@@ -3,9 +3,9 @@ import jwt from "jsonwebtoken"
 import { drizzleListRows, drizzleGetRow, drizzleCreateRow, drizzleUpdateRow } from "../../db/drizzleCrud.js"
 import { getResource } from "../../db/resourceRegistry.js"
 import { logActivity } from "../common/activityLogger.js"
-import crypto from "node:crypto"
+import { config } from "../../config.js"
 
-const JWT_SECRET = process.env.JWT_SECRET || "hkc_erp_v5_fallback_jwt_secret_key_2026"
+const JWT_SECRET = config.jwtSecret
 
 export async function ensureSuperAdmin() {
   try {

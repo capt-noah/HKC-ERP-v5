@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken"
+import { config } from "../../config.js"
 
-const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret_for_dev_only"
+const JWT_SECRET = config.jwtSecret
 
 export function authenticateToken(req, res, next) {
   if (req.method === "OPTIONS") {
