@@ -46,15 +46,51 @@ app.use(logger.requestLogger)
 // 3. Parse JSON request bodies before any route handler runs.
 app.use(express.json({ limit: "10mb" }))
 
-// 4. API & Backend routes
+import { pool } from "./db/client.js"
+
+// 4. API Diagnostics & Health Endpoints (Matching Plesk architecture)
+app.get("/hello", (req, res) => {
+  res.json({
+    status: "ok",
+    message: "HKC ERP Express server running on Plesk",
+    timestamp: new Date().toISOString(),
+    nodeVersion: process.version,
+    port: process.env.PORT || config.port,
+    dbHost: config.dbHost,
+    dbName: config.dbName,
+  })
+})
+
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", message: "HKC is working" })
+})
+
+app.get("/api/db-test", async (req, res) => {
+  try {
+    const [ping] = await pool.query("SELECT 1+1 AS result, NOW() AS server_time")
+    const [tables] = await pool.query("SHOW TABLES")
+    res.json({
+      status: "success",
+      ping: ping[0],
+      database: config.dbName,
+      host: config.dbHost,
+      totalTables: tables.length,
+      tables,
+    })
+  } catch (err) {
+    res.status(500).json({ status: "error", message: err.message })
+  }
+})
+
+// 5. API & Backend routes
 app.use("/", masterRouter)
 
-// 2. Serve static assets from pre-compiled dist/ directory (for Plesk / standalone hosting)
+// 6. Serve static assets from pre-compiled dist/ directory (for Plesk / standalone hosting)
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath, { maxAge: "1d", index: false }))
 }
 
-// 3. SPA Client-Side Catch-All Fallback (eliminates page refresh trap on Plesk across all Express versions)
+// 7. SPA Client-Side Catch-All Fallback (eliminates page refresh trap on Plesk across all Express versions)
 app.use((req, res, next) => {
   if (req.method !== "GET") return next()
   const indexPath = path.join(distPath, "index.html")
@@ -63,10 +99,6 @@ app.use((req, res, next) => {
   } else {
     res.status(200).send("HKC ERP API is running. Run 'npm run build' to generate frontend assets.")
   }
-})
-
-app.get('/health', (req, res) => {
-    res.send('HKC is working')
 })
 
 // Generic error handler — catches anything thrown inside route handlers.
@@ -82,8 +114,9 @@ app.use((err, req, res, _next) => {
   })
 })
 
-const server = app.listen(config.port, config.host, () => {
-  console.log(`HKC ERP API listening on http://${config.host}:${config.port}`)
+const PORT = Number(process.env.PORT || config.port || 1000)
+const server = app.listen(PORT, config.host, () => {
+  console.log(`HKC ERP API listening on http://${config.host}:${PORT}`)
 })
 
 // Graceful shutdown — Render sends SIGTERM before killing the container.

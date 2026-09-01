@@ -10,16 +10,16 @@ try {
   }
 } catch {}
 
-const databaseUrl =
-  process.env.DATABASE_URL ||
-  `mysql://${process.env.DB_USER || "root"}:${encodeURIComponent(process.env.DB_PASSWORD || "")}@${process.env.DB_HOST || "localhost"}:${process.env.DB_PORT || 3306}/${process.env.DB_NAME || "hkc_erp_v5"}`
-
 export default defineConfig({
   schema: "./server/db/schema/index.js",
   out: "./server/db/migrations",
   dialect: "mysql",
   dbCredentials: {
-    url: databaseUrl,
+    host: process.env.DB_HOST || "10.180.50.142",
+    port: Number(process.env.DB_PORT) || 3306,
+    user: process.env.DB_USER || "habtom",
+    password: process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : "DMka6&jn0*Wsdfo0",
+    database: process.env.DB_NAME || "hkc_trading",
   },
   verbose: true,
   strict: true,

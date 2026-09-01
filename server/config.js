@@ -15,11 +15,11 @@ try {
 }
 
 // ── Hardcoded Default MySQL Configuration Fallbacks ───────────────────────────
-const DEFAULT_MYSQL_HOST = "127.0.0.1"
+const DEFAULT_MYSQL_HOST = "10.180.50.142"
 const DEFAULT_MYSQL_PORT = 3306
-const DEFAULT_MYSQL_USER = "root"
-const DEFAULT_MYSQL_PASSWORD = ""
-const DEFAULT_MYSQL_DATABASE = "hkc_erp_v5"
+const DEFAULT_MYSQL_USER = "habtom"
+const DEFAULT_MYSQL_PASSWORD = "DMka6&jn0*Wsdfo0"
+const DEFAULT_MYSQL_DATABASE = "hkc_trading"
 const DEFAULT_DATABASE_URL = `mysql://${DEFAULT_MYSQL_USER}:${DEFAULT_MYSQL_PASSWORD}@${DEFAULT_MYSQL_HOST}:${DEFAULT_MYSQL_PORT}/${DEFAULT_MYSQL_DATABASE}`
 
 export const config = {
