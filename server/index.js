@@ -47,6 +47,10 @@ app.use(logger.requestLogger)
 app.use(express.json({ limit: "10mb" }))
 
 import { pool } from "./db/client.js"
+import { ensureSuperAdmin } from "./modules/auth/authController.js"
+
+// Auto-bootstrap superadmin account in background on startup
+void ensureSuperAdmin()
 
 // 4. API Diagnostics & Health Endpoints (Matching Plesk architecture)
 app.get("/hello", (req, res) => {
@@ -63,6 +67,15 @@ app.get("/hello", (req, res) => {
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok", message: "HKC is working" })
+})
+
+app.get("/api/auth/seed", async (req, res) => {
+  try {
+    await ensureSuperAdmin()
+    res.json({ status: "success", message: "Superadmin account verified/seeded: admin / SuperadminPassword1!" })
+  } catch (err) {
+    res.status(500).json({ status: "error", message: err.message })
+  }
 })
 
 app.get("/api/db-test", async (req, res) => {

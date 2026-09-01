@@ -1,7 +1,11 @@
 import { db } from "./client.js"
 import * as schema from "./schema/index.js"
-import { eq, desc, sql } from "drizzle-orm"
+import { eq, and, desc, sql } from "drizzle-orm"
 import crypto from "node:crypto"
+
+function snakeToCamel(str) {
+  return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
+}
 
 // Master mapping from resource table name to Drizzle schema table object
 export const tableMap = {
@@ -76,7 +80,22 @@ export async function drizzleListRows({ resource, query = {} }) {
   }
 
   try {
+    const conditions = []
+    for (const [key, rawVal] of Object.entries(query)) {
+      if (key === "limit" || key === "offset" || key === "order" || key === "select" || key === "page" || key === "pageSize" || key === "search" || key === "batch" || key === "q" || key === "apikey") continue
+      if (rawVal === undefined || rawVal === null || rawVal === "") continue
+
+      const cleanVal = typeof rawVal === "string" && rawVal.startsWith("eq.") ? rawVal.slice(3) : rawVal
+      const col = table[key] || table[snakeToCamel(key)]
+      if (col) {
+        conditions.push(eq(col, cleanVal))
+      }
+    }
+
     let q = db.select().from(table)
+    if (conditions.length > 0) {
+      q = q.where(and(...conditions))
+    }
     if (table.createdAt) q = q.orderBy(desc(table.createdAt))
     if (query.limit) q = q.limit(parseInt(query.limit, 10))
     if (query.offset) q = q.offset(parseInt(query.offset, 10))
