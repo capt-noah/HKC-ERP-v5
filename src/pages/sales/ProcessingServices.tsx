@@ -377,10 +377,15 @@ export default function ProcessingServices() {
   }
 
   const filteredServices = services.filter((s) => {
+    const ref = s.reference_number || (s as any).service_order_no || s.id || ""
+    const client = s.client_company_name || ""
+    const goods = s.goods_description || ""
+    const q = (searchQuery || "").toLowerCase()
+
     const matchesSearch =
-      s.reference_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.client_company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.goods_description.toLowerCase().includes(searchQuery.toLowerCase())
+      ref.toLowerCase().includes(q) ||
+      client.toLowerCase().includes(q) ||
+      goods.toLowerCase().includes(q)
     const matchesStage = stageFilter === "ALL" || s.status === stageFilter
     return matchesSearch && matchesStage
   })

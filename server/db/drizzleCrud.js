@@ -1,13 +1,8 @@
-import { db } from "./client.js"
+import { pool, db } from "./client.js"
 import * as schema from "./schema/index.js"
-import { eq, and, desc, sql } from "drizzle-orm"
 import crypto from "node:crypto"
 
-function snakeToCamel(str) {
-  return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase())
-}
-
-// Master mapping from resource table name to Drizzle schema table object
+// Master mapping from resource table name to Drizzle schema table object (for type-safe schema checks/migrations)
 export const tableMap = {
   // Inventory (4)
   warehouses: schema.warehouses,
@@ -55,9 +50,10 @@ export function getDrizzleTable(tableName) {
   return tableMap[tableName] || null
 }
 
-function unwrapRow(row, storage) {
+export function unwrapRow(row, storage) {
   if (!row) return null
-  if (storage === "jsonb_document" || storage === "json_document") {
+  const isDoc = storage === "jsonb_document" || storage === "json_document"
+  if (isDoc) {
     let payload = row.payload
     if (typeof payload === "string") {
       try {
@@ -66,169 +62,265 @@ function unwrapRow(row, storage) {
         payload = {}
       }
     }
-    return { id: row.id, ...(payload || {}) }
+    const merged = { ...(payload || {}), id: row.id || payload?.id }
+    if (row.created_at && !merged.created_at) merged.created_at = row.created_at
+    if (row.updated_at && !merged.updated_at) merged.updated_at = row.updated_at
+    return merged
   }
   return row
 }
 
-// ── Native MySQL Drizzle CRUD Methods ──
+// ── Native Resilient MySQL CRUD Methods (Direct Pool Connection for Maximum Compatibility) ──
 
 export async function drizzleListRows({ resource, query = {} }) {
-  const table = getDrizzleTable(resource.table)
-  if (!table) {
-    return { status: 404, body: { error: `Table '${resource.table}' not found in Drizzle schema.` } }
+  if (!resource || !resource.table) {
+    return { status: 404, body: { error: `Invalid resource specification.` } }
   }
+
+  const tableName = resource.table
+  const isDoc = resource.storage === "jsonb_document" || resource.storage === "json_document"
 
   try {
     const conditions = []
+    const params = []
+
     for (const [key, rawVal] of Object.entries(query)) {
-      if (key === "limit" || key === "offset" || key === "order" || key === "select" || key === "page" || key === "pageSize" || key === "search" || key === "batch" || key === "q" || key === "apikey") continue
+      if (
+        key === "limit" ||
+        key === "offset" ||
+        key === "order" ||
+        key === "select" ||
+        key === "page" ||
+        key === "pageSize" ||
+        key === "search" ||
+        key === "batch" ||
+        key === "q" ||
+        key === "apikey"
+      )
+        continue
       if (rawVal === undefined || rawVal === null || rawVal === "") continue
 
       const cleanVal = typeof rawVal === "string" && rawVal.startsWith("eq.") ? rawVal.slice(3) : rawVal
-      const col = table[key] || table[snakeToCamel(key)]
-      if (col) {
-        conditions.push(eq(col, cleanVal))
+
+      if (key === "id") {
+        conditions.push(`id = ?`)
+        params.push(cleanVal)
+      } else if (isDoc) {
+        conditions.push(`JSON_UNQUOTE(JSON_EXTRACT(payload, '$.${key}')) = ?`)
+        params.push(String(cleanVal))
+      } else {
+        conditions.push(`\`${key}\` = ?`)
+        params.push(cleanVal)
       }
     }
 
-    let q = db.select().from(table)
+    let sql = `SELECT * FROM \`${tableName}\``
     if (conditions.length > 0) {
-      q = q.where(and(...conditions))
+      sql += ` WHERE ${conditions.join(" AND ")}`
     }
-    if (table.createdAt) q = q.orderBy(desc(table.createdAt))
-    if (query.limit) q = q.limit(parseInt(query.limit, 10))
-    if (query.offset) q = q.offset(parseInt(query.offset, 10))
 
-    const rows = await q
+    // Try ORDER BY created_at DESC; if column doesn't exist, execute without it
+    let rows
+    try {
+      let fullSql = `${sql} ORDER BY created_at DESC`
+      const fullParams = [...params]
+      if (query.limit) {
+        fullSql += ` LIMIT ?`
+        fullParams.push(parseInt(query.limit, 10))
+      }
+      if (query.offset) {
+        fullSql += ` OFFSET ?`
+        fullParams.push(parseInt(query.offset, 10))
+      }
+      const [res] = await pool.query(fullSql, fullParams)
+      rows = res
+    } catch (orderErr) {
+      let fallbackSql = sql
+      const fallbackParams = [...params]
+      if (query.limit) {
+        fallbackSql += ` LIMIT ?`
+        fallbackParams.push(parseInt(query.limit, 10))
+      }
+      if (query.offset) {
+        fallbackSql += ` OFFSET ?`
+        fallbackParams.push(parseInt(query.offset, 10))
+      }
+      const [res] = await pool.query(fallbackSql, fallbackParams)
+      rows = res
+    }
+
     return { status: 200, body: rows.map((r) => unwrapRow(r, resource.storage)) }
   } catch (err) {
-    console.error(`[DRIZZLE MYSQL LIST ERROR] ${resource.table}:`, err)
-    return { status: 500, body: { error: `Failed to list ${resource.table}`, message: err.message } }
+    console.error(`[MYSQL LIST ERROR] ${tableName}:`, err)
+    return { status: 500, body: { error: `Failed to list ${tableName}`, message: err.message } }
   }
 }
 
 export async function drizzleGetRow({ resource, id }) {
-  const table = getDrizzleTable(resource.table)
-  if (!table) {
-    return { status: 404, body: { error: `Table '${resource.table}' not found in Drizzle schema.` } }
+  if (!resource || !resource.table) {
+    return { status: 404, body: { error: `Invalid resource specification.` } }
   }
 
+  const tableName = resource.table
   try {
-    const rows = await db.select().from(table).where(eq(table.id, id)).limit(1)
-    if (rows.length > 0) {
+    const [rows] = await pool.query(`SELECT * FROM \`${tableName}\` WHERE id = ? LIMIT 1`, [String(id)])
+    if (Array.isArray(rows) && rows.length > 0) {
       return { status: 200, body: unwrapRow(rows[0], resource.storage) }
     }
-    return { status: 404, body: { error: `Row '${id}' not found in ${resource.table}.` } }
+    return { status: 404, body: { error: `Row '${id}' not found in ${tableName}.` } }
   } catch (err) {
-    console.error(`[DRIZZLE MYSQL GET ERROR] ${resource.table}:${id}:`, err)
-    return { status: 500, body: { error: `Failed to get ${resource.table}:${id}`, message: err.message } }
+    console.error(`[MYSQL GET ERROR] ${tableName}:${id}:`, err)
+    return { status: 500, body: { error: `Failed to get ${tableName}:${id}`, message: err.message } }
   }
 }
 
 export async function drizzleCreateRow({ resource, body }) {
-  const table = getDrizzleTable(resource.table)
-  if (!table) {
-    return { status: 404, body: { error: `Table '${resource.table}' not found in Drizzle schema.` } }
+  if (!resource || !resource.table) {
+    return { status: 404, body: { error: `Invalid resource specification.` } }
   }
 
+  const tableName = resource.table
+  const isDoc = resource.storage === "jsonb_document" || resource.storage === "json_document"
   const id = body?.id ? String(body.id) : crypto.randomUUID()
-  const payloadData = (resource.storage === "jsonb_document" || resource.storage === "json_document")
-    ? (body?.payload || body)
-    : body
 
   try {
-    const isDoc = (resource.storage === "jsonb_document" || resource.storage === "json_document")
-    const insertValues = isDoc
-      ? { id, payload: payloadData, createdAt: new Date(), updatedAt: new Date() }
-      : { ...body, id, createdAt: new Date(), updatedAt: new Date() }
+    if (isDoc) {
+      const { id: _ignoredId, ...payloadData } = body || {}
+      const payloadString = JSON.stringify({ id, ...payloadData })
+      await pool.query(
+        `INSERT INTO \`${tableName}\` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3))`,
+        [id, payloadString]
+      )
+      return { status: 200, body: { id, ...payloadData } }
+    } else {
+      const fields = Object.keys(body).filter((k) => k !== "created_at" && k !== "updated_at")
+      const values = fields.map((k) => {
+        const val = body[k]
+        if (typeof val === "object" && val !== null) return JSON.stringify(val)
+        return val
+      })
+      const placeholders = fields.map(() => "?").join(", ")
+      const colNames = fields.map((f) => `\`${f}\``).join(", ")
 
-    await db.insert(table).values(insertValues)
-    const created = await db.select().from(table).where(eq(table.id, id)).limit(1)
-    return { status: 200, body: unwrapRow(created[0] || insertValues, resource.storage) }
+      await pool.query(
+        `INSERT INTO \`${tableName}\` (${colNames}) VALUES (${placeholders})`,
+        values
+      )
+      return { status: 200, body: { id, ...body } }
+    }
   } catch (err) {
-    console.error(`[DRIZZLE MYSQL CREATE ERROR] ${resource.table}:`, err)
-    return { status: 500, body: { error: `Failed to create in ${resource.table}`, message: err.message } }
+    console.error(`[MYSQL CREATE ERROR] ${tableName}:`, err)
+    return { status: 500, body: { error: `Failed to create in ${tableName}`, message: err.message } }
   }
 }
 
 export async function drizzleUpdateRow({ resource, id, body }) {
-  const table = getDrizzleTable(resource.table)
-  if (!table) {
-    return { status: 404, body: { error: `Table '${resource.table}' not found in Drizzle schema.` } }
+  if (!resource || !resource.table) {
+    return { status: 404, body: { error: `Invalid resource specification.` } }
   }
 
-  try {
-    const isDoc = (resource.storage === "jsonb_document" || resource.storage === "json_document")
-    let updateValues
-    if (isDoc) {
-      const existing = await db.select().from(table).where(eq(table.id, id)).limit(1)
-      const existingPayload = existing.length > 0
-        ? (typeof existing[0].payload === "string" ? JSON.parse(existing[0].payload) : (existing[0].payload || {}))
-        : {}
-      updateValues = { payload: { ...existingPayload, ...body }, updatedAt: new Date() }
-    } else {
-      updateValues = { ...body, updatedAt: new Date() }
-    }
+  const tableName = resource.table
+  const isDoc = resource.storage === "jsonb_document" || resource.storage === "json_document"
 
-    await db.update(table).set(updateValues).where(eq(table.id, id))
-    const updated = await db.select().from(table).where(eq(table.id, id)).limit(1)
-    return { status: 200, body: unwrapRow(updated[0] || { id, ...updateValues }, resource.storage) }
+  try {
+    if (isDoc) {
+      const [existingRows] = await pool.query(`SELECT * FROM \`${tableName}\` WHERE id = ? LIMIT 1`, [String(id)])
+      let existingPayload = {}
+      if (Array.isArray(existingRows) && existingRows.length > 0) {
+        const row = existingRows[0]
+        existingPayload = typeof row.payload === "string" ? JSON.parse(row.payload) : (row.payload || {})
+      }
+
+      const mergedPayload = { ...existingPayload, ...body, id }
+      await pool.query(
+        `UPDATE \`${tableName}\` SET payload = ?, updated_at = NOW(3) WHERE id = ?`,
+        [JSON.stringify(mergedPayload), String(id)]
+      )
+      return { status: 200, body: mergedPayload }
+    } else {
+      const fields = Object.keys(body).filter((k) => k !== "id" && k !== "created_at")
+      if (fields.length === 0) {
+        return { status: 200, body: { id, ...body } }
+      }
+
+      const setClauses = fields.map((f) => `\`${f}\` = ?`).join(", ")
+      const values = fields.map((k) => {
+        const val = body[k]
+        if (typeof val === "object" && val !== null) return JSON.stringify(val)
+        return val
+      })
+      values.push(String(id))
+
+      await pool.query(`UPDATE \`${tableName}\` SET ${setClauses} WHERE id = ?`, values)
+      return { status: 200, body: { id, ...body } }
+    }
   } catch (err) {
-    console.error(`[DRIZZLE MYSQL UPDATE ERROR] ${resource.table}:${id}:`, err)
-    return { status: 500, body: { error: `Failed to update ${resource.table}:${id}`, message: err.message } }
+    console.error(`[MYSQL UPDATE ERROR] ${tableName}:${id}:`, err)
+    return { status: 500, body: { error: `Failed to update ${tableName}:${id}`, message: err.message } }
   }
 }
 
 export async function drizzleDeleteRow({ resource, id }) {
-  const table = getDrizzleTable(resource.table)
-  if (!table) {
-    return { status: 404, body: { error: `Table '${resource.table}' not found in Drizzle schema.` } }
+  if (!resource || !resource.table) {
+    return { status: 404, body: { error: `Invalid resource specification.` } }
   }
 
+  const tableName = resource.table
   try {
-    await db.delete(table).where(eq(table.id, id))
+    await pool.query(`DELETE FROM \`${tableName}\` WHERE id = ?`, [String(id)])
     return { status: 200, body: { ok: true, deletedId: id } }
   } catch (err) {
-    console.error(`[DRIZZLE MYSQL DELETE ERROR] ${resource.table}:${id}:`, err)
-    return { status: 500, body: { error: `Failed to delete ${resource.table}:${id}`, message: err.message } }
+    console.error(`[MYSQL DELETE ERROR] ${tableName}:${id}:`, err)
+    return { status: 500, body: { error: `Failed to delete ${tableName}:${id}`, message: err.message } }
   }
 }
 
 export async function drizzleReplaceRows({ resource, body }) {
-  const table = getDrizzleTable(resource.table)
-  if (!table) {
-    return { status: 404, body: { error: `Table '${resource.table}' not found in Drizzle schema.` } }
+  if (!resource || !resource.table) {
+    return { status: 404, body: { error: `Invalid resource specification.` } }
   }
 
+  const tableName = resource.table
   const items = Array.isArray(body) ? body : [body]
   if (items.length === 0) {
     return { status: 200, body: { ok: true, count: 0 } }
   }
 
-  const isDoc = (resource.storage === "jsonb_document" || resource.storage === "json_document")
+  const isDoc = resource.storage === "jsonb_document" || resource.storage === "json_document"
 
   try {
-    const rows = items.map((item) => {
+    for (const item of items) {
       const id = item?.id ? String(item.id) : crypto.randomUUID()
       if (isDoc) {
         const { id: _ignoredId, ...payloadData } = item || {}
-        return { id, payload: payloadData, updatedAt: new Date() }
-      }
-      return { ...item, id, updatedAt: new Date() }
-    })
+        const payloadString = JSON.stringify({ id, ...payloadData })
+        await pool.query(
+          `INSERT INTO \`${tableName}\` (id, payload, created_at, updated_at)
+           VALUES (?, ?, NOW(3), NOW(3))
+           ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)`,
+          [id, payloadString]
+        )
+      } else {
+        const fields = Object.keys(item)
+        const colNames = fields.map((f) => `\`${f}\``).join(", ")
+        const placeholders = fields.map(() => "?").join(", ")
+        const updates = fields.filter((f) => f !== "id").map((f) => `\`${f}\` = VALUES(\`${f}\`)`).join(", ")
+        const values = fields.map((k) => {
+          const val = item[k]
+          if (typeof val === "object" && val !== null) return JSON.stringify(val)
+          return val
+        })
 
-    for (const row of rows) {
-      await db.insert(table).values(row).onDuplicateKeyUpdate({
-        set: isDoc
-          ? { payload: row.payload, updatedAt: new Date() }
-          : { ...row, updatedAt: new Date() }
-      })
+        const sql = `INSERT INTO \`${tableName}\` (${colNames}) VALUES (${placeholders}) ${
+          updates.length > 0 ? `ON DUPLICATE KEY UPDATE ${updates}` : ""
+        }`
+        await pool.query(sql, values)
+      }
     }
 
-    return { status: 200, body: { ok: true, count: rows.length } }
+    return { status: 200, body: { ok: true, count: items.length } }
   } catch (err) {
-    console.error(`[DRIZZLE MYSQL REPLACE ERROR] ${resource.table}:`, err)
-    return { status: 500, body: { error: `Failed to replace rows in ${resource.table}`, message: err.message } }
+    console.error(`[MYSQL REPLACE ERROR] ${tableName}:`, err)
+    return { status: 500, body: { error: `Failed to replace rows in ${tableName}`, message: err.message } }
   }
 }
