@@ -65,6 +65,10 @@ app.use((req, res, next) => {
   }
 })
 
+app.get('/health', (req, res) => {
+    res.send('HKC is working')
+})
+
 // Generic error handler — catches anything thrown inside route handlers.
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
