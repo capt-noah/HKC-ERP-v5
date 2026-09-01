@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: hkc-erp-api
+    runtime: node
+    region: frankfurt          # change to the region closest to your users
+    plan: free                 # upgrade to starter/standard for always-on
+    rootDir: .
+    buildCommand: "npm install --omit=dev"
+    startCommand: "node server/index.js"
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000            # Render always forwards external traffic to 10000
+      # Add the following in the Render dashboard (not here, to keep secrets out of git):
+      # DATABASE_URL (e.g. mysql://user:password@host:3306/hkc_erp_v5)
+      # JWT_SECRET

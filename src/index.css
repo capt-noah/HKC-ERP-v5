@@ -1,0 +1,695 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --radius: 0.75rem;
+  --background: oklch(0.99 0 0);
+  --foreground: oklch(0.1 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.1 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.1 0 0);
+  --primary: oklch(0.48 0.16 145);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.96 0 0);
+  --secondary-foreground: oklch(0.1 0 0);
+  --muted: oklch(0.96 0 0);
+  --muted-foreground: oklch(0.45 0 0);
+  --accent: oklch(0.96 0.02 145);
+  --accent-foreground: oklch(0.2 0.12 145);
+  --destructive: oklch(0.15 0 0);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(0.9 0 0);
+  --input: oklch(0.9 0 0);
+  --ring: oklch(0.48 0.16 145);
+  --chart-1: oklch(0.48 0.16 145);
+  --chart-2: oklch(0.15 0 0);
+  --chart-3: oklch(0.8 0.06 145);
+  --chart-4: oklch(0.96 0 0);
+  --chart-5: oklch(0.6 0.12 145);
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.1 0 0);
+  --sidebar-primary: oklch(0.48 0.16 145);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.96 0.02 145);
+  --sidebar-accent-foreground: oklch(0.2 0.12 145);
+  --sidebar-border: oklch(0.9 0 0);
+  --sidebar-ring: oklch(0.48 0.16 145);
+}
+
+.dark {
+  --background: oklch(0.1 0 0);
+  --foreground: oklch(0.99 0 0);
+  --card: oklch(0.14 0 0);
+  --card-foreground: oklch(0.99 0 0);
+  --popover: oklch(0.14 0 0);
+  --popover-foreground: oklch(0.99 0 0);
+  --primary: oklch(0.68 0.16 145);
+  --primary-foreground: oklch(0.1 0 0);
+  --secondary: oklch(0.2 0 0);
+  --secondary-foreground: oklch(0.99 0 0);
+  --muted: oklch(0.2 0 0);
+  --muted-foreground: oklch(0.65 0 0);
+  --accent: oklch(0.22 0.06 145);
+  --accent-foreground: oklch(0.95 0.1 145);
+  --destructive: oklch(0.99 0 0);
+  --destructive-foreground: oklch(0.1 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.68 0.16 145);
+  --chart-1: oklch(0.68 0.16 145);
+  --chart-2: oklch(0.48 0.12 145);
+  --chart-3: oklch(0.8 0.1 145);
+  --chart-4: oklch(0.99 0 0);
+  --chart-5: oklch(0.14 0 0);
+  --sidebar: oklch(0.14 0 0);
+  --sidebar-foreground: oklch(0.99 0 0);
+  --sidebar-primary: oklch(0.68 0.16 145);
+  --sidebar-primary-foreground: oklch(0.1 0 0);
+  --sidebar-accent: oklch(0.22 0.06 145);
+  --sidebar-accent-foreground: oklch(0.95 0.1 145);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.68 0.16 145);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body {
+    @apply bg-background text-foreground;
+    background-color: #f4f4f5;
+    min-height: 100vh;
+    font-family: var(--font-sans);
+  }
+  .dark html,
+  .dark body {
+    background-color: #09090b;
+  }
+}
+
+/* Globally remove scrollbars on all elements, modals, dialogs, and overflow containers */
+html,
+body,
+*,
+*::before,
+*::after {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE / Edge */
+}
+
+::-webkit-scrollbar,
+*::-webkit-scrollbar,
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-corner {
+  display: none;
+  width: 0;
+  height: 0;
+  max-width: 0;
+  max-height: 0;
+  background: transparent;
+  opacity: 0;
+}
+
+/* Restored & styled visible horizontal scrollbar for data tables on desktop */
+.table-scrollbar-x,
+[data-table-scroll] {
+  scrollbar-width: thin !important;
+  scrollbar-color: #059669 rgba(5, 150, 105, 0.08) !important;
+  -ms-overflow-style: auto !important;
+}
+
+.table-scrollbar-x::-webkit-scrollbar,
+[data-table-scroll]::-webkit-scrollbar {
+  display: block !important;
+  height: 10px !important;
+  width: 10px !important;
+  background: rgba(5, 150, 105, 0.05) !important;
+  border-radius: 9999px !important;
+  opacity: 1 !important;
+}
+
+.table-scrollbar-x::-webkit-scrollbar-track,
+[data-table-scroll]::-webkit-scrollbar-track {
+  display: block !important;
+  background: rgba(5, 150, 105, 0.05) !important;
+  border-radius: 9999px !important;
+  border: 1px solid rgba(5, 150, 105, 0.1) !important;
+  opacity: 1 !important;
+}
+
+.table-scrollbar-x::-webkit-scrollbar-thumb,
+[data-table-scroll]::-webkit-scrollbar-thumb {
+  display: block !important;
+  background: #059669 !important;
+  border-radius: 9999px !important;
+  opacity: 1 !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
+  cursor: grab !important;
+}
+
+.table-scrollbar-x::-webkit-scrollbar-thumb:hover,
+[data-table-scroll]::-webkit-scrollbar-thumb:hover {
+  background: #047857 !important;
+}
+
+.table-scrollbar-x::-webkit-scrollbar-thumb:active,
+[data-table-scroll]::-webkit-scrollbar-thumb:active {
+  cursor: grabbing !important;
+  background: #065f46 !important;
+}
+
+.dark .table-scrollbar-x,
+.dark [data-table-scroll] {
+  scrollbar-color: #10b981 rgba(16, 185, 129, 0.1) !important;
+}
+
+.dark .table-scrollbar-x::-webkit-scrollbar,
+.dark [data-table-scroll]::-webkit-scrollbar {
+  background: rgba(16, 185, 129, 0.06) !important;
+}
+
+.dark .table-scrollbar-x::-webkit-scrollbar-track,
+.dark [data-table-scroll]::-webkit-scrollbar-track {
+  background: rgba(16, 185, 129, 0.06) !important;
+  border: 1px solid rgba(16, 185, 129, 0.12) !important;
+}
+
+.dark .table-scrollbar-x::-webkit-scrollbar-thumb,
+.dark [data-table-scroll]::-webkit-scrollbar-thumb {
+  background: #10b981 !important;
+}
+
+.dark .table-scrollbar-x::-webkit-scrollbar-thumb:hover,
+.dark [data-table-scroll]::-webkit-scrollbar-thumb:hover {
+  background: #34d399 !important;
+}
+
+/* Modal open background locking & overscroll containment */
+html.modal-open,
+body.modal-open {
+  overflow: hidden !important;
+  touch-action: none !important;
+}
+
+.fixed.inset-0,
+[role="dialog"] {
+  overscroll-behavior: contain !important;
+}
+
+/* iOS 26 style glass card with 32px rounded corners - Glassy Frosted Blur */
+.glass-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.62) 0%, rgba(255, 255, 255, 0.36) 100%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.04), inset 0 1px 1px 0 rgba(255, 255, 255, 0.95);
+  border-radius: 2rem;
+  transform: translateZ(0);
+}
+
+.dark .glass-card {
+  background: linear-gradient(135deg, rgba(30, 30, 34, 0.68) 0%, rgba(20, 20, 24, 0.45) 100%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.28), inset 0 1px 1px 0 rgba(255, 255, 255, 0.06);
+  border-radius: 2rem;
+  transform: translateZ(0);
+}
+
+/* Solid black card (uses theme black) with 32px rounded corners */
+.glass-card-dark {
+  background: #242427;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.12);
+  border-radius: 2rem;
+  transform: translateZ(0);
+}
+
+/* Floating glass nav - Glassy Frosted Blur */
+.glass-nav {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.46) 100%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.04), inset 0 1px 1px rgba(255, 255, 255, 0.95);
+  transform: translateZ(0);
+}
+
+.glass-nav-dark {
+  background: linear-gradient(135deg, rgba(30, 30, 34, 0.75) 0%, rgba(20, 20, 24, 0.52) 100%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 35px rgba(0, 0, 0, 0.22), inset 0 1px 1px rgba(255, 255, 255, 0.06);
+  transform: translateZ(0);
+}
+
+/* Page gradient - clean white/grey canvas with balanced, wide organic green gradient bleeding from left to right */
+.page-gradient {
+  background:
+    radial-gradient(ellipse 110% 85% at 5% 45%, rgba(34, 197, 94, 0.13) 0%, rgba(34, 197, 94, 0.07) 40%, rgba(34, 197, 94, 0.03) 70%, transparent 92%),
+    radial-gradient(ellipse 85% 70% at 45% 60%, rgba(34, 197, 94, 0.07) 0%, rgba(34, 197, 94, 0.03) 45%, rgba(34, 197, 94, 0.01) 70%, transparent 85%),
+    radial-gradient(ellipse 60% 50% at 78% 35%, rgba(34, 197, 94, 0.04) 0%, rgba(34, 197, 94, 0.01) 45%, transparent 75%),
+    radial-gradient(circle at 92% 12%, rgba(0, 0, 0, 0.02) 0%, transparent 45%),
+    linear-gradient(135deg, #ffffff 0%, #f4f4f5 50%, #e4e4e7 100%);
+  position: relative;
+  overflow-x: hidden;
+  z-index: 1;
+}
+
+/* Elegant floating vector line circle in background - static for 0% idle CPU */
+.page-gradient::after {
+  content: "";
+  position: absolute;
+  top: 25%;
+  right: -5%;
+  width: 500px;
+  height: 500px;
+  border: 1px dashed rgba(0, 0, 0, 0.04);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+  box-shadow: inset 0 0 100px rgba(34, 197, 94, 0.02);
+}
+
+.dark .page-gradient,
+.page-gradient-dark {
+  background:
+    radial-gradient(ellipse 110% 85% at 5% 45%, rgba(34, 197, 94, 0.11) 0%, rgba(34, 197, 94, 0.05) 40%, rgba(34, 197, 94, 0.02) 70%, transparent 92%),
+    radial-gradient(ellipse 85% 70% at 45% 60%, rgba(34, 197, 94, 0.06) 0%, rgba(34, 197, 94, 0.025) 45%, rgba(34, 197, 94, 0.008) 70%, transparent 85%),
+    radial-gradient(ellipse 60% 50% at 78% 35%, rgba(34, 197, 94, 0.035) 0%, rgba(34, 197, 94, 0.01) 45%, transparent 75%),
+    radial-gradient(circle at 92% 12%, rgba(0, 0, 0, 0.15) 0%, transparent 45%),
+    linear-gradient(135deg, #09090b 0%, #18181b 50%, #09090b 100%);
+  position: relative;
+  overflow-x: hidden;
+  z-index: 1;
+}
+
+.dark .page-gradient::after,
+.page-gradient-dark::after {
+  content: "";
+  position: absolute;
+  top: 25%;
+  right: -5%;
+  width: 500px;
+  height: 500px;
+  border: 1px dashed rgba(255, 255, 255, 0.03);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: -1;
+  box-shadow: inset 0 0 100px rgba(34, 197, 94, 0.02);
+}
+
+/* Animations for background elements */
+@keyframes slow-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.credit-attachment-sheet {
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 16mm 14mm;
+  font-family: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  color: #18181b;
+}
+
+.credit-attachment-header {
+  display: grid;
+  grid-template-columns: 1fr 0.72fr;
+  gap: 16mm;
+  border-bottom: 2px solid #18181b;
+  padding-bottom: 7mm;
+}
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 140s linear infinite;
+}
+.credit-attachment-header h2 {
+  font-size: 16pt;
+  line-height: 1.1;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+}
+
+.credit-attachment-header p {
+  margin-top: 1.5mm;
+  font-size: 9pt;
+  font-weight: 700;
+  color: #3f3f46;
+}
+
+.credit-attachment-label {
+  font-size: 7.5pt;
+  font-weight: 900;
+  color: #71717a;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.credit-attachment-docno {
+  margin-top: 1mm;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11pt;
+  font-weight: 900;
+  color: #18181b;
+}
+
+.credit-attachment-title {
+  margin: 8mm 0 7mm;
+  border: 1.5px solid #18181b;
+  background: #f4f4f5;
+  padding: 3mm;
+  text-align: center;
+}
+
+.credit-attachment-title h1 {
+  font-size: 18pt;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+
+.credit-attachment-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8mm;
+  margin-bottom: 8mm;
+}
+
+.credit-attachment-info-grid > div {
+  border: 1px solid #d4d4d8;
+  padding: 4mm;
+}
+
+.credit-attachment-section-title {
+  margin-bottom: 3mm;
+  font-size: 8pt;
+  font-weight: 900;
+  color: #166534;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.credit-attachment-info-grid dl {
+  display: grid;
+  gap: 2.5mm;
+}
+
+.credit-attachment-info-grid dl div {
+  display: grid;
+  grid-template-columns: 28mm 1fr;
+  gap: 4mm;
+}
+
+.credit-attachment-info-grid dt {
+  font-size: 8pt;
+  font-weight: 900;
+  color: #52525b;
+}
+
+.credit-attachment-info-grid dd {
+  min-height: 14px;
+  border-bottom: 1px solid #d4d4d8;
+  font-size: 9pt;
+  font-weight: 800;
+  color: #18181b;
+}
+
+.credit-attachment-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.credit-attachment-table th,
+.credit-attachment-table td {
+  border: 1px solid #a1a1aa;
+  padding: 2.6mm 2.4mm;
+  vertical-align: top;
+  font-size: 8.5pt;
+}
+
+.credit-attachment-table th {
+  background: #18181b;
+  color: white;
+  font-size: 7.5pt;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.credit-attachment-table th:nth-child(1) {
+  width: 10mm;
+}
+
+.credit-attachment-table th:nth-child(2) {
+  width: auto;
+}
+
+.credit-attachment-table th:nth-child(3) {
+  width: 20mm;
+}
+
+.credit-attachment-table th:nth-child(4),
+.credit-attachment-table th:nth-child(5),
+.credit-attachment-table th:nth-child(6) {
+  width: 26mm;
+}
+
+.credit-attachment-table td strong,
+.credit-attachment-table td span {
+  display: block;
+}
+
+.credit-attachment-table td strong {
+  font-weight: 900;
+  color: #18181b;
+}
+
+.credit-attachment-table td span {
+  margin-top: 1mm;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 7.5pt;
+  font-weight: 700;
+  color: #52525b;
+}
+
+.credit-attachment-lower {
+  display: grid;
+  grid-template-columns: 1fr 62mm;
+  gap: 8mm;
+  margin-top: 8mm;
+  align-items: start;
+}
+
+.credit-attachment-payment {
+  border: 1px solid #d4d4d8;
+  padding: 4mm;
+  min-height: 34mm;
+}
+
+.credit-attachment-payment-method {
+  display: flex;
+  gap: 3mm;
+}
+
+.credit-attachment-payment-method span {
+  min-width: 25mm;
+  border: 1px solid #a1a1aa;
+  padding: 2mm 4mm;
+  text-align: center;
+  font-size: 8pt;
+  font-weight: 900;
+}
+
+.credit-attachment-payment-method .active {
+  background: #dcfce7;
+  border-color: #166534;
+  color: #14532d;
+}
+
+.credit-attachment-words {
+  margin-top: 1.5mm;
+  font-size: 10pt;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
+.credit-attachment-totals {
+  border: 1px solid #18181b;
+}
+
+.credit-attachment-totals div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8mm;
+  border-bottom: 1px solid #d4d4d8;
+  padding: 2.8mm 3.2mm;
+  font-size: 9pt;
+}
+
+.credit-attachment-totals div:last-child {
+  border-bottom: 0;
+}
+
+.credit-attachment-totals span {
+  font-weight: 800;
+  color: #52525b;
+}
+
+.credit-attachment-totals strong {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-weight: 900;
+}
+
+.credit-attachment-totals .grand {
+  background: #18181b;
+  color: white;
+}
+
+.credit-attachment-totals .grand span {
+  color: white;
+}
+
+.credit-attachment-footer {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5mm;
+  margin-top: 16mm;
+  page-break-inside: avoid;
+}
+
+.credit-attachment-footer div {
+  min-height: 24mm;
+  border-bottom: 1.5px solid #18181b;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  padding-bottom: 2mm;
+}
+
+.credit-attachment-footer span,
+.credit-attachment-footer p {
+  font-size: 8pt;
+  font-weight: 900;
+  color: #3f3f46;
+}
+
+.credit-attachment-footer p {
+  grid-column: 1 / -1;
+  margin-top: 2mm;
+  text-align: right;
+}
+
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+@media print {
+  /* 1. Hide background page layout and navigation chrome */
+  .min-h-screen,
+  header,
+  nav,
+  .floating-nav,
+  .subpage-nav,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* 2. Reset modal backdrop & overlays to clean white static layout */
+  .fixed.inset-0 {
+    position: static !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+  }
+
+  /* 3. Render printable sheet full width on white paper */
+  .printable-document,
+  #printable-document-sheet,
+  .credit-attachment-sheet {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 10mm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  body, html {
+    background: #ffffff !important;
+    color: #000000 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

@@ -1,0 +1,32 @@
+/**
+ * Comprehensive list of commercial, state, and specialized banks operating in Ethiopia.
+ */
+export const ETHIOPIAN_BANKS: string[] = [
+  "Commercial Bank of Ethiopia (CBE)",
+  "Awash International Bank",
+  "Dashen Bank",
+  "Bank of Abyssinia",
+  "Wegagen Bank",
+  "Hibret Bank (United Bank)",
+  "Nib International Bank",
+  "Cooperative Bank of Oromia (Coopbank)",
+  "Lion International Bank",
+  "Zemen Bank",
+  "Oromia Bank",
+  "Berhan Bank",
+  "Bunna International Bank",
+  "Abay Bank",
+  "Addis International Bank",
+  "Enat Bank",
+  "Global Bank Ethiopia",
+  "Goh Betoch Bank",
+  "Hijra Bank",
+  "ZamZam Bank",
+  "Siinqee Bank",
+  "Tsedey Bank",
+  "Amhara Bank",
+  "Rammis Bank",
+  "Sidama Bank",
+  "Gadaa Bank",
+  "Development Bank of Ethiopia (DBE)",
+]

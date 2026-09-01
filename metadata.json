@@ -1,0 +1,8 @@
+{
+  "name": "HKC Trading",
+  "description": "Enterprise Resource Planning (ERP) platform for HKC Trading covering Sales, Purchase Orders, Inventory, Financial Ledger & Banking, HR Payroll, and Admin Control Center.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
