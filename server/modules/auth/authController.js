@@ -39,6 +39,8 @@ export async function ensureSuperAdmin() {
   }
 }
 
+import { pool } from "../../db/client.js"
+
 export async function login(req, res) {
   const { username, password } = req.body
 
@@ -49,54 +51,68 @@ export async function login(req, res) {
   const cleanUsername = String(username).trim()
 
   try {
-    const resource = getResource("users")
-    let result = await drizzleListRows({
-      resource,
-      query: { username: cleanUsername },
-    })
+    // 1. Direct MySQL query for zero-friction lookup from imported SQL dump
+    const [userRows] = await pool.query(
+      "SELECT * FROM users WHERE LOWER(TRIM(username)) = LOWER(?) LIMIT 1",
+      [cleanUsername]
+    )
 
-    let rows = Array.isArray(result.body) ? result.body : []
-    let user = rows.find((u) => (u.username || "").toLowerCase() === cleanUsername.toLowerCase())
+    let user = Array.isArray(userRows) && userRows.length > 0 ? userRows[0] : null
 
-    // If not found with direct query, search full table
+    // 2. Fallback search by employee_id or ID if username wasn't an exact match
     if (!user) {
-      const allRes = await drizzleListRows({ resource })
-      const allUsers = Array.isArray(allRes.body) ? allRes.body : []
-      user = allUsers.find((u) => (u.username || "").toLowerCase() === cleanUsername.toLowerCase())
-    }
-
-    // Auto-bootstrap admin if table has no admin and user is trying admin login
-    if (!user && cleanUsername.toLowerCase() === "admin" && password === "SuperadminPassword1!") {
-      await ensureSuperAdmin()
-      const afterRes = await drizzleListRows({ resource })
-      const afterUsers = Array.isArray(afterRes.body) ? afterRes.body : []
-      user = afterUsers.find((u) => (u.username || "").toLowerCase() === "admin")
+      const [altRows] = await pool.query(
+        "SELECT * FROM users WHERE LOWER(TRIM(id)) = LOWER(?) OR LOWER(TRIM(employee_id)) = LOWER(?) LIMIT 1",
+        [cleanUsername, cleanUsername]
+      )
+      if (Array.isArray(altRows) && altRows.length > 0) {
+        user = altRows[0]
+      }
     }
 
     if (!user) {
-      return res.status(401).json({ error: "Invalid credentials" })
+      return res.status(401).json({ error: "Invalid credentials (user not found)" })
     }
 
-    const passwordHash = user.password_hash || user.passwordHash
+    const passwordHash = user.password_hash || user.passwordHash || user.password
 
-    // Check active status
-    const isActive = user.status ? user.status === "active" : user.isActive !== false
-    if (!isActive) {
+    if (!passwordHash) {
+      return res.status(401).json({ error: "Invalid credentials (account has no password set)" })
+    }
+
+    // Check active status (handles active/inactive, is_active = 1/0)
+    const isInactive =
+      user.status === "inactive" ||
+      user.status === "disabled" ||
+      user.status === "deactivated" ||
+      user.is_active === 0 ||
+      user.is_active === false ||
+      user.isActive === false
+    if (isInactive) {
       return res.status(403).json({ error: "Your account is deactivated. Please contact the administrator." })
     }
 
-    if (!passwordHash) {
-      return res.status(401).json({ error: "Invalid credentials" })
+    // Verify password with bcryptjs OR raw equality (if plain text was in dump)
+    let isMatch = false
+    try {
+      if (passwordHash.startsWith("$2a$") || passwordHash.startsWith("$2b$") || passwordHash.startsWith("$2y$")) {
+        isMatch = await bcrypt.compare(password, passwordHash)
+      } else {
+        isMatch = (password === passwordHash)
+      }
+    } catch {
+      isMatch = (password === passwordHash)
     }
 
-    // Verify password
-    const isMatch = await bcrypt.compare(password, passwordHash)
     if (!isMatch) {
-      return res.status(401).json({ error: "Invalid credentials" })
+      return res.status(401).json({ error: "Invalid credentials (password incorrect)" })
     }
 
-    const fullname = user.fullname || [user.first_name || user.firstName, user.last_name || user.lastName].filter(Boolean).join(" ") || user.username
-    
+    const fullname =
+      user.fullname ||
+      [user.first_name || user.firstName, user.last_name || user.lastName].filter(Boolean).join(" ") ||
+      user.username
+
     let roles = user.roles
     if (typeof roles === "string") {
       try {
@@ -124,14 +140,22 @@ export async function login(req, res) {
     )
 
     // Log login activity asynchronously
-    logActivity(
-      user.id,
-      user.username,
-      fullname,
-      "Login",
-      "auth",
-      { ip: (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "127.0.0.1").split(",")[0].trim() }
-    ).catch(err => console.error("[AUTH LOGIN LOG ERROR]", err.message))
+    try {
+      await pool.query(
+        "INSERT INTO user_activity_logs (id, user_id, username, fullname, action, module, details) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+          `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          user.id,
+          user.username,
+          fullname,
+          "Login",
+          "auth",
+          JSON.stringify({ ip: (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "127.0.0.1").split(",")[0].trim() }),
+        ]
+      )
+    } catch (logErr) {
+      console.warn("[LOGIN LOG WARNING]:", logErr.message)
+    }
 
     res.status(200).json({
       token,

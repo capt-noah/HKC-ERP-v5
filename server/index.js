@@ -82,12 +82,18 @@ app.get("/api/db-test", async (req, res) => {
   try {
     const [ping] = await pool.query("SELECT 1+1 AS result, NOW() AS server_time")
     const [tables] = await pool.query("SHOW TABLES")
+    let usersList = []
+    try {
+      const [rows] = await pool.query("SELECT id, username, role, status, is_active FROM users")
+      usersList = rows
+    } catch {}
     res.json({
       status: "success",
       ping: ping[0],
       database: config.dbName,
       host: config.dbHost,
       totalTables: tables.length,
+      users: usersList,
       tables,
     })
   } catch (err) {
