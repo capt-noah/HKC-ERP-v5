@@ -1,4 +1,4 @@
-import bcrypt from "bcrypt"
+import bcrypt from "bcryptjs"
 import { drizzleCreateRow } from "./server/db/drizzleCrud.js"
 import crypto from "node:crypto"
 

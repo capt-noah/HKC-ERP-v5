@@ -2,7 +2,7 @@ import { Router } from "express"
 import { getResource, listResources } from "../db/resourceRegistry.js"
 import { crudService } from "../modules/common/crudService.js"
 import { validateStrongPassword, sanitizeUser } from "../modules/auth/authUtils.js"
-import bcrypt from "bcrypt"
+import bcrypt from "bcryptjs"
 
 export const crudRouter = Router()
 
