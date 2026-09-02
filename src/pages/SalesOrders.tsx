@@ -238,10 +238,12 @@ export default function SalesOrders() {
 
   // Filtered data for tables
   const filteredOrders = salesOrders.filter((so) => {
-    const matchesSearch =
-      so.customer.toLowerCase().includes(soSearch.toLowerCase()) ||
-      so.id.toLowerCase().includes(soSearch.toLowerCase()) ||
-      so.desc.toLowerCase().includes(soSearch.toLowerCase())
+    const cust = (so.customer || (so as any).customer_name || "").toLowerCase()
+    const id = (so.id || "").toLowerCase()
+    const desc = (so.desc || (so as any).description || "").toLowerCase()
+    const q = (soSearch || "").toLowerCase()
+
+    const matchesSearch = cust.includes(q) || id.includes(q) || desc.includes(q)
     if (!matchesSearch) return false
     if (soWhFilter !== "ALL" && so.warehouse !== soWhFilter) return false
     if (soApprovalFilter !== "ALL") {
@@ -689,7 +691,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     }
 
     let selectedCust = customers.find(
-      (c) => c.name.toLowerCase() === finalCustName.toLowerCase() || c.id === newCustomerId
+      (c) => (c.name || "").toLowerCase() === finalCustName.toLowerCase() || c.id === newCustomerId
     )
 
     const errors: Record<string, string> = {}
@@ -1314,7 +1316,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                             delete next.customer
                             return next
                           })
-                          const match = customers.find((c) => c.name.toLowerCase() === e.target.value.toLowerCase())
+                          const match = customers.find((c) => (c.name || "").toLowerCase() === e.target.value.toLowerCase())
                           if (match) {
                             setNewCustomerId(match.id)
                             setCustPhone(match.phone || "")

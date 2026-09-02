@@ -644,7 +644,7 @@ export default function SalesIssued() {
     if (!customerName.trim()) errors.customer = "Customer Name is required."
     if (!warehouseId) errors.warehouse = "Warehouse selection is required."
 
-    const matchedCust = erp.getCustomers().find((c) => c.name.toLowerCase() === customerName.trim().toLowerCase() || c.id === customerName)
+    const matchedCust = erp.getCustomers().find((c) => (c.name || "").toLowerCase() === customerName.trim().toLowerCase() || c.id === customerName)
     if (matchedCust) {
       const evaluation = getTradeLicenseStatus(matchedCust, warehouseId)
       if (evaluation.status === "missing" && (!stagedTradePaperUrl || !stagedTradePaperName)) {
