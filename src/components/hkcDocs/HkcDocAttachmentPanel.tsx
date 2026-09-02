@@ -1,6 +1,6 @@
 import { useRef, useState } from "react"
 import type { ChangeEvent } from "react"
-import { File, Plus, X, Download, Camera, Image as ImageIcon, Eye } from "lucide-react"
+import { File, Paperclip, X, Download, Camera, Image as ImageIcon, Eye } from "lucide-react"
 import type { HkcDocAttachment } from "@/lib/erpStore"
 import CameraCaptureModal from "./CameraCaptureModal"
 
@@ -75,10 +75,10 @@ export default function HkcDocAttachmentPanel({
           <button
             type="button"
             onClick={() => setIsCameraOpen(true)}
-            className="px-3 py-1.5 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100 text-xs font-black inline-flex items-center gap-1.5 active:scale-95 transition-all text-blue-800 dark:text-blue-200 cursor-pointer shadow-2xs"
+            className="px-3 py-1.5 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-xs font-black inline-flex items-center gap-1.5 active:scale-95 transition-all text-emerald-800 dark:text-emerald-200 cursor-pointer shadow-2xs"
             title="Snap photo directly from camera"
           >
-            <Camera className="size-3.5 text-blue-600 dark:text-blue-400" />
+            <Camera className="size-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>Snap Photo</span>
           </button>
 
@@ -89,8 +89,8 @@ export default function HkcDocAttachmentPanel({
             className="px-3 py-1.5 rounded-xl border border-zinc-200 hover:bg-zinc-100 text-xs font-black inline-flex items-center gap-1.5 hover:border-zinc-300 active:scale-95 transition-all text-zinc-800 dark:text-zinc-200 cursor-pointer"
             title="Upload file or document"
           >
-            <Plus className="size-3.5 text-emerald-600" />
-            <span>Add File</span>
+            <Paperclip className="size-3.5 text-zinc-500" />
+            <span>Attach File</span>
           </button>
         </div>
 
@@ -151,7 +151,7 @@ export default function HkcDocAttachmentPanel({
                     <button
                       type="button"
                       onClick={() => setPreviewImage({ fileName: file.fileName, fileUrl: file.fileUrl })}
-                      className="p-1.5 hover:bg-blue-50 text-blue-600 rounded-lg cursor-pointer transition-colors"
+                      className="p-1.5 hover:bg-emerald-50 text-emerald-700 rounded-lg cursor-pointer transition-colors"
                       title="Preview photo"
                     >
                       <Eye className="size-3.5" />

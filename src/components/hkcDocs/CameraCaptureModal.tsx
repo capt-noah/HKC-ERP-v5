@@ -199,7 +199,7 @@ export default function CameraCaptureModal({
                     onClose()
                     onFallbackFileSelect()
                   }}
-                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
                 >
                   <Upload className="size-4" /> Choose from Gallery / Files
                 </button>
@@ -226,8 +226,8 @@ export default function CameraCaptureModal({
               {/* Document Alignment Frame Guides */}
               <div className="absolute inset-4 sm:inset-8 border-2 border-white/30 rounded-2xl pointer-events-none flex flex-col justify-between p-3">
                 <div className="flex justify-between">
-                  <div className="size-4 border-t-2 border-l-2 border-blue-400 rounded-tl-sm" />
-                  <div className="size-4 border-t-2 border-r-2 border-blue-400 rounded-tr-sm" />
+                  <div className="size-4 border-t-2 border-l-2 border-emerald-400 rounded-tl-sm" />
+                  <div className="size-4 border-t-2 border-r-2 border-emerald-400 rounded-tr-sm" />
                 </div>
                 <div className="text-center">
                   <span className="bg-black/60 backdrop-blur-xs text-white/90 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
@@ -235,8 +235,8 @@ export default function CameraCaptureModal({
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <div className="size-4 border-b-2 border-l-2 border-blue-400 rounded-bl-sm" />
-                  <div className="size-4 border-b-2 border-r-2 border-blue-400 rounded-br-sm" />
+                  <div className="size-4 border-b-2 border-l-2 border-emerald-400 rounded-bl-sm" />
+                  <div className="size-4 border-b-2 border-r-2 border-emerald-400 rounded-br-sm" />
                 </div>
               </div>
 
@@ -277,7 +277,7 @@ export default function CameraCaptureModal({
               title="Snap photo"
             >
               <div className="size-full rounded-full border-2 border-zinc-950 bg-white group-hover:bg-zinc-100 flex items-center justify-center">
-                <div className="size-10 rounded-full bg-blue-600 group-active:scale-90 transition-transform" />
+                <div className="size-10 rounded-full bg-emerald-600 group-active:scale-90 transition-transform" />
               </div>
             </button>
           ) : null}

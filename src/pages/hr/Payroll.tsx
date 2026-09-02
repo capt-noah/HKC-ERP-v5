@@ -438,10 +438,10 @@ export default function Payroll() {
                           <button
                             type="button"
                             onClick={() => transitionPaymentStatus(record, "Paid")}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 font-extrabold text-[11px] transition-all border border-blue-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-black text-white font-extrabold text-[11px] transition-all active:scale-95 shadow-2xs cursor-pointer"
                             title="Mark as Paid"
                           >
-                            <CheckCircle2 className="size-3 text-blue-700" /> Paid
+                            <CheckCircle2 className="size-3 text-emerald-400" /> Paid
                           </button>
                         )}
                         {record.payment_status !== "Paid" && period?.status !== "Cancelled" && (

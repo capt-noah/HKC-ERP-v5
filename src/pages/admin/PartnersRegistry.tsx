@@ -388,9 +388,9 @@ export default function PartnersRegistry() {
           <GlassCard className="flex items-center justify-between">
             <div>
               <span className="text-[10px] font-extrabold uppercase tracking-widest text-zinc-400">Total Registered Suppliers</span>
-              <p className="text-xl sm:text-2xl font-black font-mono text-blue-700 mt-0.5">{suppliers.length}</p>
+              <p className="text-xl sm:text-2xl font-black font-mono text-zinc-900 mt-0.5">{suppliers.length}</p>
             </div>
-            <div className="p-2.5 sm:p-3 rounded-2xl bg-blue-100 text-blue-700">
+            <div className="p-2.5 sm:p-3 rounded-2xl bg-zinc-100 text-zinc-800">
               <Building2 className="size-4 sm:size-5" />
             </div>
           </GlassCard>
@@ -432,7 +432,7 @@ export default function PartnersRegistry() {
                     : "text-zinc-600 hover:text-zinc-900"
                 }`}
               >
-                <Building2 className="size-3.5 text-blue-600" /> Suppliers ({suppliers.length})
+                <Building2 className="size-3.5 text-zinc-700" /> Suppliers ({suppliers.length})
               </button>
             </div>
 
@@ -459,7 +459,7 @@ export default function PartnersRegistry() {
               ) : (
                 <button
                   onClick={openAddSupplier}
-                  className="px-3.5 sm:px-4 py-2 rounded-xl bg-blue-700 text-white font-bold text-xs hover:bg-blue-800 shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-transform"
+                  className="px-3.5 sm:px-4 py-2 rounded-xl bg-zinc-900 text-white font-bold text-xs hover:bg-zinc-800 shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-transform"
                 >
                   <Plus className="size-3.5" /> Add Supplier
                 </button>
@@ -667,7 +667,7 @@ export default function PartnersRegistry() {
                           <div className="font-bold text-zinc-900 text-sm mt-0.5">{s.name}</div>
                         </td>
                         <td className="px-4 py-3.5">
-                          <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100/80 text-blue-800 border border-blue-200/80">
+                          <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-800 border border-zinc-200">
                             {s.category || "Supplier Partner"}
                           </span>
                           <div className="text-[11px] text-zinc-500 font-medium mt-1 flex items-center gap-1">
@@ -683,8 +683,8 @@ export default function PartnersRegistry() {
                         </td>
                         <td className="px-4 py-3.5 text-center">
                           {s.tradePaperFileName ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
-                              <CheckCircle2 className="size-3 text-blue-600" /> {s.tradePaperFileName}
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                              <CheckCircle2 className="size-3 text-emerald-600" /> {s.tradePaperFileName}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
@@ -1009,7 +1009,7 @@ export default function PartnersRegistry() {
                                   setPreviewUrl(custTradePaperUrl)
                                   setPreviewName(custTradePaperName || docTitle)
                                 }}
-                                className="px-2.5 py-1 text-[11px] font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-md inline-flex items-center gap-1 shrink-0"
+                                className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
                               >
                                 View Doc ↗
                               </button>
@@ -1162,8 +1162,8 @@ export default function PartnersRegistry() {
                       <span className="text-[10px] text-zinc-500 font-medium block">Pre-attached automatically for import Purchase Orders</span>
                     </div>
                     {suppTradePaperName && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-100 px-2.5 py-0.5 rounded-full">
-                        <CheckCircle2 className="size-3" /> Attached
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full">
+                        <CheckCircle2 className="size-3 text-emerald-600" /> Attached
                       </span>
                     )}
                   </div>
@@ -1189,7 +1189,7 @@ export default function PartnersRegistry() {
                   <button
                     type="submit"
                     disabled={isSubmittingSupplier}
-                    className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-blue-700 text-white text-xs font-bold hover:bg-blue-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {isSubmittingSupplier ? <LoadingDots color="bg-white" size="sm" /> : (editingSupplier ? "Save Changes" : "Create Supplier")}
                   </button>

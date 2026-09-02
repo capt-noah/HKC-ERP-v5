@@ -1003,7 +1003,7 @@ export default function ProcessingServices() {
                                setPreviewUrl(editingOrder.contract_url || "")
                                setPreviewName(editingOrder.contract_file_name || "Contract.pdf")
                              }}
-                             className="px-3.5 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1 border border-blue-200"
+                             className="px-3.5 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-50 rounded-lg flex items-center gap-1 border border-emerald-200 cursor-pointer"
                            >
                              View Contract <ExternalLink className="size-3" />
                            </button>

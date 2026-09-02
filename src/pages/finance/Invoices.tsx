@@ -452,12 +452,12 @@ export default function Invoices() {
             <span className="text-[10px] text-rose-600 mt-0.5 font-bold">Active credit receivables</span>
           </GlassCard>
 
-          <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-blue-500">
+          <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-zinc-900">
             <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Unsettled Invoices</span>
             {isLoading ? (
               <Skeleton className="h-7 w-20 bg-zinc-200/80 my-1" />
             ) : (
-              <p className="text-xl font-black text-blue-700 font-mono mt-1">{activeCount} invoices</p>
+              <p className="text-xl font-black text-zinc-900 font-mono mt-1">{activeCount} invoices</p>
             )}
             <span className="text-[10px] text-zinc-400 mt-0.5">Unpaid or ongoing installments</span>
           </GlassCard>
@@ -579,7 +579,7 @@ export default function Invoices() {
                         </div>
                         <div className="w-full bg-zinc-200 h-2 rounded-full overflow-hidden">
                           <div
-                            className={`h-full transition-all duration-300 ${dueVal <= 0 ? "bg-emerald-600" : "bg-blue-600"}`}
+                            className={`h-full transition-all duration-300 ${dueVal <= 0 ? "bg-emerald-600" : "bg-emerald-500"}`}
                             style={{ width: `${pct}%` }}
                           />
                         </div>
@@ -621,7 +621,7 @@ export default function Invoices() {
                                     setPreviewDocUrl(p.payment_advice_url!)
                                     setPreviewDocName(p.payment_advice_filename || "Payment Slip")
                                   }}
-                                  className="text-blue-600 font-bold hover:underline text-[11px]"
+                                  className="text-emerald-700 font-bold hover:underline text-[11px] cursor-pointer"
                                 >
                                   Slip ↗
                                 </button>
@@ -685,7 +685,7 @@ export default function Invoices() {
                     <button
                       type="button"
                       onClick={() => handleOpenEditModal(activeInvoice)}
-                      className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-extrabold text-[11px] transition-all shadow-sm cursor-pointer"
+                      className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[11px] transition-all shadow-sm cursor-pointer"
                       title="Record Payment Installment"
                     >
                       <Receipt className="size-3 text-white" /> Record Payment
@@ -907,7 +907,7 @@ export default function Invoices() {
                         <button
                           type="button"
                           onClick={() => setEditPayAmount(String(dueAmt))}
-                          className="text-[11px] font-black text-blue-700 hover:underline cursor-pointer"
+                          className="text-[11px] font-black text-emerald-700 hover:underline cursor-pointer"
                         >
                           Pay Full Due (ETB {money(dueAmt)})
                         </button>
@@ -1005,7 +1005,7 @@ export default function Invoices() {
                       <button
                         type="submit"
                         disabled={isSavingEdit}
-                        className="px-5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-black shadow-md cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                        className="px-5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-black shadow-md cursor-pointer disabled:opacity-50 flex items-center gap-1.5 transition-colors"
                       >
                         {isSavingEdit ? <LoadingDots color="bg-white" size="sm" /> : <>Save & Record <ArrowRight className="size-3.5" /></>}
                       </button>
