@@ -1806,7 +1806,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                       )
                                     })()}
                                     <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
-                                      <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail} {item.unit}</span></span>
+                                      <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail}{isWh1Order ? ` ${item.unit}` : ""}</span></span>
                                       {isOver && (
                                         <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md mt-0.5">
                                           <AlertTriangle className="size-3 text-amber-600 shrink-0" />
@@ -2329,7 +2329,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                               )
                             })()}
                             <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
-                              <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail} {item.unit}</span></span>
+                              <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail}{isWh1Editing ? ` ${item.unit}` : ""}</span></span>
                               {isOver && (
                                 <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md mt-0.5">
                                   <AlertTriangle className="size-3 text-amber-600 shrink-0" />
