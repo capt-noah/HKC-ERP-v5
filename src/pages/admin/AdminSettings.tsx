@@ -26,7 +26,6 @@ import {
   Coins,
   ShieldCheck,
   Scale,
-  BookOpen,
 } from "lucide-react"
 import { useErpStore, type Warehouse } from "@/lib/erpStore"
 import { useFinanceStore, type TaxRule } from "@/lib/financeStore"
@@ -100,7 +99,7 @@ export default function AdminSettings() {
   const warehouses = erp.getWarehouses()
 
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<"general" | "pension" | "tax" | "warehouses" | "rates" | "accounts">("general")
+  const [activeTab, setActiveTab] = useState<"general" | "pension" | "tax" | "warehouses" | "rates">("general")
   const [isSaved, setIsSaved] = useState(false)
 
   // 1. General & Entity Profile State
@@ -577,7 +576,6 @@ export default function AdminSettings() {
     { id: "tax" as const, label: "Tax Rates & Rules", icon: Receipt, description: "Configure VAT, withholding & customs rates" },
     { id: "warehouses" as const, label: "Warehouse Facilities", icon: WarehouseIcon, description: "Change warehouse names, codes & details" },
     { id: "rates" as const, label: "Processing & Storage", icon: SlidersHorizontal, description: "Toll fee rates & tiered monthly storage" },
-    { id: "accounts" as const, label: "GL Account Mappings", icon: BookOpen, description: "Default inventory, revenue, and COGS accounts" },
   ]
 
   return (
@@ -1231,99 +1229,10 @@ export default function AdminSettings() {
                     </GlassCard>
                   </motion.div>
                 )}
-
-                {/* Tab 6: GL Account Mappings */}
-                {activeTab === "accounts" && (
-                  <motion.div key="accounts" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
-                    <GlassCard>
-                      <div className="flex items-center gap-3.5 mb-6 pb-4 border-b border-black/5">
-                        <div className="p-2.5 rounded-2xl bg-indigo-100 text-indigo-700">
-                          <BookOpen className="size-5" />
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-bold text-black">Chart of Accounts GL Mappings</h3>
-                          <p className="text-xs text-gray-400">Map automated ERP transactions directly to corresponding General Ledger accounts.</p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Inventory Asset Account</label>
-                          <select
-                            value={defaultInventoryAcc}
-                            onChange={(e) => setDefaultInventoryAcc(e.target.value)}
-                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-indigo-600 focus:bg-white transition-colors"
-                          >
-                            <option value="">Select Inventory Account...</option>
-                            {accounts.filter((a) => a.account_type === "Asset" && !a.is_group).map((a) => (
-                              <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Sales Revenue Account</label>
-                          <select
-                            value={defaultRevenueAcc}
-                            onChange={(e) => setDefaultRevenueAcc(e.target.value)}
-                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-indigo-600 focus:bg-white transition-colors"
-                          >
-                            <option value="">Select Revenue Account...</option>
-                            {accounts.filter((a) => a.account_type === "Revenue" && !a.is_group).map((a) => (
-                              <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Cost of Goods Sold (COGS) Account</label>
-                          <select
-                            value={defaultCogsAcc}
-                            onChange={(e) => setDefaultCogsAcc(e.target.value)}
-                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-indigo-600 focus:bg-white transition-colors"
-                          >
-                            <option value="">Select COGS Account...</option>
-                            {accounts.filter((a) => a.account_type === "Expense" && !a.is_group).map((a) => (
-                              <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Default Damage / Adjustment Loss Account</label>
-                          <select
-                            value={defaultDamageAcc}
-                            onChange={(e) => setDefaultDamageAcc(e.target.value)}
-                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-indigo-600 focus:bg-white transition-colors"
-                          >
-                            <option value="">Select Adjustment Account...</option>
-                            {accounts.filter((a) => a.account_type === "Expense" && !a.is_group).map((a) => (
-                              <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-bold text-black uppercase tracking-wider mb-2">Primary Settlement Bank / Cash Account</label>
-                          <select
-                            value={defaultCashAcc}
-                            onChange={(e) => setDefaultCashAcc(e.target.value)}
-                            className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-sm font-semibold text-black outline-none focus:border-indigo-600 focus:bg-white transition-colors"
-                          >
-                            <option value="">Select Cash/Bank Account...</option>
-                            {accounts.filter((a) => a.account_type === "Asset" && !a.is_group).map((a) => (
-                              <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    </GlassCard>
-                  </motion.div>
-                )}
               </AnimatePresence>
 
             {/* Bottom Action Buttons (for tabs with general form inputs) */}
-            {["general", "pension", "tax", "rates", "accounts"].includes(activeTab) && (
+            {["general", "pension", "tax", "rates"].includes(activeTab) && (
               <div className="flex items-center justify-end gap-2.5 pt-2">
                 <button
                   onClick={handleDiscardChanges}

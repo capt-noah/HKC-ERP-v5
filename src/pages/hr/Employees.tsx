@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
-import { Eye, ImagePlus, Pencil, UserMinus, X } from "lucide-react"
+import { Eye, ImagePlus, MoreHorizontal, Pencil, UserCheck, UserMinus, X } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { HRPageSkeleton } from "@/components/HRSkeleton"
@@ -9,6 +9,7 @@ import { HRTableToolbar, ResizableTableHeader, type TableColumn, useColumnWidths
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { useFeedback } from "@/context/FeedbackContext"
 import { LoadingDots } from "@/components/ui/LoadingDots"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, WAREHOUSE_OPTIONS, employeeDuplicateKey, emptyEmployee, hrApi, initials, loadHRData, makeId, money, type AttendanceRecord, type Employee, type LeaveRequest, type PayrollRecord } from "@/lib/hrApi"
 
@@ -18,7 +19,7 @@ const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 type FormState = Omit<Employee, "id">
 
 export default function Employees() {
-  const { showToast } = useFeedback()
+  const { showToast, confirm } = useFeedback()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([])
   const [leaves, setLeaves] = useState<LeaveRequest[]>([])
@@ -165,6 +166,16 @@ export default function Employees() {
     }
   }
 
+  const reactivate = async (employee: Employee) => {
+    try {
+      await hrApi.updateEmployee(employee.id, { status: "Active" })
+      showToast("Employee Reactivated", "success", `${employee.full_name} is now active.`)
+      await refresh()
+    } catch (err) {
+      showToast("Reactivate Failed", "warning", err instanceof Error ? err.message : "Could not update employee status.")
+    }
+  }
+
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
@@ -231,16 +242,51 @@ export default function Employees() {
                           >
                             <Pencil className="size-3 text-zinc-700" /> Edit
                           </button>
-                          {employee.status === "Active" && (
-                            <button
-                              type="button"
-                              onClick={() => deactivate(employee)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[11px] transition-all border border-rose-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                              title="Deactivate Employee"
-                            >
-                              <UserMinus className="size-3 text-rose-600" /> Deactivate
-                            </button>
-                          )}
+
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center size-7 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                                title="More Employee Actions"
+                              >
+                                <MoreHorizontal className="size-3.5" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-1.5 z-50">
+                              {employee.status === "Active" ? (
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    confirm({
+                                      title: "Deactivate Employee",
+                                      message: `Are you sure you want to deactivate ${employee.full_name} (${employee.employee_number})? They will be marked Inactive and excluded from active payroll cycles.`,
+                                      confirmLabel: "Deactivate Employee",
+                                      isDestructive: true,
+                                      onConfirm: () => deactivate(employee),
+                                    })
+                                  }}
+                                  className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl cursor-pointer"
+                                >
+                                  <UserMinus className="size-3.5" /> Deactivate Employee
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    confirm({
+                                      title: "Reactivate Employee",
+                                      message: `Are you sure you want to reactivate ${employee.full_name} (${employee.employee_number})? They will be marked Active again.`,
+                                      confirmLabel: "Reactivate Employee",
+                                      isDestructive: false,
+                                      onConfirm: () => reactivate(employee),
+                                    })
+                                  }}
+                                  className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-xl cursor-pointer"
+                                >
+                                  <UserCheck className="size-3.5" /> Reactivate Employee
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </Cell>
                     </tr>

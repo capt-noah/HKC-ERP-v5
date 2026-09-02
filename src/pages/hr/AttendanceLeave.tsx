@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { FileSpreadsheet, Info, X } from "lucide-react"
+import { Ban, FileSpreadsheet, Info, MoreHorizontal, X } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { HRPageSkeleton } from "@/components/HRSkeleton"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import {
   HRTableToolbar,
   ResizableTableHeader,
@@ -56,7 +57,7 @@ function statusLabel(status: string) {
 }
 
 export default function AttendanceLeave() {
-  const { showToast } = useFeedback()
+  const { showToast, confirm } = useFeedback()
   const [activeTab, setActiveTab] = useState<"Attendance" | "Leave">("Attendance")
   const [employees, setEmployees] = useState<Employee[]>([])
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([])
@@ -422,14 +423,33 @@ export default function AttendanceLeave() {
                                       >
                                         Approve
                                       </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleLeaveStatus(leave, "Rejected")}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[11px] transition-all border border-rose-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                                        title="Reject Leave"
-                                      >
-                                        Reject
-                                      </button>
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <button
+                                            type="button"
+                                            className="inline-flex items-center justify-center size-7 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                                            title="More Actions"
+                                          >
+                                            <MoreHorizontal className="size-3.5" />
+                                          </button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-44 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-1.5 z-50">
+                                          <DropdownMenuItem
+                                            onClick={() => {
+                                              confirm({
+                                                title: "Reject Leave Request",
+                                                message: `Are you sure you want to reject the leave request for ${employees.find(e => e.id === leave.employee_id)?.full_name ?? leave.employee_id} (${leave.leave_type}, ${leave.number_of_days} day(s))?`,
+                                                confirmLabel: "Reject Leave",
+                                                isDestructive: true,
+                                                onConfirm: () => handleLeaveStatus(leave, "Rejected"),
+                                              })
+                                            }}
+                                            className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl cursor-pointer"
+                                          >
+                                            <Ban className="size-3.5" /> Reject Leave
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
                                     </div>
                                   ) : (
                                     <span className="inline-block px-2.5 py-1 rounded-xl text-[10px] font-bold bg-zinc-100 text-zinc-500 border border-zinc-200/80">Audited</span>

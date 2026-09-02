@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
-import { BadgeCheck, Ban, CheckCircle2, Eye, Pencil, Printer, X } from "lucide-react"
+import { BadgeCheck, Ban, CheckCircle2, Eye, MoreHorizontal, Pencil, Printer, X } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { HRPageSkeleton } from "@/components/HRSkeleton"
@@ -8,6 +8,7 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { HRTableToolbar, ResizableTableHeader, type TableColumn, useColumnWidths, useTableSort } from "@/components/HRTable"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { useFeedback } from "@/context/FeedbackContext"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { financeStore } from "@/lib/financeStore"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { PAYMENT_STATUSES, PAYROLL_PERIOD_STATUSES, calculatePayroll, hrApi, loadHRData, makeId, money, type Employee, type PayrollPeriod, type PayrollRecord } from "@/lib/hrApi"
@@ -36,11 +37,14 @@ function blankRecord(employee: Employee, periodId: string): PayrollRecord {
     ? s.tax_brackets_config
     : DEFAULT_ETHIOPIAN_TAX_BRACKETS
 
+  const basicSalary = Number(employee.basic_salary || 0)
+  const allowances = 0
+
   const ethiopian = calculateEthiopianPayroll({
     employeeId: employee.id,
     employeeName: employee.full_name,
-    basicSalary: Number(employee.basic_salary || 0),
-    allowances: 0,
+    basicSalary,
+    allowances,
     pensionConfig,
     taxBrackets,
   })
@@ -49,8 +53,8 @@ function blankRecord(employee: Employee, periodId: string): PayrollRecord {
     id: makeId("PAY"),
     payroll_period_id: periodId,
     employee_id: employee.id,
-    basic_salary: Number(employee.basic_salary || 0),
-    allowances: 0,
+    basic_salary: basicSalary,
+    allowances,
     overtime_pay: 0,
     bonus: 0,
     other_earnings: 0,
@@ -65,7 +69,7 @@ function blankRecord(employee: Employee, periodId: string): PayrollRecord {
 }
 
 export default function Payroll() {
-  const { showToast } = useFeedback()
+  const { showToast, confirm } = useFeedback()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [periods, setPeriods] = useState<PayrollPeriod[]>([])
   const [records, setRecords] = useState<PayrollRecord[]>([])
@@ -260,7 +264,38 @@ export default function Payroll() {
     } else if (!editable) {
       return showToast("Payroll Locked", "warning", "Only pending payroll records can be edited.")
     }
-    const calculated = calculatePayroll({ ...record, ...changes })
+
+    const merged = { ...record, ...changes }
+    const s = financeStore.getCompanySettings()
+    const pensionConfig = {
+      employeeRatePercent: s.pension_employee_rate ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.employeeRatePercent,
+      employerRatePercent: s.pension_employer_rate ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.employerRatePercent,
+      expatExempt: s.pension_expat_exempt ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.expatExempt,
+    }
+    const taxBrackets = s.tax_brackets_config && s.tax_brackets_config.length > 0
+      ? s.tax_brackets_config
+      : DEFAULT_ETHIOPIAN_TAX_BRACKETS
+
+    const ethiopian = calculateEthiopianPayroll({
+      employeeId: merged.employee_id,
+      basicSalary: Number(merged.basic_salary || 0),
+      allowances: Number(merged.allowances || 0),
+      overtimePay: Number(merged.overtime_pay || 0),
+      bonus: Number(merged.bonus || 0),
+      otherEarnings: Number(merged.other_earnings || 0),
+      absenceDeduction: Number(merged.absence_deduction || 0),
+      loanDeduction: Number(merged.loan_deduction || 0),
+      otherDeductions: Number(merged.other_deductions || 0),
+      pensionConfig,
+      taxBrackets,
+    })
+
+    const calculated = calculatePayroll({
+      ...merged,
+      tax: ("tax" in changes && changes.tax !== undefined) ? Number(changes.tax) : ethiopian.incomeTaxDeducted,
+      pension: ("pension" in changes && changes.pension !== undefined) ? Number(changes.pension) : ethiopian.employeePension,
+    })
+
     try {
       await hrApi.updatePayrollRecord(record.id, calculated)
       showToast("Payroll Record Updated", "success", "Payroll record was recalculated and saved.")
@@ -444,16 +479,6 @@ export default function Payroll() {
                             <CheckCircle2 className="size-3 text-emerald-400" /> Paid
                           </button>
                         )}
-                        {record.payment_status !== "Paid" && period?.status !== "Cancelled" && (
-                          <button
-                            type="button"
-                            onClick={() => transitionPaymentStatus(record, "Cancelled")}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[11px] transition-all border border-rose-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                            title="Cancel Payroll"
-                          >
-                            <Ban className="size-3 text-rose-600" /> Cancel
-                          </button>
-                        )}
                         {canPrint && (
                           <button
                             type="button"
@@ -463,6 +488,37 @@ export default function Payroll() {
                           >
                             <Printer className="size-3 text-zinc-700" /> Print
                           </button>
+                        )}
+                        {record.payment_status !== "Paid" && period?.status !== "Cancelled" && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center size-7 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                                title="More Payroll Actions"
+                              >
+                                <MoreHorizontal className="size-3.5" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-52 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-1.5 z-50">
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  const empName = employee?.full_name || record.employee_id
+                                  const periodName = period?.name || record.payroll_period_id
+                                  confirm({
+                                    title: "Cancel Payroll Record",
+                                    message: `Are you sure you want to cancel the payroll record for ${empName} in ${periodName}? This will mark the record as Cancelled.`,
+                                    confirmLabel: "Cancel Record",
+                                    isDestructive: true,
+                                    onConfirm: () => transitionPaymentStatus(record, "Cancelled"),
+                                  })
+                                }}
+                                className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl cursor-pointer"
+                              >
+                                <Ban className="size-3.5" /> Cancel Payroll Record
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         )}
                       </div>
                     </Cell>

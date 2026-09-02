@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
-import { Ban, Check, FileText, Pencil, X } from "lucide-react"
+import { Ban, Check, FileText, MoreHorizontal, Pencil, X } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { HRPageSkeleton } from "@/components/HRSkeleton"
@@ -8,6 +8,7 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { HRTableToolbar, ResizableTableHeader, type TableColumn, useColumnWidths, useTableSort } from "@/components/HRTable"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { useFeedback } from "@/context/FeedbackContext"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { LEAVE_STATUSES, LEAVE_TYPES, hrApi, leaveDays, loadHRData, makeId, type Employee, type LeaveRequest } from "@/lib/hrApi"
 
@@ -34,7 +35,7 @@ const blankLeave = (employee?: Employee): Omit<LeaveRequest, "id"> => ({
 })
 
 export default function Leave() {
-  const { showToast } = useFeedback()
+  const { showToast, confirm } = useFeedback()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [requests, setRequests] = useState<LeaveRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -195,7 +196,33 @@ export default function Leave() {
                           </>
                         )}
                         {request.status !== "Cancelled" && (
-                          <button type="button" onClick={() => changeStatus(request, "Cancelled")} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[11px] transition-all border border-rose-200/80 active:scale-95 shadow-2xs cursor-pointer" title="Cancel Leave"><Ban className="size-3 text-rose-600" /> Cancel</button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center size-7 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                                title="More Leave Actions"
+                              >
+                                <MoreHorizontal className="size-3.5" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-48 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-1.5 z-50">
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  confirm({
+                                    title: "Cancel Leave Request",
+                                    message: `Are you sure you want to cancel the leave request for ${employee?.full_name || "this employee"} (${request.leave_type}, ${request.number_of_days} day(s))?`,
+                                    confirmLabel: "Cancel Leave Request",
+                                    isDestructive: true,
+                                    onConfirm: () => changeStatus(request, "Cancelled"),
+                                  })
+                                }}
+                                className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl cursor-pointer"
+                              >
+                                <Ban className="size-3.5" /> Cancel Leave Request
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         )}
                       </div>
                     </Cell>

@@ -134,8 +134,9 @@ export function calculateEthiopianPayroll(options: {
     ? Math.round((basicSalary * (pensionConfig.employerRatePercent / 100)) * 100) / 100
     : 0
 
-  // 2. Taxable Income Base Formula: (Gross Monthly Basic Salary + Taxable Allowances) - Employee Pension Contribution (7%)
-  const taxableIncomeBase = Math.max(0, Math.round(((basicSalary + allowances) - employeePension) * 100) / 100)
+  // 2. Taxable Income Base Formula: (Gross Monthly Basic Salary + Taxable Allowances + Overtime + Bonus + Other Earnings) - Employee Pension Contribution (7%)
+  const totalTaxableEarnings = basicSalary + allowances + overtimePay + bonus + otherEarnings
+  const taxableIncomeBase = Math.max(0, Math.round((totalTaxableEarnings - employeePension) * 100) / 100)
 
   // 3. Income Tax Calculation
   const incomeTaxDeducted = calculateEthiopianIncomeTax(taxableIncomeBase, taxBrackets)
