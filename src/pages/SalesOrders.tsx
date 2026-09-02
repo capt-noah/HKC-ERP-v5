@@ -1524,7 +1524,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                             <span className="text-[11px] block mt-0.5 leading-normal">
                               {isWh1Order
                                 ? "This customer does not have an attached Bank Permit on file. Please attach a Bank Permit file to proceed."
-                                : "This customer's trade license has expired (exceeded 30 days) or is missing. You must upload a new trade license to create this sales order."
+                                : "This customer's trade license has expired (exceeded 6 months) or is missing. You must upload a new trade license to create this sales order."
                               }
                             </span>
                           </div>
@@ -2053,7 +2053,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     <span className="text-[11px] block mt-0.5 leading-normal">
                       {isWh1Editing
                         ? "This customer does not have an attached Bank Permit on file. Please attach a Bank Permit file to update this order."
-                        : "This customer's trade license has expired (exceeded 30 days) or is missing. You must upload a new trade license to update this sales order."
+                        : "This customer's trade license has expired (exceeded 6 months) or is missing. You must upload a new trade license to update this sales order."
                       }
                     </span>
                   </div>

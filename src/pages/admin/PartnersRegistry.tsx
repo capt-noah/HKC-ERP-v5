@@ -993,7 +993,7 @@ export default function PartnersRegistry() {
                           {!isWh1 && editingCustomer && getTradeLicenseStatus(editingCustomer, custWarehouseTarget).status === "expired" && !isNewlyUploadedCustLicense && custTradePaperName && (
                             <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold flex items-center gap-2">
                               <AlertTriangle className="size-3.5 text-rose-600 shrink-0" />
-                              <span>This trade license has expired (&gt;30 days). Please select a renewed file to upload.</span>
+                              <span>This trade license has expired (&gt;6 months). Please select a renewed file to upload.</span>
                             </div>
                           )}
                           <div className="flex items-center gap-2 pt-1">

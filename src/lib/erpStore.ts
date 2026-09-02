@@ -381,12 +381,12 @@ export function getTradeLicenseStatus(customer: Customer, warehouse?: string): {
     return { status: "valid", daysRemaining: 9999, isPermanent: true, docType }
   }
 
-  // Trade License for WH2 / WH3 requires active 30-day compliance tracking
+  // Trade License for WH2 / WH3 requires active 6-month (180 days) compliance tracking
   if (!customer.tradePaperUploadedAt) {
     return { status: "expired", daysRemaining: 0, isPermanent: false, docType }
   }
   const uploadedDate = new Date(customer.tradePaperUploadedAt)
-  const expiryDate = new Date(uploadedDate.getTime() + 30 * 24 * 60 * 60 * 1000)
+  const expiryDate = new Date(uploadedDate.getTime() + 180 * 24 * 60 * 60 * 1000)
   const today = new Date()
   const diffMs = expiryDate.getTime() - today.getTime()
   const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))

@@ -331,7 +331,7 @@ const getTradeLicenseStatus = (customer, warehouse) => {
     return { status: "expired", daysRemaining: 0, isPermanent: false, docType }
   }
   const uploadedDate = new Date(customer.tradePaperUploadedAt)
-  const expiryDate = new Date(uploadedDate.getTime() + 30 * 24 * 60 * 60 * 1000)
+  const expiryDate = new Date(uploadedDate.getTime() + 180 * 24 * 60 * 60 * 1000)
   const today = new Date()
   const diffMs = expiryDate.getTime() - today.getTime()
   const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24))
@@ -342,8 +342,8 @@ const getTradeLicenseStatus = (customer, warehouse) => {
   return { status: "valid", daysRemaining: diffDays, isPermanent: false, docType }
 }
 
-runTest("WH1 Customer Bank Permit is permanent and NEVER expires even after 180+ days", () => {
-  const oldDate = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString()
+runTest("WH1 Customer Bank Permit is permanent and NEVER expires even after 365+ days", () => {
+  const oldDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString()
   const wh1Customer = {
     id: "CUST-WH1-001",
     name: "Oromia Coffee Farmers Union",
@@ -359,19 +359,19 @@ runTest("WH1 Customer Bank Permit is permanent and NEVER expires even after 180+
   assert.equal(result.docType, "Bank Permit", "Document type must be Bank Permit")
 })
 
-runTest("WH2/WH3 Customer Trade License strictly expires after 30 days", () => {
-  const thirtyFiveDaysAgo = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString()
+runTest("WH2/WH3 Customer Trade License strictly expires after 6 months (180 days)", () => {
+  const oneHundredEightyFiveDaysAgo = new Date(Date.now() - 185 * 24 * 60 * 60 * 1000).toISOString()
   const wh2Customer = {
     id: "CUST-WH2-002",
     name: "Central Veterinary Pharmacy",
     warehouseTarget: "WH2",
     tradePaperFileName: "Trade_License_2026.pdf",
     tradePaperUrl: "data:application/pdf;base64,doc",
-    tradePaperUploadedAt: thirtyFiveDaysAgo,
+    tradePaperUploadedAt: oneHundredEightyFiveDaysAgo,
   }
 
   const result = getTradeLicenseStatus(wh2Customer)
-  assert.equal(result.status, "expired", "WH2 Trade License must be marked expired after 30 days")
+  assert.equal(result.status, "expired", "WH2 Trade License must be marked expired after 180 days")
   assert.equal(result.isPermanent, false, "isPermanent flag must be false for WH2")
   assert.equal(result.docType, "Trade License", "Document type must be Trade License")
 })
@@ -462,7 +462,7 @@ runTest("Pipeline Step 2: Sales Order inline form errors highlight missing custo
 runTest("Pipeline Step 3: Sales Issue creation strictly locks unapproved or expired sales orders", () => {
   const mockCustomers = [
     { id: "CUST-1", name: "Oromia Union", tradePaperFileName: "Permit.pdf", tradePaperUrl: "data:doc", tradePaperUploadedAt: new Date().toISOString() },
-    { id: "CUST-2", name: "Expired Pharma Ltd", tradePaperFileName: "Old.pdf", tradePaperUrl: "data:doc", tradePaperUploadedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString() },
+    { id: "CUST-2", name: "Expired Pharma Ltd", tradePaperFileName: "Old.pdf", tradePaperUrl: "data:doc", tradePaperUploadedAt: new Date(Date.now() - 190 * 24 * 60 * 60 * 1000).toISOString() },
   ]
 
   const mockSalesOrders = [
