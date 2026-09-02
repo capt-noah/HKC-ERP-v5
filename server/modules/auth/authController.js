@@ -127,6 +127,18 @@ export async function login(req, res) {
     }
     const primaryRole = roles[0]
 
+    let warehouseIds = user.warehouse_ids || user.warehouseIds
+    if (typeof warehouseIds === "string") {
+      try {
+        warehouseIds = JSON.parse(warehouseIds)
+      } catch {
+        warehouseIds = warehouseIds ? [warehouseIds] : []
+      }
+    }
+    if (!Array.isArray(warehouseIds)) {
+      warehouseIds = user.warehouse_id ? [user.warehouse_id] : []
+    }
+
     // Generate JWT (30 days expiration)
     const token = jwt.sign(
       {
@@ -135,6 +147,9 @@ export async function login(req, res) {
         roles,
         fullname,
         role: primaryRole,
+        warehouse_ids: warehouseIds,
+        warehouse_id: warehouseIds[0] || user.warehouse_id || null,
+        employee_id: user.employee_id || null,
       },
       JWT_SECRET,
       { expiresIn: "30d" }
@@ -168,6 +183,9 @@ export async function login(req, res) {
         fullname,
         first_name: user.first_name || user.firstName,
         last_name: user.last_name || user.lastName,
+        warehouse_ids: warehouseIds,
+        warehouse_id: warehouseIds[0] || user.warehouse_id || null,
+        employee_id: user.employee_id || null,
       },
     })
   } catch (error) {
@@ -190,6 +208,18 @@ export async function getCurrentUser(req, res) {
     const fullname = u.fullname || [u.first_name || u.firstName, u.last_name || u.lastName].filter(Boolean).join(" ") || u.username
     const roles = Array.isArray(u.roles) && u.roles.length > 0 ? u.roles : [u.role || "viewer"]
 
+    let warehouseIds = u.warehouse_ids || u.warehouseIds
+    if (typeof warehouseIds === "string") {
+      try {
+        warehouseIds = JSON.parse(warehouseIds)
+      } catch {
+        warehouseIds = warehouseIds ? [warehouseIds] : []
+      }
+    }
+    if (!Array.isArray(warehouseIds)) {
+      warehouseIds = u.warehouse_id ? [u.warehouse_id] : []
+    }
+
     res.status(200).json({
       id: u.id,
       username: u.username,
@@ -198,6 +228,9 @@ export async function getCurrentUser(req, res) {
       fullname,
       first_name: u.first_name || u.firstName,
       last_name: u.last_name || u.lastName,
+      warehouse_ids: warehouseIds,
+      warehouse_id: warehouseIds[0] || u.warehouse_id || null,
+      employee_id: u.employee_id || null,
       status: u.status || (u.isActive ? "active" : "inactive"),
       created_at: u.created_at || u.createdAt,
       updated_at: u.updated_at || u.updatedAt,
@@ -245,13 +278,14 @@ export async function updateCurrentUserProfile(req, res) {
 }
 
 export async function register(req, res) {
-  const { username, password, roles, role, status, fullname, firstName, lastName } = req.body
+  const { username, password, roles, role, status, fullname, firstName, lastName, warehouse_ids, warehouse_id, employee_id } = req.body
 
   if (!username || !password) {
     return res.status(400).json({ error: "Username and password are required" })
   }
 
   const assignedRoles = Array.isArray(roles) && roles.length > 0 ? roles : [role || "viewer"]
+  let assignedWarehouseIds = Array.isArray(warehouse_ids) ? warehouse_ids : warehouse_id ? [warehouse_id] : []
 
   try {
     const resource = getResource("users")
@@ -280,6 +314,9 @@ export async function register(req, res) {
         fullname: fNameFull || username,
         first_name: fName,
         last_name: lName,
+        employee_id: employee_id || null,
+        warehouse_ids: assignedWarehouseIds,
+        warehouse_id: assignedWarehouseIds[0] || null,
         status: status || "active",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),

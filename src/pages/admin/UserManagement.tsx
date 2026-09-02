@@ -181,7 +181,40 @@ export default function UserManagement() {
         loadResource<any>("employees"),
         loadResource<any>("warehouses"),
       ])
-      setUsers(sortNewestFirst(usersData))
+
+      const normalizedUsers = (usersData || []).map((u: any) => {
+        let roles = u.roles
+        if (typeof roles === "string") {
+          try {
+            roles = JSON.parse(roles)
+          } catch {
+            roles = [u.role || "viewer"]
+          }
+        }
+        if (!Array.isArray(roles) || roles.length === 0) {
+          roles = [u.role || "viewer"]
+        }
+
+        let whIds = u.warehouse_ids || u.warehouseIds
+        if (typeof whIds === "string") {
+          try {
+            whIds = JSON.parse(whIds)
+          } catch {
+            whIds = whIds ? [whIds] : []
+          }
+        }
+        if (!Array.isArray(whIds)) {
+          whIds = u.warehouse_id ? [u.warehouse_id] : []
+        }
+
+        return {
+          ...u,
+          roles,
+          warehouse_ids: whIds,
+        }
+      })
+
+      setUsers(sortNewestFirst(normalizedUsers))
       setEmployees(sortNewestFirst(employeesData))
       setWarehouses(sortNewestFirst(warehousesData))
     } catch (err: any) {
@@ -564,7 +597,10 @@ export default function UserManagement() {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setEditingUser(user)
+                                    const whIds = Array.isArray(user.warehouse_ids)
+                                      ? user.warehouse_ids
+                                      : (user.warehouse_id ? [user.warehouse_id] : [])
+                                    setEditingUser({ ...user, warehouse_ids: whIds })
                                     setEditPassword("")
                                     setShowEditingUserPassword(false)
                                     setShowEditModal(true)
