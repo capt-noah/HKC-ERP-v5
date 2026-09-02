@@ -6,6 +6,7 @@ import {
   getSalesIssue,
   listSalesIssues,
   postSalesIssue,
+  updateSalesIssue,
 } from "./salesIssues.js"
 import {
   assignOfficer,
@@ -28,7 +29,7 @@ export const salesService = {
   list: listSalesIssues,
   get: getSalesIssue,
   create: createSalesIssue,
-  update: (body, id) => createSalesIssue(body, id),
+  update: updateSalesIssue,
   delete: deleteSalesIssue,
   post: postSalesIssue,
   cancel: cancelSalesIssue,

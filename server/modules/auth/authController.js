@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
+import crypto from "node:crypto"
 import { drizzleListRows, drizzleGetRow, drizzleCreateRow, drizzleUpdateRow } from "../../db/drizzleCrud.js"
 import { getResource } from "../../db/resourceRegistry.js"
 import { logActivity } from "../common/activityLogger.js"

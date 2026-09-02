@@ -33,7 +33,7 @@ export function validateStrongPassword(password) {
  */
 export function sanitizeUser(user) {
   if (!user || typeof user !== "object") return user
-  const { password_hash, passwordHash, ...safeUser } = user
+  const { password_hash, passwordHash, password, ...safeUser } = user
 
   // Ensure roles is parsed properly if stored as JSON string
   if (typeof safeUser.roles === "string") {

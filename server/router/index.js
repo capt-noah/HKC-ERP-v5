@@ -23,10 +23,6 @@ masterRouter.use("/api", authenticateToken)
 // Track user activity on mutations
 masterRouter.use("/api", activityLoggerMiddleware)
 
-// Restrict users management endpoint to superadmin only
-masterRouter.use("/api/users", authorizeRoles("superadmin"))
-masterRouter.use("/api/user_activity_logs", authorizeRoles("superadmin"))
-
 // Resource registry endpoint
 masterRouter.get("/api", (_req, res) => {
   res.json({ service: "HKC ERP API", resources: listResources() })

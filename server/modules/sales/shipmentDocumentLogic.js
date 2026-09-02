@@ -103,22 +103,22 @@ export function evaluateShipmentDocs({ record, items = [], attachments = [], rul
     }
 
     // Check origin country match
-    if (rule.origin_country && originCountry) {
-      if (rule.origin_country.toLowerCase() !== originCountry.toLowerCase()) {
+    if (rule.origin_country) {
+      if (!originCountry || rule.origin_country.toLowerCase() !== originCountry.toLowerCase()) {
         return false
       }
     }
 
     // Check destination region match
-    if (rule.destination_region && destinationRegion) {
-      if (rule.destination_region.toLowerCase() !== destinationRegion.toLowerCase()) {
+    if (rule.destination_region) {
+      if (!destinationRegion || rule.destination_region.toLowerCase() !== destinationRegion.toLowerCase()) {
         return false
       }
     }
 
     // Check category match
     if (rule.product_category) {
-      if (categories.size > 0 && !categories.has(rule.product_category)) {
+      if (categories.size === 0 || !categories.has(rule.product_category)) {
         return false
       }
     }
