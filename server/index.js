@@ -148,12 +148,18 @@ app.use((err, req, res, _next) => {
   })
 })
 
-const PORT = Number(process.env.PORT || config.port || 1000)
-const server = app.listen(PORT, config.host, () => {
-  console.log(`HKC ERP API listening on http://${config.host}:${PORT}`)
-})
+const rawPort = process.env.PORT || config.port || 1000
+const isNamedPipeOrSocket = typeof rawPort === "string" && isNaN(Number(rawPort))
 
-// Graceful shutdown — Render sends SIGTERM before killing the container.
+const server = isNamedPipeOrSocket
+  ? app.listen(rawPort, () => {
+      console.log(`HKC ERP API listening on socket/pipe ${rawPort}`)
+    })
+  : app.listen(Number(rawPort), () => {
+      console.log(`HKC ERP API listening on port ${rawPort}`)
+    })
+
+// Graceful shutdown
 function shutdown(signal) {
   console.log(`${signal} received — shutting down gracefully.`)
   server.close(() => {
@@ -161,7 +167,6 @@ function shutdown(signal) {
     process.exit(0)
   })
 
-  // Force-exit if connections don't drain within 10 seconds.
   setTimeout(() => {
     console.error("Forced exit after timeout.")
     process.exit(1)
@@ -170,3 +175,15 @@ function shutdown(signal) {
 
 process.on("SIGTERM", () => shutdown("SIGTERM"))
 process.on("SIGINT", () => shutdown("SIGINT"))
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[SERVER UNHANDLED REJECTION]:", reason)
+})
+
+process.on("uncaughtException", (err) => {
+  console.error("[SERVER UNCAUGHT EXCEPTION]:", err)
+})
+
+export { app, server }
+export default app
+
