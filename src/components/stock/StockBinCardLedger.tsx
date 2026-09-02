@@ -32,6 +32,7 @@ export default function StockBinCardLedger({
                 <th colSpan={3} className="py-1.5 text-center border-r border-b border-zinc-200 bg-zinc-100/80 font-black text-zinc-800">
                   Quantity ({product.unit})
                 </th>
+                <th rowSpan={2} className="py-2.5 px-4 text-right border-r border-zinc-200">Unit Price</th>
                 <th rowSpan={2} className="py-2.5 px-4 border-r border-zinc-200">Expiry Date</th>
                 <th rowSpan={2} className="py-2.5 px-4 border-r border-zinc-200">Received From / Issued To</th>
                 <th rowSpan={2} className="py-2.5 px-4 border-r border-zinc-200">Remark</th>
@@ -57,6 +58,13 @@ export default function StockBinCardLedger({
                   <td className="py-2.5 px-4 text-right font-mono font-black text-zinc-950 bg-zinc-50 border-r border-zinc-100">
                     {rec.balance.toLocaleString()}
                   </td>
+                  <td className="py-2.5 px-4 text-right font-mono font-bold text-zinc-800 border-r border-zinc-100">
+                    {rec.unitPrice != null && Number(rec.unitPrice) > 0
+                      ? `ETB ${Number(rec.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : product.unitCost
+                        ? `ETB ${Number(product.unitCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : "—"}
+                  </td>
                   <td className="py-2.5 px-4 font-mono text-zinc-600 border-r border-zinc-100">{rec.expiryDate || "-"}</td>
                   <td className="py-2.5 px-4 font-semibold text-zinc-800 border-r border-zinc-100">{rec.party || "-"}</td>
                   <td className="py-2.5 px-4 text-zinc-500 max-w-xs truncate border-r border-zinc-100">{rec.remark || "-"}</td>
@@ -81,7 +89,7 @@ export default function StockBinCardLedger({
                 <td className="py-2.5 px-4 text-right text-emerald-800 border-r border-zinc-200">+{totalReceived.toLocaleString()}</td>
                 <td className="py-2.5 px-4 text-right text-rose-800 border-r border-zinc-200">-{totalIssued.toLocaleString()}</td>
                 <td className="py-2.5 px-4 text-right font-black bg-zinc-200 border-r border-zinc-200">{currentBalance.toLocaleString()} {product.unit}</td>
-                <td colSpan={3} className="py-2.5 px-4 text-zinc-500 font-sans italic text-[10px]">
+                <td colSpan={4} className="py-2.5 px-4 text-zinc-500 font-sans italic text-[10px]">
                   Warehouse: {product.warehouseName || product.warehouse} &bull; Shelf: {product.shelfNo || "Unassigned"}
                 </td>
               </tr>
