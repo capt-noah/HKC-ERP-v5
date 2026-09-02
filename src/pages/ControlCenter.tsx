@@ -7,15 +7,12 @@ import {
   Package,
   Activity,
   Search,
-  Filter,
-  Calendar,
   MapPin,
   RefreshCw,
   TrendingUp,
   PieChart as PieChartIcon,
   BarChart3,
   Layers,
-  Users,
   CheckCircle2,
   X,
   Clock,
@@ -46,6 +43,10 @@ import {
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
+import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
+import { TableScrollWrapper } from "@/components/TableScrollWrapper"
+import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
+import { Skeleton } from "@/components/ui/skeleton"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, type SalesOrder } from "@/lib/erpStore"
 import { useFinanceStore } from "@/lib/financeStore"
@@ -94,9 +95,19 @@ const roleLabels: Record<string, string> = {
   sales_manager: "Sales Manager",
   hr_manager: "HR Manager",
   finance_manager: "Finance Manager",
-  hkc_docs_manager: "HKC Docs Manager",
-  inventory_admin: "Inventory Admin",
+  inventory_manager: "Inventory Manager",
+  operator: "Staff Operator",
+  auditor: "Auditor",
 }
+
+const auditLogColumns: TableColumn[] = [
+  { key: "resolvedName", label: "Operator Name" },
+  { key: "action", label: "Action" },
+  { key: "resource", label: "Module / Resource" },
+  { key: "details", label: "Context Details", noSort: true },
+  { key: "created_at", label: "Timestamp" },
+  { key: "_actions", label: "Navigation", align: "center", noSort: true },
+]
 
 const resourceLabels: Record<string, string> = {
   auth: "Authentication",
@@ -250,6 +261,31 @@ function TableSkeleton() {
   )
 }
 
+function AuditLogSkeletonRows() {
+  return (
+    <>
+      {Array.from({ length: 8 }).map((_, index) => (
+        <tr key={index} className="border-b border-zinc-150/40">
+          <td className="px-3 py-3">
+            <div className="flex items-center gap-2.5">
+              <Skeleton className="size-7 rounded-full bg-zinc-200/80 shrink-0" />
+              <div className="space-y-1">
+                <Skeleton className="h-3 w-28 bg-zinc-200/80" />
+                <Skeleton className="h-2.5 w-16 bg-zinc-200/80" />
+              </div>
+            </div>
+          </td>
+          <td className="px-3 py-3"><Skeleton className="h-5 w-16 rounded-full bg-zinc-200/80" /></td>
+          <td className="px-3 py-3"><Skeleton className="h-3.5 w-24 bg-zinc-200/80" /></td>
+          <td className="px-3 py-3"><Skeleton className="h-3.5 w-36 bg-zinc-200/80" /></td>
+          <td className="px-3 py-3"><Skeleton className="h-3.5 w-28 bg-zinc-200/80" /></td>
+          <td className="px-3 py-3 text-center"><Skeleton className="h-7 w-24 rounded-xl bg-zinc-200/80 mx-auto" /></td>
+        </tr>
+      ))}
+    </>
+  )
+}
+
 export default function ControlCenter() {
   const erp = useErpStore()
   const finance = useFinanceStore()
@@ -289,6 +325,8 @@ export default function ControlCenter() {
   const [selectedModule, setSelectedModule] = useState("All")
   const [selectedAction, setSelectedAction] = useState("All")
   const [selectedTimeframe, setSelectedTimeframe] = useState("All")
+  const [auditPage, setAuditPage] = useState(1)
+  const [auditPageSize, setAuditPageSize] = useState(10)
 
   // Sales Order Approvals State
   const salesOrders = erp.getSalesOrders()
@@ -711,6 +749,28 @@ export default function ControlCenter() {
     })
     return Array.from(set).sort()
   }, [logs])
+
+  // Table sorting & resizing hook for Audit Logs
+  const auditTable = useResizableTable<typeof logsWithUserInfo[0]>(
+    auditLogColumns,
+    filteredLogs,
+    {
+      resolvedName: 200,
+      action: 130,
+      resource: 170,
+      details: 260,
+      created_at: 170,
+      _actions: 140,
+    }
+  )
+
+  const sortedAuditLogs = auditTable.sorted()
+  const totalAuditLogs = sortedAuditLogs.length
+  const totalAuditPages = Math.max(1, Math.ceil(totalAuditLogs / auditPageSize))
+  const paginatedLogs = useMemo(() => {
+    const start = (auditPage - 1) * auditPageSize
+    return sortedAuditLogs.slice(start, start + auditPageSize)
+  }, [sortedAuditLogs, auditPage, auditPageSize])
 
   // View Module routing logic
   const handleViewModule = (resource: string) => {
@@ -1325,226 +1385,257 @@ export default function ControlCenter() {
 
         {/* Tab Content 2: Activity Logs */}
         {activeTab === "logs" && (
-          <motion.div key="logs" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
-            {/* Log Filters Bar */}
-            <GlassCard className="p-4 flex flex-col xl:flex-row xl:items-center gap-4">
-              {/* Text Search */}
-              <div className="relative flex items-center h-[38px] px-3 rounded-full border border-black/5 bg-black/[0.02] hover:bg-white/50 focus-within:bg-white/80 transition-all flex-1 min-w-[200px]">
-                <Search className="size-4 text-gray-400 mr-2 shrink-0" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search logs (names, actions, details)..."
-                  className="bg-transparent border-none text-xs font-semibold text-black outline-none w-full"
-                />
-              </div>
-
-              {/* Filters grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 shrink-0">
-                {/* User filter */}
-                <div className="relative flex items-center h-[38px] px-3.5 rounded-full border border-black/5 bg-black/[0.02] hover:bg-white/50 transition-all">
-                  <Users className="size-3.5 text-gray-400 mr-2 shrink-0" />
-                  <select
-                    value={selectedUser}
-                    onChange={(e) => setSelectedUser(e.target.value)}
-                    className="bg-transparent border-none text-xs font-bold text-black outline-none pr-4 cursor-pointer appearance-none"
-                  >
-                    <option value="All">All Users</option>
-                    {uniqueUsernames.map((u) => (
-                      <option key={u} value={u}>
-                        @{u}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Module filter */}
-                <div className="relative flex items-center h-[38px] px-3.5 rounded-full border border-black/5 bg-black/[0.02] hover:bg-white/50 transition-all">
-                  <Filter className="size-3.5 text-gray-400 mr-2 shrink-0" />
-                  <select
-                    value={selectedModule}
-                    onChange={(e) => setSelectedModule(e.target.value)}
-                    className="bg-transparent border-none text-xs font-bold text-black outline-none pr-4 cursor-pointer appearance-none"
-                  >
-                    <option value="All">All Modules</option>
-                    {uniqueResources.map((r) => (
-                      <option key={r} value={r}>
-                        {resourceLabels[r] || r}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Action filter */}
-                <div className="relative flex items-center h-[38px] px-3.5 rounded-full border border-black/5 bg-black/[0.02] hover:bg-white/50 transition-all">
-                  <Activity className="size-3.5 text-gray-400 mr-2 shrink-0" />
-                  <select
-                    value={selectedAction}
-                    onChange={(e) => setSelectedAction(e.target.value)}
-                    className="bg-transparent border-none text-xs font-bold text-black outline-none pr-4 cursor-pointer appearance-none"
-                  >
-                    <option value="All">All Actions</option>
-                    {uniqueActions.map((a) => (
-                      <option key={a} value={a}>
-                        {a}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Date range filter */}
-                <div className="relative flex items-center h-[38px] px-3.5 rounded-full border border-black/5 bg-black/[0.02] hover:bg-white/50 transition-all">
-                  <Calendar className="size-3.5 text-gray-400 mr-2 shrink-0" />
-                  <select
-                    value={selectedTimeframe}
-                    onChange={(e) => setSelectedTimeframe(e.target.value)}
-                    className="bg-transparent border-none text-xs font-bold text-black outline-none pr-4 cursor-pointer appearance-none"
-                  >
-                    <option value="All">All Time</option>
-                    <option value="Today">Today</option>
-                    <option value="Yesterday">Yesterday</option>
-                    <option value="7Days">Last 7 Days</option>
-                    <option value="30Days">Last 30 Days</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Export & Refresh Buttons */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleExportAuditLogs}
-                  disabled={logsLoading || filteredLogs.length === 0}
-                  className="flex items-center gap-1.5 h-[38px] px-4 rounded-full border border-black/5 hover:bg-zinc-100 transition-all text-xs font-bold text-zinc-800 disabled:opacity-50 cursor-pointer"
-                  title="Export filtered audit logs as CSV"
+          <motion.div key="logs" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+            <GlassCard className="p-0 overflow-hidden border border-white/65 shadow-md">
+              <div className="px-6 pt-6">
+                <FinanceTableToolbar
+                  title="Audit Activity Logs"
+                  subtitle={`${totalAuditLogs} records from the audit activity log`}
+                  searchValue={searchQuery}
+                  onSearchChange={(value) => {
+                    setSearchQuery(value)
+                    setAuditPage(1)
+                  }}
+                  searchPlaceholder="Search operator, username, action, module, details..."
+                  filters={[
+                    {
+                      value: selectedUser,
+                      onChange: (v) => {
+                        setSelectedUser(v)
+                        setAuditPage(1)
+                      },
+                      ariaLabel: "User",
+                      options: [
+                        { value: "All", label: "All Users" },
+                        ...uniqueUsernames.map((u) => ({ value: u, label: `@${u}` })),
+                      ],
+                    },
+                    {
+                      value: selectedModule,
+                      onChange: (v) => {
+                        setSelectedModule(v)
+                        setAuditPage(1)
+                      },
+                      ariaLabel: "Module",
+                      options: [
+                        { value: "All", label: "All Modules" },
+                        ...uniqueResources.map((r) => ({ value: r, label: resourceLabels[r] || r })),
+                      ],
+                    },
+                    {
+                      value: selectedAction,
+                      onChange: (v) => {
+                        setSelectedAction(v)
+                        setAuditPage(1)
+                      },
+                      ariaLabel: "Action",
+                      options: [
+                        { value: "All", label: "All Actions" },
+                        ...uniqueActions.map((a) => ({ value: a, label: a })),
+                      ],
+                    },
+                    {
+                      value: selectedTimeframe,
+                      onChange: (v) => {
+                        setSelectedTimeframe(v)
+                        setAuditPage(1)
+                      },
+                      ariaLabel: "Timeframe",
+                      options: [
+                        { value: "All", label: "All Time" },
+                        { value: "Today", label: "Today" },
+                        { value: "Yesterday", label: "Yesterday" },
+                        { value: "7Days", label: "Last 7 Days" },
+                        { value: "30Days", label: "Last 30 Days" },
+                      ],
+                    },
+                  ]}
+                  actions={[
+                    {
+                      label: "Export CSV",
+                      onClick: handleExportAuditLogs,
+                      icon: <Download className="size-4" />,
+                      variant: "secondary",
+                    },
+                  ]}
                 >
-                  <Download className="size-3.5 text-zinc-600" />
-                  <span>Export CSV</span>
-                </button>
-
-                <button
-                  onClick={fetchAuditLogsData}
-                  disabled={logsLoading}
-                  className="flex items-center justify-center size-[38px] rounded-full border border-black/5 hover:bg-zinc-100 transition-all shrink-0 disabled:opacity-50 cursor-pointer"
-                  title="Refresh log registry"
-                >
-                  <RefreshCw className={cn("size-4 text-gray-500", logsLoading && "animate-spin")} />
-                </button>
+                  <button
+                    type="button"
+                    onClick={fetchAuditLogsData}
+                    disabled={logsLoading}
+                    className="flex items-center justify-center size-[38px] sm:size-[40px] rounded-2xl border border-black/5 bg-black/[0.04] hover:bg-black/[0.08] transition-all shrink-0 disabled:opacity-50 cursor-pointer shadow-2xs"
+                    title="Refresh log registry"
+                  >
+                    <RefreshCw className={cn("size-4 text-zinc-700", logsLoading && "animate-spin")} />
+                  </button>
+                </FinanceTableToolbar>
               </div>
-            </GlassCard>
 
-            {/* Audit Logs Table with Skeleton Loader */}
-            <GlassCard>
-              {logsLoading ? (
-                <TableSkeleton />
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-black/5 text-[10px] text-gray-400 font-black uppercase tracking-wider">
-                        <th className="py-4 px-5">Operator Name</th>
-                        <th className="py-4 px-4">Action</th>
-                        <th className="py-4 px-4">Module / Resource</th>
-                        <th className="py-4 px-4">Context Details</th>
-                        <th className="py-4 px-4">Timestamp</th>
-                        <th className="py-4 px-5 text-right">Navigation</th>
+              <TableScrollWrapper>
+                <table className="w-full text-left border-collapse table-fixed">
+                  <thead>
+                    <tr className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
+                      {auditLogColumns.map((col) => (
+                        <ResizableTh
+                          key={col.key}
+                          col={col}
+                          width={auditTable.colWidths[col.key] || 140}
+                          sortKey={auditTable.sortKey}
+                          sortDir={auditTable.sortDir}
+                          openMenuCol={auditTable.openMenuCol}
+                          onResizeStart={auditTable.handleResizeStart}
+                          onToggleMenu={auditTable.toggleMenu}
+                          onSortAsc={auditTable.setSortAsc}
+                          onSortDesc={auditTable.setSortDesc}
+                          onClearSort={auditTable.clearSort}
+                        />
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 font-medium">
+                    {logsLoading ? (
+                      <AuditLogSkeletonRows />
+                    ) : paginatedLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={auditLogColumns.length} className="py-16 text-center text-xs font-bold text-zinc-400">
+                          No operational audit logs match your filters.
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-black/5 text-xs text-black">
-                      {filteredLogs.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="py-12 text-center text-gray-400 font-medium">
-                            No operational audit logs match the current filters.
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredLogs.map((log) => {
-                          const initials =
-                            log.resolvedName
-                              .split(" ")
-                              .map((p) => p[0])
-                              .join("")
-                              .slice(0, 2)
-                              .toUpperCase() || "U"
+                    ) : (
+                      paginatedLogs.map((log) => {
+                        const initials =
+                          log.resolvedName
+                            .split(" ")
+                            .map((p) => p[0])
+                            .join("")
+                            .slice(0, 2)
+                            .toUpperCase() || "U"
 
-                          return (
-                            <tr key={log.id} className="hover:bg-black/[0.01] transition-all">
-                              {/* User identity card info */}
-                              <td className="py-3.5 px-5">
-                                <div className="flex items-center gap-3">
-                                  <div className="size-8 rounded-full bg-zinc-900 text-white flex items-center justify-center font-black text-xs border border-black/5">
-                                    {initials}
-                                  </div>
-                                  <div>
-                                    <p className="font-bold text-black leading-snug">{log.resolvedName}</p>
-                                    <p className="text-[10px] text-gray-400 font-medium">
-                                      @{log.username} {log.roleDisplay ? `• ${log.roleDisplay}` : ""}
-                                    </p>
-                                  </div>
+                        return (
+                          <tr key={log.id} className="border-b border-zinc-150/40 hover:bg-zinc-50/60 transition-colors text-xs">
+                            {/* Operator Name */}
+                            <td style={{ width: `${auditTable.colWidths.resolvedName}px` }} className="px-3 py-3">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="size-7 rounded-full bg-zinc-900 text-white flex items-center justify-center font-black text-[11px] shrink-0 border border-black/5">
+                                  {initials}
                                 </div>
-                              </td>
+                                <div className="min-w-0 truncate">
+                                  <p className="font-bold text-zinc-900 text-xs leading-snug truncate">{log.resolvedName}</p>
+                                  <p className="text-[10px] text-zinc-400 font-semibold truncate">
+                                    @{log.username} {log.roleDisplay ? `• ${log.roleDisplay}` : ""}
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
 
-                              {/* Action Type Badge */}
-                              <td className="py-3.5 px-4">
-                                <span
-                                  className={cn(
-                                    "px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border",
-                                    getActionBadgeStyle(log.action)
-                                  )}
-                                >
-                                  {log.action}
-                                </span>
-                              </td>
+                            {/* Action */}
+                            <td style={{ width: `${auditTable.colWidths.action}px` }} className="px-3 py-3">
+                              <span
+                                className={cn(
+                                  "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border",
+                                  getActionBadgeStyle(log.action)
+                                )}
+                              >
+                                {log.action}
+                              </span>
+                            </td>
 
-                              {/* Normalized Module name */}
-                              <td className="py-3.5 px-4 font-bold text-gray-600">
-                                {resourceLabels[log.resource] || log.resource}
-                              </td>
+                            {/* Module / Resource */}
+                            <td style={{ width: `${auditTable.colWidths.resource}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">
+                              {resourceLabels[log.resource] || log.resource}
+                            </td>
 
-                              {/* JSON details formatted */}
-                              <td className="py-3.5 px-4">
-                                <div className="flex flex-col gap-1 text-[10px]">
-                                  {log.details?.ip && (
-                                    <span className="text-gray-400 font-semibold font-mono flex items-center gap-1">
-                                      <MapPin className="size-3" /> {log.details.ip}
-                                    </span>
-                                  )}
+                            {/* Context Details */}
+                            <td style={{ width: `${auditTable.colWidths.details}px` }} className="px-3 py-3">
+                              <div className="flex flex-col gap-1 text-[10px] min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                   {log.details?.itemId && (
-                                    <span className="text-zinc-600 font-extrabold font-mono bg-black/[0.04] px-1.5 py-0.5 rounded border border-black/5 w-max">
+                                    <span className="text-zinc-700 font-extrabold font-mono bg-zinc-100 px-1.5 py-0.5 rounded border border-zinc-200/80 shrink-0">
                                       ID: {log.details.itemId}
                                     </span>
                                   )}
-                                  {log.details?.path && (
-                                    <span className="text-gray-400 truncate max-w-[180px] font-medium" title={log.details.path}>
-                                      {log.details.path}
+                                  {log.details?.ip && (
+                                    <span className="text-zinc-400 font-semibold font-mono flex items-center gap-1 shrink-0">
+                                      <MapPin className="size-2.5" /> {log.details.ip}
                                     </span>
                                   )}
                                 </div>
-                              </td>
+                                {log.details?.path && (
+                                  <span className="text-zinc-400 truncate max-w-[220px] font-medium" title={log.details.path}>
+                                    {log.details.path}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
 
-                              {/* Timestamp */}
-                              <td className="py-3.5 px-4 font-mono font-medium text-gray-500 text-[11px] whitespace-nowrap">
-                                {formatDateTime(log.created_at)}
-                              </td>
+                            {/* Timestamp */}
+                            <td style={{ width: `${auditTable.colWidths.created_at}px` }} className="px-3 py-3 font-mono text-xs font-bold text-zinc-600 truncate">
+                              {formatDateTime(log.created_at)}
+                            </td>
 
-                              {/* Redirection link */}
-                              <td className="py-3.5 px-5 text-right whitespace-nowrap">
-                                <button
-                                  onClick={() => handleViewModule(log.resource)}
-                                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border border-black/5 hover:border-black/15 bg-white/50 hover:bg-white text-[11px] font-black text-zinc-700 hover:text-black transition-all active:scale-95 shadow-sm"
-                                >
-                                  View Module
-                                  <ArrowUpRight className="size-3 shrink-0" />
-                                </button>
-                              </td>
-                            </tr>
-                          )
-                        })
-                      )}
-                    </tbody>
-                  </table>
+                            {/* Navigation */}
+                            <td style={{ width: `${auditTable.colWidths._actions}px` }} className="px-3 py-3 text-center whitespace-nowrap overflow-hidden">
+                              <button
+                                type="button"
+                                onClick={() => handleViewModule(log.resource)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                                title="Navigate to module"
+                              >
+                                <span>View Module</span>
+                                <ArrowUpRight className="size-3 text-zinc-700 shrink-0" />
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </TableScrollWrapper>
+
+              {/* Pagination Footer */}
+              <div className="flex flex-col sm:flex-row items-center justify-between border-t border-zinc-100 px-6 py-4 bg-white/40 gap-3">
+                <div className="flex items-center gap-3 text-xs font-bold text-zinc-500">
+                  <span>
+                    Showing {totalAuditLogs === 0 ? 0 : (auditPage - 1) * auditPageSize + 1} to {Math.min(auditPage * auditPageSize, totalAuditLogs)} of {totalAuditLogs} entries
+                  </span>
+                  <div className="flex items-center gap-1.5 pl-2 border-l border-zinc-200 dark:border-zinc-700">
+                    <span className="text-[11px] font-semibold text-zinc-400">Rows:</span>
+                    <select
+                      value={auditPageSize}
+                      onChange={(e) => {
+                        setAuditPageSize(Number(e.target.value))
+                        setAuditPage(1)
+                      }}
+                      className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2 py-0.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none cursor-pointer"
+                    >
+                      <option value={10}>10</option>
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
                 </div>
-              )}
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={auditPage === 1}
+                    onClick={() => setAuditPage((value) => Math.max(1, value - 1))}
+                    className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs font-black text-zinc-700 px-2 font-mono">
+                    Page {auditPage} of {totalAuditPages}
+                  </span>
+                  <button
+                    disabled={auditPage >= totalAuditPages}
+                    onClick={() => setAuditPage((value) => value + 1)}
+                    className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-2xs transition-all"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
             </GlassCard>
           </motion.div>
         )}
