@@ -53,6 +53,7 @@ export interface BinCardMovementEntry {
   qtyIssued: number
   balance: number
   expiryDate: string
+  mfgDate?: string
   party: string
   unitPrice?: number
   remark: string
@@ -1203,9 +1204,13 @@ class ErpStore {
       status: "Released" as const,
     }))
 
+    const packSize = Number(prod.quantityPerPack || 1)
+    const nextCartons = packSize > 0 ? Math.floor(totalQuantity / packSize) : (prod.numberOfCartons || 0)
+
     return await this.updateProductDetails(productId, {
       quantity: totalQuantity,
       totalQuantity: totalQuantity + (prod.quantitySold || 0),
+      numberOfCartons: nextCartons,
       totalStockValue: nextVal,
       batch: latestBatch || prod.batch,
       expiry: latestExpiry || prod.expiry,
@@ -1236,9 +1241,13 @@ class ErpStore {
       status: "Released" as const,
     }))
 
+    const packSize = Number(prod.quantityPerPack || 1)
+    const nextCartons = packSize > 0 ? Math.floor(totalQuantity / packSize) : (prod.numberOfCartons || 0)
+
     return await this.updateProductDetails(productId, {
       quantity: totalQuantity,
       totalQuantity: totalQuantity + (prod.quantitySold || 0),
+      numberOfCartons: nextCartons,
       totalStockValue: nextVal,
       batch: latestBatch || prod.batch,
       expiry: latestExpiry || prod.expiry,
@@ -1259,10 +1268,13 @@ class ErpStore {
     const nextVal = totalQuantity * Number(prod.unitCost || 0)
 
     const updatedBreakdown = [{ warehouse: prod.warehouse, qty: totalQuantity }]
+    const packSize = Number(prod.quantityPerPack || 1)
+    const nextCartons = packSize > 0 ? Math.floor(totalQuantity / packSize) : (prod.numberOfCartons || 0)
 
     return await this.updateProductDetails(productId, {
       quantity: totalQuantity,
       totalQuantity: totalQuantity + (prod.quantitySold || 0),
+      numberOfCartons: nextCartons,
       totalStockValue: nextVal,
       batch: latestBatch || prod.batch,
       expiry: latestExpiry || prod.expiry,

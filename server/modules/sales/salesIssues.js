@@ -93,7 +93,7 @@ export async function listSalesIssues(query = {}) {
         totalQuantity: total_quantity,
         amount_paid,
         balance_due,
-        settlement_status: issue.settlement_status || (payment_type === "Cash" ? "Fully Settled" : (amount_paid >= total_amount ? "Fully Settled" : amount_paid > 0 ? "Ongoing" : "Unpaid")),
+        settlement_status: issue.settlement_status || (payment_type === "Cash" ? "Fully Settled" : (total_amount > 0 && amount_paid >= total_amount ? "Fully Settled" : amount_paid > 0 ? "Ongoing" : "Unpaid")),
         created_by: issue.created_by || issue.createdBy || "System",
         items: issueItems,
         savedToDb: true,
@@ -203,7 +203,7 @@ export async function getSalesIssue(id) {
         totalQuantity: total_quantity,
         amount_paid,
         balance_due,
-        settlement_status: issue.settlement_status || (payment_type === "Cash" ? "Fully Settled" : (amount_paid >= total_amount ? "Fully Settled" : amount_paid > 0 ? "Ongoing" : "Unpaid")),
+        settlement_status: issue.settlement_status || (payment_type === "Cash" ? "Fully Settled" : (total_amount > 0 && amount_paid >= total_amount ? "Fully Settled" : amount_paid > 0 ? "Ongoing" : "Unpaid")),
         created_by: issue.created_by || issue.createdBy || "System",
         items,
         savedToDb: true,
@@ -466,6 +466,25 @@ export async function postSalesIssue(arg1, arg2) {
           finalUnitCost = newQty > 0 ? Math.round((finalStockValue / newQty) * 100) / 100 : unitCost
         }
 
+        let updatedBinCardEntries = prod.binCardEntries || []
+        if (!isWH1) {
+          const autoIssueBinEntry = {
+            id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            date: existing.sale_date || new Date().toISOString().slice(0, 10),
+            batchNo: targetBatch || "BATCH-ISSUE",
+            qtyReceived: 0,
+            qtyIssued: issueQty,
+            balance: newQty,
+            expiryDate: item.expiryDate || item.expiry || "",
+            mfgDate: item.mfgDate || item.manufacturingDate || "",
+            party: existing.customer_name || "Customer Dispatch",
+            unitPrice: unitPrice > 0 ? unitPrice : unitCost,
+            remark: `Sales Issue FS-${existing.fs_no} (Ref: ${existing.reference_no || 'Direct Dispatch'})`,
+            createdAt: new Date().toISOString(),
+          }
+          updatedBinCardEntries = [...updatedBinCardEntries, autoIssueBinEntry]
+        }
+
         const updatedProd = {
           ...prod,
           quantity: newQty,
@@ -474,6 +493,7 @@ export async function postSalesIssue(arg1, arg2) {
           stockBreakdown: updatedBreakdown,
           batches: updatedBatches,
           wh1Entries: updatedWH1Entries,
+          binCardEntries: updatedBinCardEntries,
           status: updatedStatus,
           unitCost: finalUnitCost,
           sellingPrice: finalUnitCost,

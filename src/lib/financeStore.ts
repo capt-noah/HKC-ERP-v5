@@ -556,7 +556,7 @@ class FinanceStore {
             const invoiceTotal = Math.max(0, subtotal + vatAmount - discountAmount)
             const taxRate = Number(si.vat_rate || (subtotal > 0 && vatAmount > 0 ? Math.round((vatAmount / subtotal) * 100) : (vatAmount > 0 ? 15 : 0)))
 
-            const isCredit = si.payment_type === "Credit"
+            const isCredit = (si.payment_type || si.paymentType || si.payment_method || si.paymentMethod || "").toString().toLowerCase().includes("credit")
             const isCash = !isCredit
             const isPosted = (si.status || "").toLowerCase() === "posted"
 
@@ -702,8 +702,15 @@ class FinanceStore {
             // ── Invoices record sync ──
             const invId = `INV-SI-${si.id}`
             const existingInvIdx = this.invoices.findIndex(
-              (inv) => inv.id === invId || inv.invoice_number === `INV-${si.fs_no}` || inv.sales_issue_id === si.id
+              (inv) => inv.id === invId || inv.invoice_number === `INV-${si.fs_no}` || inv.sales_issue_id === si.id || (si.fs_no && (inv.fs_no === si.fs_no || inv.invoice_number?.includes(si.fs_no)))
             )
+
+            const paymentsForThisIssue = this.payments.filter((p) => (p.sales_issue_id && p.sales_issue_id === si.id) || p.linked_invoice_id === invId)
+            const totalPaidFromPayments = paymentsForThisIssue.reduce((s, p) => s + Number(p.amount || 0), 0)
+            const actualAmountPaid = isCash ? invoiceTotal : Math.max(Number(si.amount_paid || 0), totalPaidFromPayments)
+            const actualBalanceDue = isCash ? 0 : Math.max(0, invoiceTotal - actualAmountPaid)
+            const actualStatus: Invoice["status"] = isCash || (invoiceTotal > 0 && actualBalanceDue <= 0 && actualAmountPaid > 0) ? "Paid" : (actualAmountPaid > 0 ? "Partially Paid" : "Sent")
+            const actualSettlement: Invoice["settlement_status"] = isCash || (invoiceTotal > 0 && actualBalanceDue <= 0 && actualAmountPaid > 0) ? "Fully Settled" : (actualAmountPaid > 0 ? "Ongoing" : "Unpaid")
 
             const mappedInvoice: Invoice = {
               id: invId,
@@ -719,28 +726,33 @@ class FinanceStore {
               discount_amount: discountAmount,
               payment_terms: isCash ? "Cash" : "Credit (Net 30)",
               total: invoiceTotal,
-              amount_paid: isCash ? invoiceTotal : 0,
-              balance_due: isCash ? 0 : invoiceTotal,
-              status: isCash ? "Paid" : "Sent",
+              amount_paid: actualAmountPaid,
+              balance_due: actualBalanceDue,
+              status: actualStatus,
+              settlement_status: actualSettlement,
               sales_issue_id: si.id,
+              sales_order_id: si.reference_no || undefined,
               fs_no: si.fs_no,
             }
 
             if (existingInvIdx >= 0) {
               const current = this.invoices[existingInvIdx]
-              const preservePaid = current.status === "Paid" || isCash
               this.invoices[existingInvIdx] = {
                 ...current,
                 ...mappedInvoice,
+                id: current.id || invId,
                 subtotal: mappedInvoice.subtotal,
                 tax_amount: mappedInvoice.tax_amount,
                 tax_rate: mappedInvoice.tax_rate,
                 discount_amount: mappedInvoice.discount_amount,
                 total: mappedInvoice.total,
-                status: preservePaid ? "Paid" : mappedInvoice.status,
-                amount_paid: preservePaid ? mappedInvoice.total : (Number(current.amount_paid) || 0),
-                balance_due: preservePaid ? 0 : Math.max(0, mappedInvoice.total - (Number(current.amount_paid) || 0)),
+                amount_paid: actualAmountPaid,
+                balance_due: actualBalanceDue,
+                status: actualStatus,
+                settlement_status: actualSettlement,
                 payment_terms: mappedInvoice.payment_terms,
+                sales_issue_id: si.id,
+                fs_no: si.fs_no,
               }
             } else {
               this.invoices.push(mappedInvoice)
@@ -1507,8 +1519,9 @@ class FinanceStore {
   }
 
   public getPaymentsForSalesIssue(salesIssueId: string): Payment[] {
+    if (!salesIssueId || !salesIssueId.trim()) return []
     return this.payments.filter(
-      (p) => p.sales_issue_id === salesIssueId || p.linked_invoice_id === `INV-SI-${salesIssueId}` || p.reference.includes(salesIssueId)
+      (p) => (p.sales_issue_id && p.sales_issue_id === salesIssueId) || (p.linked_invoice_id && p.linked_invoice_id === `INV-SI-${salesIssueId}`)
     )
   }
 
@@ -1563,10 +1576,14 @@ class FinanceStore {
 
     let updatedInv: Invoice | undefined
 
-    if (paymentData.linked_invoice_id) {
+    if (paymentData.linked_invoice_id || paymentData.sales_issue_id || paymentData.sales_order_id) {
       let custName = paymentData.customer_name || "Customer"
       this.invoices = this.invoices.map((inv) => {
-        if (inv.id === paymentData.linked_invoice_id || inv.invoice_number === paymentData.linked_invoice_id) {
+        const matchesLinkedId = paymentData.linked_invoice_id && (inv.id === paymentData.linked_invoice_id || inv.invoice_number === paymentData.linked_invoice_id)
+        const matchesSalesIssue = paymentData.sales_issue_id && (inv.sales_issue_id === paymentData.sales_issue_id || inv.id === `INV-SI-${paymentData.sales_issue_id}` || (inv.fs_no && paymentData.sales_issue_id.includes(inv.fs_no)))
+        const matchesSalesOrder = paymentData.sales_order_id && (inv.sales_order_id === paymentData.sales_order_id || inv.invoice_number?.includes(paymentData.sales_order_id))
+
+        if (matchesLinkedId || matchesSalesIssue || matchesSalesOrder) {
           custName = inv.customer_name
           const newPaid = Number((inv.amount_paid + paymentData.amount).toFixed(2))
           const newBal = Number(Math.max(0, inv.total - newPaid).toFixed(2))

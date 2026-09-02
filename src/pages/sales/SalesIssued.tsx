@@ -208,9 +208,11 @@ export default function SalesIssued() {
     setCustomerName(so.customer)
     const matchedWh = warehouses.find((w) => w.code === so.warehouse || w.id === so.warehouse || w.name === so.warehouse)
     const targetWhId = matchedWh ? matchedWh.id : canonicalWarehouseId(so.warehouse)
-    const targetIsWh1 = isWH1(so.warehouse) || isWH1(targetWhId)
     setWarehouseId(targetWhId)
-    setPaymentType(so.paymentType === "Cash" ? "Cash" : (targetIsWh1 ? "Credit" : "Cash"))
+    const targetIsWh1 = isWH1(so.warehouse) || isWH1(targetWhId)
+    const rawTerms = (so.payment_terms || so.paymentTerms || so.paymentType || so.payment_type || "").toString().toLowerCase()
+    const isCreditOrder = rawTerms.includes("credit") || rawTerms.includes("net")
+    setPaymentType(isCreditOrder ? "Credit" : "Cash")
     setReferenceNo(so.id)
     if (!saleDate) setSaleDate(new Date().toISOString().split("T")[0])
     setIssueFormErrors({})
@@ -330,7 +332,9 @@ export default function SalesIssued() {
       const targetWhId = matchedWh ? matchedWh.id : canonicalWarehouseId(preselectedSo.warehouse)
       const targetIsWh1 = isWH1(preselectedSo.warehouse) || isWH1(targetWhId)
       setWarehouseId(targetWhId)
-      setPaymentType(preselectedSo.paymentType === "Cash" ? "Cash" : (targetIsWh1 ? "Credit" : "Cash"))
+      const rawTerms = (preselectedSo.payment_terms || preselectedSo.paymentTerms || preselectedSo.paymentType || preselectedSo.payment_type || "").toString().toLowerCase()
+      const isCreditOrder = rawTerms.includes("credit") || rawTerms.includes("net")
+      setPaymentType(isCreditOrder ? "Credit" : "Cash")
       setReferenceNo(preselectedSo.id)
       const allProducts = erp.getProducts()
 
@@ -883,7 +887,8 @@ export default function SalesIssued() {
                 ) : salesTable.sorted().length === 0 ? (
                   <tr><td colSpan={salesIssueColumns.length} className="py-16 text-center text-xs font-bold text-zinc-400">No sales issued records match your filters.</td></tr>
                 ) : salesTable.sorted().map((row) => {
-                  const isCash = (row.payment_type || "Cash") === "Cash"
+                  const isCredit = (row.payment_type || (row as any).paymentType || "").toString().toLowerCase().includes("credit")
+                  const isCash = !isCredit
                   const paymentsForIssue = financeStore.getPaymentsForSalesIssue(row.id)
                   const totalAmt = Number(row.total_amount || 0)
                   const paidAmt = paymentsForIssue.reduce((s, p) => s + p.amount, 0) || Number(row.amount_paid || 0)
@@ -904,7 +909,7 @@ export default function SalesIssued() {
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
                             Cash
                           </span>
-                        ) : dueAmt <= 0 && paidAmt > 0 ? (
+                        ) : totalAmt > 0 && dueAmt <= 0 && paidAmt > 0 ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
                             <CheckCircle2 className="size-3 text-emerald-600" /> Credit • Fully Settled
                           </span>
@@ -923,7 +928,7 @@ export default function SalesIssued() {
                               Credit • Unpaid (0%)
                             </span>
                             <span className="text-[10px] font-mono text-rose-600 font-bold">
-                              Due: {money(dueAmt)}
+                              Due: {money(dueAmt || totalAmt)}
                             </span>
                           </div>
                         )}

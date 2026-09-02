@@ -381,8 +381,6 @@ export default function StockProducts() {
         { key: "voucherNo", label: "Voucher No", align: "left" },
         { key: "customer", label: "Customer", align: "left" },
         { key: "plateNumber", label: "Plate No", align: "left" },
-        { key: "entryDate", label: "Entry Date", align: "left" },
-        { key: "leaveDate", label: "Leave Date", align: "left" },
         { key: "quantity", label: "Total Quantity", align: "right" },
         { key: "unit", label: "UOM", align: "left" },
         { key: "totalStockValue", label: "Stock Value", align: "right" }
@@ -541,6 +539,7 @@ export default function StockProducts() {
             qtyReceived: addTotalQuantity,
             qtyIssued: 0,
             balance: addTotalQuantity,
+            mfgDate: isWH1Form ? undefined : (addMfgDate || undefined),
             expiryDate: addExpDate,
             party: "Initial Stock Deposit",
             unitPrice: Number(addUnitPrice || 0),
@@ -1021,12 +1020,6 @@ export default function StockProducts() {
                           if (isWH1Item && isWH1(selectedWarehouse)) {
                             const entries = prod.wh1Entries || []
                             const totalReceived = entries.reduce((sum, e) => sum + e.quantityReceived, 0)
-                            const entryDates = entries.map(e => new Date(e.entryDate).getTime()).filter(t => !Number.isNaN(t))
-                            const earliestDate = entryDates.length ? new Date(Math.min(...entryDates)).toISOString().slice(0, 10) : prod.entryDate || "-"
-                            const latestDate = entryDates.length ? new Date(Math.max(...entryDates)).toISOString().slice(0, 10) : prod.entryDate || "-"
-                            
-                            const leaveDates = entries.map(e => e.leaveDate ? new Date(e.leaveDate).getTime() : 0).filter(t => t > 0)
-                            const latestLeave = leaveDates.length ? new Date(Math.max(...leaveDates)).toISOString().slice(0, 10) : prod.leaveDate || "-"
 
                             return (
                               <Fragment key={prod.id}>
@@ -1069,14 +1062,6 @@ export default function StockProducts() {
                                   <td className="py-4 px-4 font-mono text-[11px] text-zinc-600">
                                     {prod.plateNumber || (entries[0]?.plateNumber || "—")}
                                   </td>
-
-                                  {/* Entry date */}
-                                  <td className="py-4 px-4 font-mono text-[11px] text-zinc-700">
-                                    {earliestDate === latestDate ? earliestDate : `${earliestDate} to ${latestDate}`}
-                                  </td>
-
-                                  {/* Leave date */}
-                                  <td className="py-4 px-4 font-mono text-[11px] text-zinc-700">{latestLeave}</td>
 
                                   {/* Total quantity */}
                                   <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
@@ -1572,15 +1557,6 @@ export default function StockProducts() {
                     />
                   </label>
                 )}
-                
-                <label className="space-y-1">
-                  <span className="block text-[11px] font-black uppercase text-zinc-500">Compliance Status</span>
-                  <select value={editForm.approvalStatus || "Approved"} onChange={(e) => updateEditForm({ approvalStatus: e.target.value as Product["approvalStatus"] })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs">
-                    <option value="Approved">Approved</option>
-                    <option value="Submitted">Submitted</option>
-                    <option value="Not Submitted">Not Submitted</option>
-                  </select>
-                </label>
               </div>
 
               <div className="mt-6 flex justify-end gap-2 border-t border-zinc-100 pt-4">

@@ -30,6 +30,7 @@ export default function StockBinEntryModal({
   const [date, setDate] = useState("")
   const [batchNo, setBatchNo] = useState("")
   const [quantity, setQuantity] = useState("")
+  const [mfgDate, setMfgDate] = useState("")
   const [expiryDate, setExpiryDate] = useState("")
   const [party, setParty] = useState("")
   const [unitPrice, setUnitPrice] = useState("")
@@ -44,6 +45,7 @@ export default function StockBinEntryModal({
       setDate(entry.date || new Date().toISOString().slice(0, 10))
       setBatchNo(entry.batchNo || "")
       setQuantity(String(isRec ? entry.qtyReceived : entry.qtyIssued))
+      setMfgDate(entry.mfgDate || "")
       setExpiryDate(entry.expiryDate || "")
       setParty(entry.party || "")
       setUnitPrice(entry.unitPrice !== undefined ? String(entry.unitPrice) : "")
@@ -53,6 +55,7 @@ export default function StockBinEntryModal({
       setDate(new Date().toISOString().slice(0, 10))
       setBatchNo(product?.batch || "")
       setQuantity("")
+      setMfgDate("")
       setExpiryDate(product?.expiry || "")
       setParty("")
       setUnitPrice(product?.unitCost !== undefined ? String(product.unitCost) : "")
@@ -77,6 +80,7 @@ export default function StockBinEntryModal({
         batchNo: batchNo.trim().toUpperCase(),
         qtyReceived: movementType === "received" ? qtyNum : 0,
         qtyIssued: movementType === "issued" ? qtyNum : 0,
+        mfgDate: mfgDate.trim(),
         expiryDate: expiryDate.trim(),
         party: party.trim(),
         unitPrice: unitPrice ? Number(unitPrice) : undefined,
@@ -231,8 +235,18 @@ export default function StockBinEntryModal({
               </div>
             </div>
 
-            {/* Expiry Date & Received From / Issued To */}
+            {/* Mfg Date & Expiry Date */}
             <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="block text-[10px] font-black uppercase text-zinc-500">Mfg Date</label>
+                <input
+                  type="date"
+                  value={mfgDate}
+                  onChange={(e) => setMfgDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-zinc-900 outline-none"
+                />
+              </div>
+
               <div className="space-y-1">
                 <label className="block text-[10px] font-black uppercase text-zinc-500">Expiry Date</label>
                 <input
@@ -242,19 +256,20 @@ export default function StockBinEntryModal({
                   className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-zinc-900 outline-none"
                 />
               </div>
+            </div>
 
-              <div className="space-y-1">
-                <label className="block text-[10px] font-black uppercase text-zinc-500">
-                  {movementType === "received" ? "Received From (Supplier)" : "Issued To (Client / Dept)"}
-                </label>
-                <input
-                  type="text"
-                  placeholder={movementType === "received" ? "Supplier name" : "Client / Bureau name"}
-                  value={party}
-                  onChange={(e) => setParty(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-zinc-900 outline-none"
-                />
-              </div>
+            {/* Received From / Issued To */}
+            <div className="space-y-1">
+              <label className="block text-[10px] font-black uppercase text-zinc-500">
+                {movementType === "received" ? "Received From (Supplier)" : "Issued To (Client / Dept)"}
+              </label>
+              <input
+                type="text"
+                placeholder={movementType === "received" ? "Supplier name" : "Client / Bureau name"}
+                value={party}
+                onChange={(e) => setParty(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-zinc-900 outline-none"
+              />
             </div>
 
             {/* Remark */}

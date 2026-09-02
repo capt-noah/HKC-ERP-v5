@@ -141,14 +141,24 @@ export async function fetchTradeAndAdviceDocs(params: {
   const searchIds = [salesOrderId, salesIssueId, invoiceId, fsNo, customerId].filter(Boolean) as string[]
   let attachedDocs: ShipmentDocAttachment[] = []
 
-  if (searchIds.length > 0) {
-    try {
-      const allDocs = await fetchAllShipmentDocs()
-      attachedDocs = allDocs.filter((d) => searchIds.includes(d.record_id))
-    } catch {
-      attachedDocs = []
+    if (searchIds.length > 0) {
+      try {
+        const allDocs = await fetchAllShipmentDocs()
+        const rawFiltered = allDocs.filter((d) => searchIds.includes(d.record_id))
+        const seenUrls = new Set<string>()
+        const uniqueDocs: ShipmentDocAttachment[] = []
+        for (const doc of rawFiltered) {
+          const key = (doc.file_url || `${doc.file_name}-${doc.record_id}`).trim()
+          if (!seenUrls.has(key)) {
+            seenUrls.add(key)
+            uniqueDocs.push(doc)
+          }
+        }
+        attachedDocs = uniqueDocs
+      } catch {
+        attachedDocs = []
+      }
     }
-  }
 
   // 1. Resolve Payment Advice (Order/Issue/Invoice specific)
   let paymentAdvice: DocumentInfo | null = null
@@ -244,46 +254,46 @@ export async function saveTradeLicense(params: {
       (customerId && c.id === customerId) ||
       (customerName && (c.name?.toLowerCase() === customerName.toLowerCase() || c.id === customerName))
   )
-
   if (matchedCust) {
-    erpStore.updateCustomer(matchedCust.id, {
-      tradePaperFileName: fileName,
-      tradePaperUrl: fileUrl,
-      tradePaperUploadedAt: now,
-    })
+    try {
+      erpStore.updateCustomer(matchedCust.id, {
+        tradePaperFileName: fileName,
+        tradePaperUrl: fileUrl,
+        tradePaperUploadedAt: now,
+      })
+    } catch (err) {
+      console.warn("Failed updating customer registry trade license:", err)
+    }
   }
 
-  // 2. Persist to shipment_documents table for all linked record IDs
-  const recordsToSave: Array<{ id: string; type: ShipmentDocAttachment["record_type"] }> = []
+  // 2. Persist single canonical record to backend shipment_documents table
+  const primaryId = salesIssueId || salesOrderId || customerId
+  const primaryType: ShipmentDocAttachment["record_type"] = salesIssueId
+    ? "sales_issue"
+    : salesOrderId
+      ? "sales_order"
+      : "customer"
 
-  if (matchedCust?.id) {
-    recordsToSave.push({ id: matchedCust.id, type: "customer" })
-  }
-  if (salesOrderId) {
-    recordsToSave.push({ id: salesOrderId, type: "sales_order" })
-  }
-  if (salesIssueId) {
-    recordsToSave.push({ id: salesIssueId, type: "sales_issue" })
-  }
-
-  await Promise.all(
-    recordsToSave.map((rec) =>
-      uploadShipmentDoc({
-        record_id: rec.id,
-        record_type: rec.type,
+  if (primaryId) {
+    try {
+      await uploadShipmentDoc({
+        record_id: primaryId,
+        record_type: primaryType,
         document_type: docType,
         file_name: fileName,
         file_url: fileUrl,
         file_size: fileSize || 102400,
         uploaded_at: now,
         uploaded_by: user,
-      }).catch((err) => console.warn(`Failed saving ${docType} for ${rec.id}:`, err))
-    )
-  )
+      })
+    } catch (err) {
+      console.warn(`Failed saving ${docType} for ${primaryId}:`, err)
+    }
+  }
 }
 
 /**
- * Persists a Payment Advice across Sales Order, Sales Issue, and Finance Invoice records simultaneously.
+ * Persists a Payment Advice across Sales Order, Sales Issue, and Finance Invoice records.
  */
 export async function savePaymentAdvice(params: {
   salesOrderId?: string
@@ -301,33 +311,27 @@ export async function savePaymentAdvice(params: {
   const now = new Date().toISOString()
   const user = uploadedBy || "Finance / Sales Officer"
 
-  const recordsToSave: Array<{ id: string; type: ShipmentDocAttachment["record_type"] }> = []
+  const primaryId = salesIssueId || invoiceId || salesOrderId || fsNo
+  const primaryType: ShipmentDocAttachment["record_type"] = salesIssueId
+    ? "sales_issue"
+    : invoiceId
+      ? "invoice"
+      : "sales_order"
 
-  if (salesOrderId) {
-    recordsToSave.push({ id: salesOrderId, type: "sales_order" })
-  }
-  if (salesIssueId) {
-    recordsToSave.push({ id: salesIssueId, type: "sales_issue" })
-  }
-  if (fsNo && fsNo !== salesIssueId) {
-    recordsToSave.push({ id: fsNo, type: "sales_issue" })
-  }
-  if (invoiceId) {
-    recordsToSave.push({ id: invoiceId, type: "invoice" })
-  }
-
-  await Promise.all(
-    recordsToSave.map((rec) =>
-      uploadShipmentDoc({
-        record_id: rec.id,
-        record_type: rec.type,
+  if (primaryId) {
+    try {
+      await uploadShipmentDoc({
+        record_id: primaryId,
+        record_type: primaryType,
         document_type: "Payment Advice",
         file_name: fileName,
         file_url: fileUrl,
         file_size: fileSize || 102400,
         uploaded_at: now,
         uploaded_by: user,
-      }).catch((err) => console.warn(`Failed saving Payment Advice for ${rec.id}:`, err))
-    )
-  )
+      })
+    } catch (err) {
+      console.warn(`Failed saving Payment Advice for ${primaryId}:`, err)
+    }
+  }
 }
