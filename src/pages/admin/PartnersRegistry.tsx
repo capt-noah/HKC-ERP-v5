@@ -28,6 +28,7 @@ import { useErpStore, getTradeLicenseStatus, type Customer, type Supplier } from
 import { isWH1 } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
+import { uploadFile } from "@/lib/fileUpload"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
@@ -154,22 +155,24 @@ export default function PartnersRegistry() {
     setShowAddSupplierModal(true)
   }
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, fileType: "trade" | "supplier" = "trade") => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, fileType: "trade" | "supplier" = "trade") => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const url = (reader.result as string) || ""
+    try {
+      const folder = fileType === "supplier" ? "suppliers" : "customers"
+      const res = await uploadFile(file, folder)
       if (fileType === "supplier") {
-        setSuppTradePaperName(file.name)
-        setSuppTradePaperUrl(url)
+        setSuppTradePaperName(res.originalName)
+        setSuppTradePaperUrl(res.url)
       } else {
-        setCustTradePaperName(file.name)
-        setCustTradePaperUrl(url)
+        setCustTradePaperName(res.originalName)
+        setCustTradePaperUrl(res.url)
         setIsNewlyUploadedCustLicense(true)
       }
+    } catch (err: any) {
+      console.error("File upload failed:", err)
+      showToast("Upload Failed", "warning", err.message || "Failed to upload file")
     }
-    reader.readAsDataURL(file)
   }
 
   const handleSaveCustomer = async (e: React.FormEvent) => {

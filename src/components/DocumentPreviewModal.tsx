@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { X, Download, ExternalLink, FileText } from "lucide-react"
+import { resolveFileUrl } from "@/lib/fileUpload"
 
 interface DocumentPreviewModalProps {
   isOpen: boolean
@@ -25,7 +26,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
       return
     }
 
-    let urlToUse = fileUrl
+    let urlToUse = resolveFileUrl(fileUrl)
     let revokeUrl: string | null = null
 
     // Determine type

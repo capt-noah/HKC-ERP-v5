@@ -104,12 +104,27 @@ app.get("/api/db-test", async (req, res) => {
 // 5. API & Backend routes
 app.use("/", masterRouter)
 
-// 6. Serve static assets from pre-compiled dist/ directory (for Plesk / standalone hosting)
+// 6. Serve uploaded files statically with caching and security headers
+const uploadsPath = path.resolve(__dirname, "../uploads")
+if (!fs.existsSync(uploadsPath)) {
+  fs.mkdirSync(uploadsPath, { recursive: true })
+}
+app.use(
+  "/uploads",
+  express.static(uploadsPath, {
+    maxAge: "7d",
+    setHeaders: (res) => {
+      res.set("X-Content-Type-Options", "nosniff")
+    },
+  })
+)
+
+// 7. Serve static assets from pre-compiled dist/ directory (for Plesk / standalone hosting)
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath, { maxAge: "1d", index: false }))
 }
 
-// 7. SPA Client-Side Catch-All Fallback (eliminates page refresh trap on Plesk across all Express versions)
+// 8. SPA Client-Side Catch-All Fallback (eliminates page refresh trap on Plesk across all Express versions)
 app.use((req, res, next) => {
   if (req.method !== "GET") return next()
   const indexPath = path.join(distPath, "index.html")

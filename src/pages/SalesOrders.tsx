@@ -37,6 +37,7 @@ import {
   fetchDocumentsForRecord,
   fetchAllShipmentDocs,
 } from "@/lib/tradeDocumentService"
+import { uploadFile } from "@/lib/fileUpload"
 
 const isWH1 = (w?: string) => {
   if (!w) return false
@@ -1626,21 +1627,22 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                               <input
                                 type="file"
                                 className="hidden"
-                                onChange={(e) => {
+                                onChange={async (e) => {
                                   const f = e.target.files?.[0]
                                   if (f) {
-                                    const reader = new FileReader()
-                                    reader.onload = () => {
-                                      setStagedTradePaperName(f.name)
-                                      setStagedTradePaperUrl(reader.result as string)
+                                    try {
+                                      const res = await uploadFile(f, "sales_orders")
+                                      setStagedTradePaperName(res.originalName)
+                                      setStagedTradePaperUrl(res.url)
                                       setIsNewlyUploadedTradeLicense(true)
                                       setCreateFormErrors((prev) => {
                                         const next = { ...prev }
                                         delete next.tradePaper
                                         return next
                                       })
+                                    } catch (err: any) {
+                                      showToast("Upload Error", "warning", err.message || "Failed to upload file")
                                     }
-                                    reader.readAsDataURL(f)
                                   }
                                 }}
                               />
@@ -1689,20 +1691,21 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                 <input
                                   type="file"
                                   className="hidden"
-                                  onChange={(e) => {
+                                  onChange={async (e) => {
                                     const f = e.target.files?.[0]
                                     if (f) {
-                                      const reader = new FileReader()
-                                      reader.onload = () => {
-                                        setStagedPaymentAdviceName(f.name)
-                                        setStagedPaymentAdviceUrl(reader.result as string)
+                                      try {
+                                        const res = await uploadFile(f, "sales_orders")
+                                        setStagedPaymentAdviceName(res.originalName)
+                                        setStagedPaymentAdviceUrl(res.url)
                                         setCreateFormErrors((prev) => {
                                           const next = { ...prev }
                                           delete next.paymentAdvice
                                           return next
                                         })
+                                      } catch (err: any) {
+                                        showToast("Upload Error", "warning", err.message || "Failed to upload file")
                                       }
-                                      reader.readAsDataURL(f)
                                     }
                                   }}
                                 />
@@ -2151,21 +2154,22 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                       <input
                         type="file"
                         className="hidden"
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const f = e.target.files?.[0]
                           if (f) {
-                            const reader = new FileReader()
-                            reader.onload = () => {
-                              setStagedTradePaperName(f.name)
-                              setStagedTradePaperUrl(reader.result as string)
+                            try {
+                              const res = await uploadFile(f, "sales_orders")
+                              setStagedTradePaperName(res.originalName)
+                              setStagedTradePaperUrl(res.url)
                               setIsNewlyUploadedTradeLicense(true)
                               setEditFormErrors((prev) => {
                                 const next = { ...prev }
                                 delete next.tradePaper
                                 return next
                               })
+                            } catch (err: any) {
+                              showToast("Upload Error", "warning", err.message || "Failed to upload file")
                             }
-                            reader.readAsDataURL(f)
                           }
                         }}
                       />
@@ -2213,20 +2217,21 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         <input
                           type="file"
                           className="hidden"
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const f = e.target.files?.[0]
                             if (f) {
-                              const reader = new FileReader()
-                              reader.onload = () => {
-                                setStagedPaymentAdviceName(f.name)
-                                setStagedPaymentAdviceUrl(reader.result as string)
+                              try {
+                                const res = await uploadFile(f, "sales_orders")
+                                setStagedPaymentAdviceName(res.originalName)
+                                setStagedPaymentAdviceUrl(res.url)
                                 setEditFormErrors((prev) => {
                                   const next = { ...prev }
                                   delete next.paymentAdvice
                                   return next
                                 })
+                              } catch (err: any) {
+                                showToast("Upload Error", "warning", err.message || "Failed to upload file")
                               }
-                              reader.readAsDataURL(f)
                             }
                           }}
                         />
