@@ -8,7 +8,6 @@ import {
   Layers,
   ArrowUpRight,
   ArrowDownRight,
-  ShieldCheck,
   CheckCircle2,
   Plus,
 } from "lucide-react"
@@ -258,65 +257,65 @@ export default function Taxes() {
     <div className="min-h-screen page-gradient text-black">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div
-        variants={stagger}
-        initial="hidden"
-        animate="visible"
-        className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-16 space-y-6"
-      >
-        <SubPageNav items={getSectionChildren("Finance")} />
+      <main className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+        {/* Title Header with SubPageNav */}
+        <motion.div initial="hidden" animate="visible" variants={fade} className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h1 className="text-3xl font-black text-black tracking-tight">Tax Engine & Schedules</h1>
+            <p className="text-xs font-semibold text-zinc-500 mt-1">Multi-tax calculation rules, rate schedules, and Chart of Accounts double-entry mapping.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <SubPageNav items={getSectionChildren("Finance")} />
+          </div>
+        </motion.div>
 
         {/* TOP STATS CARDS */}
-        <motion.div variants={fade} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <GlassCard className="p-5 flex items-center justify-between border-l-4 border-l-blue-500 shadow-sm">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Active Tax Rules</p>
-              <h3 className="text-2xl font-black font-mono text-zinc-900 mt-1">{taxRules.length}</h3>
-              <p className="text-[11px] text-zinc-500 mt-0.5">Rates & Formulas</p>
-            </div>
-            <div className="size-11 rounded-2xl bg-blue-50 border border-blue-200/80 flex items-center justify-center text-blue-600">
-              <Receipt className="size-5" />
-            </div>
+        <motion.div initial="hidden" animate="visible" variants={stagger} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-blue-500 shadow-sm">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Active Tax Rules</span>
+            {isLoading ? (
+              <Skeleton className="h-7 w-24 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black font-mono text-zinc-900 mt-1">{taxRules.length}</p>
+            )}
+            <span className="text-[10px] text-gray-400 mt-0.5">Rates & Formulas</span>
           </GlassCard>
 
-          <GlassCard className="p-5 flex items-center justify-between border-l-4 border-l-emerald-600 shadow-sm">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Tax Schedules (Bundles)</p>
-              <h3 className="text-2xl font-black font-mono text-zinc-900 mt-1">{taxSchedules.length}</h3>
-              <p className="text-[11px] text-zinc-500 mt-0.5">Multi-tax Packages</p>
-            </div>
-            <div className="size-11 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-600">
-              <Layers className="size-5" />
-            </div>
+          <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-emerald-600 shadow-sm">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Tax Schedules (Bundles)</span>
+            {isLoading ? (
+              <Skeleton className="h-7 w-24 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black font-mono text-zinc-900 mt-1">{taxSchedules.length}</p>
+            )}
+            <span className="text-[10px] text-gray-400 mt-0.5">Multi-tax Packages</span>
           </GlassCard>
 
-          <GlassCard className="p-5 flex items-center justify-between border-l-4 border-l-emerald-500 shadow-sm">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Zero-Click Engine</p>
-              <h3 className="text-2xl font-black text-emerald-600 mt-1 flex items-center gap-1.5">
-                <CheckCircle2 className="size-5" /> Active
-              </h3>
-              <p className="text-[11px] text-zinc-500 mt-0.5">Party & Product Auto-Resolution</p>
-            </div>
-            <div className="size-11 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-600">
-              <ShieldCheck className="size-5" />
-            </div>
+          <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-emerald-500 shadow-sm">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Zero-Click Engine</span>
+            {isLoading ? (
+              <Skeleton className="h-7 w-24 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black text-emerald-600 mt-1 flex items-center gap-1.5">
+                <CheckCircle2 className="size-4" /> Active
+              </p>
+            )}
+            <span className="text-[10px] text-gray-400 mt-0.5">Party & Product Auto-Resolution</span>
           </GlassCard>
 
-          <GlassCard className="p-5 flex items-center justify-between border-l-4 border-l-amber-500 shadow-sm">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500">COA Double-Entry</p>
-              <h3 className="text-2xl font-black font-mono text-zinc-900 mt-1">100%</h3>
-              <p className="text-[11px] text-zinc-500 mt-0.5">GL Auto-Posting Enabled</p>
-            </div>
-            <div className="size-11 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-amber-600">
-              <ShieldCheck className="size-5" />
-            </div>
+          <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-amber-500 shadow-sm">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">COA Double-Entry</span>
+            {isLoading ? (
+              <Skeleton className="h-7 w-24 bg-zinc-200/80 my-1" />
+            ) : (
+              <p className="text-xl font-black font-mono text-zinc-900 mt-1">100%</p>
+            )}
+            <span className="text-[10px] text-gray-400 mt-0.5">GL Auto-Posting Enabled</span>
           </GlassCard>
         </motion.div>
 
         {/* TABS SELECTOR */}
-        <motion.div variants={fade} className="flex items-center gap-2 border-b border-zinc-200 pb-2">
+        <motion.div variants={fade} className="flex items-center gap-2 border-b border-zinc-200 pb-2 mb-6">
           <button
             onClick={() => setActiveTab("rules")}
             className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
@@ -603,7 +602,7 @@ export default function Taxes() {
             </GlassCard>
           </motion.div>
         )}
-      </motion.div>
+      </main>
 
       {/* MODAL: ADD TAX RULE */}
       <AnimatePresence>
