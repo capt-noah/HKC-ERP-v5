@@ -116,7 +116,17 @@ export default function SalesIssued() {
   const { showToast, confirm } = useFeedback()
   const products = erp.getProducts()
   const warehouses = withOperatingWarehouses(erp.getWarehouses())
-  const bankAccounts = financeStore.getAccounts().filter((a) => !a.is_group && (a.code.startsWith("1000") || a.account_type === "Asset"))
+  const bankAccounts = useMemo(() => {
+    const raw = financeStore.getAccounts().filter((a) => !a.is_group && (a.code.startsWith("1000") || a.account_type === "Asset"))
+    if (raw.length > 0) return raw
+    return [
+      { id: "1000-02-26", code: "1000-02-26", name: "Commercial Bank of Ethiopia (CBE)", account_type: "Asset" },
+      { id: "1000-02-27", code: "1000-02-27", name: "Awash Bank", account_type: "Asset" },
+      { id: "1000-02-28", code: "1000-02-28", name: "Dashen Bank", account_type: "Asset" },
+      { id: "1000-02-29", code: "1000-02-29", name: "Bank of Abyssinia", account_type: "Asset" },
+      { id: "1000-01-01", code: "1000-01-01", name: "Cash on Hand / Main Cash", account_type: "Asset" },
+    ]
+  }, [financeStore])
 
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
