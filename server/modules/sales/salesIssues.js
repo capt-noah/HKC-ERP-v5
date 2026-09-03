@@ -661,29 +661,37 @@ export async function postSalesIssue(arg1, arg2) {
 
   // 1. Deduct Stock from inventory_products
   try {
-    for (const item of (existing.items || [])) {
-      const prodId = item.item_id || item.productId
-      if (!prodId) continue
+    const allProdRes = await drizzleListRows({ resource: getResource("inventory_products") }).catch(() => ({ body: [] }))
+    const allProducts = Array.isArray(allProdRes.body) ? allProdRes.body.map(p => p?.payload ? { ...p.payload, ...p } : p) : []
 
-      const prodRes = await drizzleGetRow({ resource: getResource("inventory_products"), id: prodId })
-      if (prodRes.status === 200 && prodRes.body) {
-        const prod = prodRes.body
+    for (const item of (existing.items || [])) {
+      const prodId = item.item_id || item.productId || item.product_id
+      const itemName = (item.item_name || item.product_name || "").toLowerCase().trim()
+      
+      let matchedProd = allProducts.find(p => p.id === prodId || p.product_id === prodId)
+      if (!matchedProd && itemName) {
+        matchedProd = allProducts.find(p => (p.name || p.product_name || "").toLowerCase().trim() === itemName)
+      }
+
+      if (matchedProd) {
+        const prod = matchedProd
+        const realProdId = prod.id || prodId
         const issueQty = Number(item.quantity || item.qty || 0)
         const unitPrice = Number(item.unit_price || item.unitPrice || 0)
-        const unitCost = Number(prod.unitCost || 0)
+        const unitCost = Number(prod.unitCost || prod.unit_cost || 0)
 
         totalQty += issueQty
         totalAmount += issueQty * unitPrice
         totalCost += issueQty * unitCost
 
-        const isWH1 = prod.warehouse === "WH1" || prod.warehouse === "WH1-AGRI-EXP"
+        const isWH1 = (prod.warehouse || existing.warehouse_id || "").toUpperCase().startsWith("WH1")
         let newQty = Math.max(0, Number(prod.quantity || 0) - issueQty)
         let updatedWH1Entries = prod.wh1Entries || []
 
         if (isWH1 && Array.isArray(prod.wh1Entries) && prod.wh1Entries.length > 0) {
           let remaining = issueQty
           const sorted = [...prod.wh1Entries].sort((a, b) =>
-            new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime()
+            new Date(a.entryDate || a.created_at || 0).getTime() - new Date(b.entryDate || b.created_at || 0).getTime()
           )
           updatedWH1Entries = sorted.map((entry) => {
             if (remaining <= 0) return entry
@@ -697,7 +705,7 @@ export async function postSalesIssue(arg1, arg2) {
           newQty = updatedWH1Entries.reduce((sum, e) => sum + Number(e.quantityRemaining || 0), 0)
         }
 
-        const newSold = Number(prod.quantitySold || 0) + issueQty
+        const newSold = Number(prod.quantitySold || prod.quantity_sold || 0) + issueQty
         const targetWh = existing.warehouse_id || existing.warehouse || prod.warehouse
         const targetWhBase = (targetWh || "").split("-")[0]
 
@@ -706,46 +714,45 @@ export async function postSalesIssue(arg1, arg2) {
             ? { ...sb, qty: Math.max(0, Number(sb.qty || 0) - issueQty) }
             : sb
         )
-        const targetBatch = item.batch_no || item.batch_id || prod.batch
+        const targetBatch = item.batch_no || item.batch_id || item.batch_number || prod.batch
         const updatedBatches = (prod.batches || []).map((b) =>
-          b.batchNo === targetBatch || b.batch_no === targetBatch
+          b.batchNo === targetBatch || b.batch_no === targetBatch || b.batch === targetBatch
             ? { ...b, qty: Math.max(0, Number(b.qty || 0) - issueQty) }
             : b
         )
-        const packSize = Number(prod.quantityPerPack || 1)
+        const packSize = Number(prod.quantityPerPack || prod.quantity_per_pack || 1)
         const newCartons = packSize > 0 ? Math.max(0, Math.floor(newQty / packSize)) : Math.max(0, (prod.numberOfCartons || 0) - issueQty)
         const updatedStatus = newQty === 0 ? "Out of Stock" : newQty < 20 ? "Low Stock" : "In Stock"
 
         let finalUnitCost = unitCost
         let finalStockValue = newQty * unitCost
         if (isWH1 && updatedWH1Entries.length > 0) {
-          finalStockValue = updatedWH1Entries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || 0)), 0)
+          finalStockValue = updatedWH1Entries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || e.unit_price || 0)), 0)
           finalUnitCost = newQty > 0 ? Math.round((finalStockValue / newQty) * 100) / 100 : unitCost
         }
 
-        let updatedBinCardEntries = prod.binCardEntries || []
-        if (!isWH1) {
-          const autoIssueBinEntry = {
-            id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            date: existing.sale_date || new Date().toISOString().slice(0, 10),
-            batchNo: targetBatch || "BATCH-ISSUE",
-            qtyReceived: 0,
-            qtyIssued: issueQty,
-            balance: newQty,
-            expiryDate: item.expiryDate || item.expiry || "",
-            mfgDate: item.mfgDate || item.manufacturingDate || "",
-            party: existing.customer_name || "Customer Dispatch",
-            unitPrice: unitPrice > 0 ? unitPrice : unitCost,
-            remark: `Sales Issue FS-${existing.fs_no} (Ref: ${existing.reference_no || 'Direct Dispatch'})`,
-            createdAt: new Date().toISOString(),
-          }
-          updatedBinCardEntries = [...updatedBinCardEntries, autoIssueBinEntry]
+        let updatedBinCardEntries = Array.isArray(prod.binCardEntries) ? prod.binCardEntries : []
+        const autoIssueBinEntry = {
+          id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          date: existing.sale_date || new Date().toISOString().slice(0, 10),
+          batchNo: targetBatch || "BATCH-ISSUE",
+          qtyReceived: 0,
+          qtyIssued: issueQty,
+          balance: newQty,
+          expiryDate: item.expiryDate || item.expiry || "",
+          mfgDate: item.mfgDate || item.manufacturingDate || "",
+          party: existing.customer_name || existing.customer || "Customer Dispatch",
+          unitPrice: unitPrice > 0 ? unitPrice : unitCost,
+          remark: `Sales Issue FS-${existing.fs_no || id} (Ref: ${existing.reference_no || 'Direct Dispatch'})`,
+          createdAt: new Date().toISOString(),
         }
+        updatedBinCardEntries = [...updatedBinCardEntries, autoIssueBinEntry]
 
         const updatedProd = {
           ...prod,
           quantity: newQty,
           quantitySold: newSold,
+          quantity_sold: newSold,
           numberOfCartons: newCartons,
           stockBreakdown: updatedBreakdown,
           batches: updatedBatches,
@@ -760,7 +767,7 @@ export async function postSalesIssue(arg1, arg2) {
 
         await drizzleUpdateRow({
           resource: getResource("inventory_products"),
-          id: prodId,
+          id: realProdId,
           body: updatedProd,
         })
       }
@@ -769,12 +776,20 @@ export async function postSalesIssue(arg1, arg2) {
     console.warn("Stock deduction warning during post:", err.message)
   }
 
-  // 2. Update status in sales_issues
+  // 2. Update status in sales_issues while strictly preserving payment integrity
   const isWh1 = (existing.warehouse_id || "").toUpperCase().startsWith("WH1")
   const issueSubtotal = totalAmount || Number(existing.subtotal || existing.total_amount || 0)
   const issueVatRate = isWh1 ? 0 : Number(existing.vat_rate !== undefined ? existing.vat_rate : 15)
   const issueVatAmount = issueVatRate > 0 ? Number(existing.vat_amount || Math.round(issueSubtotal * (issueVatRate / 100))) : 0
   const grandTotal = issueSubtotal + issueVatAmount
+
+  const isCash = (existing.payment_type || "").toString().toLowerCase() === "cash"
+  const existingPaid = Number(existing.amount_paid || existing.amountPaid || (isCash ? grandTotal : 0))
+  const existingBal = isCash ? 0 : Number(existing.balance_due !== undefined ? existing.balance_due : Math.max(0, grandTotal - existingPaid))
+  const isFullySettled = isCash || (grandTotal > 0 && existingPaid >= grandTotal) || existing.settlement_status === "Fully Settled"
+
+  const paymentStatus = isFullySettled ? "Paid" : (existingPaid > 0 ? "Partially Paid" : "Unpaid")
+  const settlementStatus = isFullySettled ? "Fully Settled" : (existingPaid > 0 ? "Ongoing" : "Unpaid")
 
   await drizzleUpdateRow({
     resource: getResource("sales_issues"),
@@ -796,6 +811,13 @@ export async function postSalesIssue(arg1, arg2) {
       taxAmount: issueVatAmount,
       total_amount: grandTotal,
       totalAmount: grandTotal,
+      amount_paid: existingPaid,
+      amountPaid: existingPaid,
+      balance_due: existingBal,
+      balanceDue: existingBal,
+      payment_status: paymentStatus,
+      paymentStatus: paymentStatus,
+      settlement_status: settlementStatus,
     },
   })
 

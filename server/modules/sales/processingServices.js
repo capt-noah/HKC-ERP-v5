@@ -187,28 +187,38 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
     // Save invoice via Drizzle CRUD
     try {
       const clientName = existing.client_company_name || existing.clientCompanyName || "Client Company"
+      const refNum = existing.reference_number || existing.referenceNumber || id
       const invoicePayload = {
         id: invoiceId,
         invoice_number: invoiceId,
         customer_name: clientName,
+        customer: clientName,
         issue_date: new Date().toISOString().split("T")[0],
         due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
         line_items: [
           {
             description: `Toll processing & storage fee for ${existing.goods_description || existing.goodsDescription} (${existing.quantity} ${existing.uom})`,
+            quantity: Number(existing.quantity || 1),
             qty: Number(existing.quantity || 1),
             unit_price: Number(agreedPrice || 0) / Number(existing.quantity || 1),
+            line_total: Number(agreedPrice || 0),
             total: Number(agreedPrice || 0),
           }
         ],
         subtotal: Number(agreedPrice || 0),
         tax_amount: 0,
+        tax_rate: 0,
         discount_amount: 0,
+        total: Number(agreedPrice || 0),
         total_amount: Number(agreedPrice || 0),
         amount_paid: 0,
         balance_due: Number(agreedPrice || 0),
         status: "Unpaid",
+        settlement_status: "Unpaid",
+        payment_terms: "Credit (Net 30)",
         currency: "ETB",
+        sales_order_id: id,
+        fs_no: refNum,
       }
 
       const invResource = getResource("invoices")

@@ -451,13 +451,37 @@ class FinanceStore {
         currency: l.currency || "ETB",
         exchange_rate_at_time: Number(l.exchange_rate_at_time || 1.0),
       }))
-      this.invoices = sortNewestFirst(invoices.map((inv: any) => ({
-        ...inv,
-        subtotal: Number(inv.subtotal ?? inv.amount ?? 0),
-        total_amount: Number(inv.total_amount ?? inv.total ?? inv.amount ?? 0),
-        balance_due: Number(inv.balance_due ?? inv.total_amount ?? 0),
-        status: inv.status || "Draft",
-      })))
+      this.invoices = sortNewestFirst(invoices.map((inv: any) => {
+        const rawItems = Array.isArray(inv.line_items) ? inv.line_items : []
+        const line_items: InvoiceLineItem[] = rawItems.map((li: any) => {
+          const qty = Number(li.quantity || li.qty || 1)
+          const up = Number(li.unit_price ?? li.price ?? 0)
+          const tot = Number(li.line_total ?? li.total ?? (qty * up))
+          return {
+            description: li.description || li.name || "Item",
+            quantity: qty,
+            unit_price: up,
+            line_total: tot,
+          }
+        })
+        const totalVal = Number(inv.total ?? inv.total_amount ?? inv.amount ?? (line_items.length > 0 ? line_items.reduce((s, i) => s + i.line_total, 0) : 0))
+        const subtotalVal = Number(inv.subtotal ?? (line_items.length > 0 ? line_items.reduce((s, i) => s + i.line_total, 0) : totalVal))
+        const amountPaid = Number(inv.amount_paid || 0)
+        const balanceDue = Number(inv.balance_due !== undefined ? inv.balance_due : Math.max(0, totalVal - amountPaid))
+        const isPaid = (inv.status || "").toLowerCase() === "paid" || (totalVal > 0 && balanceDue <= 0)
+        return {
+          ...inv,
+          customer_name: inv.customer_name || inv.customer || "Customer",
+          line_items: line_items.length > 0 ? line_items : [{ description: `Invoice ${inv.invoice_number || inv.id}`, quantity: 1, unit_price: totalVal, line_total: totalVal }],
+          subtotal: subtotalVal,
+          total: totalVal,
+          total_amount: totalVal,
+          amount_paid: amountPaid,
+          balance_due: balanceDue,
+          status: isPaid ? "Paid" : (amountPaid > 0 ? "Partially Paid" : (inv.status || "Sent")),
+          settlement_status: isPaid ? "Fully Settled" : (amountPaid > 0 ? "Ongoing" : "Unpaid"),
+        }
+      }))
       this.payments = sortNewestFirst(payments)
       this.recurringSchedules = sortNewestFirst(recurringSchedules)
       this.expenses = sortNewestFirst(expenses.map((exp: any) => ({
@@ -515,12 +539,13 @@ class FinanceStore {
    */
   public async syncCrossModule(customSalesIssues?: any[], customPurchaseOrders?: any[]) {
     try {
-      const [fetchedSI, fetchedSO, fetchedPO, fetchedPR, fetchedCust] = await Promise.all([
+      const [fetchedSI, fetchedSO, fetchedPO, fetchedPR, fetchedCust, fetchedPS] = await Promise.all([
         loadResource<any>("sales_issues").catch(() => []),
         loadResource<any>("sales_orders").catch(() => []),
         loadResource<any>("purchase_orders").catch(() => []),
         loadResource<any>("payroll_records").catch(() => []),
         loadResource<any>("customers").catch(() => []),
+        loadResource<any>("processing_services").catch(() => []),
       ])
 
       const salesIssues = customSalesIssues || fetchedSI
@@ -897,6 +922,67 @@ class FinanceStore {
                   { id: `${jeId}-2`, journal_entry_id: jeId, account_id: cashAcc.id, debit_amount: 0, credit_amount: payAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Employee", party_id: pr.employee_id || null, party_name: pr.employee_name || null }
                 )
               }
+            }
+          });
+
+          // E. Sync Processing Services → Invoices & Service Revenue
+          (fetchedPS || []).forEach((ps: any) => {
+            const agreedPrice = Number(ps.locked_total_fee || ps.agreed_price || 0)
+            if (agreedPrice <= 0) return
+            const isDelivered = (ps.status || "").toString().toLowerCase() === "delivered"
+            const invId = `INV-PS-${ps.id}`
+            const clientName = ps.client_company_name || ps.clientName || custMap.get(ps.customer_id) || "Client Company"
+            const refNum = ps.reference_number || ps.id
+
+            const existingInvIdx = this.invoices.findIndex((inv) => inv.id === invId || inv.invoice_number === invId || inv.sales_order_id === ps.id)
+            const paymentsForThisPS = this.payments.filter((p) => p.linked_invoice_id === invId || (p.reference && p.reference.includes(refNum)))
+            const totalPaidFromPayments = paymentsForThisPS.reduce((s, p) => s + Number(p.amount || 0), 0)
+            const actualAmountPaid = totalPaidFromPayments
+            const actualBalanceDue = Math.max(0, agreedPrice - actualAmountPaid)
+            const isFullyPaid = agreedPrice > 0 && actualBalanceDue <= 0 && actualAmountPaid > 0
+            const actualStatus: Invoice["status"] = isFullyPaid ? "Paid" : (actualAmountPaid > 0 ? "Partially Paid" : (isDelivered ? "Sent" : "Draft"))
+            const actualSettlement: Invoice["settlement_status"] = isFullyPaid ? "Fully Settled" : (actualAmountPaid > 0 ? "Ongoing" : "Unpaid")
+
+            const mappedPSInvoice: Invoice = {
+              id: invId,
+              invoice_number: invId,
+              customer_name: clientName,
+              issue_date: ps.delivered_at ? ps.delivered_at.split("T")[0] : (ps.entry_date || new Date().toISOString().split("T")[0]),
+              due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+              currency: ps.currency || "ETB",
+              line_items: [
+                {
+                  description: `Toll processing & storage fee for ${ps.goods_description || "Agricultural Commodity"} (${ps.quantity || 1} ${ps.uom || "Quintal"})`,
+                  quantity: Number(ps.quantity || 1),
+                  unit_price: Number(agreedPrice) / Number(ps.quantity || 1),
+                  line_total: Number(agreedPrice),
+                }
+              ],
+              subtotal: Number(agreedPrice),
+              tax_amount: 0,
+              tax_rate: 0,
+              discount_amount: 0,
+              total: Number(agreedPrice),
+              amount_paid: actualAmountPaid,
+              balance_due: actualBalanceDue,
+              status: actualStatus,
+              settlement_status: actualSettlement,
+              payment_terms: "Credit (Net 30)",
+              sales_order_id: ps.id,
+              fs_no: refNum,
+            }
+
+            if (existingInvIdx >= 0) {
+              this.invoices[existingInvIdx] = {
+                ...this.invoices[existingInvIdx],
+                ...mappedPSInvoice,
+                amount_paid: actualAmountPaid,
+                balance_due: actualBalanceDue,
+                status: actualStatus,
+                settlement_status: actualSettlement,
+              }
+            } else {
+              this.invoices.push(mappedPSInvoice)
             }
           })
 
