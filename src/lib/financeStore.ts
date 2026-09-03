@@ -418,16 +418,16 @@ class FinanceStore {
         companySettingsRows,
         taxRules,
       ] = await Promise.all([
-        loadResource<AccountItem>("chart_of_accounts"),
-        loadResource<JournalEntry>("journal_entries"),
-        loadResource<JournalEntryLine>("journal_entry_lines"),
-        loadResource<Invoice>("invoices"),
-        loadResource<Payment>("payments"),
-        loadResource<RecurringExpenseSchedule>("recurring_expense_schedules"),
-        loadResource<OneOffExpense>("expenses"),
-        loadResource<Vehicle>("vehicles"),
-        loadResource<CompanySettings & { id?: string }>("company_settings"),
-        loadResource<TaxRule>("tax_rules"),
+        loadResource<AccountItem>("chart_of_accounts").catch(() => []),
+        loadResource<JournalEntry>("journal_entries").catch(() => []),
+        loadResource<JournalEntryLine>("journal_entry_lines").catch(() => []),
+        loadResource<Invoice>("invoices").catch(() => []),
+        loadResource<Payment>("payments").catch(() => []),
+        loadResource<RecurringExpenseSchedule>("recurring_expense_schedules").catch(() => []),
+        loadResource<OneOffExpense>("expenses").catch(() => []),
+        loadResource<Vehicle>("vehicles").catch(() => []),
+        loadResource<CompanySettings & { id?: string }>("company_settings").catch(() => []),
+        loadResource<TaxRule>("tax_rules").catch(() => []),
       ])
 
       if (!Array.isArray(accounts) || accounts.length === 0 || accounts.some((a) => a.id?.startsWith("ACC-1000") || a.code === "1010")) {

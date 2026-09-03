@@ -52,7 +52,7 @@ crudRouter.use("/:resource", (req, res, next) => {
     const resName = req.params.resource
 
     // Company settings, Chart of Accounts, and tax rules readable by all logged-in staff
-    if (resName === "company_settings" || resName === "tax_rules" || resName === "accounts") {
+    if (resName === "company_settings" || resName === "tax_rules" || resName === "accounts" || resName === "chart_of_accounts") {
       isAllowed = true
     }
 
