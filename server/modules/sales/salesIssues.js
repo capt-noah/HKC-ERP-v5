@@ -58,7 +58,10 @@ export async function listSalesIssues(query = {}) {
       const issueItems = itemsByIssueId.get(issue.id) || issue.items || []
       const fs_no = issue.fs_no || issue.fsNo || issue.issue_number || issue.issueNumber || issue.id
       const reference_no = issue.reference_no || issue.referenceNo || issue.sales_order_id || issue.salesOrderId || ""
-      const sale_date = issue.sale_date || issue.issueDate || issue.issue_date || (issue.created_at ? issue.created_at.split("T")[0] : new Date().toISOString().split("T")[0])
+      let rawDate = issue.sale_date || issue.issueDate || issue.issue_date || issue.created_at || new Date()
+      let sale_date = typeof rawDate === "string" 
+        ? (rawDate.includes("T") ? rawDate.split("T")[0] : rawDate)
+        : (rawDate instanceof Date ? rawDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
       const customer_name = issue.customer_name || issue.customer || issue.customerName || "Customer"
       const customer_id = issue.customer_id || issue.customerId || customer_name
       const warehouse_id = issue.warehouse_id || issue.warehouseId || issue.warehouse || "WH1"
@@ -166,7 +169,10 @@ export async function getSalesIssue(id) {
 
     const fs_no = issue.fs_no || issue.fsNo || issue.issue_number || issue.issueNumber || issue.id
     const reference_no = issue.reference_no || issue.referenceNo || issue.sales_order_id || issue.salesOrderId || ""
-    const sale_date = issue.sale_date || issue.issueDate || issue.issue_date || (issue.created_at ? issue.created_at.split("T")[0] : new Date().toISOString().split("T")[0])
+    let rawDate = issue.sale_date || issue.issueDate || issue.issue_date || issue.created_at || new Date()
+    let sale_date = typeof rawDate === "string" 
+      ? (rawDate.includes("T") ? rawDate.split("T")[0] : rawDate)
+      : (rawDate instanceof Date ? rawDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
     const customer_name = issue.customer_name || issue.customer || issue.customerName || "Customer"
     const customer_id = issue.customer_id || issue.customerId || customer_name
     const warehouse_id = issue.warehouse_id || issue.warehouseId || issue.warehouse || "WH1"

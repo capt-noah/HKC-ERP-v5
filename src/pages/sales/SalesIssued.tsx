@@ -58,6 +58,24 @@ function money(value: number) {
   return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function formatDate(d?: string | Date | null) {
+  if (!d) return "—"
+  try {
+    const str = typeof d === "string" ? (d.includes("T") ? d.split("T")[0] : d) : new Date(d).toISOString().split("T")[0]
+    const [y, m, day] = str.split("-")
+    if (y && m && day) {
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+      const mIdx = parseInt(m, 10) - 1
+      if (mIdx >= 0 && mIdx < 12) {
+        return `${monthNames[mIdx]} ${parseInt(day, 10)}, ${y}`
+      }
+    }
+    return str
+  } catch {
+    return String(d)
+  }
+}
+
 const isWH1 = (w?: string) => {
   if (!w) return false
   const upper = w.toUpperCase()
@@ -911,7 +929,7 @@ export default function SalesIssued() {
                     <tr key={row.id} className="border-b border-zinc-150/40 hover:bg-zinc-50/60 transition-colors text-xs">
                       <td style={{ width: `${salesTable.colWidths.fs_no}px` }} className="px-3 py-3 font-mono text-xs font-black text-zinc-950 truncate">{row.fs_no}</td>
                       <td style={{ width: `${salesTable.colWidths.reference_no}px` }} className="px-3 py-3 font-mono text-xs font-bold text-zinc-700 truncate">{row.reference_no}</td>
-                      <td style={{ width: `${salesTable.colWidths.sale_date}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">{row.sale_date}</td>
+                      <td style={{ width: `${salesTable.colWidths.sale_date}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">{formatDate(row.sale_date)}</td>
                       <td style={{ width: `${salesTable.colWidths.item}px` }} className="px-3 py-3 text-xs font-black text-zinc-900 truncate">{row.items?.[0]?.item_name || "Multiple items"}</td>
                       <td style={{ width: `${salesTable.colWidths.customer_name}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">{row.customer_name}</td>
                       
