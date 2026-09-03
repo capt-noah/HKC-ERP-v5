@@ -101,6 +101,25 @@ app.get("/api/db-test", async (req, res) => {
   }
 })
 
+app.get("/api/db-test/sales-issues", async (req, res) => {
+  try {
+    const [issues] = await pool.query("SELECT * FROM `sales_issues` ORDER BY created_at DESC LIMIT 20").catch(async () => {
+      const [rows] = await pool.query("SELECT * FROM `sales_issues` LIMIT 20")
+      return [rows]
+    })
+    const [items] = await pool.query("SELECT * FROM `sales_issue_items` LIMIT 50")
+    res.json({
+      status: "success",
+      totalIssues: issues.length,
+      totalItems: items.length,
+      issues,
+      items,
+    })
+  } catch (err) {
+    res.status(500).json({ status: "error", message: err.message })
+  }
+})
+
 // 5. API & Backend routes
 app.use("/", masterRouter)
 
