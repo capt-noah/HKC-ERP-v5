@@ -160,13 +160,37 @@ export async function listSalesIssues(query = {}) {
 
 export async function getSalesIssue(id) {
   try {
-    const issueRes = await drizzleGetRow({
+    let issueRes = await drizzleGetRow({
       resource: getResource("sales_issues"),
       id,
     })
 
     if (issueRes.status >= 400 || !issueRes.body) {
-      return { status: 404, body: { error: `Sales issue '${id}' not found.` } }
+      // Robust Fallback: Search all rows by id, fs_no, issue_number, reference_no, or sales_order_id
+      const listRes = await drizzleListRows({
+        resource: getResource("sales_issues"),
+      })
+      const all = Array.isArray(listRes.body) ? listRes.body : []
+      const found = all.find((r) => {
+        const item = r?.payload ? { ...r.payload, ...r } : r
+        return (
+          item.id === id ||
+          item.fs_no === id ||
+          item.fsNo === id ||
+          item.issue_number === id ||
+          item.issueNumber === id ||
+          item.reference_no === id ||
+          item.referenceNo === id ||
+          item.sales_order_id === id ||
+          item.salesOrderId === id
+        )
+      })
+
+      if (found) {
+        issueRes = { status: 200, body: found }
+      } else {
+        return { status: 404, body: { error: `Sales issue '${id}' not found.` } }
+      }
     }
 
     const rawIssue = issueRes.body
@@ -335,19 +359,49 @@ export async function createSalesIssue(input, existingId = null) {
     return { status: 400, body: { error: "Validation failed", details: errors } }
   }
 
-  // 1. Save Header with exact MySQL relational schema columns
+  // 1. Save Header with exact MySQL relational schema columns (including all possible naming variants)
   const headerRow = {
     id,
-    sales_order_id: reference_no || null,
+    fs_no: fs_no,
+    fsNo: fs_no,
     issue_number: fs_no,
+    issueNumber: fs_no,
+    reference_no: reference_no || null,
+    referenceNo: reference_no || null,
+    sales_order_id: reference_no || null,
+    salesOrderId: reference_no || null,
     customer_id: customer_id || null,
+    customerId: customer_id || null,
+    customer_name: customer_name || null,
+    customer: customer_name || null,
+    warehouse_id: warehouse_id || null,
+    warehouseId: warehouse_id || null,
+    warehouse: warehouse_id || null,
+    sale_date: sale_date,
     issue_date: sale_date,
+    issueDate: sale_date,
     status: doc.status || "Draft",
-    total_amount: finalTotalAmount,
+    total_quantity: total_quantity,
+    totalQuantity: total_quantity,
+    subtotal: subtotal,
     subtotal_amount: subtotal,
+    subtotalAmount: subtotal,
+    vat_rate: vat_rate,
+    vatRate: vat_rate,
+    vat_amount: vat_amount,
+    vatAmount: vat_amount,
     tax_amount: vat_amount,
+    taxAmount: vat_amount,
+    total_amount: finalTotalAmount,
+    totalAmount: finalTotalAmount,
+    payment_type: payment_type,
+    paymentType: payment_type,
     payment_status: payment_type === "Cash" ? "Paid" : "Unpaid",
+    paymentStatus: payment_type === "Cash" ? "Paid" : "Unpaid",
     payment_method: payment_type,
+    paymentMethod: payment_type,
+    created_by: doc.created_by || "Sales Officer",
+    createdBy: doc.created_by || "Sales Officer",
   }
 
   await drizzleCreateRow({
@@ -360,13 +414,27 @@ export async function createSalesIssue(input, existingId = null) {
     const itemRows = items.map((item, idx) => ({
       id: String(item.id || `${id}-ITEM-${idx + 1}`),
       sales_issue_id: id,
-      product_id: String(item.item_id || item.productId || `ITEM-${idx + 1}`),
-      product_name: String(item.item_name || item.name || "Item"),
-      batch_number: String(item.batch_no || item.batch_id || "BATCH-MAIN"),
+      salesIssueId: id,
+      product_id: String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`),
+      productId: String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`),
+      product_name: String(item.item_name || item.product_name || item.name || "Item"),
+      productName: String(item.item_name || item.product_name || item.name || "Item"),
+      item_name: String(item.item_name || item.product_name || item.name || "Item"),
+      itemName: String(item.item_name || item.product_name || item.name || "Item"),
+      batch_number: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
+      batchNumber: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
+      batch_no: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
+      batchNo: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
       quantity: Number(item.quantity || item.qty || 0),
+      qty: Number(item.quantity || item.qty || 0),
       unit_price: Number(item.unit_price || item.price || 0),
-      total_price: Number(item.amount || (item.quantity * item.unit_price) || 0),
+      unitPrice: Number(item.unit_price || item.price || 0),
+      total_price: Number(item.amount || item.total_price || (item.quantity * item.unit_price) || 0),
+      totalPrice: Number(item.amount || item.total_price || (item.quantity * item.unit_price) || 0),
+      amount: Number(item.amount || item.total_price || (item.quantity * item.unit_price) || 0),
       unit: String(item.packaging_unit || item.unit || "Box"),
+      packaging_unit: String(item.packaging_unit || item.unit || "Box"),
+      packagingUnit: String(item.packaging_unit || item.unit || "Box"),
     }))
 
     for (const itemRow of itemRows) {
@@ -399,16 +467,44 @@ export async function updateSalesIssue(input, id) {
   const finalTotalAmount = input?.total_amount !== undefined ? Number(input.total_amount) : (subtotal + vat_amount)
 
   const updateHeader = {
-    sales_order_id: (input?.reference_no || existing.reference_no) || null,
+    fs_no: input?.fs_no || existing.fs_no || id,
+    fsNo: input?.fs_no || existing.fs_no || id,
     issue_number: input?.fs_no || existing.fs_no || id,
+    issueNumber: input?.fs_no || existing.fs_no || id,
+    reference_no: (input?.reference_no || existing.reference_no) || null,
+    referenceNo: (input?.reference_no || existing.reference_no) || null,
+    sales_order_id: (input?.reference_no || existing.reference_no) || null,
+    salesOrderId: (input?.reference_no || existing.reference_no) || null,
     customer_id: (input?.customer_id || existing.customer_id) || null,
+    customerId: (input?.customer_id || existing.customer_id) || null,
+    customer_name: (input?.customer_name || existing.customer_name) || null,
+    customer: (input?.customer_name || existing.customer_name) || null,
+    warehouse_id: warehouse_id || null,
+    warehouseId: warehouse_id || null,
+    warehouse: warehouse_id || null,
+    sale_date: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
     issue_date: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
+    issueDate: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
     status: input?.status || existing.status || "Draft",
-    total_amount: finalTotalAmount,
+    total_quantity: total_quantity,
+    totalQuantity: total_quantity,
+    subtotal: subtotal,
     subtotal_amount: subtotal,
+    subtotalAmount: subtotal,
+    vat_rate: vat_rate,
+    vatRate: vat_rate,
+    vat_amount: vat_amount,
+    vatAmount: vat_amount,
     tax_amount: vat_amount,
+    taxAmount: vat_amount,
+    total_amount: finalTotalAmount,
+    totalAmount: finalTotalAmount,
+    payment_type: input?.payment_type || existing.payment_type || "Cash",
+    paymentType: input?.payment_type || existing.payment_type || "Cash",
     payment_status: (input?.payment_type || existing.payment_type) === "Cash" ? "Paid" : (existing.payment_status || "Unpaid"),
+    paymentStatus: (input?.payment_type || existing.payment_type) === "Cash" ? "Paid" : (existing.payment_status || "Unpaid"),
     payment_method: input?.payment_type || existing.payment_type || "Cash",
+    paymentMethod: input?.payment_type || existing.payment_type || "Cash",
   }
 
   await drizzleUpdateRow({
@@ -429,13 +525,27 @@ export async function updateSalesIssue(input, id) {
       const itemRow = {
         id: String(item.id || `${id}-ITEM-${idx + 1}`),
         sales_issue_id: id,
-        product_id: String(item.item_id || item.productId || `ITEM-${idx + 1}`),
-        product_name: String(item.item_name || item.name || "Item"),
-        batch_number: String(item.batch_no || item.batch_id || "BATCH-MAIN"),
+        salesIssueId: id,
+        product_id: String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`),
+        productId: String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`),
+        product_name: String(item.item_name || item.product_name || item.name || "Item"),
+        productName: String(item.item_name || item.product_name || item.name || "Item"),
+        item_name: String(item.item_name || item.product_name || item.name || "Item"),
+        itemName: String(item.item_name || item.product_name || item.name || "Item"),
+        batch_number: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
+        batchNumber: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
+        batch_no: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
+        batchNo: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
         quantity: Number(item.quantity || item.qty || 0),
+        qty: Number(item.quantity || item.qty || 0),
         unit_price: Number(item.unit_price || item.price || 0),
-        total_price: Number(item.amount || (item.quantity * item.unit_price) || 0),
+        unitPrice: Number(item.unit_price || item.price || 0),
+        total_price: Number(item.amount || item.total_price || (item.quantity * item.unit_price) || 0),
+        totalPrice: Number(item.amount || item.total_price || (item.quantity * item.unit_price) || 0),
+        amount: Number(item.amount || item.total_price || (item.quantity * item.unit_price) || 0),
         unit: String(item.packaging_unit || item.unit || "Box"),
+        packaging_unit: String(item.packaging_unit || item.unit || "Box"),
+        packagingUnit: String(item.packaging_unit || item.unit || "Box"),
       }
       await drizzleCreateRow({
         resource: getResource("sales_issue_items"),
@@ -611,16 +721,36 @@ export async function postSalesIssue(arg1, arg2) {
       posted_at: new Date().toISOString(),
       posted_by: "Sales Officer",
       total_quantity: totalQty || existing.total_quantity,
+      totalQuantity: totalQty || existing.total_quantity,
       subtotal: issueSubtotal,
+      subtotal_amount: issueSubtotal,
+      subtotalAmount: issueSubtotal,
       vat_rate: issueVatRate,
+      vatRate: issueVatRate,
       vat_amount: issueVatAmount,
+      vatAmount: issueVatAmount,
+      tax_amount: issueVatAmount,
+      taxAmount: issueVatAmount,
       total_amount: grandTotal,
+      totalAmount: grandTotal,
     },
   })
 
   // 3. Post Double-Entry Journal Entries
   try {
+    const coaRes = await drizzleListRows({ resource: getResource("chart_of_accounts") }).catch(() => ({ body: [] }))
+    const allAccounts = Array.isArray(coaRes.body) ? coaRes.body.map(a => a?.payload ? { ...a.payload, ...a } : a) : []
+    const findAcc = (code) => allAccounts.find(a => (a.code || a.account_code) === code)?.id || null
+
     const isCredit = existing.payment_type === "Credit"
+    const debitAccId = isCredit
+      ? (findAcc("1300-03") || findAcc("1200-03") || findAcc("1100-03") || "ACC-1200")
+      : (findAcc("1000-02-26") || findAcc("1000-01-01") || findAcc("1000") || "ACC-1000")
+    const revenueAccId = findAcc("4000-01-01") || findAcc("4000-03-02") || findAcc("4000") || "ACC-4000"
+    const vatAccId = findAcc("2000-05") || "ACC-2200"
+    const cogsAccId = findAcc("6000-04") || findAcc("6000") || "ACC-5000"
+    const inventoryAccId = findAcc("1410-01") || findAcc("1410-03") || findAcc("1410") || "ACC-1010"
+
     const saleJeId = `JE-SALE-${id}`
     const cogsJeId = `JE-COGS-${id}`
 
@@ -641,13 +771,13 @@ export async function postSalesIssue(arg1, arg2) {
     })
 
     // B. Sales Journal Entry Lines
-    // 1. Debit Cash (ACC-1000) or Accounts Receivable (ACC-1200) for Grand Total
+    // 1. Debit Cash (1000) or Accounts Receivable (1300) for Grand Total
     await drizzleCreateRow({
       resource: getResource("journal_entry_lines"),
       body: {
         id: `${saleJeId}-DR`,
         journal_entry_id: saleJeId,
-        account_id: isCredit ? "ACC-1200" : "ACC-1000",
+        account_id: debitAccId,
         debit_amount: grandTotal,
         credit_amount: 0,
         currency: "ETB",
@@ -659,13 +789,13 @@ export async function postSalesIssue(arg1, arg2) {
       },
     })
 
-    // 2. Credit Sales Revenue (ACC-4000) for Net Subtotal
+    // 2. Credit Sales Revenue (4000) for Net Subtotal
     await drizzleCreateRow({
       resource: getResource("journal_entry_lines"),
       body: {
         id: `${saleJeId}-CR`,
         journal_entry_id: saleJeId,
-        account_id: "ACC-4000",
+        account_id: revenueAccId,
         debit_amount: 0,
         credit_amount: issueSubtotal,
         currency: "ETB",
@@ -677,14 +807,14 @@ export async function postSalesIssue(arg1, arg2) {
       },
     })
 
-    // 3. Credit Output VAT Payable (ACC-2200) if VAT is charged
+    // 3. Credit Output VAT Payable (2000-05) if VAT is charged
     if (issueVatAmount > 0) {
       await drizzleCreateRow({
         resource: getResource("journal_entry_lines"),
         body: {
           id: `${saleJeId}-VAT`,
           journal_entry_id: saleJeId,
-          account_id: "ACC-2200",
+          account_id: vatAccId,
           debit_amount: 0,
           credit_amount: issueVatAmount,
           currency: "ETB",
@@ -719,7 +849,7 @@ export async function postSalesIssue(arg1, arg2) {
         body: {
           id: `${cogsJeId}-DR`,
           journal_entry_id: cogsJeId,
-          account_id: "ACC-5000",
+          account_id: cogsAccId,
           debit_amount: totalCost,
           credit_amount: 0,
           currency: "ETB",
@@ -733,7 +863,7 @@ export async function postSalesIssue(arg1, arg2) {
         body: {
           id: `${cogsJeId}-CR`,
           journal_entry_id: cogsJeId,
-          account_id: "ACC-1010",
+          account_id: inventoryAccId,
           debit_amount: 0,
           credit_amount: totalCost,
           currency: "ETB",
@@ -741,6 +871,28 @@ export async function postSalesIssue(arg1, arg2) {
           warehouse_id: existing.warehouse_id || null,
         },
       })
+    }
+
+    // 4. Update Sales Order if referenced
+    if (existing.sales_order_id || existing.reference_no) {
+      const soId = existing.sales_order_id || existing.reference_no
+      try {
+        const soRes = await drizzleGetRow({ resource: getResource("sales_orders"), id: soId })
+        if (soRes.status === 200 && soRes.body) {
+          const soData = soRes.body
+          const updatedSo = {
+            ...soData,
+            stage: "Shipped",
+            deliveryStatus: "Fully Delivered",
+            deliveredAmount: grandTotal,
+            billingStatus: existing.payment_type === "Cash" ? "Fully Billed" : (soData.billingStatus || "Fully Billed"),
+            updatedAt: new Date().toISOString(),
+          }
+          await drizzleUpdateRow({ resource: getResource("sales_orders"), id: soId, body: updatedSo })
+        }
+      } catch (soErr) {
+        console.warn("SO sync warning:", soErr.message)
+      }
     }
   } catch (err) {
     console.warn("GL Journal posting warning:", err.message)
