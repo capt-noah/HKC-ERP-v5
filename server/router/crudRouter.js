@@ -42,17 +42,29 @@ crudRouter.use("/:resource", (req, res, next) => {
     if ((req.method === "PATCH" || req.method === "PUT") && req.params.id === user.id) isAllowed = true
   }
 
+  // Allow sales manager and finance manager to record customer payments
+  if (req.params.resource === "payments" && userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager"].includes(r))) {
+    isAllowed = true
+  }
+
   // Cross-module READ permissions for ERP operational flow
   if (req.method === "GET") {
     const resName = req.params.resource
 
-    // Company settings and tax rules readable by all logged-in staff
-    if (resName === "company_settings" || resName === "tax_rules") {
+    // Company settings, Chart of Accounts, and tax rules readable by all logged-in staff
+    if (resName === "company_settings" || resName === "tax_rules" || resName === "accounts") {
       isAllowed = true
     }
 
-    // Warehouses and inventory products readable by sales, finance, and inventory admins
-    if (resName === "warehouses" || resName === "inventory_products") {
+    // Invoices and payments readable by sales, finance, docs, and inventory managers
+    if (resName === "invoices" || resName === "payments") {
+      if (userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager", "inventory_admin"].includes(r))) {
+        isAllowed = true
+      }
+    }
+
+    // Warehouses, inventory products, and stock movements readable by sales, finance, and inventory admins
+    if (resName === "warehouses" || resName === "inventory_products" || resName === "stock_movements") {
       if (userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager", "inventory_admin"].includes(r))) {
         isAllowed = true
       }
@@ -67,7 +79,7 @@ crudRouter.use("/:resource", (req, res, next) => {
 
     // Sales orders, sales issues, and processing services readable by finance manager for invoicing & AR
     if (resName === "sales_orders" || resName === "sales_issues" || resName === "processing_services") {
-      if (userRoles.includes("finance_manager")) {
+      if (userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager", "inventory_admin"].includes(r))) {
         isAllowed = true
       }
     }
