@@ -781,75 +781,77 @@ class ErpStore {
   // Inter-Warehouse Transfer Execution
   public addStockTransfer(transfer: Transfer): { success: boolean; journalEntryId?: string } {
     let transferVal = 0
-
-    // Deduct stock from origin warehouse and add to destination breakdown
-    transfer.line_items.forEach((item) => {
-      const prod = this.products.find(
-        (p) => p.name.toLowerCase().includes(item.item.toLowerCase()) || item.item.toLowerCase().includes(p.name.toLowerCase())
-      )
-      const valuation = prod ? prod.unitCost : 1000
-      transferVal += item.quantity * valuation
-
-      if (prod) {
-        const updatedBreakdown = prod.stockBreakdown.map((sb) => {
-          if (sb.warehouse === transfer.from_warehouse) {
-            return { ...sb, qty: Math.max(0, sb.qty - item.quantity) }
-          }
-          if (sb.warehouse === transfer.to_warehouse) {
-            return { ...sb, qty: sb.qty + item.quantity }
-          }
-          return sb
-        })
-
-        // Ensure destination warehouse exists in breakdown
-        if (!updatedBreakdown.some((sb) => sb.warehouse === transfer.to_warehouse)) {
-          updatedBreakdown.push({ warehouse: transfer.to_warehouse, qty: item.quantity })
-        }
-
-        this.updateProduct(prod.id, {
-          stockBreakdown: updatedBreakdown,
-        })
-      }
-
-      // Record Stock Movement Log
-      this.stockMovements.unshift({
-        id: `SM-${Date.now().toString().slice(-4)}`,
-        date: transfer.date || new Date().toISOString().split("T")[0],
-        type: "TRANSFER",
-        productId: prod?.id,
-        productName: item.item,
-        fromWarehouse: transfer.from_warehouse,
-        toWarehouse: transfer.to_warehouse,
-        qty: item.quantity,
-        unit: item.UOM,
-        reference: transfer.reference_number,
-        remarks: item.remark || `Transfer from ${transfer.from_warehouse} to ${transfer.to_warehouse}`,
-      })
-    })
-
-    // Post Double-Entry Journal Voucher in Finance Store for inter-warehouse inventory asset transfer
-    const stockAcc = financeStore.getAccounts().find((a) => a.code === "1410-01" || a.code === "1410-03" || a.code === "1410" || a.account_type === "Asset") || financeStore.getAccounts()[0]
     let jeId: string | undefined = undefined
 
-    if (stockAcc && transferVal > 0) {
-      const postRes = financeStore.postJournalEntry(
-        {
-          entry_date: transfer.date || new Date().toISOString().split("T")[0],
-          description: `Inter-Warehouse Inventory Asset Transfer ${transfer.reference_number} (${transfer.from_warehouse} → ${transfer.to_warehouse})`,
-          source_type: "Warehouse Transfer",
-          source_id: transfer.reference_number,
-          created_by: transfer.issued_by || "Warehouse Store Manager",
-          currency: "ETB",
-          exchange_rate: 1.0,
-        },
-        [
-          { account_id: stockAcc.id, debit_amount: transferVal, credit_amount: 0, warehouse_id: transfer.to_warehouse },
-          { account_id: stockAcc.id, debit_amount: 0, credit_amount: transferVal, warehouse_id: transfer.from_warehouse },
-        ]
-      )
-      if (postRes.success && postRes.entry) {
-        jeId = postRes.entry.id
-        transfer.journalEntryId = jeId
+    // Only move inventory and post GL entry if transfer is Issued or Received (not Draft)
+    if (transfer.status !== "Draft") {
+      transfer.line_items.forEach((item) => {
+        const prod = this.products.find(
+          (p) => p.name.toLowerCase().includes(item.item.toLowerCase()) || item.item.toLowerCase().includes(p.name.toLowerCase()) || p.id === item.item
+        )
+        const valuation = prod ? prod.unitCost : 1000
+        transferVal += item.quantity * valuation
+
+        if (prod) {
+          const updatedBreakdown = prod.stockBreakdown.map((sb) => {
+            if (sb.warehouse === transfer.from_warehouse) {
+              return { ...sb, qty: Math.max(0, sb.qty - item.quantity) }
+            }
+            if (sb.warehouse === transfer.to_warehouse) {
+              return { ...sb, qty: sb.qty + item.quantity }
+            }
+            return sb
+          })
+
+          // Ensure destination warehouse exists in breakdown
+          if (!updatedBreakdown.some((sb) => sb.warehouse === transfer.to_warehouse)) {
+            updatedBreakdown.push({ warehouse: transfer.to_warehouse, qty: item.quantity })
+          }
+
+          this.updateProduct(prod.id, {
+            stockBreakdown: updatedBreakdown,
+          })
+        }
+
+        // Record Stock Movement Log
+        this.stockMovements.unshift({
+          id: `SM-${Date.now().toString().slice(-4)}`,
+          date: transfer.date || new Date().toISOString().split("T")[0],
+          type: "TRANSFER",
+          productId: prod?.id,
+          productName: item.item,
+          fromWarehouse: transfer.from_warehouse,
+          toWarehouse: transfer.to_warehouse,
+          qty: item.quantity,
+          unit: item.UOM,
+          reference: transfer.reference_number,
+          remarks: item.remark || `Transfer from ${transfer.from_warehouse} to ${transfer.to_warehouse}`,
+        })
+      })
+
+      // Post Double-Entry Journal Voucher in Finance Store for inter-warehouse inventory asset transfer
+      const stockAcc = financeStore.getAccounts().find((a) => a.code === "1410-01" || a.code === "1410-03" || a.code === "1410" || a.account_type === "Asset") || financeStore.getAccounts()[0]
+
+      if (stockAcc && transferVal > 0) {
+        const postRes = financeStore.postJournalEntry(
+          {
+            entry_date: transfer.date || new Date().toISOString().split("T")[0],
+            description: `Inter-Warehouse Inventory Asset Transfer ${transfer.reference_number} (${transfer.from_warehouse} → ${transfer.to_warehouse})`,
+            source_type: "Warehouse Transfer",
+            source_id: transfer.reference_number,
+            created_by: transfer.issued_by || "Warehouse Store Manager",
+            currency: "ETB",
+            exchange_rate: 1.0,
+          },
+          [
+            { account_id: stockAcc.id, debit_amount: transferVal, credit_amount: 0, warehouse_id: transfer.to_warehouse },
+            { account_id: stockAcc.id, debit_amount: 0, credit_amount: transferVal, warehouse_id: transfer.from_warehouse },
+          ]
+        )
+        if (postRes.success && postRes.entry) {
+          jeId = postRes.entry.id
+          transfer.journalEntryId = jeId
+        }
       }
     }
 

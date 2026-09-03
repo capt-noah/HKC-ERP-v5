@@ -316,8 +316,8 @@ export default function StoreTransfersTab() {
       todayStr
     )
 
-    // Stock Ledger Transfer Execution: Deduct from origin and add to destination in product stock breakdown
-    if (newStatus === "Received") {
+    // Stock Ledger Transfer Execution: Only move stock if not already moved during dispatch
+    if (newStatus === "Received" && receivingTransfer.status === "Draft") {
       receivingTransfer.line_items.forEach((line) => {
         const prod = transferProducts.find(p => p.name.toLowerCase() === line.item.toLowerCase() || p.id === line.item)
         if (prod) {
