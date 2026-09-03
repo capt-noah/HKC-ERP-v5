@@ -174,6 +174,23 @@ export async function drizzleGetRow({ resource, id }) {
   }
 }
 
+const tableColumnsCache = new Map()
+
+async function getTableColumns(tableName) {
+  if (tableColumnsCache.has(tableName)) {
+    return tableColumnsCache.get(tableName)
+  }
+  try {
+    const [cols] = await pool.query(`SHOW COLUMNS FROM \`${tableName}\``)
+    const colNames = new Set(cols.map((c) => c.Field))
+    tableColumnsCache.set(tableName, colNames)
+    return colNames
+  } catch (err) {
+    console.warn(`[TABLE COLUMNS CHECK WARNING] \`${tableName}\`:`, err.message)
+    return null
+  }
+}
+
 export async function drizzleCreateRow({ resource, body }) {
   if (!resource || !resource.table) {
     return { status: 404, body: { error: `Invalid resource specification.` } }
@@ -193,7 +210,11 @@ export async function drizzleCreateRow({ resource, body }) {
       )
       return { status: 200, body: { id, ...payloadData } }
     } else {
-      const fields = Object.keys(body).filter((k) => k !== "created_at" && k !== "updated_at")
+      const validCols = await getTableColumns(tableName)
+      const fields = Object.keys(body).filter((k) => k !== "created_at" && k !== "updated_at" && (!validCols || validCols.has(k)))
+      if (fields.length === 0) {
+        return { status: 200, body: { id, ...body } }
+      }
       const values = fields.map((k) => {
         const val = body[k]
         if (typeof val === "object" && val !== null) return JSON.stringify(val)
@@ -238,7 +259,8 @@ export async function drizzleUpdateRow({ resource, id, body }) {
       )
       return { status: 200, body: mergedPayload }
     } else {
-      const fields = Object.keys(body).filter((k) => k !== "id" && k !== "created_at")
+      const validCols = await getTableColumns(tableName)
+      const fields = Object.keys(body).filter((k) => k !== "id" && k !== "created_at" && (!validCols || validCols.has(k)))
       if (fields.length === 0) {
         return { status: 200, body: { id, ...body } }
       }

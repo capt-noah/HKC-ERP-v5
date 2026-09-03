@@ -484,7 +484,7 @@ export default function SalesIssued() {
 
   const handleRecordInstallmentSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!payingIssue) return
+    if (!payingIssue || isSubmittingPayment) return
     const numAmount = parseFloat(payAmount)
     if (isNaN(numAmount) || numAmount <= 0) {
       showToast("Invalid Amount", "warning", "Please enter a valid installment payment amount.")
@@ -671,6 +671,7 @@ export default function SalesIssued() {
   }, [products, warehouseId])
 
   const handleSave = async () => {
+    if (isSaving) return
     const isWh1Active = isWH1(warehouseId)
     const errors: Record<string, string> = {}
     if (!fsNo.trim()) errors.fsNo = "FS Number is required."

@@ -383,7 +383,26 @@ export default function ControlCenter() {
     fetchSalesIssuesData()
   }, [])
 
-  // Unsettled Sales Issues & Outstanding Receivables Computation
+  const financeStore = useFinanceStore()
+  const invoices = financeStore.getInvoices()
+
+  // Unsettled Invoices & Outstanding Customer Receivables Computation
+  interface ReceivableItem {
+    id: string
+    fs_no: string
+    reference_no: string
+    sale_date: string
+    customer_name: string
+    payment_type: string
+    calculatedTotal: number
+    calculatedPaid: number
+    calculatedDue: number
+    percentPaid: number
+    effectiveSettlement: string
+    sales_issue_id?: string
+  }
+
+  // Unsettled Invoices & Outstanding Customer Receivables Computation
   const {
     unsettledIssues,
     filteredReceivables,
@@ -391,30 +410,64 @@ export default function ControlCenter() {
     unpaidCount,
     ongoingCount,
   } = useMemo(() => {
-    const list = salesIssues
-      .filter((si) => si.status !== "Cancelled")
-      .map((si) => {
-        const isCash = (si.payment_type || "Cash") === "Cash"
-        const totalAmount = Number(si.total_amount || 0)
-
-        // Cash sales are paid immediately at the point of issue (Immediate Cash Collection)
-        // Credit sales represent customer receivables with ongoing or unpaid installment balances
-        const amountPaid = isCash ? totalAmount : Number(si.amount_paid || 0)
-        const balanceDue = isCash ? 0 : (typeof si.balance_due === "number" ? Math.max(0, si.balance_due) : Math.max(0, totalAmount - amountPaid))
-        const percentPaid = totalAmount > 0 ? Math.min(100, Math.round((amountPaid / totalAmount) * 100)) : (isCash ? 100 : 0)
-        const settlementStatus = isCash ? "Fully Settled" : (si.settlement_status || (balanceDue <= 0 ? "Fully Settled" : (amountPaid > 0 ? "Ongoing" : "Unpaid")))
+    // 1. Primary source: Active AR Invoices from Finance Store
+    let list: ReceivableItem[] = invoices
+      .filter((inv) => inv.status !== "Cancelled" && inv.status !== "Draft")
+      .map((inv) => {
+        const total = Number(inv.total || 0)
+        const paid = Number(inv.amount_paid || 0)
+        const due = typeof inv.balance_due === "number" ? Math.max(0, inv.balance_due) : Math.max(0, total - paid)
+        const percentPaid = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0
+        const status = due <= 0 ? "Paid" : paid > 0 ? "Ongoing" : "Unpaid"
 
         return {
-          ...si,
-          calculatedTotal: totalAmount,
-          calculatedPaid: amountPaid,
-          calculatedDue: balanceDue,
+          id: inv.id,
+          fs_no: inv.fs_no || inv.invoice_number || inv.id,
+          reference_no: inv.sales_order_id || inv.sales_issue_id || "",
+          sale_date: inv.issue_date || "",
+          customer_name: inv.customer_name || "Customer",
+          payment_type: "Credit",
+          calculatedTotal: total,
+          calculatedPaid: paid,
+          calculatedDue: due,
           percentPaid,
-          effectiveSettlement: settlementStatus,
+          effectiveSettlement: status,
+          sales_issue_id: inv.sales_issue_id,
         }
       })
-      .filter((si) => si.calculatedDue > 0 && si.effectiveSettlement !== "Fully Settled")
-      .sort((a, b) => new Date(b.sale_date || 0).getTime() - new Date(a.sale_date || 0).getTime())
+      .filter((inv) => inv.calculatedDue > 0 && inv.effectiveSettlement !== "Paid")
+
+    // 2. Fallback / Merge with unsettled sales issues if no invoices recorded yet
+    if (list.length === 0 && salesIssues.length > 0) {
+      list = salesIssues
+        .filter((si) => si.status !== "Cancelled")
+        .map((si) => {
+          const isCash = (si.payment_type || "Cash") === "Cash"
+          const totalAmount = Number(si.total_amount || 0)
+          const amountPaid = isCash ? totalAmount : Number(si.amount_paid || 0)
+          const balanceDue = isCash ? 0 : (typeof si.balance_due === "number" ? Math.max(0, si.balance_due) : Math.max(0, totalAmount - amountPaid))
+          const percentPaid = totalAmount > 0 ? Math.min(100, Math.round((amountPaid / totalAmount) * 100)) : (isCash ? 100 : 0)
+          const settlementStatus = isCash ? "Fully Settled" : (si.settlement_status || (balanceDue <= 0 ? "Fully Settled" : (amountPaid > 0 ? "Ongoing" : "Unpaid")))
+
+          return {
+            id: si.id,
+            fs_no: si.fs_no || si.id,
+            reference_no: si.reference_no || "",
+            sale_date: si.sale_date || "",
+            customer_name: si.customer_name || "Customer",
+            payment_type: si.payment_type || "Credit",
+            calculatedTotal: totalAmount,
+            calculatedPaid: amountPaid,
+            calculatedDue: balanceDue,
+            percentPaid,
+            effectiveSettlement: settlementStatus,
+            sales_issue_id: si.id,
+          }
+        })
+        .filter((si) => si.calculatedDue > 0 && si.effectiveSettlement !== "Fully Settled")
+    }
+
+    list.sort((a, b) => new Date(b.sale_date || 0).getTime() - new Date(a.sale_date || 0).getTime())
 
     const totalOutstanding = list.reduce((sum, item) => sum + item.calculatedDue, 0)
     const unpaid = list.filter((item) => item.calculatedPaid === 0 || item.effectiveSettlement === "Unpaid").length
@@ -442,7 +495,7 @@ export default function ControlCenter() {
       unpaidCount: unpaid,
       ongoingCount: ongoing,
     }
-  }, [salesIssues, receivableFilter, receivableSearch])
+  }, [invoices, salesIssues, receivableFilter, receivableSearch])
 
   const filteredApprovals = useMemo(() => {
     return salesOrders.filter((so) => {

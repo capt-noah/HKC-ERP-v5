@@ -339,12 +339,12 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
     setNewWarehouse(targetWh)
     setNewPaymentType(isWh1Target ? "Credit" : "Cash")
-    setNewCustomerId(customers[0]?.id || "")
+    setNewCustomerId("")
     setCustomerSearchInput("")
     setShowCustomerDropdown(false)
-    setCustPhone(customers[0]?.phone || "")
-    setCustEmail(customers[0]?.email || "")
-    setCustAddress(customers[0]?.address || "")
+    setCustPhone("")
+    setCustEmail("")
+    setCustAddress("")
     setNewDesc("")
     setStagedTradePaperName("")
     setStagedTradePaperUrl("")
@@ -583,7 +583,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
   const handleSaveEditOrder = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!editingOrder) return
+    if (!editingOrder || isSavingEditOrder) return
 
     const isWh1Order = isWH1(editingOrder.warehouse)
     const matchedCust = customers.find((c) => c.id === editingOrder.customerId || c.name === editingOrder.customer)
@@ -615,6 +615,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       return
     }
     setEditFormErrors({})
+    setIsSavingEditOrder(true)
 
     const sanitizedItems: SalesOrderItem[] = editingOrderItems.map((i) => {
       const q = Math.max(1, Number(i.qty) || 1)
@@ -735,14 +736,16 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       return
     }
     setCreateFormErrors({})
+    setIsSubmittingOrder(true)
 
-    if (selectedCust && (stagedTradePaperUrl !== (selectedCust.tradePaperUrl || "") || stagedTradePaperName !== (selectedCust.tradePaperFileName || ""))) {
-      erp.updateCustomer(selectedCust.id, {
-        tradePaperFileName: stagedTradePaperName || selectedCust.tradePaperFileName,
-        tradePaperUrl: stagedTradePaperUrl || selectedCust.tradePaperUrl,
-        tradePaperUploadedAt: new Date().toISOString(),
-      })
-    }
+    try {
+      if (selectedCust && (stagedTradePaperUrl !== (selectedCust.tradePaperUrl || "") || stagedTradePaperName !== (selectedCust.tradePaperFileName || ""))) {
+        erp.updateCustomer(selectedCust.id, {
+          tradePaperFileName: stagedTradePaperName || selectedCust.tradePaperFileName,
+          tradePaperUrl: stagedTradePaperUrl || selectedCust.tradePaperUrl,
+          tradePaperUploadedAt: new Date().toISOString(),
+        })
+      }
 
     if (!selectedCust) {
       const newCustId = `CUST-${Date.now().toString().slice(-4)}`
@@ -832,32 +835,31 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       }
     }
 
-    try {
-      setIsSubmittingOrder(true)
-      const docs = await fetchDocumentsForRecord(soId, "sales_order")
-      setSoAttachmentsMap((prev) => ({ ...prev, [soId]: docs }))
+    const docs = await fetchDocumentsForRecord(soId, "sales_order")
+    setSoAttachmentsMap((prev) => ({ ...prev, [soId]: docs }))
 
-      erp.addSalesOrder(newSo)
+    erp.addSalesOrder(newSo)
 
-      showToast("Sales Order Created", "success", `Contract ${newSo.id} created under Quote stage for ${selectedCust.name}.`)
-      setIsNewOrderOpen(false)
-      setNewDesc("")
-      setCustomerSearchInput("")
-      setNewCustomerId("")
-      setStagedTradePaperName("")
-      setStagedTradePaperUrl("")
-      setStagedPaymentAdviceName("")
-      setStagedPaymentAdviceUrl("")
-    } catch (err) {
-      showToast("Create Error", "warning", "Failed to create sales order.")
-    } finally {
-      setIsSubmittingOrder(false)
-    }
+    showToast("Sales Order Created", "success", `Contract ${newSo.id} created under Quote stage for ${selectedCust.name}.`)
+    setIsNewOrderOpen(false)
+    setNewDesc("")
+    setCustomerSearchInput("")
+    setNewCustomerId("")
+    setStagedTradePaperName("")
+    setStagedTradePaperUrl("")
+    setStagedPaymentAdviceName("")
+    setStagedPaymentAdviceUrl("")
+  } catch (err) {
+    showToast("Create Error", "warning", "Failed to create sales order.")
+  } finally {
+    setIsSubmittingOrder(false)
+  }
   }
 
   // Handle Create Quotation
   const handleCreateQuotation = (e: React.FormEvent) => {
     e.preventDefault()
+    if (isSubmittingQuotation) return
     const selectedCust = customers.find((c) => c.id === quoteCustomerId)
     if (!selectedCust || !quoteWarehouse || !quoteValidDays) {
       showToast("Validation Error", "warning", "Please select a customer, warehouse, and valid-until period.")
@@ -1349,7 +1351,18 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                               setCustomerSearchInput("")
                               setNewCustomerId("")
                               setCustPhone("")
+                              setCustEmail("")
+                              setCustAddress("")
+                              setStagedTradePaperName("")
+                              setStagedTradePaperUrl("")
                               setShowCustomerDropdown(false)
+                              setCreateFormErrors((prev) => {
+                                const next = { ...prev }
+                                delete next.customer
+                                delete next.phone
+                                delete next.tradePaper
+                                return next
+                              })
                             }}
                             className="text-zinc-400 hover:text-zinc-700 p-0.5"
                             title="Clear input"
