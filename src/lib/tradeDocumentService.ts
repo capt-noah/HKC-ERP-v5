@@ -1,5 +1,6 @@
 import { API_BASE, getAuthHeaders } from "./apiPersistence"
 import { erpStore } from "./erpStore"
+import { financeStore } from "./financeStore"
 
 export interface ShipmentDocAttachment {
   id: string
@@ -140,25 +141,59 @@ export async function fetchTradeAndAdviceDocs(params: {
 
   const searchIds = [salesOrderId, salesIssueId, invoiceId, fsNo, customerId].filter(Boolean) as string[]
   let attachedDocs: ShipmentDocAttachment[] = []
+  const seenUrls = new Set<string>()
 
-    if (searchIds.length > 0) {
-      try {
-        const allDocs = await fetchAllShipmentDocs()
-        const rawFiltered = allDocs.filter((d) => searchIds.includes(d.record_id))
-        const seenUrls = new Set<string>()
-        const uniqueDocs: ShipmentDocAttachment[] = []
-        for (const doc of rawFiltered) {
-          const key = (doc.file_url || `${doc.file_name}-${doc.record_id}`).trim()
+  if (searchIds.length > 0) {
+    try {
+      const allDocs = await fetchAllShipmentDocs()
+      const rawFiltered = allDocs.filter((d) => searchIds.includes(d.record_id))
+      const uniqueDocs: ShipmentDocAttachment[] = []
+      for (const doc of rawFiltered) {
+        const key = (doc.file_url || `${doc.file_name}-${doc.record_id}`).trim()
+        if (!seenUrls.has(key)) {
+          seenUrls.add(key)
+          uniqueDocs.push(doc)
+        }
+      }
+      attachedDocs = uniqueDocs
+    } catch {
+      attachedDocs = []
+    }
+
+    // Seamlessly aggregate any payment advice attached to recorded payments in financeStore
+    try {
+      const payments = financeStore.getPayments()
+      const matchingPayments = payments.filter((p) => {
+        const matchInv = invoiceId && p.linked_invoice_id && (p.linked_invoice_id === invoiceId || p.linked_invoice_id === `INV-SI-${invoiceId}` || p.linked_invoice_id.includes(invoiceId))
+        const matchSi = salesIssueId && (p.sales_issue_id === salesIssueId || p.linked_invoice_id === `INV-SI-${salesIssueId}` || p.reference?.includes(salesIssueId))
+        const matchSo = salesOrderId && (p.sales_order_id === salesOrderId || p.reference?.includes(salesOrderId))
+        const matchFs = fsNo && p.reference?.includes(fsNo)
+        return Boolean((matchInv || matchSi || matchSo || matchFs) && p.payment_advice_url)
+      })
+
+      matchingPayments.forEach((p) => {
+        if (p.payment_advice_url) {
+          const key = (p.payment_advice_url || p.id).trim()
           if (!seenUrls.has(key)) {
             seenUrls.add(key)
-            uniqueDocs.push(doc)
+            attachedDocs.push({
+              id: p.id,
+              record_id: invoiceId || salesIssueId || salesOrderId || p.id,
+              record_type: "invoice",
+              document_type: "Payment Advice",
+              file_name: p.payment_advice_filename || "Payment Slip",
+              file_url: p.payment_advice_url,
+              file_size: 102400,
+              uploaded_at: p.date,
+              uploaded_by: "Cashier / Finance Officer",
+            })
           }
         }
-        attachedDocs = uniqueDocs
-      } catch {
-        attachedDocs = []
-      }
+      })
+    } catch (err) {
+      console.warn("Notice: payment slip resolution:", err)
     }
+  }
 
   // 1. Resolve Payment Advice (Order/Issue/Invoice specific)
   let paymentAdvice: DocumentInfo | null = null

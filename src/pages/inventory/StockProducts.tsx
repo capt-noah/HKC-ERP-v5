@@ -389,14 +389,12 @@ export default function StockProducts() {
       cols.push(
         { key: "dosage", label: "Strength / Dosage", align: "left" },
         { key: "shelfNo", label: "Shelf Number", align: "left" },
-        { key: "batch", label: "Batch", align: "left" },
         { key: "manufacturingDate", label: "MFG", align: "left" },
         { key: "expiryDate", label: "EXP", align: "left" },
         { key: "numberOfCartons", label: "Cartons", align: "right" },
         { key: "quantityPerPack", label: "Quantity/Pack", align: "right" },
         { key: "quantity", label: "Total Quantity", align: "right" },
         { key: "unit", label: "Packaging Unit", align: "left" },
-        { key: "unitCost", label: "Unit Price", align: "right" },
         { key: "totalStockValue", label: "Stock Value", align: "right" }
       )
     }
@@ -1211,17 +1209,6 @@ export default function StockProducts() {
                                 {/* Shelf Number */}
                                 <td className="py-4 px-4 font-mono font-bold text-zinc-600 truncate">{prod.shelfNo || "—"}</td>
 
-                                {/* Batch (Parent level shows — / multiple indicator; child batches display specific batch numbers) */}
-                                <td className="py-4 px-4 font-mono font-bold text-zinc-400">
-                                  {binEntries.length > 1 ? (
-                                    <span className="px-2 py-0.5 rounded-full bg-zinc-100 text-[10px] font-bold text-zinc-600 border border-zinc-200">
-                                      {binEntries.length} batches
-                                    </span>
-                                  ) : (
-                                    "—"
-                                  )}
-                                </td>
-
                                 {/* MFG */}
                                 <td className="py-4 px-4 font-mono text-zinc-600">{displayDate(prod.manufacturingDate)}</td>
 
@@ -1263,11 +1250,6 @@ export default function StockProducts() {
 
                                 {/* Packaging Unit */}
                                 <td className="py-4 px-4 font-bold text-zinc-600 uppercase">{prod.unit}</td>
-
-                                {/* Unit Price (Parent level shows — because different batches have varying prices; child rows display batch unit price) */}
-                                <td className="py-4 px-4 text-right font-mono font-bold text-zinc-400">
-                                  —
-                                </td>
 
                                 {/* Total Stock Value (Aggregate across all child batches) */}
                                 <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">

@@ -701,11 +701,17 @@ class FinanceStore {
 
             // ── Invoices record sync ──
             const invId = `INV-SI-${si.id}`
-            const existingInvIdx = this.invoices.findIndex(
-              (inv) => inv.id === invId || inv.invoice_number === `INV-${si.fs_no}` || inv.sales_issue_id === si.id || (si.fs_no && (inv.fs_no === si.fs_no || inv.invoice_number?.includes(si.fs_no)))
-            )
+            const isMatchingInvoice = (inv: Invoice) => {
+              if (inv.id === invId || inv.sales_issue_id === si.id || inv.id === si.id) return true
+              if (si.fs_no && (inv.fs_no === si.fs_no || inv.invoice_number === `INV-${si.fs_no}` || inv.invoice_number?.includes(si.fs_no))) return true
+              if (si.reference_no && (inv.sales_order_id === si.reference_no || inv.invoice_number === si.reference_no || inv.invoice_number?.includes(si.reference_no))) return true
+              if (inv.customer_name?.toLowerCase() === si.customer_name?.toLowerCase() && Math.abs((inv.total || 0) - invoiceTotal) < 0.01 && invoiceTotal > 0) return true
+              return false
+            }
 
-            const paymentsForThisIssue = this.payments.filter((p) => (p.sales_issue_id && p.sales_issue_id === si.id) || p.linked_invoice_id === invId)
+            const existingInvIdx = this.invoices.findIndex(isMatchingInvoice)
+
+            const paymentsForThisIssue = this.payments.filter((p) => (p.sales_issue_id && p.sales_issue_id === si.id) || p.linked_invoice_id === invId || (si.fs_no && p.reference?.includes(si.fs_no)))
             const totalPaidFromPayments = paymentsForThisIssue.reduce((s, p) => s + Number(p.amount || 0), 0)
             const actualAmountPaid = isCash ? invoiceTotal : Math.max(Number(si.amount_paid || 0), totalPaidFromPayments)
             const actualBalanceDue = isCash ? 0 : Math.max(0, invoiceTotal - actualAmountPaid)
@@ -737,10 +743,11 @@ class FinanceStore {
 
             if (existingInvIdx >= 0) {
               const current = this.invoices[existingInvIdx]
-              this.invoices[existingInvIdx] = {
+              const merged: Invoice = {
                 ...current,
                 ...mappedInvoice,
                 id: current.id || invId,
+                invoice_number: current.invoice_number || mappedInvoice.invoice_number,
                 subtotal: mappedInvoice.subtotal,
                 tax_amount: mappedInvoice.tax_amount,
                 tax_rate: mappedInvoice.tax_rate,
@@ -753,6 +760,14 @@ class FinanceStore {
                 payment_terms: mappedInvoice.payment_terms,
                 sales_issue_id: si.id,
                 fs_no: si.fs_no,
+              }
+              // Update in place and remove any remaining stale duplicates for this issue
+              this.invoices = this.invoices.filter((inv, idx) => idx === existingInvIdx || !isMatchingInvoice(inv))
+              const updatedIdx = this.invoices.findIndex((inv) => inv.id === merged.id)
+              if (updatedIdx >= 0) {
+                this.invoices[updatedIdx] = merged
+              } else {
+                this.invoices.push(merged)
               }
             } else {
               this.invoices.push(mappedInvoice)
@@ -941,7 +956,16 @@ class FinanceStore {
   }
 
   public getInvoices(): Invoice[] {
-    return [...this.invoices]
+    const seen = new Set<string>()
+    const unique: Invoice[] = []
+    for (const inv of this.invoices) {
+      const key = (inv.sales_issue_id || inv.invoice_number || inv.id).trim().toLowerCase()
+      if (!seen.has(key)) {
+        seen.add(key)
+        unique.push(inv)
+      }
+    }
+    return unique
   }
 
   public getPayments(): Payment[] {
@@ -1514,8 +1538,14 @@ class FinanceStore {
     this.notify()
   }
 
-  public getPaymentsForInvoice(invoiceId: string): Payment[] {
-    return this.payments.filter((p) => p.linked_invoice_id === invoiceId)
+  public getPaymentsForInvoice(invoiceId: string, salesIssueId?: string, fsNo?: string): Payment[] {
+    if (!invoiceId && !salesIssueId && !fsNo) return []
+    return this.payments.filter((p) => {
+      const matchInv = invoiceId && p.linked_invoice_id && (p.linked_invoice_id === invoiceId || p.linked_invoice_id === `INV-SI-${invoiceId}` || p.linked_invoice_id.includes(invoiceId))
+      const matchSi = salesIssueId && (p.sales_issue_id === salesIssueId || p.linked_invoice_id === `INV-SI-${salesIssueId}` || p.reference?.includes(salesIssueId))
+      const matchFs = fsNo && p.reference?.includes(fsNo)
+      return Boolean(matchInv || matchSi || matchFs)
+    })
   }
 
   public getPaymentsForSalesIssue(salesIssueId: string): Payment[] {

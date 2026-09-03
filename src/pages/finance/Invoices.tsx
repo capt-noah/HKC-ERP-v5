@@ -32,6 +32,7 @@ import {
   savePaymentAdvice,
   fetchTradeAndAdviceDocs,
 } from "@/lib/tradeDocumentService"
+import { uploadFile } from "@/lib/fileUpload"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.08 } } }
@@ -332,11 +333,17 @@ export default function Invoices() {
 
       if (editAdviceFile) {
         stagedSlipName = editAdviceFile.name
-        stagedSlipUrl = await new Promise<string>((resolve) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result as string)
-          reader.readAsDataURL(editAdviceFile)
-        })
+        try {
+          const upRes = await uploadFile(editAdviceFile, "invoices")
+          stagedSlipUrl = upRes.url
+          stagedSlipName = upRes.filename || editAdviceFile.name
+        } catch {
+          stagedSlipUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result as string)
+            reader.readAsDataURL(editAdviceFile)
+          })
+        }
 
         try {
           await savePaymentAdvice({
@@ -597,7 +604,7 @@ export default function Invoices() {
 
                 {/* Recorded Installment Receipts History */}
                 {(() => {
-                  const invPayments = store.getPaymentsForInvoice(activeInvoice.id)
+                  const invPayments = store.getPaymentsForInvoice(activeInvoice.id, activeInvoice.sales_issue_id, activeInvoice.fs_no)
                   if (invPayments.length === 0) return null
                   return (
                     <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/50 space-y-2">
@@ -1269,6 +1276,17 @@ export default function Invoices() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Document Preview Modal */}
+      <DocumentPreviewModal
+        isOpen={Boolean(previewDocUrl)}
+        fileUrl={previewDocUrl}
+        fileName={previewDocName}
+        onClose={() => {
+          setPreviewDocUrl("")
+          setPreviewDocName("")
+        }}
+      />
     </div>
   )
 }
