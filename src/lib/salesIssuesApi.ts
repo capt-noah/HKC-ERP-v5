@@ -34,6 +34,7 @@ export interface SalesIssue {
   total_amount: number
   amount_paid?: number
   balance_due?: number
+  payment_status?: string
   settlement_status?: "Unpaid" | "Ongoing" | "Fully Settled"
   created_by: string
   posted_by?: string | null

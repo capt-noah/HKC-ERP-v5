@@ -943,11 +943,20 @@ export default function SalesIssued() {
                 ) : salesTable.sorted().map((row) => {
                   const isCredit = (row.payment_type || (row as any).paymentType || "").toString().toLowerCase().includes("credit")
                   const isCash = !isCredit
-                  const paymentsForIssue = financeStore.getPaymentsForSalesIssue(row.id)
-                  const totalAmt = Number(row.total_amount || 0)
-                  const paidAmt = paymentsForIssue.reduce((s, p) => s + p.amount, 0) || Number(row.amount_paid || 0)
-                  const dueAmt = Number(Math.max(0, totalAmt - paidAmt).toFixed(2))
-                  const pct = totalAmt > 0 ? Math.min(100, Math.round((paidAmt / totalAmt) * 100)) : 0
+                  const matchingInvoice = financeStore.getInvoices().find(
+                    (inv) =>
+                      inv.sales_issue_id === row.id ||
+                      inv.id === `INV-SI-${row.id}` ||
+                      (row.fs_no && (inv.fs_no === row.fs_no || inv.invoice_number?.includes(row.fs_no))) ||
+                      (row.reference_no && (inv.sales_order_id === row.reference_no || inv.invoice_number?.includes(row.reference_no)))
+                  )
+                  const paymentsForIssue = financeStore.getPaymentsForSalesIssue(row.id, row.fs_no, row.reference_no)
+                  const totalAmt = Number(row.total_amount || matchingInvoice?.total || 0)
+                  const paidFromPayments = paymentsForIssue.reduce((s, p) => s + Number(p.amount || 0), 0)
+                  const paidAmt = isCash ? totalAmt : Math.max(Number(row.amount_paid || 0), Number(matchingInvoice?.amount_paid || 0), paidFromPayments)
+                  const dueAmt = isCash ? 0 : Number(Math.max(0, totalAmt - paidAmt).toFixed(2))
+                  const pct = totalAmt > 0 ? Math.min(100, Math.round((paidAmt / totalAmt) * 100)) : (isCash ? 100 : 0)
+                  const isFullySettled = isCash || (totalAmt > 0 && dueAmt <= 0.01 && paidAmt > 0) || row.settlement_status === "Fully Settled" || row.payment_status === "Paid" || matchingInvoice?.status === "Paid" || matchingInvoice?.settlement_status === "Fully Settled"
 
                   return (
                     <tr key={row.id} className="border-b border-zinc-150/40 hover:bg-zinc-50/60 transition-colors text-xs">
@@ -963,7 +972,7 @@ export default function SalesIssued() {
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
                             Cash
                           </span>
-                        ) : totalAmt > 0 && dueAmt <= 0 && paidAmt > 0 ? (
+                        ) : isFullySettled ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
                             <CheckCircle2 className="size-3 text-emerald-600" /> Credit • Fully Settled
                           </span>

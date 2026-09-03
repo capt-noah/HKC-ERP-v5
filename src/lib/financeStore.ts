@@ -1643,11 +1643,24 @@ class FinanceStore {
     })
   }
 
-  public getPaymentsForSalesIssue(salesIssueId: string): Payment[] {
-    if (!salesIssueId || !salesIssueId.trim()) return []
-    return this.payments.filter(
-      (p) => (p.sales_issue_id && p.sales_issue_id === salesIssueId) || (p.linked_invoice_id && p.linked_invoice_id === `INV-SI-${salesIssueId}`)
-    )
+  public getPaymentsForSalesIssue(salesIssueId: string, fsNo?: string, referenceNo?: string): Payment[] {
+    if (!salesIssueId && !fsNo && !referenceNo) return []
+    const cleanId = (salesIssueId || "").trim()
+    const cleanFs = (fsNo || "").trim()
+    const cleanRef = (referenceNo || "").trim()
+
+    return this.payments.filter((p) => {
+      if (cleanId && (p.sales_issue_id === cleanId || p.linked_invoice_id === cleanId || p.linked_invoice_id === `INV-SI-${cleanId}` || p.linked_invoice_id === `INV-${cleanId}` || p.reference?.includes(cleanId))) {
+        return true
+      }
+      if (cleanFs && (p.sales_issue_id === cleanFs || p.linked_invoice_id?.includes(cleanFs) || p.reference?.includes(cleanFs))) {
+        return true
+      }
+      if (cleanRef && (p.sales_order_id === cleanRef || p.linked_invoice_id?.includes(cleanRef) || p.reference?.includes(cleanRef))) {
+        return true
+      }
+      return false
+    })
   }
 
   public getPaymentsForSalesOrder(salesOrderId: string): Payment[] {
