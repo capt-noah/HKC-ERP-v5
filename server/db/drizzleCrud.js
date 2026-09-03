@@ -162,11 +162,36 @@ export async function drizzleGetRow({ resource, id }) {
   }
 
   const tableName = resource.table
+  const cleanId = String(id).trim()
   try {
-    const [rows] = await pool.query(`SELECT * FROM \`${tableName}\` WHERE id = ? LIMIT 1`, [String(id)])
+    const [rows] = await pool.query(`SELECT * FROM \`${tableName}\` WHERE id = ? LIMIT 1`, [cleanId])
     if (Array.isArray(rows) && rows.length > 0) {
       return { status: 200, body: unwrapRow(rows[0], resource.storage) }
     }
+
+    // Dynamic multi-identifier column fallback
+    const validCols = await getTableColumns(tableName)
+    const possibleCols = [
+      "issue_number",
+      "fs_no",
+      "sales_order_id",
+      "reference_no",
+      "invoice_number",
+      "voucher_number",
+      "order_number",
+      "customer_id",
+    ]
+    const matchedCols = possibleCols.filter((c) => validCols && validCols.has(c))
+
+    if (matchedCols.length > 0) {
+      const orClauses = matchedCols.map((c) => `\`${c}\` = ?`).join(" OR ")
+      const params = matchedCols.map(() => cleanId)
+      const [altRows] = await pool.query(`SELECT * FROM \`${tableName}\` WHERE ${orClauses} LIMIT 1`, params)
+      if (Array.isArray(altRows) && altRows.length > 0) {
+        return { status: 200, body: unwrapRow(altRows[0], resource.storage) }
+      }
+    }
+
     return { status: 404, body: { error: `Row '${id}' not found in ${tableName}.` } }
   } catch (err) {
     console.error(`[MYSQL GET ERROR] ${tableName}:${id}:`, err)

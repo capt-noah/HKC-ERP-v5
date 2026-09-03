@@ -419,9 +419,14 @@ export default function SalesIssued() {
 
   const openEdit = async (issue: SalesIssue) => {
     try {
-      const full = await getSalesIssue(issue.id)
+      let full: SalesIssue
+      try {
+        full = await getSalesIssue(issue.id || issue.fs_no)
+      } catch {
+        full = issue
+      }
       setEditing(full)
-      setFsNo(full.fs_no || "")
+      setFsNo(full.fs_no || full.id || "")
       setReferenceNo(full.reference_no || "")
       setSaleDate(full.sale_date ? (typeof full.sale_date === "string" ? full.sale_date.split("T")[0] : new Date(full.sale_date).toISOString().split("T")[0]) : "")
       setCustomerName(full.customer_name || (full as any).customer || "")
@@ -819,19 +824,19 @@ export default function SalesIssued() {
 
   const doPost = (issue: SalesIssue) => {
     confirm({
-      title: `Post Sales Issue ${issue.fs_no}?`,
+      title: `Post Sales Issue ${issue.fs_no || issue.id}?`,
       message: "Posting reduces batch stock and creates balanced journal entries. This can happen only once.",
       confirmLabel: "Post",
       onConfirm: async () => {
         try {
-          await postSalesIssue(issue.id)
+          await postSalesIssue(issue.id || issue.fs_no)
           const refStr = issue.reference_no || ""
           const matchingOrders = salesOrders.filter((so) => refStr.includes(so.id))
           matchingOrders.forEach((so) => {
             erp.updateSalesOrderStage(so.id, "Shipped")
           })
 
-          showToast("Sales issue posted", "success", `${issue.fs_no} posted, inventory stock reduced, and linked Sales Orders fulfilled.`)
+          showToast("Sales issue posted", "success", `${issue.fs_no || issue.id} posted, inventory stock reduced, and linked Sales Orders fulfilled.`)
           await erp.reloadFromApi()
           await financeStore.reloadFromApi()
           await load()
@@ -845,12 +850,12 @@ export default function SalesIssued() {
   const doDelete = (issue: SalesIssue) => {
     confirm({
       title: "Delete Draft?",
-      message: `Delete ${issue.fs_no}? Only draft records can be deleted.`,
+      message: `Delete ${issue.fs_no || issue.id}? Only draft records can be deleted.`,
       isDestructive: true,
       confirmLabel: "Delete",
       onConfirm: async () => {
-        await deleteSalesIssue(issue.id)
-        showToast("Draft deleted", "success", `${issue.fs_no} removed.`)
+        await deleteSalesIssue(issue.id || issue.fs_no)
+        showToast("Draft deleted", "success", `${issue.fs_no || issue.id} removed.`)
         await load()
       },
     })

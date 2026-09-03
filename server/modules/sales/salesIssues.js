@@ -214,7 +214,17 @@ export async function getSalesIssue(id) {
     const items = allItems
       .filter((i) => {
         const item = i?.payload ? { ...i.payload, ...i } : i
-        return (item.sales_issue_id || item.salesIssueId) === id
+        const parentId = item.sales_issue_id || item.salesIssueId || item.sales_order_id
+        return (
+          parentId === id ||
+          parentId === issue.id ||
+          parentId === issue.fs_no ||
+          parentId === issue.fsNo ||
+          parentId === issue.issue_number ||
+          parentId === issue.issueNumber ||
+          (issue.reference_no && parentId === issue.reference_no) ||
+          (issue.sales_order_id && parentId === issue.sales_order_id)
+        )
       })
       .map((rawItem) => {
         const item = rawItem?.payload ? { ...rawItem.payload, ...rawItem } : rawItem
