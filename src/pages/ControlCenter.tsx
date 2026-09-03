@@ -411,43 +411,44 @@ export default function ControlCenter() {
     ongoingCount,
   } = useMemo(() => {
     // 1. Primary source: Active AR Invoices from Finance Store
-    let list: ReceivableItem[] = invoices
-      .filter((inv) => inv.status !== "Cancelled" && inv.status !== "Draft")
-      .map((inv) => {
-        const total = Number(inv.total || 0)
-        const paid = Number(inv.amount_paid || 0)
-        const due = typeof inv.balance_due === "number" ? Math.max(0, inv.balance_due) : Math.max(0, total - paid)
-        const percentPaid = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0
-        const status = due <= 0 ? "Paid" : paid > 0 ? "Ongoing" : "Unpaid"
+    let list: ReceivableItem[] = []
+    if (invoices.length > 0) {
+      list = invoices
+        .filter((inv) => inv.status !== "Cancelled" && inv.status !== "Draft")
+        .map((inv) => {
+          const total = Number(inv.total || 0)
+          const paid = Number(inv.amount_paid || 0)
+          const due = typeof inv.balance_due === "number" ? Math.max(0, inv.balance_due) : Math.max(0, total - paid)
+          const percentPaid = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0
+          const isPaid = (inv.status || "").toLowerCase() === "paid" || due <= 0.01
 
-        return {
-          id: inv.id,
-          fs_no: inv.fs_no || inv.invoice_number || inv.id,
-          reference_no: inv.sales_order_id || inv.sales_issue_id || "",
-          sale_date: inv.issue_date || "",
-          customer_name: inv.customer_name || "Customer",
-          payment_type: "Credit",
-          calculatedTotal: total,
-          calculatedPaid: paid,
-          calculatedDue: due,
-          percentPaid,
-          effectiveSettlement: status,
-          sales_issue_id: inv.sales_issue_id,
-        }
-      })
-      .filter((inv) => inv.calculatedDue > 0 && inv.effectiveSettlement !== "Paid")
-
-    // 2. Fallback / Merge with unsettled sales issues if no invoices recorded yet
-    if (list.length === 0 && salesIssues.length > 0) {
+          return {
+            id: inv.id,
+            fs_no: inv.fs_no || inv.invoice_number || inv.id,
+            reference_no: inv.sales_order_id || inv.sales_issue_id || "",
+            sale_date: inv.issue_date || "",
+            customer_name: inv.customer_name || "Customer",
+            payment_type: inv.payment_terms || "Credit",
+            calculatedTotal: total,
+            calculatedPaid: paid,
+            calculatedDue: due,
+            percentPaid,
+            effectiveSettlement: isPaid ? "Paid" : paid > 0 ? "Ongoing" : "Unpaid",
+            sales_issue_id: inv.sales_issue_id,
+          }
+        })
+        .filter((inv) => inv.calculatedDue > 0.01 && inv.effectiveSettlement !== "Paid")
+    } else if (salesIssues.length > 0) {
+      // 2. Fallback only if no invoices exist in database at all
       list = salesIssues
         .filter((si) => si.status !== "Cancelled")
         .map((si) => {
-          const isCash = (si.payment_type || "Cash") === "Cash"
+          const isCash = (si.payment_type || "Cash").toLowerCase() === "cash"
           const totalAmount = Number(si.total_amount || 0)
           const amountPaid = isCash ? totalAmount : Number(si.amount_paid || 0)
           const balanceDue = isCash ? 0 : (typeof si.balance_due === "number" ? Math.max(0, si.balance_due) : Math.max(0, totalAmount - amountPaid))
           const percentPaid = totalAmount > 0 ? Math.min(100, Math.round((amountPaid / totalAmount) * 100)) : (isCash ? 100 : 0)
-          const settlementStatus = isCash ? "Fully Settled" : (si.settlement_status || (balanceDue <= 0 ? "Fully Settled" : (amountPaid > 0 ? "Ongoing" : "Unpaid")))
+          const isPaid = isCash || (totalAmount > 0 && amountPaid >= totalAmount) || balanceDue <= 0.01 || si.settlement_status === "Fully Settled"
 
           return {
             id: si.id,
@@ -460,11 +461,11 @@ export default function ControlCenter() {
             calculatedPaid: amountPaid,
             calculatedDue: balanceDue,
             percentPaid,
-            effectiveSettlement: settlementStatus,
+            effectiveSettlement: isPaid ? "Paid" : amountPaid > 0 ? "Ongoing" : "Unpaid",
             sales_issue_id: si.id,
           }
         })
-        .filter((si) => si.calculatedDue > 0 && si.effectiveSettlement !== "Fully Settled")
+        .filter((si) => si.calculatedDue > 0.01 && si.effectiveSettlement !== "Paid")
     }
 
     list.sort((a, b) => new Date(b.sale_date || 0).getTime() - new Date(a.sale_date || 0).getTime())
