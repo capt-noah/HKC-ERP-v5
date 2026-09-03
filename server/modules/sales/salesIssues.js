@@ -69,8 +69,9 @@ export async function listSalesIssues(query = {}) {
 
     let fullIssues = issues.map((rawIssue) => {
       const issue = rawIssue?.payload ? { ...rawIssue.payload, ...rawIssue } : rawIssue
-      const issueItems = itemsByIssueId.get(issue.id) || issue.items || []
-      const fs_no = issue.fs_no || issue.fsNo || issue.issue_number || issue.issueNumber || issue.id
+      const issueItems = itemsByIssueId.get(issue.id) || itemsByIssueId.get(issue.issue_number) || itemsByIssueId.get(issue.fs_no) || issue.items || []
+      const fs_no = issue.fs_no || issue.fsNo || issue.issue_number || issue.issueNumber || String(issue.id)
+      const primaryId = fs_no || String(issue.id)
       const reference_no = issue.reference_no || issue.referenceNo || issue.sales_order_id || issue.salesOrderId || ""
       let rawDate = issue.sale_date || issue.issueDate || issue.issue_date || issue.created_at || new Date()
       let sale_date = typeof rawDate === "string" 
@@ -100,18 +101,24 @@ export async function listSalesIssues(query = {}) {
 
       return {
         ...issue,
-        id: issue.id,
+        id: primaryId,
         fs_no,
         fsNo: fs_no,
+        issue_number: fs_no,
+        issueNumber: fs_no,
         reference_no,
         referenceNo: reference_no,
+        sales_order_id: reference_no,
+        salesOrderId: reference_no,
         sale_date,
+        issue_date: sale_date,
         issueDate: sale_date,
         customer_name,
         customer: customer_name,
         customer_id,
         customerId: customer_id,
         warehouse_id,
+        warehouseId: warehouse_id,
         warehouse: warehouse_id,
         payment_type,
         paymentType: payment_type,
@@ -151,18 +158,27 @@ export async function listSalesIssues(query = {}) {
       )
     }
 
-    return { status: 200, body: fullIssues }
+    return {
+      status: 200,
+      body: {
+        rows: fullIssues,
+        total: fullIssues.length,
+        page: 1,
+        pageSize: fullIssues.length,
+      },
+    }
   } catch (err) {
-    console.warn("[sales_issues list exception]:", err?.message || err)
-    return { status: 200, body: [] }
+    console.error("[listSalesIssues exception]:", err)
+    return { status: 500, body: { error: "Failed to list sales issues", message: err.message } }
   }
 }
 
 export async function getSalesIssue(id) {
   try {
+    const cleanId = String(id).trim()
     let issueRes = await drizzleGetRow({
       resource: getResource("sales_issues"),
-      id,
+      id: cleanId,
     })
 
     if (issueRes.status >= 400 || !issueRes.body) {
@@ -174,15 +190,15 @@ export async function getSalesIssue(id) {
       const found = all.find((r) => {
         const item = r?.payload ? { ...r.payload, ...r } : r
         return (
-          item.id === id ||
-          item.fs_no === id ||
-          item.fsNo === id ||
-          item.issue_number === id ||
-          item.issueNumber === id ||
-          item.reference_no === id ||
-          item.referenceNo === id ||
-          item.sales_order_id === id ||
-          item.salesOrderId === id
+          String(item.id) === cleanId ||
+          String(item.fs_no || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(item.fsNo || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(item.issue_number || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(item.issueNumber || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(item.reference_no || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(item.referenceNo || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(item.sales_order_id || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(item.salesOrderId || "").toLowerCase() === cleanId.toLowerCase()
         )
       })
 
@@ -210,6 +226,10 @@ export async function getSalesIssue(id) {
     const allProducts = Array.isArray(productsRes.body) ? productsRes.body : []
     const productMap = new Map(allProducts.map((p) => [p.id, p.payload ? { ...p.payload, ...p } : p]))
 
+    const issue = rawIssue?.payload ? { ...rawIssue.payload, ...rawIssue } : rawIssue
+    const fs_no = issue.fs_no || issue.fsNo || issue.issue_number || issue.issueNumber || String(issue.id)
+    const primaryId = fs_no || String(issue.id)
+
     const allItems = Array.isArray(itemsRes.body) ? itemsRes.body : []
     const items = allItems
       .filter((i) => {
@@ -217,6 +237,7 @@ export async function getSalesIssue(id) {
         const parentId = item.sales_issue_id || item.salesIssueId || item.sales_order_id
         return (
           parentId === id ||
+          parentId === cleanId ||
           parentId === issue.id ||
           parentId === issue.fs_no ||
           parentId === issue.fsNo ||
@@ -231,7 +252,7 @@ export async function getSalesIssue(id) {
         const matchedProd = productMap.get(item.product_id) || productMap.get(item.item_id)
         return {
           id: item.id,
-          sales_issue_id: id,
+          sales_issue_id: primaryId,
           item_id: item.item_id || item.product_id || item.id,
           product_id: item.product_id || item.item_id || item.id,
           item_name: item.item_name || item.product_name || matchedProd?.name || item.name || "Item",
@@ -245,7 +266,6 @@ export async function getSalesIssue(id) {
         }
       })
 
-    const fs_no = issue.fs_no || issue.fsNo || issue.issue_number || issue.issueNumber || issue.id
     const reference_no = issue.reference_no || issue.referenceNo || issue.sales_order_id || issue.salesOrderId || ""
     let rawDate = issue.sale_date || issue.issueDate || issue.issue_date || issue.created_at || new Date()
     let sale_date = typeof rawDate === "string" 
@@ -277,18 +297,24 @@ export async function getSalesIssue(id) {
       status: 200,
       body: {
         ...issue,
-        id: issue.id,
+        id: primaryId,
         fs_no,
         fsNo: fs_no,
+        issue_number: fs_no,
+        issueNumber: fs_no,
         reference_no,
         referenceNo: reference_no,
+        sales_order_id: reference_no,
+        salesOrderId: reference_no,
         sale_date,
+        issue_date: sale_date,
         issueDate: sale_date,
         customer_name,
         customer: customer_name,
         customer_id,
         customerId: customer_id,
         warehouse_id,
+        warehouseId: warehouse_id,
         warehouse: warehouse_id,
         payment_type,
         paymentType: payment_type,
@@ -317,8 +343,8 @@ export async function getSalesIssue(id) {
 }
 
 export async function createSalesIssue(input, existingId = null) {
-  const id = existingId || input?.id || `SI-${Date.now().toString().slice(-5)}`
-  const fs_no = input?.fs_no || input?.fsNo || id
+  const fs_no = input?.fs_no || input?.fsNo || input?.issue_number || input?.issueNumber || `FS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
+  const id = existingId || input?.id || fs_no
   const reference_no = input?.reference_no || input?.referenceNo || `REF-${fs_no}`
   const sale_date = input?.sale_date || input?.issueDate || new Date().toISOString().split("T")[0]
   const customer_name = input?.customer_name || input?.customer || input?.customer_id || "Walk-in Customer"
