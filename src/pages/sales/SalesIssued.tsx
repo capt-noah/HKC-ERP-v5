@@ -228,9 +228,9 @@ export default function SalesIssued() {
     const targetWhId = matchedWh ? matchedWh.id : canonicalWarehouseId(so.warehouse)
     setWarehouseId(targetWhId)
     const targetIsWh1 = isWH1(so.warehouse) || isWH1(targetWhId)
-    const rawTerms = (so.payment_terms || so.paymentTerms || so.paymentType || so.payment_type || "").toString().toLowerCase()
-    const isCreditOrder = rawTerms.includes("credit") || rawTerms.includes("net")
-    setPaymentType(isCreditOrder ? "Credit" : "Cash")
+    const explicitPaymentType = (so.paymentType || so.payment_type || so.payment_method || so.paymentMethod || "").toString().trim().toLowerCase()
+    const targetIsCash = explicitPaymentType === "cash" || (!explicitPaymentType && (so.payment_terms || so.paymentTerms || "").toString().toLowerCase() === "cash")
+    setPaymentType(targetIsCash ? "Cash" : "Credit")
     setReferenceNo(so.id)
     if (!saleDate) setSaleDate(new Date().toISOString().split("T")[0])
     setIssueFormErrors({})
@@ -350,9 +350,9 @@ export default function SalesIssued() {
       const targetWhId = matchedWh ? matchedWh.id : canonicalWarehouseId(preselectedSo.warehouse)
       const targetIsWh1 = isWH1(preselectedSo.warehouse) || isWH1(targetWhId)
       setWarehouseId(targetWhId)
-      const rawTerms = (preselectedSo.payment_terms || preselectedSo.paymentTerms || preselectedSo.paymentType || preselectedSo.payment_type || "").toString().toLowerCase()
-      const isCreditOrder = rawTerms.includes("credit") || rawTerms.includes("net")
-      setPaymentType(isCreditOrder ? "Credit" : "Cash")
+      const explicitPaymentType = (preselectedSo.paymentType || preselectedSo.payment_type || preselectedSo.payment_method || preselectedSo.paymentMethod || "").toString().trim().toLowerCase()
+      const targetIsCash = explicitPaymentType === "cash" || (!explicitPaymentType && (preselectedSo.payment_terms || preselectedSo.paymentTerms || "").toString().toLowerCase() === "cash")
+      setPaymentType(targetIsCash ? "Cash" : "Credit")
       setReferenceNo(preselectedSo.id)
       const allProducts = erp.getProducts()
 
@@ -423,11 +423,29 @@ export default function SalesIssued() {
       setEditing(full)
       setFsNo(full.fs_no || "")
       setReferenceNo(full.reference_no || "")
-      setSaleDate(full.sale_date || "")
-      setCustomerName(full.customer_name || "")
-      setWarehouseId(canonicalWarehouseId(full.warehouse_id || ""))
+      setSaleDate(full.sale_date ? (typeof full.sale_date === "string" ? full.sale_date.split("T")[0] : new Date(full.sale_date).toISOString().split("T")[0]) : "")
+      setCustomerName(full.customer_name || (full as any).customer || "")
+      const canonicalWh = canonicalWarehouseId(full.warehouse_id || "")
+      setWarehouseId(canonicalWh)
       setPaymentType(((full.payment_type || (full as any).paymentType || "Cash") === "Credit" ? "Credit" : "Cash") as PaymentType)
-      setItems(full.items && full.items.length > 0 ? full.items : [blankItem()])
+      
+      const mappedItems = (full.items && full.items.length > 0 ? full.items : [blankItem()]).map((item: any) => {
+        const qty = Number(item.quantity || item.qty || 1)
+        const price = Number(item.unit_price || item.price || 0)
+        const amt = Number(item.amount || (qty * price))
+        return {
+          ...item,
+          item_id: item.item_id || item.product_id || item.id,
+          item_name: item.item_name || item.product_name || item.name || "Item",
+          quantity: qty,
+          unit_price: price,
+          amount: amt,
+          packaging_unit: item.packaging_unit || item.packagingUnit || item.unit || (isWH1(canonicalWh) ? "Quintal" : "Box"),
+          batch_no: item.batch_no || item.batch_id || item.batch_number || item.batch || (isWH1(canonicalWh) ? "N/A" : "BATCH-MAIN"),
+          batch_id: item.batch_id || item.batch_no || item.batch_number || item.batch || (isWH1(canonicalWh) ? "N/A" : "BATCH-MAIN"),
+        }
+      })
+      setItems(mappedItems)
 
       setIsDocsLoading(true)
       fetchTradeAndAdviceDocs({
@@ -1090,15 +1108,15 @@ export default function SalesIssued() {
                 </div>
               )}
 
-              {/* FINANCIAL SUMMARY & SETTLEMENT KPI CARD FOR EDITING */}
-              {editing && (
+              {/* FINANCIAL SUMMARY & SETTLEMENT KPI CARD FOR EDITING (CREDIT ONLY) */}
+              {editing && (editing.payment_type || "Cash") === "Credit" && (
                 (() => {
                   const issuePayments = financeStore.getPaymentsForSalesIssue(editing.id)
                   const totalAmt = Number(editing.total_amount || 0)
                   const paidAmt = issuePayments.reduce((s, p) => s + p.amount, 0) || Number(editing.amount_paid || 0)
                   const dueAmt = Number(Math.max(0, totalAmt - paidAmt).toFixed(2))
                   const pct = totalAmt > 0 ? Math.min(100, Math.round((paidAmt / totalAmt) * 100)) : 0
-                  const isCredit = (editing.payment_type || "Cash") === "Credit"
+                  const isCredit = true
 
                   return (
                     <div className="mb-5 p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
@@ -1477,8 +1495,8 @@ export default function SalesIssued() {
                         )}
                       </div>
 
-                      {/* Payment Advice Dropzone - Shown when Cash */}
-                      {paymentType === "Cash" && (
+                      {/* Payment Advice Dropzone - Shown when Cash or when Credit has slip attached / is settled */}
+                      {(paymentType === "Cash" || Boolean(stagedPaymentAdviceName || stagedPaymentAdviceUrl || (editing && (editing.payment_type || "Cash") === "Credit"))) && (
                         <div className={`p-3 rounded-xl border shadow-sm space-y-1.5 transition-colors ${
                           issueFormErrors.paymentAdvice 
                             ? "bg-rose-50/40 border-rose-400" 
@@ -1494,9 +1512,13 @@ export default function SalesIssued() {
                               </span>
                             ) : isDocsLoading ? (
                               <Skeleton className="h-4 w-16 bg-zinc-200/80 rounded-full" />
-                            ) : (
+                            ) : paymentType === "Cash" ? (
                               <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
                                 Required for Cash
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold text-zinc-500 bg-zinc-100 border border-zinc-200 px-2 py-0.5 rounded-full">
+                                Optional / Settled Slip
                               </span>
                             )}
                           </div>
@@ -1634,7 +1656,15 @@ export default function SalesIssued() {
                             className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold disabled:cursor-not-allowed disabled:bg-zinc-100"
                           >
                             <option value="">{warehouseId ? "Select item" : "Select warehouse first"}</option>
-                            {selectableProducts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            {(() => {
+                              const hasSelected = selectableProducts.some((p) => p.id === item.item_id)
+                              const extra = item.item_id && !hasSelected ? [{ id: item.item_id, name: item.item_name || item.item_id }] : []
+                              return [...selectableProducts, ...extra].map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name}
+                                </option>
+                              ))
+                            })()}
                           </select>
                         )}
                       </label>

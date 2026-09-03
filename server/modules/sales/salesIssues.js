@@ -24,9 +24,21 @@ export async function listSalesIssues(query = {}) {
     })
 
     const issues = Array.isArray(issuesRes.body) ? issuesRes.body : []
-    const itemsRes = await drizzleListRows({
-      resource: getResource("sales_issue_items"),
-    })
+    const [itemsRes, customersRes, ordersRes, productsRes] = await Promise.all([
+      drizzleListRows({ resource: getResource("sales_issue_items") }),
+      drizzleListRows({ resource: getResource("customers") }).catch(() => ({ body: [] })),
+      drizzleListRows({ resource: getResource("sales_orders") }).catch(() => ({ body: [] })),
+      drizzleListRows({ resource: getResource("inventory_products") }).catch(() => ({ body: [] })),
+    ])
+
+    const allCustomers = Array.isArray(customersRes.body) ? customersRes.body : []
+    const customerMap = new Map(allCustomers.map((c) => [c.id, c.payload ? { ...c.payload, ...c } : c]))
+
+    const allOrders = Array.isArray(ordersRes.body) ? ordersRes.body : []
+    const orderMap = new Map(allOrders.map((o) => [o.id, o.payload ? { ...o.payload, ...o } : o]))
+
+    const allProducts = Array.isArray(productsRes.body) ? productsRes.body : []
+    const productMap = new Map(allProducts.map((p) => [p.id, p.payload ? { ...p.payload, ...p } : p]))
 
     const allItems = Array.isArray(itemsRes.body) ? itemsRes.body : []
     const itemsByIssueId = new Map()
@@ -36,15 +48,17 @@ export async function listSalesIssues(query = {}) {
       const issueId = item.sales_issue_id || item.salesIssueId || item.sales_order_id
       if (issueId) {
         const existing = itemsByIssueId.get(issueId) || []
+        const matchedProd = productMap.get(item.product_id) || productMap.get(item.item_id)
         existing.push({
           id: item.id,
           sales_issue_id: issueId,
-          item_id: item.item_id || item.productId || item.product_id || item.id,
-          item_name: item.item_name || item.name || "Item",
-          batch_id: item.batch_id || item.batch_no || item.batchNumber || item.batch || "BATCH-MAIN",
-          batch_no: item.batch_no || item.batch_id || item.batchNumber || item.batch || "BATCH-MAIN",
-          packaging_unit: item.packaging_unit || item.packagingUnit || item.unit || "Box",
-          available_quantity: Number(item.available_quantity || item.availableQuantity || 1000),
+          item_id: item.item_id || item.product_id || item.id,
+          product_id: item.product_id || item.item_id || item.id,
+          item_name: item.item_name || item.product_name || matchedProd?.name || item.name || "Item",
+          batch_id: item.batch_id || item.batch_no || item.batch_number || item.batch || "BATCH-MAIN",
+          batch_no: item.batch_no || item.batch_id || item.batch_number || item.batch || "BATCH-MAIN",
+          packaging_unit: item.packaging_unit || item.packagingUnit || item.unit || matchedProd?.unit || "Box",
+          available_quantity: Number(item.available_quantity || item.availableQuantity || matchedProd?.quantity || 1000),
           quantity: Number(item.quantity || item.qty || 0),
           unit_price: Number(item.unit_price || item.unitPrice || item.price || 0),
           amount: Number(item.amount || item.total_price || item.totalPrice || (Number(item.quantity || 0) * Number(item.unit_price || 0))),
@@ -62,12 +76,24 @@ export async function listSalesIssues(query = {}) {
       let sale_date = typeof rawDate === "string" 
         ? (rawDate.includes("T") ? rawDate.split("T")[0] : rawDate)
         : (rawDate instanceof Date ? rawDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
-      const customer_name = issue.customer_name || issue.customer || issue.customerName || "Customer"
-      const customer_id = issue.customer_id || issue.customerId || customer_name
-      const warehouse_id = issue.warehouse_id || issue.warehouseId || issue.warehouse || "WH1"
+
+      const matchedCust = customerMap.get(issue.customer_id)
+      const matchedOrder = orderMap.get(issue.sales_order_id) || orderMap.get(reference_no)
+      const firstItem = issueItems[0]
+      const matchedProd = firstItem ? (productMap.get(firstItem.product_id) || productMap.get(firstItem.item_id)) : null
+
+      const customer_name = issue.customer_name || matchedCust?.name || matchedOrder?.customer || issue.customer || issue.customerName || issue.customer_id || "Customer"
+      const customer_id = issue.customer_id || matchedCust?.id || matchedOrder?.customerId || customer_name
+      const warehouse_id = issue.warehouse_id || matchedOrder?.warehouse || matchedProd?.warehouse || issue.warehouseId || issue.warehouse || "WH1"
+      const isWh1 = (warehouse_id || "").toUpperCase().startsWith("WH1")
+
       const payment_type = issue.payment_type || issue.paymentType || issue.payment_method || issue.paymentMethod || "Cash"
       const status = issue.status || "Draft"
-      const total_amount = Number(issue.total_amount || issue.totalAmount || issueItems.reduce((s, i) => s + (i.amount || 0), 0) || 0)
+
+      const subtotal = Number(issue.subtotal_amount || issue.subtotal || issueItems.reduce((s, i) => s + (i.amount || 0), 0) || 0)
+      const vat_amount = Number(issue.tax_amount || issue.vat_amount || 0)
+      const vat_rate = Number(issue.vat_rate !== undefined ? issue.vat_rate : (vat_amount > 0 && subtotal > 0 ? Math.round((vat_amount / subtotal) * 100) : (isWh1 ? 0 : 15)))
+      const total_amount = Number(issue.total_amount || issue.totalAmount || (subtotal + vat_amount) || 0)
       const total_quantity = Number(issue.total_quantity || issue.totalQuantity || issueItems.reduce((s, i) => s + (i.quantity || 0), 0) || 0)
       const amount_paid = Number(issue.amount_paid || issue.amountPaid || 0)
       const balance_due = Number(issue.balance_due || issue.balanceDue || Math.max(0, total_amount - amount_paid))
@@ -90,6 +116,11 @@ export async function listSalesIssues(query = {}) {
         payment_type,
         paymentType: payment_type,
         status,
+        subtotal,
+        subtotal_amount: subtotal,
+        vat_rate,
+        vat_amount,
+        tax_amount: vat_amount,
         total_amount,
         totalAmount: total_amount,
         total_quantity,
@@ -139,10 +170,21 @@ export async function getSalesIssue(id) {
     }
 
     const rawIssue = issueRes.body
-    const issue = rawIssue?.payload ? { ...rawIssue.payload, ...rawIssue } : rawIssue
-    const itemsRes = await drizzleListRows({
-      resource: getResource("sales_issue_items"),
-    })
+    const [itemsRes, customersRes, ordersRes, productsRes] = await Promise.all([
+      drizzleListRows({ resource: getResource("sales_issue_items") }),
+      drizzleListRows({ resource: getResource("customers") }).catch(() => ({ body: [] })),
+      drizzleListRows({ resource: getResource("sales_orders") }).catch(() => ({ body: [] })),
+      drizzleListRows({ resource: getResource("inventory_products") }).catch(() => ({ body: [] })),
+    ])
+
+    const allCustomers = Array.isArray(customersRes.body) ? customersRes.body : []
+    const customerMap = new Map(allCustomers.map((c) => [c.id, c.payload ? { ...c.payload, ...c } : c]))
+
+    const allOrders = Array.isArray(ordersRes.body) ? ordersRes.body : []
+    const orderMap = new Map(allOrders.map((o) => [o.id, o.payload ? { ...o.payload, ...o } : o]))
+
+    const allProducts = Array.isArray(productsRes.body) ? productsRes.body : []
+    const productMap = new Map(allProducts.map((p) => [p.id, p.payload ? { ...p.payload, ...p } : p]))
 
     const allItems = Array.isArray(itemsRes.body) ? itemsRes.body : []
     const items = allItems
@@ -152,15 +194,17 @@ export async function getSalesIssue(id) {
       })
       .map((rawItem) => {
         const item = rawItem?.payload ? { ...rawItem.payload, ...rawItem } : rawItem
+        const matchedProd = productMap.get(item.product_id) || productMap.get(item.item_id)
         return {
           id: item.id,
           sales_issue_id: id,
-          item_id: item.item_id || item.productId || item.product_id || item.id,
-          item_name: item.item_name || item.name || "Item",
-          batch_id: item.batch_id || item.batch_no || item.batchNumber || item.batch || "BATCH-MAIN",
-          batch_no: item.batch_no || item.batch_id || item.batchNumber || item.batch || "BATCH-MAIN",
-          packaging_unit: item.packaging_unit || item.packagingUnit || item.unit || "Box",
-          available_quantity: Number(item.available_quantity || item.availableQuantity || 1000),
+          item_id: item.item_id || item.product_id || item.id,
+          product_id: item.product_id || item.item_id || item.id,
+          item_name: item.item_name || item.product_name || matchedProd?.name || item.name || "Item",
+          batch_id: item.batch_id || item.batch_no || item.batch_number || item.batch || "BATCH-MAIN",
+          batch_no: item.batch_no || item.batch_id || item.batch_number || item.batch || "BATCH-MAIN",
+          packaging_unit: item.packaging_unit || item.packagingUnit || item.unit || matchedProd?.unit || "Box",
+          available_quantity: Number(item.available_quantity || item.availableQuantity || matchedProd?.quantity || 1000),
           quantity: Number(item.quantity || item.qty || 0),
           unit_price: Number(item.unit_price || item.unitPrice || item.price || 0),
           amount: Number(item.amount || item.total_price || item.totalPrice || (Number(item.quantity || 0) * Number(item.unit_price || 0))),
@@ -173,12 +217,24 @@ export async function getSalesIssue(id) {
     let sale_date = typeof rawDate === "string" 
       ? (rawDate.includes("T") ? rawDate.split("T")[0] : rawDate)
       : (rawDate instanceof Date ? rawDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
-    const customer_name = issue.customer_name || issue.customer || issue.customerName || "Customer"
-    const customer_id = issue.customer_id || issue.customerId || customer_name
-    const warehouse_id = issue.warehouse_id || issue.warehouseId || issue.warehouse || "WH1"
+
+    const matchedCust = customerMap.get(issue.customer_id)
+    const matchedOrder = orderMap.get(issue.sales_order_id) || orderMap.get(reference_no)
+    const firstItem = items[0]
+    const matchedProd = firstItem ? (productMap.get(firstItem.product_id) || productMap.get(firstItem.item_id)) : null
+
+    const customer_name = issue.customer_name || matchedCust?.name || matchedOrder?.customer || issue.customer || issue.customerName || issue.customer_id || "Customer"
+    const customer_id = issue.customer_id || matchedCust?.id || matchedOrder?.customerId || customer_name
+    const warehouse_id = issue.warehouse_id || matchedOrder?.warehouse || matchedProd?.warehouse || issue.warehouseId || issue.warehouse || "WH1"
+    const isWh1 = (warehouse_id || "").toUpperCase().startsWith("WH1")
+
     const payment_type = issue.payment_type || issue.paymentType || issue.payment_method || issue.paymentMethod || "Cash"
     const status = issue.status || "Draft"
-    const total_amount = Number(issue.total_amount || issue.totalAmount || items.reduce((s, i) => s + (i.amount || 0), 0) || 0)
+
+    const subtotal = Number(issue.subtotal_amount || issue.subtotal || items.reduce((s, i) => s + (i.amount || 0), 0) || 0)
+    const vat_amount = Number(issue.tax_amount || issue.vat_amount || 0)
+    const vat_rate = Number(issue.vat_rate !== undefined ? issue.vat_rate : (vat_amount > 0 && subtotal > 0 ? Math.round((vat_amount / subtotal) * 100) : (isWh1 ? 0 : 15)))
+    const total_amount = Number(issue.total_amount || issue.totalAmount || (subtotal + vat_amount) || 0)
     const total_quantity = Number(issue.total_quantity || issue.totalQuantity || items.reduce((s, i) => s + (i.quantity || 0), 0) || 0)
     const amount_paid = Number(issue.amount_paid || issue.amountPaid || 0)
     const balance_due = Number(issue.balance_due || issue.balanceDue || Math.max(0, total_amount - amount_paid))
@@ -203,6 +259,11 @@ export async function getSalesIssue(id) {
         payment_type,
         paymentType: payment_type,
         status,
+        subtotal,
+        subtotal_amount: subtotal,
+        vat_rate,
+        vat_amount,
+        tax_amount: vat_amount,
         total_amount,
         totalAmount: total_amount,
         total_quantity,

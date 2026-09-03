@@ -566,13 +566,14 @@ export default function Invoices() {
                 {/* Financial Summary & Settlement Progress */}
                 {(() => {
                   const totalVal = Number(activeInvoice.total ?? 0)
-                  const subtotalVal = Number(activeInvoice.subtotal ?? totalVal)
-                  const taxVal = Number(activeInvoice.tax_amount ?? 0)
+                  const lineItemsSum = (activeInvoice.line_items || []).reduce((s, i) => s + (Number(i.line_total) || (Number(i.quantity) * Number(i.unit_price)) || 0), 0)
+                  const subtotalVal = Number(activeInvoice.subtotal ?? (lineItemsSum > 0 ? lineItemsSum : (totalVal > 0 ? Math.round(totalVal / 1.15) : 0)))
                   const discVal = Number(activeInvoice.discount_amount ?? 0)
+                  const taxVal = Number(activeInvoice.tax_amount !== undefined && activeInvoice.tax_amount > 0 ? activeInvoice.tax_amount : (totalVal > subtotalVal ? totalVal - subtotalVal : 0))
                   const paidVal = Number(activeInvoice.amount_paid ?? 0)
                   const dueVal = Number(activeInvoice.balance_due ?? Math.max(0, totalVal - paidVal))
                   const pct = totalVal > 0 ? Math.min(100, Math.round((paidVal / totalVal) * 100)) : 0
-                  const recordedTaxRate = activeInvoice.tax_rate !== undefined
+                  const recordedTaxRate = activeInvoice.tax_rate !== undefined && activeInvoice.tax_rate > 0
                     ? activeInvoice.tax_rate
                     : (subtotalVal > 0 && taxVal > 0 ? Math.round((taxVal / Math.max(1, subtotalVal - discVal)) * 100) : (taxVal > 0 ? 15 : 0))
 

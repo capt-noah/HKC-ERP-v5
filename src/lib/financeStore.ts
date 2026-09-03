@@ -515,16 +515,20 @@ class FinanceStore {
    */
   public async syncCrossModule(customSalesIssues?: any[], customPurchaseOrders?: any[]) {
     try {
-      const [fetchedSI, , fetchedPO, fetchedPR] = await Promise.all([
+      const [fetchedSI, fetchedSO, fetchedPO, fetchedPR, fetchedCust] = await Promise.all([
         loadResource<any>("sales_issues").catch(() => []),
         loadResource<any>("sales_orders").catch(() => []),
         loadResource<any>("purchase_orders").catch(() => []),
         loadResource<any>("payroll_records").catch(() => []),
+        loadResource<any>("customers").catch(() => []),
       ])
 
       const salesIssues = customSalesIssues || fetchedSI
       const purchaseOrders = customPurchaseOrders || fetchedPO
       const payrollRecords = fetchedPR
+
+      const custMap = new Map((fetchedCust || []).map((c: any) => [c.id, (c.payload ? c.payload.name : c.name) || c.id]))
+      const soMap = new Map((fetchedSO || []).map((so: any) => [so.id, so.payload ? { ...so.payload, ...so } : so]))
 
       let hasNewSync = false
 
@@ -548,10 +552,13 @@ class FinanceStore {
                 })
               : [{ description: `Sales Issue ${si.fs_no || si.id}`, quantity: 1, unit_price: Number(si.total_amount || 0), line_total: Number(si.total_amount || 0) }]
 
-            const subtotal = Number(si.subtotal || lineItems.reduce((sum, item) => sum + item.line_total, 0))
-            const isWh1 = (si.warehouse_id || "").toString().toUpperCase().startsWith("WH1")
-            const taxRate = Number(si.vat_rate !== undefined ? si.vat_rate : (isWh1 ? 0 : 15))
-            const vatAmount = Number(si.vat_amount !== undefined ? si.vat_amount : (taxRate > 0 ? Math.round(subtotal * (taxRate / 100)) : 0))
+            const matchedOrder = soMap.get(si.sales_order_id || si.reference_no)
+            const matchedCustName = custMap.get(si.customer_id) || matchedOrder?.customer || (si.customer_name && si.customer_name !== "Customer" ? si.customer_name : null) || si.customer || "Customer"
+
+            const subtotal = Number(si.subtotal_amount || si.subtotal || lineItems.reduce((sum, item) => sum + item.line_total, 0))
+            const isWh1 = (si.warehouse_id || matchedOrder?.warehouse || "").toString().toUpperCase().startsWith("WH1")
+            const vatAmount = Number(si.tax_amount !== undefined ? si.tax_amount : (si.vat_amount !== undefined ? si.vat_amount : (isWh1 ? 0 : Math.round(subtotal * 0.15))))
+            const taxRate = Number(si.vat_rate !== undefined ? si.vat_rate : (vatAmount > 0 && subtotal > 0 ? Math.round((vatAmount / subtotal) * 100) : (isWh1 ? 0 : 15)))
             const discountAmount = Number(si.discount_amount || 0)
             const whtAmount = Number(si.wht_amount || 0)
             const invoiceTotal = Number(si.total_amount || (subtotal + vatAmount - discountAmount))
@@ -723,7 +730,7 @@ class FinanceStore {
             const mappedInvoice: Invoice = {
               id: invId,
               invoice_number: `INV-${si.fs_no || si.reference_no || si.id}`,
-              customer_name: si.customer_name || "Customer",
+              customer_name: matchedCustName,
               issue_date: si.sale_date || new Date().toISOString().split("T")[0],
               due_date: si.sale_date || new Date().toISOString().split("T")[0],
               currency: "ETB",
