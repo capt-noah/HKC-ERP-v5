@@ -447,31 +447,45 @@ export async function createSalesIssue(input, existingId = null) {
 
   // 2. Save Items with exact MySQL relational schema columns
   if (items.length > 0) {
-    const itemRows = items.map((item, idx) => ({
-      id: String(item.id || `${id}-ITEM-${idx + 1}`),
-      sales_issue_id: id,
-      salesIssueId: id,
-      product_id: String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`),
-      productId: String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`),
-      product_name: String(item.item_name || item.product_name || item.name || "Item"),
-      productName: String(item.item_name || item.product_name || item.name || "Item"),
-      item_name: String(item.item_name || item.product_name || item.name || "Item"),
-      itemName: String(item.item_name || item.product_name || item.name || "Item"),
-      batch_number: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
-      batchNumber: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
-      batch_no: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
-      batchNo: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
-      quantity: Number(item.quantity || item.qty || 0),
-      qty: Number(item.quantity || item.qty || 0),
-      unit_price: Number(item.unit_price || item.price || 0),
-      unitPrice: Number(item.unit_price || item.price || 0),
-      total_price: Number(item.amount || item.total_price || (item.quantity * item.unit_price) || 0),
-      totalPrice: Number(item.amount || item.total_price || (item.quantity * item.unit_price) || 0),
-      amount: Number(item.amount || item.total_price || (item.quantity * item.unit_price) || 0),
-      unit: String(item.packaging_unit || item.unit || "Box"),
-      packaging_unit: String(item.packaging_unit || item.unit || "Box"),
-      packagingUnit: String(item.packaging_unit || item.unit || "Box"),
-    }))
+    const itemRows = items.map((item, idx) => {
+      const prodId = String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`)
+      const prodName = String(item.item_name || item.product_name || item.name || "Item")
+      const batchCode = String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN")
+      const packUnit = String(item.packaging_unit || item.unit || "Box")
+      const q = Number(item.quantity || item.qty || 0)
+      const p = Number(item.unit_price || item.price || 0)
+      const tot = Number(item.amount || item.total_price || (q * p) || 0)
+
+      return {
+        id: String(item.id || `${id}-ITEM-${idx + 1}`),
+        sales_issue_id: id,
+        salesIssueId: id,
+        item_id: prodId,
+        itemId: prodId,
+        product_id: prodId,
+        productId: prodId,
+        product_name: prodName,
+        productName: prodName,
+        item_name: prodName,
+        itemName: prodName,
+        batch_id: batchCode,
+        batchId: batchCode,
+        batch_number: batchCode,
+        batchNumber: batchCode,
+        batch_no: batchCode,
+        batchNo: batchCode,
+        quantity: q,
+        qty: q,
+        unit_price: p,
+        unitPrice: p,
+        total_price: tot,
+        totalPrice: tot,
+        amount: tot,
+        unit: packUnit,
+        packaging_unit: packUnit,
+        packagingUnit: packUnit,
+      }
+    })
 
     for (const itemRow of itemRows) {
       await drizzleCreateRow({
@@ -485,7 +499,8 @@ export async function createSalesIssue(input, existingId = null) {
 }
 
 export async function updateSalesIssue(input, id) {
-  const getRes = await getSalesIssue(id)
+  const cleanId = String(id).trim()
+  const getRes = await getSalesIssue(cleanId)
   if (getRes.status >= 400 || !getRes.body) {
     return { status: 404, body: { error: `Sales issue '${id}' not found.` } }
   }
@@ -503,10 +518,10 @@ export async function updateSalesIssue(input, id) {
   const finalTotalAmount = input?.total_amount !== undefined ? Number(input.total_amount) : (subtotal + vat_amount)
 
   const updateHeader = {
-    fs_no: input?.fs_no || existing.fs_no || id,
-    fsNo: input?.fs_no || existing.fs_no || id,
-    issue_number: input?.fs_no || existing.fs_no || id,
-    issueNumber: input?.fs_no || existing.fs_no || id,
+    fs_no: input?.fs_no || existing.fs_no || cleanId,
+    fsNo: input?.fs_no || existing.fs_no || cleanId,
+    issue_number: input?.fs_no || existing.fs_no || cleanId,
+    issueNumber: input?.fs_no || existing.fs_no || cleanId,
     reference_no: (input?.reference_no || existing.reference_no) || null,
     referenceNo: (input?.reference_no || existing.reference_no) || null,
     sales_order_id: (input?.reference_no || existing.reference_no) || null,
@@ -545,7 +560,7 @@ export async function updateSalesIssue(input, id) {
 
   await drizzleUpdateRow({
     resource: getResource("sales_issues"),
-    id,
+    id: cleanId,
     body: updateHeader,
   })
 
@@ -558,30 +573,42 @@ export async function updateSalesIssue(input, id) {
       }
     }
     for (const [idx, item] of items.entries()) {
+      const prodId = String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`)
+      const prodName = String(item.item_name || item.product_name || item.name || "Item")
+      const batchCode = String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN")
+      const packUnit = String(item.packaging_unit || item.unit || "Box")
+      const q = Number(item.quantity || item.qty || 0)
+      const p = Number(item.unit_price || item.price || 0)
+      const tot = Number(item.amount || item.total_price || (q * p) || 0)
+
       const itemRow = {
-        id: String(item.id || `${id}-ITEM-${idx + 1}`),
-        sales_issue_id: id,
-        salesIssueId: id,
-        product_id: String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`),
-        productId: String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`),
-        product_name: String(item.item_name || item.product_name || item.name || "Item"),
-        productName: String(item.item_name || item.product_name || item.name || "Item"),
-        item_name: String(item.item_name || item.product_name || item.name || "Item"),
-        itemName: String(item.item_name || item.product_name || item.name || "Item"),
-        batch_number: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
-        batchNumber: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
-        batch_no: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
-        batchNo: String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN"),
-        quantity: Number(item.quantity || item.qty || 0),
-        qty: Number(item.quantity || item.qty || 0),
-        unit_price: Number(item.unit_price || item.price || 0),
-        unitPrice: Number(item.unit_price || item.price || 0),
-        total_price: Number(item.amount || item.total_price || (item.quantity * item.unit_price) || 0),
-        totalPrice: Number(item.amount || item.total_price || (item.quantity * item.unit_price) || 0),
-        amount: Number(item.amount || item.total_price || (item.quantity * item.unit_price) || 0),
-        unit: String(item.packaging_unit || item.unit || "Box"),
-        packaging_unit: String(item.packaging_unit || item.unit || "Box"),
-        packagingUnit: String(item.packaging_unit || item.unit || "Box"),
+        id: String(item.id || `${cleanId}-ITEM-${idx + 1}`),
+        sales_issue_id: cleanId,
+        salesIssueId: cleanId,
+        item_id: prodId,
+        itemId: prodId,
+        product_id: prodId,
+        productId: prodId,
+        product_name: prodName,
+        productName: prodName,
+        item_name: prodName,
+        itemName: prodName,
+        batch_id: batchCode,
+        batchId: batchCode,
+        batch_number: batchCode,
+        batchNumber: batchCode,
+        batch_no: batchCode,
+        batchNo: batchCode,
+        quantity: q,
+        qty: q,
+        unit_price: p,
+        unitPrice: p,
+        total_price: tot,
+        totalPrice: tot,
+        amount: tot,
+        unit: packUnit,
+        packaging_unit: packUnit,
+        packagingUnit: packUnit,
       }
       await drizzleCreateRow({
         resource: getResource("sales_issue_items"),
