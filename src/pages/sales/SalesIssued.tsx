@@ -8,7 +8,7 @@ import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, getTradeLicenseStatus } from "@/lib/erpStore"
-import { financeStore } from "@/lib/financeStore"
+import { useFinanceStore } from "@/lib/financeStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { sortNewestFirst } from "@/lib/utils"
@@ -112,6 +112,7 @@ function SalesIssuedSkeletonRows() {
 
 export default function SalesIssued() {
   const erp = useErpStore()
+  const financeStore = useFinanceStore()
   const { showToast, confirm } = useFeedback()
   const products = erp.getProducts()
   const warehouses = withOperatingWarehouses(erp.getWarehouses())
@@ -315,7 +316,10 @@ export default function SalesIssued() {
       if (batchFilter !== "ALL") params.set("batch", batchFilter)
       if (search.trim()) params.set("search", search.trim())
 
-      const result = await listSalesIssues(params)
+      const [result] = await Promise.all([
+        listSalesIssues(params),
+        financeStore.getInvoices().length === 0 ? financeStore.reloadFromApi() : Promise.resolve(),
+      ])
       const sorted = sortNewestFirst(result.rows)
       setRows(sorted)
       setTotal(result.total)
