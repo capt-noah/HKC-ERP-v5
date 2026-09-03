@@ -227,7 +227,13 @@ export async function createSalesIssue(input, existingId = null) {
   const items = Array.isArray(input?.items) ? input.items : []
 
   const total_quantity = items.reduce((sum, item) => sum + Number(item.quantity || item.qty || 0), 0)
-  const total_amount = items.reduce((sum, item) => sum + Number(item.amount || (item.quantity * item.unit_price) || 0), 0)
+  const itemTotal = items.reduce((sum, item) => sum + Number(item.amount || (item.quantity * item.unit_price) || 0), 0)
+
+  const isWh1 = (warehouse_id || "").toUpperCase().startsWith("WH1")
+  const subtotal = input?.subtotal !== undefined ? Number(input.subtotal) : itemTotal
+  const vat_rate = input?.vat_rate !== undefined ? Number(input.vat_rate) : (isWh1 ? 0 : 15)
+  const vat_amount = input?.vat_amount !== undefined ? Number(input.vat_amount) : (vat_rate > 0 ? Math.round(subtotal * (vat_rate / 100)) : 0)
+  const finalTotalAmount = input?.total_amount !== undefined ? Number(input.total_amount) : (subtotal + vat_amount)
 
   const doc = {
     ...input,
@@ -262,23 +268,19 @@ export async function createSalesIssue(input, existingId = null) {
     return { status: 400, body: { error: "Validation failed", details: errors } }
   }
 
-  // 1. Save Header
+  // 1. Save Header with exact MySQL relational schema columns
   const headerRow = {
     id,
-    fs_no,
-    reference_no,
-    sale_date,
-    customer_id,
-    customer_name,
-    warehouse_id,
-    payment_type,
-    status: doc.status,
-    total_quantity,
-    subtotal,
-    vat_rate,
-    vat_amount,
+    sales_order_id: reference_no || null,
+    issue_number: fs_no,
+    customer_id: customer_id || null,
+    issue_date: sale_date,
+    status: doc.status || "Draft",
     total_amount: finalTotalAmount,
-    created_by: "Current User",
+    subtotal_amount: subtotal,
+    tax_amount: vat_amount,
+    payment_status: payment_type === "Cash" ? "Paid" : "Unpaid",
+    payment_method: payment_type,
   }
 
   await drizzleCreateRow({
@@ -286,18 +288,18 @@ export async function createSalesIssue(input, existingId = null) {
     body: headerRow,
   })
 
-  // 2. Save Items
+  // 2. Save Items with exact MySQL relational schema columns
   if (items.length > 0) {
     const itemRows = items.map((item, idx) => ({
       id: String(item.id || `${id}-ITEM-${idx + 1}`),
       sales_issue_id: id,
-      item_id: String(item.item_id || item.productId || `ITEM-${idx + 1}`),
-      item_name: String(item.item_name || item.name || "Item"),
-      batch_id: String(item.batch_id || item.batch_no || "BATCH-MAIN"),
-      batch_no: String(item.batch_no || item.batch_id || "BATCH-MAIN"),
+      product_id: String(item.item_id || item.productId || `ITEM-${idx + 1}`),
+      product_name: String(item.item_name || item.name || "Item"),
+      batch_number: String(item.batch_no || item.batch_id || "BATCH-MAIN"),
       quantity: Number(item.quantity || item.qty || 0),
       unit_price: Number(item.unit_price || item.price || 0),
-      amount: Number(item.amount || (item.quantity * item.unit_price) || 0),
+      total_price: Number(item.amount || (item.quantity * item.unit_price) || 0),
+      unit: String(item.packaging_unit || item.unit || "Box"),
     }))
 
     for (const itemRow of itemRows) {
@@ -330,19 +332,16 @@ export async function updateSalesIssue(input, id) {
   const finalTotalAmount = input?.total_amount !== undefined ? Number(input.total_amount) : (subtotal + vat_amount)
 
   const updateHeader = {
-    fs_no: input?.fs_no || existing.fs_no,
-    reference_no: input?.reference_no || existing.reference_no,
-    sale_date: input?.sale_date || existing.sale_date,
-    customer_id: input?.customer_id || existing.customer_id,
-    customer_name: input?.customer_name || existing.customer_name,
-    warehouse_id,
-    payment_type: input?.payment_type || existing.payment_type,
-    status: input?.status || existing.status,
-    total_quantity,
-    subtotal,
-    vat_rate,
-    vat_amount,
+    sales_order_id: (input?.reference_no || existing.reference_no) || null,
+    issue_number: input?.fs_no || existing.fs_no || id,
+    customer_id: (input?.customer_id || existing.customer_id) || null,
+    issue_date: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
+    status: input?.status || existing.status || "Draft",
     total_amount: finalTotalAmount,
+    subtotal_amount: subtotal,
+    tax_amount: vat_amount,
+    payment_status: (input?.payment_type || existing.payment_type) === "Cash" ? "Paid" : (existing.payment_status || "Unpaid"),
+    payment_method: input?.payment_type || existing.payment_type || "Cash",
   }
 
   await drizzleUpdateRow({
@@ -363,25 +362,27 @@ export async function updateSalesIssue(input, id) {
       const itemRow = {
         id: String(item.id || `${id}-ITEM-${idx + 1}`),
         sales_issue_id: id,
-        item_id: String(item.item_id || item.productId || `ITEM-${idx + 1}`),
-        item_name: String(item.item_name || item.name || "Item"),
-        batch_id: String(item.batch_id || item.batch_no || "BATCH-MAIN"),
-        batch_no: String(item.batch_no || item.batch_id || "BATCH-MAIN"),
+        product_id: String(item.item_id || item.productId || `ITEM-${idx + 1}`),
+        product_name: String(item.item_name || item.name || "Item"),
+        batch_number: String(item.batch_no || item.batch_id || "BATCH-MAIN"),
         quantity: Number(item.quantity || item.qty || 0),
         unit_price: Number(item.unit_price || item.price || 0),
-        amount: Number(item.amount || (item.quantity * item.unit_price) || 0),
+        total_price: Number(item.amount || (item.quantity * item.unit_price) || 0),
+        unit: String(item.packaging_unit || item.unit || "Box"),
       }
       await drizzleCreateRow({
         resource: getResource("sales_issue_items"),
         body: itemRow,
       })
     }
-  } catch (err) {
-    console.warn("Update items warning:", err.message)
+  } catch (itemErr) {
+    console.warn("Item update warning:", itemErr.message)
   }
 
-  return { status: 200, body: { ...existing, ...input, total_quantity, total_amount, items, savedToDb: true } }
+  return { status: 200, body: { ...existing, ...input, total_quantity, total_amount: finalTotalAmount, items, savedToDb: true } }
 }
+
+
 
 export async function deleteSalesIssue(id) {
   try {
