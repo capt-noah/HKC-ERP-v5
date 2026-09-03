@@ -1344,37 +1344,6 @@ class ErpStore {
     }
     this.salesOrders.unshift(enrichedSo)
 
-    // Auto-create Customer AR Invoice & Double-Entry GL Entry in Finance Store
-    try {
-      const invId = `INV-2026-${Date.now().toString().slice(-4)}`
-      const vatRate = financeStore.getDefaultVatRate()
-      const taxAmt = Math.round(so.amount * (vatRate / 100))
-      const totalAmt = so.amount + taxAmt
-
-      financeStore.createInvoice({
-        invoice_number: invId,
-        customer_name: so.customer,
-        issue_date: so.date || new Date().toISOString().split("T")[0],
-        due_date: new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0],
-        currency: "ETB",
-        line_items: (so.items || []).map((i) => ({
-          description: i.name || "Sales Order Item",
-          quantity: i.qty || 1,
-          unit_price: i.unitPrice || 150,
-          line_total: i.total || 150,
-        })),
-        subtotal: so.amount,
-        tax_amount: taxAmt,
-        tax_rate: vatRate,
-        discount_amount: 0,
-        payment_terms: "Net 30",
-        total: totalAmt,
-        status: "Sent",
-      })
-    } catch (err) {
-      console.error("Auto-posting Sales Order to Finance failed:", err)
-    }
-
     // Persist directly to Database
     try {
       await createResource<SalesOrder>("sales_orders", enrichedSo)

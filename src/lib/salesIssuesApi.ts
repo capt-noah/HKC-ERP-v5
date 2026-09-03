@@ -28,6 +28,9 @@ export interface SalesIssue {
   payment_type: PaymentType
   status: SalesIssueStatus
   total_quantity: number
+  subtotal?: number
+  vat_rate?: number
+  vat_amount?: number
   total_amount: number
   amount_paid?: number
   balance_due?: number

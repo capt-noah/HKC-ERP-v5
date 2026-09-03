@@ -245,11 +245,14 @@ export async function createSalesIssue(input, existingId = null) {
     warehouse: warehouse_id,
     payment_type,
     paymentType: payment_type,
-    status: input?.status || "Draft",
+    status: (input?.status || "Draft").toString().charAt(0).toUpperCase() + (input?.status || "Draft").toString().slice(1).toLowerCase(),
     items,
     total_quantity,
-    total_amount,
-    totalAmount: total_amount,
+    subtotal,
+    vat_rate,
+    vat_amount,
+    total_amount: finalTotalAmount,
+    totalAmount: finalTotalAmount,
     createdAt: input?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
@@ -271,7 +274,10 @@ export async function createSalesIssue(input, existingId = null) {
     payment_type,
     status: doc.status,
     total_quantity,
-    total_amount,
+    subtotal,
+    vat_rate,
+    vat_amount,
+    total_amount: finalTotalAmount,
     created_by: "Current User",
   }
 
@@ -314,7 +320,14 @@ export async function updateSalesIssue(input, id) {
   const existing = getRes.body
   const items = Array.isArray(input?.items) ? input.items : existing.items || []
   const total_quantity = items.reduce((sum, item) => sum + Number(item.quantity || item.qty || 0), 0)
-  const total_amount = items.reduce((sum, item) => sum + Number(item.amount || (item.quantity * item.unit_price) || 0), 0)
+  const itemTotal = items.reduce((sum, item) => sum + Number(item.amount || (item.quantity * item.unit_price) || 0), 0)
+
+  const warehouse_id = input?.warehouse_id || existing.warehouse_id
+  const isWh1 = (warehouse_id || "").toUpperCase().startsWith("WH1")
+  const subtotal = input?.subtotal !== undefined ? Number(input.subtotal) : itemTotal
+  const vat_rate = input?.vat_rate !== undefined ? Number(input.vat_rate) : (isWh1 ? 0 : 15)
+  const vat_amount = input?.vat_amount !== undefined ? Number(input.vat_amount) : (vat_rate > 0 ? Math.round(subtotal * (vat_rate / 100)) : 0)
+  const finalTotalAmount = input?.total_amount !== undefined ? Number(input.total_amount) : (subtotal + vat_amount)
 
   const updateHeader = {
     fs_no: input?.fs_no || existing.fs_no,
@@ -322,11 +335,14 @@ export async function updateSalesIssue(input, id) {
     sale_date: input?.sale_date || existing.sale_date,
     customer_id: input?.customer_id || existing.customer_id,
     customer_name: input?.customer_name || existing.customer_name,
-    warehouse_id: input?.warehouse_id || existing.warehouse_id,
+    warehouse_id,
     payment_type: input?.payment_type || existing.payment_type,
     status: input?.status || existing.status,
     total_quantity,
-    total_amount,
+    subtotal,
+    vat_rate,
+    vat_amount,
+    total_amount: finalTotalAmount,
   }
 
   await drizzleUpdateRow({
@@ -513,6 +529,12 @@ export async function postSalesIssue(arg1, arg2) {
   }
 
   // 2. Update status in sales_issues
+  const isWh1 = (existing.warehouse_id || "").toUpperCase().startsWith("WH1")
+  const issueSubtotal = totalAmount || Number(existing.subtotal || existing.total_amount || 0)
+  const issueVatRate = isWh1 ? 0 : Number(existing.vat_rate !== undefined ? existing.vat_rate : 15)
+  const issueVatAmount = issueVatRate > 0 ? Number(existing.vat_amount || Math.round(issueSubtotal * (issueVatRate / 100))) : 0
+  const grandTotal = issueSubtotal + issueVatAmount
+
   await drizzleUpdateRow({
     resource: getResource("sales_issues"),
     id,
@@ -521,7 +543,10 @@ export async function postSalesIssue(arg1, arg2) {
       posted_at: new Date().toISOString(),
       posted_by: "Sales Officer",
       total_quantity: totalQty || existing.total_quantity,
-      total_amount: totalAmount || existing.total_amount,
+      subtotal: issueSubtotal,
+      vat_rate: issueVatRate,
+      vat_amount: issueVatAmount,
+      total_amount: grandTotal,
     },
   })
 
@@ -548,13 +573,14 @@ export async function postSalesIssue(arg1, arg2) {
     })
 
     // B. Sales Journal Entry Lines
+    // 1. Debit Cash (ACC-1000) or Accounts Receivable (ACC-1200) for Grand Total
     await drizzleCreateRow({
       resource: getResource("journal_entry_lines"),
       body: {
         id: `${saleJeId}-DR`,
         journal_entry_id: saleJeId,
         account_id: isCredit ? "ACC-1200" : "ACC-1000",
-        debit_amount: totalAmount || existing.total_amount,
+        debit_amount: grandTotal,
         credit_amount: 0,
         currency: "ETB",
         exchange_rate_at_time: 1.0,
@@ -565,6 +591,7 @@ export async function postSalesIssue(arg1, arg2) {
       },
     })
 
+    // 2. Credit Sales Revenue (ACC-4000) for Net Subtotal
     await drizzleCreateRow({
       resource: getResource("journal_entry_lines"),
       body: {
@@ -572,7 +599,7 @@ export async function postSalesIssue(arg1, arg2) {
         journal_entry_id: saleJeId,
         account_id: "ACC-4000",
         debit_amount: 0,
-        credit_amount: totalAmount || existing.total_amount,
+        credit_amount: issueSubtotal,
         currency: "ETB",
         exchange_rate_at_time: 1.0,
         warehouse_id: existing.warehouse_id || null,
@@ -581,6 +608,26 @@ export async function postSalesIssue(arg1, arg2) {
         party_name: existing.customer_name || existing.customer || null,
       },
     })
+
+    // 3. Credit Output VAT Payable (ACC-2200) if VAT is charged
+    if (issueVatAmount > 0) {
+      await drizzleCreateRow({
+        resource: getResource("journal_entry_lines"),
+        body: {
+          id: `${saleJeId}-VAT`,
+          journal_entry_id: saleJeId,
+          account_id: "ACC-2200",
+          debit_amount: 0,
+          credit_amount: issueVatAmount,
+          currency: "ETB",
+          exchange_rate_at_time: 1.0,
+          warehouse_id: existing.warehouse_id || null,
+          party_type: "Customer",
+          party_id: existing.customer_id || null,
+          party_name: existing.customer_name || existing.customer || null,
+        },
+      })
+    }
 
     // C. COGS Journal Entry
     if (totalCost > 0) {

@@ -608,7 +608,11 @@ export default function SalesIssued() {
   }
 
   const totalQuantity = useMemo(() => items.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [items])
-  const grandTotal = useMemo(() => items.reduce((sum, item) => sum + Number(item.amount || 0), 0), [items])
+  const subtotal = useMemo(() => items.reduce((sum, item) => sum + Number(item.amount || 0), 0), [items])
+  const isWh1Export = isWH1(warehouseId)
+  const vatRate = isWh1Export ? 0 : 15
+  const vatAmount = useMemo(() => Math.round(subtotal * (vatRate / 100)), [subtotal, vatRate])
+  const grandTotal = useMemo(() => subtotal + vatAmount, [subtotal, vatAmount])
 
   const selectableProducts = useMemo(() => {
     if (!warehouseId) return []
@@ -702,6 +706,10 @@ export default function SalesIssued() {
           warehouse_id: canonicalWarehouseId(warehouseId),
           payment_type: paymentType,
           items: validItems,
+          subtotal,
+          vat_rate: vatRate,
+          vat_amount: vatAmount,
+          total_amount: grandTotal,
         })
       } else {
         const created = await createSalesIssue({
@@ -712,6 +720,10 @@ export default function SalesIssued() {
           warehouse_id: canonicalWarehouseId(warehouseId),
           payment_type: paymentType,
           items: validItems,
+          subtotal,
+          vat_rate: vatRate,
+          vat_amount: vatAmount,
+          total_amount: grandTotal,
         })
         issueId = created.id
       }
@@ -1205,7 +1217,7 @@ export default function SalesIssued() {
                                     ? "bg-white/20 text-white" 
                                     : (isCredit ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800")
                                 }`}>
-                                  {isCredit ? "Credit" : "Sales"}
+                                  {isCredit ? "Credit" : "Cash"}
                                 </span>
                               </div>
                               <div className={`text-[10px] mt-0.5 ${isSelected ? "text-emerald-100" : "text-zinc-500"}`}>
@@ -1700,7 +1712,24 @@ export default function SalesIssued() {
                 <div className="text-xs font-bold text-zinc-500">
                   {isPostedEditing ? "Stock balances are already updated in GL ledger." : "Posting deducts the selected batch quantity from inventory in one server transaction."}
                 </div>
-                <div className="flex gap-4 text-sm font-black"><span>Total Quantity: {totalQuantity.toLocaleString()}</span><span>Grand Total: {money(grandTotal)}</span></div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="px-3 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200">
+                    <span className="text-zinc-400 text-[9px] uppercase font-black block">Total Qty</span>
+                    <span className="font-mono font-black text-zinc-800 text-xs">{totalQuantity.toLocaleString()}</span>
+                  </div>
+                  <div className="px-3 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200">
+                    <span className="text-zinc-400 text-[9px] uppercase font-black block">Subtotal (Net)</span>
+                    <span className="font-mono font-black text-zinc-800 text-xs">ETB {money(subtotal)}</span>
+                  </div>
+                  <div className="px-3 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200">
+                    <span className="text-zinc-400 text-[9px] uppercase font-black block">VAT ({vatRate}%)</span>
+                    <span className="font-mono font-black text-zinc-800 text-xs">ETB {money(vatAmount)}</span>
+                  </div>
+                  <div className="px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 shadow-2xs">
+                    <span className="text-emerald-700 text-[9px] uppercase font-black block">Total Payable</span>
+                    <span className="font-mono font-black text-emerald-800 text-sm">ETB {money(grandTotal)}</span>
+                  </div>
+                </div>
               </div>
 
               {Object.keys(issueFormErrors).length > 0 && (

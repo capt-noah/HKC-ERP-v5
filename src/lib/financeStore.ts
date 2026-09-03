@@ -548,13 +548,14 @@ class FinanceStore {
                 })
               : [{ description: `Sales Issue ${si.fs_no || si.id}`, quantity: 1, unit_price: Number(si.total_amount || 0), line_total: Number(si.total_amount || 0) }]
 
-            const subtotal = lineItems.reduce((sum, item) => sum + item.line_total, 0)
-            const vatAmount = Number(si.vat_amount || 0)
+            const subtotal = Number(si.subtotal || lineItems.reduce((sum, item) => sum + item.line_total, 0))
+            const isWh1 = (si.warehouse_id || "").toString().toUpperCase().startsWith("WH1")
+            const taxRate = Number(si.vat_rate !== undefined ? si.vat_rate : (isWh1 ? 0 : 15))
+            const vatAmount = Number(si.vat_amount !== undefined ? si.vat_amount : (taxRate > 0 ? Math.round(subtotal * (taxRate / 100)) : 0))
             const discountAmount = Number(si.discount_amount || 0)
             const whtAmount = Number(si.wht_amount || 0)
-            const netReceivableDue = Math.max(0, subtotal + vatAmount - discountAmount - whtAmount)
-            const invoiceTotal = Math.max(0, subtotal + vatAmount - discountAmount)
-            const taxRate = Number(si.vat_rate || (subtotal > 0 && vatAmount > 0 ? Math.round((vatAmount / subtotal) * 100) : (vatAmount > 0 ? 15 : 0)))
+            const invoiceTotal = Number(si.total_amount || (subtotal + vatAmount - discountAmount))
+            const netReceivableDue = Math.max(0, invoiceTotal - whtAmount)
 
             const isCredit = (si.payment_type || si.paymentType || si.payment_method || si.paymentMethod || "").toString().toLowerCase().includes("credit")
             const isCash = !isCredit
@@ -676,7 +677,7 @@ class FinanceStore {
 
                 const debitAcc = acc("6000-04") || acc("6000") || this.accounts.find((a) => a.account_type === "Expense" && !a.is_group)  // Cost of Sales
                 const creditAcc = acc("1410-01") || acc("1410-03") || acc("1410") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group) // Inventory Asset
-                const estimatedCost = Math.round(invoiceTotal * 0.7)
+                const estimatedCost = Math.round(subtotal * 0.7)
 
                 if (debitAcc && creditAcc) {
                   this.entries.push({
@@ -704,19 +705,20 @@ class FinanceStore {
             const isMatchingInvoice = (inv: Invoice) => {
               if (inv.id === invId || inv.sales_issue_id === si.id || inv.id === si.id) return true
               if (si.fs_no && (inv.fs_no === si.fs_no || inv.invoice_number === `INV-${si.fs_no}` || inv.invoice_number?.includes(si.fs_no))) return true
-              if (si.reference_no && (inv.sales_order_id === si.reference_no || inv.invoice_number === si.reference_no || inv.invoice_number?.includes(si.reference_no))) return true
-              if (inv.customer_name?.toLowerCase() === si.customer_name?.toLowerCase() && Math.abs((inv.total || 0) - invoiceTotal) < 0.01 && invoiceTotal > 0) return true
+              if (si.reference_no && (inv.sales_order_id === si.reference_no || inv.id === `INV-SO-${si.reference_no}` || inv.invoice_number === si.reference_no || inv.invoice_number?.includes(si.reference_no))) return true
+              if (inv.customer_name?.toLowerCase() === si.customer_name?.toLowerCase() && (Math.abs((inv.total || 0) - invoiceTotal) < 0.01 || Math.abs((inv.subtotal || 0) - subtotal) < 0.01) && invoiceTotal > 0) return true
               return false
             }
 
             const existingInvIdx = this.invoices.findIndex(isMatchingInvoice)
 
-            const paymentsForThisIssue = this.payments.filter((p) => (p.sales_issue_id && p.sales_issue_id === si.id) || p.linked_invoice_id === invId || (si.fs_no && p.reference?.includes(si.fs_no)))
+            const paymentsForThisIssue = this.payments.filter((p) => (p.sales_issue_id && p.sales_issue_id === si.id) || p.linked_invoice_id === invId || (si.fs_no && p.reference?.includes(si.fs_no)) || (si.reference_no && p.reference?.includes(si.reference_no)))
             const totalPaidFromPayments = paymentsForThisIssue.reduce((s, p) => s + Number(p.amount || 0), 0)
             const actualAmountPaid = isCash ? invoiceTotal : Math.max(Number(si.amount_paid || 0), totalPaidFromPayments)
             const actualBalanceDue = isCash ? 0 : Math.max(0, invoiceTotal - actualAmountPaid)
-            const actualStatus: Invoice["status"] = isCash || (invoiceTotal > 0 && actualBalanceDue <= 0 && actualAmountPaid > 0) ? "Paid" : (actualAmountPaid > 0 ? "Partially Paid" : "Sent")
-            const actualSettlement: Invoice["settlement_status"] = isCash || (invoiceTotal > 0 && actualBalanceDue <= 0 && actualAmountPaid > 0) ? "Fully Settled" : (actualAmountPaid > 0 ? "Ongoing" : "Unpaid")
+            const isFullyPaid = invoiceTotal > 0 && actualBalanceDue <= 0 && (isCash || actualAmountPaid > 0)
+            const actualStatus: Invoice["status"] = isFullyPaid ? "Paid" : (actualAmountPaid > 0 ? "Partially Paid" : "Sent")
+            const actualSettlement: Invoice["settlement_status"] = isFullyPaid ? "Fully Settled" : (actualAmountPaid > 0 ? "Ongoing" : "Unpaid")
 
             const mappedInvoice: Invoice = {
               id: invId,
