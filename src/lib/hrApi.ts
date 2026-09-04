@@ -81,6 +81,8 @@ export interface PayrollRecord {
   payroll_period_id: string
   employee_id: string
   basic_salary: number
+  taxable_allowances?: number
+  non_taxable_allowances?: number
   allowances: number
   overtime_pay: number
   bonus: number
@@ -216,7 +218,12 @@ function normalizePayrollPeriod(row: Partial<PayrollPeriod> & Record<string, unk
 
 function normalizePayrollRecord(row: Partial<PayrollRecord> & Record<string, unknown>): PayrollRecord {
   const basicSalary = Number(row.basic_salary ?? row.salary ?? 0)
-  const allowances = Number(row.allowances ?? 0)
+  const taxableAllowances = row.taxable_allowances !== undefined && row.taxable_allowances !== null
+    ? Number(row.taxable_allowances)
+    : Number(row.allowances ?? 0)
+  const nonTaxableAllowances = Number(row.non_taxable_allowances ?? 0)
+  const totalAllowances = Number(row.allowances ?? (taxableAllowances + nonTaxableAllowances))
+
   const overtimePay = Number(row.overtime_pay ?? 0)
   const bonus = Number(row.bonus ?? 0)
   const otherEarnings = Number(row.other_earnings ?? 0)
@@ -227,7 +234,7 @@ function normalizePayrollRecord(row: Partial<PayrollRecord> & Record<string, unk
   const otherDeductions = Number(row.other_deductions ?? 0)
   const grossPay = row.gross_pay !== undefined && row.gross_pay !== null
     ? Number(row.gross_pay)
-    : (basicSalary + allowances + overtimePay + bonus + otherEarnings)
+    : (basicSalary + totalAllowances + overtimePay + bonus + otherEarnings)
   const totalDeductions = row.total_deductions !== undefined && row.total_deductions !== null
     ? Number(row.total_deductions)
     : (tax + pension + absenceDeduction + loanDeduction + otherDeductions)
@@ -240,7 +247,9 @@ function normalizePayrollRecord(row: Partial<PayrollRecord> & Record<string, unk
     payroll_period_id: String(row.payroll_period_id || row.payrollPeriodId || ""),
     employee_id: String(row.employee_id || row.employeeId || ""),
     basic_salary: basicSalary,
-    allowances,
+    taxable_allowances: taxableAllowances,
+    non_taxable_allowances: nonTaxableAllowances,
+    allowances: totalAllowances,
     overtime_pay: overtimePay,
     bonus,
     other_earnings: otherEarnings,
@@ -288,9 +297,12 @@ export function leaveDays(start: string, end: string) {
 }
 
 export function calculatePayroll(record: Omit<PayrollRecord, "gross_pay" | "total_deductions" | "net_pay">): PayrollRecord {
-  const gross_pay = Number(record.basic_salary || 0) + Number(record.allowances || 0) + Number(record.overtime_pay || 0) + Number(record.bonus || 0) + Number(record.other_earnings || 0)
+  const taxableAllowances = Number(record.taxable_allowances ?? record.allowances ?? 0)
+  const nonTaxableAllowances = Number(record.non_taxable_allowances ?? 0)
+  const totalAllowances = Number(record.allowances ?? (taxableAllowances + nonTaxableAllowances))
+  const gross_pay = Number(record.basic_salary || 0) + totalAllowances + Number(record.overtime_pay || 0) + Number(record.bonus || 0) + Number(record.other_earnings || 0)
   const total_deductions = Number(record.tax || 0) + Number(record.pension || 0) + Number(record.absence_deduction || 0) + Number(record.loan_deduction || 0) + Number(record.other_deductions || 0)
-  return { ...record, gross_pay, total_deductions, net_pay: gross_pay - total_deductions }
+  return { ...record, allowances: totalAllowances, taxable_allowances: taxableAllowances, non_taxable_allowances: nonTaxableAllowances, gross_pay, total_deductions, net_pay: gross_pay - total_deductions }
 }
 
 function improveHRResourceError(error: unknown, resource: string, label: string) {

@@ -44,6 +44,8 @@ export interface EthiopianPayrollBreakdown {
   employeeId: string
   employeeName: string
   grossBasicSalary: number
+  taxableAllowances: number
+  nonTaxableAllowances: number
   totalAllowances: number
   grossSalary: number
   isExpat: boolean
@@ -101,6 +103,8 @@ export function calculateEthiopianPayroll(options: {
   employeeId?: string
   employeeName?: string
   basicSalary: number
+  taxableAllowances?: number
+  nonTaxableAllowances?: number
   allowances?: number
   overtimePay?: number
   bonus?: number
@@ -113,7 +117,12 @@ export function calculateEthiopianPayroll(options: {
   taxBrackets?: TaxBracket[]
 }): EthiopianPayrollBreakdown {
   const basicSalary = Number(options.basicSalary || 0)
-  const allowances = Number(options.allowances || 0)
+  const taxableAllowances = options.taxableAllowances !== undefined
+    ? Number(options.taxableAllowances || 0)
+    : Number(options.allowances || 0)
+  const nonTaxableAllowances = Number(options.nonTaxableAllowances || 0)
+  const totalAllowances = Math.round((taxableAllowances + nonTaxableAllowances) * 100) / 100
+
   const overtimePay = Number(options.overtimePay || 0)
   const bonus = Number(options.bonus || 0)
   const otherEarnings = Number(options.otherEarnings || 0)
@@ -134,15 +143,15 @@ export function calculateEthiopianPayroll(options: {
     ? Math.round((basicSalary * (pensionConfig.employerRatePercent / 100)) * 100) / 100
     : 0
 
-  // 2. Taxable Income Base: Total Gross Taxable Earnings (Basic Salary + Allowances + Overtime + Bonus + Other Earnings)
-  const totalTaxableEarnings = basicSalary + allowances + overtimePay + bonus + otherEarnings
+  // 2. Taxable Income Base: Basic Salary + Taxable Allowances + Overtime + Bonus + Other Earnings
+  const totalTaxableEarnings = basicSalary + taxableAllowances + overtimePay + bonus + otherEarnings
   const taxableIncomeBase = Math.max(0, Math.round(totalTaxableEarnings * 100) / 100)
 
-  // 3. Income Tax Calculation based on Progressive Tax Brackets
+  // 3. Income Tax Calculation based on Progressive Tax Brackets (Proc. 1395/2025)
   const incomeTaxDeducted = calculateEthiopianIncomeTax(taxableIncomeBase, taxBrackets)
 
   // 4. Gross and Net
-  const grossSalary = Math.round((basicSalary + allowances + overtimePay + bonus + otherEarnings) * 100) / 100
+  const grossSalary = Math.round((basicSalary + totalAllowances + overtimePay + bonus + otherEarnings) * 100) / 100
   const totalEmployeeDeductions = Math.round(
     (employeePension + incomeTaxDeducted + absenceDeduction + loanDeduction + otherDeductions) * 100
   ) / 100
@@ -152,7 +161,9 @@ export function calculateEthiopianPayroll(options: {
     employeeId: options.employeeId || "",
     employeeName: options.employeeName || "",
     grossBasicSalary: basicSalary,
-    totalAllowances: allowances,
+    taxableAllowances,
+    nonTaxableAllowances,
+    totalAllowances,
     grossSalary,
     isExpat,
     employeePension,
@@ -204,6 +215,8 @@ export function calculatePayrollRecord(
 export function formatEthiopianPayrollSummary(data: EthiopianPayrollBreakdown): string {
   return [
     `* Gross Basic Salary: ${data.grossBasicSalary.toLocaleString()} ETB`,
+    `* Taxable Allowances: ${data.taxableAllowances.toLocaleString()} ETB`,
+    `* Non-Taxable / Transport Allowances: ${data.nonTaxableAllowances.toLocaleString()} ETB`,
     `* Total Allowances: ${data.totalAllowances.toLocaleString()} ETB`,
     `* Employee Pension (${DEFAULT_ETHIOPIAN_PENSION_CONFIG.employeeRatePercent}%): ${data.employeePension.toLocaleString()} ETB`,
     `* Employer Pension (${DEFAULT_ETHIOPIAN_PENSION_CONFIG.employerRatePercent}%): ${data.employerPension.toLocaleString()} ETB`,

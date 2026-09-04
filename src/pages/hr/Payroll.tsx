@@ -38,13 +38,15 @@ function blankRecord(employee: Employee, periodId: string): PayrollRecord {
     : DEFAULT_ETHIOPIAN_TAX_BRACKETS
 
   const basicSalary = Number(employee.basic_salary || 0)
-  const allowances = 0
+  const taxableAllowances = 0
+  const nonTaxableAllowances = 0
 
   const ethiopian = calculateEthiopianPayroll({
     employeeId: employee.id,
     employeeName: employee.full_name,
     basicSalary,
-    allowances,
+    taxableAllowances,
+    nonTaxableAllowances,
     pensionConfig,
     taxBrackets,
   })
@@ -54,7 +56,9 @@ function blankRecord(employee: Employee, periodId: string): PayrollRecord {
     payroll_period_id: periodId,
     employee_id: employee.id,
     basic_salary: basicSalary,
-    allowances,
+    taxable_allowances: taxableAllowances,
+    non_taxable_allowances: nonTaxableAllowances,
+    allowances: 0,
     overtime_pay: 0,
     bonus: 0,
     other_earnings: 0,
@@ -207,7 +211,8 @@ export default function Payroll() {
         const newSalary = Number(emp.basic_salary || 0)
         const calculated = calculateEthiopianPayroll({
           basicSalary: newSalary,
-          allowances: Number(record.allowances || 0),
+          taxableAllowances: Number(record.taxable_allowances ?? record.allowances ?? 0),
+          nonTaxableAllowances: Number(record.non_taxable_allowances || 0),
           overtimePay: Number(record.overtime_pay || 0),
           bonus: Number(record.bonus || 0),
           otherEarnings: Number(record.other_earnings || 0),
@@ -279,7 +284,8 @@ export default function Payroll() {
     const ethiopian = calculateEthiopianPayroll({
       employeeId: merged.employee_id,
       basicSalary: Number(merged.basic_salary || 0),
-      allowances: Number(merged.allowances || 0),
+      taxableAllowances: Number(merged.taxable_allowances ?? merged.allowances ?? 0),
+      nonTaxableAllowances: Number(merged.non_taxable_allowances || 0),
       overtimePay: Number(merged.overtime_pay || 0),
       bonus: Number(merged.bonus || 0),
       otherEarnings: Number(merged.other_earnings || 0),
@@ -611,9 +617,12 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
 
   // Initialize form with live Ethiopian calculations applied immediately
   const [form, setForm] = useState(() => {
+    const taxAllow = Number(record.taxable_allowances ?? record.allowances ?? 0)
+    const nonTaxAllow = Number(record.non_taxable_allowances || 0)
     const initialCalculated = calculateEthiopianPayroll({
       basicSalary: Number(record.basic_salary || 0),
-      allowances: Number(record.allowances || 0),
+      taxableAllowances: taxAllow,
+      nonTaxableAllowances: nonTaxAllow,
       overtimePay: Number(record.overtime_pay || 0),
       bonus: Number(record.bonus || 0),
       otherEarnings: Number(record.other_earnings || 0),
@@ -626,6 +635,9 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
 
     return {
       ...record,
+      taxable_allowances: taxAllow,
+      non_taxable_allowances: nonTaxAllow,
+      allowances: initialCalculated.totalAllowances,
       pension: initialCalculated.employeePension,
       tax: initialCalculated.incomeTaxDeducted,
       gross_pay: initialCalculated.grossSalary,
@@ -637,7 +649,8 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
   // Compute live Ethiopian breakdown
   const ethiopian = useMemo(() => calculateEthiopianPayroll({
     basicSalary: Number(form.basic_salary || 0),
-    allowances: Number(form.allowances || 0),
+    taxableAllowances: Number(form.taxable_allowances ?? form.allowances ?? 0),
+    nonTaxableAllowances: Number(form.non_taxable_allowances || 0),
     overtimePay: Number(form.overtime_pay || 0),
     bonus: Number(form.bonus || 0),
     otherEarnings: Number(form.other_earnings || 0),
@@ -646,12 +659,13 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
     otherDeductions: Number(form.other_deductions || 0),
     pensionConfig,
     taxBrackets,
-  }), [form.basic_salary, form.allowances, form.overtime_pay, form.bonus, form.other_earnings, form.absence_deduction, form.loan_deduction, form.other_deductions, pensionConfig, taxBrackets])
+  }), [form.basic_salary, form.taxable_allowances, form.non_taxable_allowances, form.allowances, form.overtime_pay, form.bonus, form.other_earnings, form.absence_deduction, form.loan_deduction, form.other_deductions, pensionConfig, taxBrackets])
 
   const setField = (key: keyof PayrollRecord, value: string | number) => {
     const nextValue = typeof value === "number" ? value : Number(value) || 0
     const bSalary = key === "basic_salary" ? nextValue : Number(form.basic_salary || 0)
-    const allow = key === "allowances" ? nextValue : Number(form.allowances || 0)
+    const taxAllow = key === "taxable_allowances" ? nextValue : Number(form.taxable_allowances ?? form.allowances ?? 0)
+    const nonTaxAllow = key === "non_taxable_allowances" ? nextValue : Number(form.non_taxable_allowances || 0)
     const ot = key === "overtime_pay" ? nextValue : Number(form.overtime_pay || 0)
     const bon = key === "bonus" ? nextValue : Number(form.bonus || 0)
     const otherEarn = key === "other_earnings" ? nextValue : Number(form.other_earnings || 0)
@@ -661,7 +675,8 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
 
     const calculated = calculateEthiopianPayroll({
       basicSalary: bSalary,
-      allowances: allow,
+      taxableAllowances: taxAllow,
+      nonTaxableAllowances: nonTaxAllow,
       overtimePay: ot,
       bonus: bon,
       otherEarnings: otherEarn,
@@ -676,7 +691,9 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
       ...form,
       [key]: value,
       basic_salary: bSalary,
-      allowances: allow,
+      taxable_allowances: taxAllow,
+      non_taxable_allowances: nonTaxAllow,
+      allowances: calculated.totalAllowances,
       overtime_pay: ot,
       bonus: bon,
       other_earnings: otherEarn,
@@ -708,38 +725,47 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
             </span>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5 text-xs font-mono">
             <div className="bg-white/[0.06] p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Gross Basic Salary</span>
+              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Gross Basic</span>
               <span className="text-sm font-black text-white">{money(ethiopian.grossBasicSalary)} ETB</span>
             </div>
             <div className="bg-white/[0.06] p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Total Allowances</span>
-              <span className="text-sm font-black text-white">{money(ethiopian.totalAllowances)} ETB</span>
+              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Taxable Allowances</span>
+              <span className="text-sm font-black text-white">{money(ethiopian.taxableAllowances)} ETB</span>
             </div>
             <div className="bg-white/[0.06] p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Employee Pension ({pensionConfig.employeeRatePercent}%)</span>
-              <span className="text-sm font-black text-amber-400">{money(ethiopian.employeePension)} ETB</span>
+              <span className="block text-[9px] uppercase text-emerald-400 font-sans font-bold">Tax-Free Allowances</span>
+              <span className="text-sm font-black text-emerald-300">{money(ethiopian.nonTaxableAllowances)} ETB</span>
             </div>
             <div className="bg-white/[0.06] p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Employer Pension ({pensionConfig.employerRatePercent}%)</span>
-              <span className="text-sm font-black text-amber-200">{money(ethiopian.employerPension)} ETB</span>
+              <span className="block text-[9px] uppercase text-amber-400 font-sans font-bold">Employee Pension (7%)</span>
+              <span className="text-sm font-black text-amber-300">{money(ethiopian.employeePension)} ETB</span>
             </div>
             <div className="bg-white/[0.06] p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Taxable Income Base</span>
-              <span className="text-sm font-black text-sky-400">{money(ethiopian.taxableIncomeBase)} ETB</span>
+              <span className="block text-[9px] uppercase text-sky-400 font-sans font-bold">Taxable Base</span>
+              <span className="text-sm font-black text-sky-300">{money(ethiopian.taxableIncomeBase)} ETB</span>
             </div>
             <div className="bg-white/[0.06] p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Income Tax Deducted</span>
-              <span className="text-sm font-black text-rose-400">{money(ethiopian.incomeTaxDeducted)} ETB</span>
+              <span className="block text-[9px] uppercase text-rose-400 font-sans font-bold">Income Tax</span>
+              <span className="text-sm font-black text-rose-300">{money(ethiopian.incomeTaxDeducted)} ETB</span>
             </div>
             <div className="bg-white/[0.06] p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Total Deductions</span>
+              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Employer Pension (11%)</span>
+              <span className="text-sm font-black text-zinc-300">{money(ethiopian.employerPension)} ETB</span>
+            </div>
+            <div className="bg-white/[0.06] p-2.5 rounded-xl">
+              <span className="block text-[9px] uppercase text-rose-400 font-sans font-bold">Total Deductions</span>
               <span className="text-sm font-black text-rose-300">{money(form.total_deductions)} ETB</span>
             </div>
-            <div className="bg-emerald-600/30 border border-emerald-500/40 p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-emerald-300 font-sans font-bold">Net Take-Home Pay</span>
-              <span className="text-sm font-black text-emerald-400">{money(form.net_pay)} ETB</span>
+            <div className="col-span-2 bg-emerald-600/30 border border-emerald-500/40 p-2.5 rounded-xl flex items-center justify-between">
+              <div>
+                <span className="block text-[9px] uppercase text-emerald-300 font-sans font-bold">Net Take-Home Pay</span>
+                <span className="text-base font-black text-emerald-400">{money(form.net_pay)} ETB</span>
+              </div>
+              <div className="text-right text-[10px] text-zinc-300 font-sans">
+                Gross: ETB {money(form.gross_pay)}
+              </div>
             </div>
           </div>
         </div>
@@ -763,7 +789,8 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
         {/* Input Fields */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Input label="Basic Salary (ETB)" type="number" value={form.basic_salary} onChange={(value) => setField("basic_salary", value)} />
-          <Input label="Allowances (ETB)" type="number" value={form.allowances} onChange={(value) => setField("allowances", value)} />
+          <Input label="Taxable Allowances (ETB)" subtitle="Position, Housing, etc. (Taxed)" type="number" value={form.taxable_allowances ?? form.allowances ?? 0} onChange={(value) => setField("taxable_allowances", value)} />
+          <Input label="Tax-Free Allowances (ETB)" subtitle="Transport under cap, Per Diem (Tax-Free)" type="number" value={form.non_taxable_allowances ?? 0} onChange={(value) => setField("non_taxable_allowances", value)} />
           <Input label="Overtime Pay (ETB)" type="number" value={form.overtime_pay} onChange={(value) => setField("overtime_pay", value)} />
           <Input label="Bonus (ETB)" type="number" value={form.bonus} onChange={(value) => setField("bonus", value)} />
           <Input label="Other Earnings (ETB)" type="number" value={form.other_earnings} onChange={(value) => setField("other_earnings", value)} />
@@ -774,7 +801,7 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
           {/* Automatic Read-Only Statutory Calculated Fields */}
           <ReadOnlyField label="Employee Pension (7% - Auto)" value={`ETB ${money(form.pension)}`} subtitle="Computed on Basic Salary" />
           <ReadOnlyField label="Income Tax (Auto - Proc. 1395/2025)" value={`ETB ${money(form.tax)}`} subtitle="Computed on Taxable Base" />
-          <ReadOnlyField label="Gross Pay (Calculated)" value={`ETB ${money(form.gross_pay)}`} subtitle="Basic + Allowances + Extras" />
+          <ReadOnlyField label="Gross Pay (Calculated)" value={`ETB ${money(form.gross_pay)}`} subtitle="Basic + All Allowances + Extras" />
           <ReadOnlyField label="Total Deductions (Calculated)" value={`ETB ${money(form.total_deductions)}`} subtitle="Tax + Pension + Deductions" />
           <ReadOnlyField label="Net Pay (Take-Home)" value={`ETB ${money(form.net_pay)}`} subtitle="Gross Pay - Deductions" highlight />
 
@@ -801,11 +828,17 @@ function ReadOnlyField({ label, value, subtitle, highlight = false }: { label: s
 }
 
 function Payslip({ record, employee, period, onClose }: { record: PayrollRecord; employee?: Employee; period?: PayrollPeriod; onClose: () => void }) {
+  const taxAllow = Number(record.taxable_allowances ?? record.allowances ?? 0)
+  const nonTaxAllow = Number(record.non_taxable_allowances || 0)
   return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm print:static print:bg-white print:p-0"><motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-2xl bg-white rounded-3xl p-6 shadow-2xl border border-black/10 print:shadow-none print:border-0 print:rounded-none"><div className="flex items-center justify-between mb-5 print:hidden"><h3 className="text-lg font-black">Payslip</h3><div className="flex gap-2"><button onClick={() => window.print()} className="px-3 py-1.5 rounded-full bg-black text-white text-xs font-bold flex items-center gap-1"><Printer className="size-3.5" />Print</button><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div></div>
     <div className="text-center border-b border-black/10 pb-4 mb-4"><h2 className="text-xl font-black">HKC Trading ERP</h2><p className="text-xs font-bold text-zinc-500">{period?.name || "Payroll period"} Payslip</p></div>
     <div className="grid grid-cols-2 gap-3 text-xs">
       <Line label="Employee Number" value={employee?.employee_number || "-"} /><Line label="Employee Name" value={employee?.full_name || "-"} /><Line label="Warehouse" value={employee?.warehouse_id || "-"} /><Line label="Payment Status" value={record.payment_status} />
-      <Line label="Basic Salary" value={`ETB ${money(record.basic_salary)}`} /><Line label="Allowances" value={`ETB ${money(record.allowances)}`} /><Line label="Overtime Pay" value={`ETB ${money(record.overtime_pay)}`} /><Line label="Bonus" value={`ETB ${money(record.bonus)}`} /><Line label="Other Earnings" value={`ETB ${money(record.other_earnings)}`} /><Line label="Gross Pay" value={`ETB ${money(record.gross_pay)}`} />
+      <Line label="Basic Salary" value={`ETB ${money(record.basic_salary)}`} />
+      {taxAllow > 0 && <Line label="Taxable Allowances" value={`ETB ${money(taxAllow)}`} />}
+      {nonTaxAllow > 0 && <Line label="Tax-Free / Transport Allowances" value={`ETB ${money(nonTaxAllow)}`} />}
+      {taxAllow === 0 && nonTaxAllow === 0 && <Line label="Allowances" value={`ETB ${money(record.allowances)}`} />}
+      <Line label="Overtime Pay" value={`ETB ${money(record.overtime_pay)}`} /><Line label="Bonus" value={`ETB ${money(record.bonus)}`} /><Line label="Other Earnings" value={`ETB ${money(record.other_earnings)}`} /><Line label="Gross Pay" value={`ETB ${money(record.gross_pay)}`} />
       <Line label="Tax" value={`ETB ${money(record.tax)}`} /><Line label="Pension" value={`ETB ${money(record.pension)}`} /><Line label="Absence Deduction" value={`ETB ${money(record.absence_deduction)}`} /><Line label="Loan Deduction" value={`ETB ${money(record.loan_deduction)}`} /><Line label="Other Deductions" value={`ETB ${money(record.other_deductions)}`} /><Line label="Total Deductions" value={`ETB ${money(record.total_deductions)}`} />
       <div className="col-span-2 rounded-2xl bg-black text-white p-4 flex items-center justify-between"><span className="text-sm font-black">Net Pay</span><span className="text-xl font-black">ETB {money(record.net_pay)}</span></div>
     </div>
@@ -820,8 +853,8 @@ function Actions({ onClose, label }: { onClose: () => void; label: string }) {
   return <div className="md:col-span-3 flex justify-end gap-3 pt-2"><button type="button" onClick={onClose} className="px-4 py-2 rounded-full bg-black/5 text-xs font-bold">Cancel</button><button type="submit" className="px-5 py-2 rounded-full bg-black text-white text-xs font-bold">{label}</button></div>
 }
 
-function Input({ label, value, onChange, type = "text", required = false }: { label: string; value: string | number; onChange: (value: string) => void; type?: string; required?: boolean }) {
-  return <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}<input type={type} required={required} value={value} onChange={(event) => onChange(event.target.value)} readOnly={onChange.toString().includes("undefined")} className="mt-1 w-full rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 text-xs font-bold outline-none read-only:bg-zinc-100" /></label>
+function Input({ label, value, onChange, type = "text", required = false, subtitle }: { label: string; value: string | number; onChange: (value: string) => void; type?: string; required?: boolean; subtitle?: string }) {
+  return <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}{subtitle && <span className="block text-[8.5px] font-semibold text-zinc-400 capitalize -mt-0.5 mb-0.5">{subtitle}</span>}<input type={type} required={required} value={value} onChange={(event) => onChange(event.target.value)} readOnly={onChange.toString().includes("undefined")} className="mt-1 w-full rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 text-xs font-bold outline-none read-only:bg-zinc-100" /></label>
 }
 
 function Select({ label, value, options, onChange }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void }) {
