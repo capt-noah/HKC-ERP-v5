@@ -47,7 +47,7 @@ export interface WH1Entry {
 
 export interface BinCardMovementEntry {
   id: string
-  type?: "entry" | "leave"
+  type?: "entry" | "leave" | "quarantine"
   date: string
   batchNo: string
   voucherNo?: string
@@ -133,9 +133,13 @@ export type TransferStatus = "Draft" | "Issued" | "Received" | "Discrepancy"
 
 export interface TransferLineItem {
   line_no: number
+  productId?: string
   item: string
   UOM: string
   quantity: number
+  batch_no?: string
+  expiry?: string
+  unit_price?: number
   remark?: string
 }
 
@@ -159,10 +163,29 @@ export interface Transfer {
 
 type PersistedTransfer = Transfer & { id?: string }
 
+export interface QuarantineRecord {
+  id: string
+  warehouseId: string
+  warehouseName?: string
+  productId: string
+  productName: string
+  sku: string
+  batchNo: string
+  nameEntered: string
+  quarantineDate: string
+  quantity: number
+  unit: string
+  proposedReleaseDate: string
+  reason?: string
+  status: "Quarantined" | "Released" | "Disposed"
+  binCardEntryId?: string
+  createdAt: string
+}
+
 export interface StockMovementLog {
   id: string
   date: string
-  type: "TRANSFER" | "ADJUSTMENT" | "RECEIPT" | "FULFILLMENT" | "SALES_OUT"
+  type: "TRANSFER" | "ADJUSTMENT" | "RECEIPT" | "FULFILLMENT" | "SALES_OUT" | "QUARANTINE"
   productId?: string
   productName: string
   sku?: string
@@ -432,6 +455,7 @@ class ErpStore {
   private deliveryNotes: DeliveryNote[] = []
   private transfers: Transfer[] = []
   private stockMovements: StockMovementLog[] = []
+  private quarantineRecords: QuarantineRecord[] = []
 
   private listeners = new Set<() => void>()
   private loading = false
@@ -442,7 +466,14 @@ class ErpStore {
   private _salesLoading = false
 
   constructor() {
-    // Eager constructor load removed to prevent firing 10+ requests on import/startup
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        const cached = localStorage.getItem("hkc_quarantine_records")
+        if (cached) {
+          this.quarantineRecords = JSON.parse(cached)
+        }
+      }
+    } catch {}
   }
 
   public isInventoryLoaded(): boolean {
@@ -490,6 +521,34 @@ class ErpStore {
       this.stockMovements = sortNewestFirst(stockMovements)
       if (suppliers.length > 0) this.suppliers = sortNewestFirst(suppliers)
       if (purchaseOrders.length > 0) this.purchaseOrders = sortNewestFirst(purchaseOrders)
+
+      // Sync quarantine records from stock movements
+      const movementQuarantines: QuarantineRecord[] = this.stockMovements
+        .filter((m: any) => m.type === "QUARANTINE" || (m.reference && m.reference.startsWith("QRN-")))
+        .map((m: any) => ({
+          id: m.id,
+          warehouseId: m.fromWarehouse || m.toWarehouse || "WH2",
+          warehouseName: m.fromWarehouse || m.toWarehouse || "WH2",
+          productId: m.productId || "",
+          productName: m.productName || "",
+          sku: m.sku || "",
+          batchNo: (m as any).batchNo || "",
+          nameEntered: (m as any).nameEntered || "Officer",
+          quarantineDate: (m as any).quarantineDate || m.date,
+          quantity: Number(m.qty || 0),
+          unit: m.unit || "Box",
+          proposedReleaseDate: (m as any).proposedReleaseDate || "",
+          reason: m.remarks || "",
+          status: ((m as any).status || "Quarantined") as "Quarantined" | "Released" | "Disposed",
+          createdAt: (m as any).createdAt || m.date || new Date().toISOString(),
+        }))
+      const idSet = new Set(this.quarantineRecords.map(r => r.id))
+      for (const mq of movementQuarantines) {
+        if (!idSet.has(mq.id)) {
+          this.quarantineRecords.push(mq)
+          idSet.add(mq.id)
+        }
+      }
 
       this._inventoryLoaded = true
       this._loadError = null
@@ -643,7 +702,7 @@ class ErpStore {
   }
 
   public async reloadFromApi() {
-    await this.loadFromApi()
+    await this.loadFromApi("all")
   }
 
   public isLoading() {
@@ -664,9 +723,19 @@ class ErpStore {
   private withInventoryValue(product: Product): Product {
     const quantity = Number(product.quantity || 0)
     const unitCost = Number(product.unitCost || 0)
+
+    let totalStockValue = Math.round(quantity * unitCost * 100) / 100
+    if (isWH1(product.warehouse) && Array.isArray(product.wh1Entries) && product.wh1Entries.length > 0) {
+      totalStockValue = product.wh1Entries.reduce(
+        (sum, entry) => sum + (Number(entry.quantityRemaining || 0) * Number(entry.unitPrice || unitCost || 0)),
+        0
+      )
+      totalStockValue = Math.round(totalStockValue * 100) / 100
+    }
+
     return {
       ...product,
-      totalStockValue: Math.round(quantity * unitCost * 100) / 100,
+      totalStockValue,
     }
   }
 
@@ -733,6 +802,251 @@ class ErpStore {
     this.listeners.forEach((l) => l())
   }
 
+  public getQuarantineRecords(warehouseId?: string): QuarantineRecord[] {
+    if (!warehouseId || warehouseId === "ALL") return [...this.quarantineRecords]
+    const wid = warehouseId.toLowerCase()
+    return this.quarantineRecords.filter((r) => {
+      const rWid = (r.warehouseId || "").toLowerCase()
+      return (
+        rWid === wid ||
+        (wid.includes("wh2") && rWid.includes("wh2")) ||
+        (wid.includes("wh3") && rWid.includes("wh3"))
+      )
+    })
+  }
+
+  public async addQuarantineRecord(input: {
+    warehouseId: string
+    warehouseName?: string
+    productId: string
+    batchNo: string
+    nameEntered: string
+    quarantineDate: string
+    quantity: number
+    proposedReleaseDate: string
+    reason?: string
+  }): Promise<QuarantineRecord> {
+    const prod = this.products.find((p) => p.id === input.productId)
+    if (!prod) throw new Error("Product not found")
+
+    const issueQty = Number(input.quantity) || 0
+    if (issueQty <= 0) throw new Error("Quarantine quantity must be greater than 0")
+
+    const prevQty = Number(prod.quantity || 0)
+    if (issueQty > prevQty) {
+      throw new Error(`Cannot quarantine ${issueQty} ${prod.unit || "units"}. Only ${prevQty} available in total stock.`)
+    }
+
+    const matchesWarehouse = (whA?: string, whB?: string): boolean => {
+      if (!whA || !whB) return false
+      const a = whA.toLowerCase().trim()
+      const b = whB.toLowerCase().trim()
+      if (a === b) return true
+      if (a.includes("wh2") && b.includes("wh2")) return true
+      if (a.includes("wh3") && b.includes("wh3")) return true
+      return a.includes(b) || b.includes(a)
+    }
+
+    // 1. Deduct from specific batch
+    let remainingToDeduct = issueQty
+    const updatedBatches = (prod.batches || []).map((b) => {
+      if (remainingToDeduct > 0 && (!input.batchNo || b.batchNo === input.batchNo)) {
+        const deduct = Math.min(Number(b.qty || 0), remainingToDeduct)
+        remainingToDeduct -= deduct
+        return { ...b, qty: Math.max(0, Number(b.qty || 0) - deduct) }
+      }
+      return b
+    })
+
+    // 2. Deduct from warehouse stock breakdown
+    const updatedBreakdown = (prod.stockBreakdown || []).map((sb) => {
+      if (matchesWarehouse(sb.warehouse, input.warehouseId)) {
+        return { ...sb, qty: Math.max(0, Number(sb.qty || 0) - issueQty) }
+      }
+      return sb
+    })
+
+    const nextQty = Math.max(0, prevQty - issueQty)
+    const packSize = Number(prod.quantityPerPack || 1)
+    const nextCartons = packSize > 0 ? Math.floor(nextQty / packSize) : (prod.numberOfCartons || 0)
+    const nextVal = nextQty * Number(prod.unitCost || 0)
+
+    const qrnId = `QRN-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+    const binEntryId = `BCE-QRN-${Date.now()}`
+
+    const targetBatch = (prod.batches || []).find((b) => b.batchNo === input.batchNo)
+    const expiryDate = targetBatch?.expiry || prod.expiry || ""
+
+    // 3. Create dedicated Bin Card movement entry with type "quarantine"
+    const quarantineBinEntry: BinCardMovementEntry = {
+      id: binEntryId,
+      type: "quarantine",
+      date: input.quarantineDate || new Date().toISOString().slice(0, 10),
+      batchNo: input.batchNo || prod.batch || "BATCH-WH",
+      qtyReceived: 0,
+      qtyIssued: issueQty,
+      balance: nextQty,
+      expiryDate,
+      party: "Quarantine Hold - Broken/Damaged",
+      remark: `Quarantined by ${input.nameEntered}: ${input.reason || "Broken/Damaged Medicine"} (Release Date: ${input.proposedReleaseDate})`.trim(),
+      createdAt: new Date().toISOString(),
+    }
+
+    const currentBinEntries = prod.binCardEntries || []
+    const updatedBinEntries = [...currentBinEntries, quarantineBinEntry]
+
+    // 4. Update product details in store & API
+    await this.updateProductDetails(prod.id, {
+      quantity: nextQty,
+      numberOfCartons: nextCartons,
+      totalStockValue: nextVal,
+      stockBreakdown: updatedBreakdown,
+      batches: updatedBatches,
+      binCardEntries: updatedBinEntries,
+    })
+
+    // 5. Store Quarantine record
+    const record: QuarantineRecord = {
+      id: qrnId,
+      warehouseId: input.warehouseId,
+      warehouseName: input.warehouseName,
+      productId: prod.id,
+      productName: prod.name,
+      sku: prod.sku,
+      batchNo: input.batchNo,
+      nameEntered: input.nameEntered,
+      quarantineDate: input.quarantineDate,
+      quantity: issueQty,
+      unit: prod.unit || "Box",
+      proposedReleaseDate: input.proposedReleaseDate,
+      reason: input.reason,
+      status: "Quarantined",
+      binCardEntryId: binEntryId,
+      createdAt: new Date().toISOString(),
+    }
+
+    this.quarantineRecords.unshift(record)
+    try {
+      localStorage.setItem("hkc_quarantine_records", JSON.stringify(this.quarantineRecords))
+    } catch {}
+
+    // 6. Log to stock_movements in MySQL
+    const movementLog: StockMovementLog = {
+      id: qrnId,
+      date: input.quarantineDate || new Date().toISOString().slice(0, 10),
+      type: "QUARANTINE",
+      productId: prod.id,
+      productName: prod.name,
+      sku: prod.sku,
+      fromWarehouse: input.warehouseId,
+      qty: issueQty,
+      unit: prod.unit || "Box",
+      reference: qrnId,
+      remarks: `Quarantined by ${input.nameEntered}: ${input.reason || "Broken/Damaged Medicine"} [Batch: ${input.batchNo}]`,
+    }
+    await createResource<StockMovementLog>("stock_movements", movementLog).catch(() => {})
+
+    this.notify()
+    return record
+  }
+
+  public async updateQuarantineRecord(id: string, patch: Partial<QuarantineRecord>): Promise<QuarantineRecord> {
+    const idx = this.quarantineRecords.findIndex((r) => r.id === id)
+    if (idx === -1) throw new Error("Quarantine record not found")
+
+    const existing = this.quarantineRecords[idx]
+    const updated: QuarantineRecord = {
+      ...existing,
+      ...patch,
+    }
+
+    if (existing.binCardEntryId && (patch.reason || patch.proposedReleaseDate || patch.nameEntered)) {
+      const prod = this.products.find((p) => p.id === existing.productId)
+      if (prod && prod.binCardEntries) {
+        const nextBinEntries = prod.binCardEntries.map((b) => {
+          if (b.id === existing.binCardEntryId) {
+            return {
+              ...b,
+              remark: `Quarantined by ${updated.nameEntered}: ${updated.reason || "Broken/Damaged Medicine"} (Release Date: ${updated.proposedReleaseDate})`.trim(),
+            }
+          }
+          return b
+        })
+        await this.updateProductDetails(prod.id, { binCardEntries: nextBinEntries })
+      }
+    }
+
+    this.quarantineRecords[idx] = updated
+    try {
+      localStorage.setItem("hkc_quarantine_records", JSON.stringify(this.quarantineRecords))
+    } catch {}
+
+    this.notify()
+    return updated
+  }
+
+  public async deleteQuarantineRecord(id: string): Promise<void> {
+    const record = this.quarantineRecords.find((r) => r.id === id)
+    if (!record) return
+
+    const prod = this.products.find((p) => p.id === record.productId)
+    if (prod) {
+      const restoreQty = Number(record.quantity) || 0
+      const nextQty = Number(prod.quantity || 0) + restoreQty
+
+      const matchesWarehouse = (whA?: string, whB?: string): boolean => {
+        if (!whA || !whB) return false
+        const a = whA.toLowerCase().trim()
+        const b = whB.toLowerCase().trim()
+        if (a === b) return true
+        if (a.includes("wh2") && b.includes("wh2")) return true
+        if (a.includes("wh3") && b.includes("wh3")) return true
+        return a.includes(b) || b.includes(a)
+      }
+
+      const updatedBatches = (prod.batches || []).map((b) => {
+        if (b.batchNo === record.batchNo) {
+          return { ...b, qty: Number(b.qty || 0) + restoreQty }
+        }
+        return b
+      })
+
+      const updatedBreakdown = (prod.stockBreakdown || []).map((sb) => {
+        if (matchesWarehouse(sb.warehouse, record.warehouseId)) {
+          return { ...sb, qty: Number(sb.qty || 0) + restoreQty }
+        }
+        return sb
+      })
+
+      const updatedBinEntries = (prod.binCardEntries || []).filter(
+        (b) => b.id !== record.binCardEntryId && b.id !== record.id
+      )
+
+      const { recalculatedEntries } = this.recalculateBinCardLedger(updatedBinEntries)
+
+      const packSize = Number(prod.quantityPerPack || 1)
+      const nextCartons = packSize > 0 ? Math.floor(nextQty / packSize) : (prod.numberOfCartons || 0)
+      const nextVal = nextQty * Number(prod.unitCost || 0)
+
+      await this.updateProductDetails(prod.id, {
+        quantity: nextQty,
+        numberOfCartons: nextCartons,
+        totalStockValue: nextVal,
+        stockBreakdown: updatedBreakdown,
+        batches: updatedBatches,
+        binCardEntries: recalculatedEntries,
+      })
+    }
+
+    this.quarantineRecords = this.quarantineRecords.filter((r) => r.id !== id)
+    try {
+      localStorage.setItem("hkc_quarantine_records", JSON.stringify(this.quarantineRecords))
+    } catch {}
+
+    await deleteResource("stock_movements", id).catch(() => {})
+    this.notify()
+  }
+
   public async recordStockReceipt(input: { productId: string; warehouse: string; quantity: number; remarks?: string }): Promise<StockMovementLog> {
     const product = this.products.find((item) => item.id === input.productId)
     if (!product) throw new Error("Product not found.")
@@ -782,55 +1096,98 @@ class ErpStore {
   }
 
   // Inter-Warehouse Transfer Execution
-  public addStockTransfer(transfer: Transfer): { success: boolean; journalEntryId?: string } {
+  public async addStockTransfer(transfer: Transfer): Promise<{ success: boolean; journalEntryId?: string }> {
     let transferVal = 0
     let jeId: string | undefined = undefined
 
+    const matchesWarehouse = (whA?: string, whB?: string): boolean => {
+      if (!whA || !whB) return false
+      const a = whA.toLowerCase().trim()
+      const b = whB.toLowerCase().trim()
+      if (a === b) return true
+      if (a.includes("wh2") && b.includes("wh2")) return true
+      if (a.includes("wh3") && b.includes("wh3")) return true
+      return a.includes(b) || b.includes(a)
+    }
+
     // Only move inventory and post GL entry if transfer is Issued or Received (not Draft)
     if (transfer.status !== "Draft") {
-      transfer.line_items.forEach((item) => {
-        const prod = this.products.find(
-          (p) => p.name.toLowerCase().includes(item.item.toLowerCase()) || item.item.toLowerCase().includes(p.name.toLowerCase()) || p.id === item.item
+      for (const item of transfer.line_items) {
+        const originProd = this.products.find(
+          (p) =>
+            matchesWarehouse(p.warehouse, transfer.from_warehouse) &&
+            (p.id === item.productId || p.name.toLowerCase().trim() === item.item.toLowerCase().trim() || p.sku === item.item)
+        ) || this.products.find(
+          (p) => p.id === item.productId || p.name.toLowerCase().trim() === item.item.toLowerCase().trim()
         )
-        const valuation = prod ? prod.unitCost : 1000
-        transferVal += item.quantity * valuation
 
-        if (prod) {
-          const updatedBreakdown = prod.stockBreakdown.map((sb) => {
-            if (sb.warehouse === transfer.from_warehouse) {
-              return { ...sb, qty: Math.max(0, sb.qty - item.quantity) }
+        const valuation = originProd ? (originProd.unitCost || 1000) : 1000
+        const issueQty = Number(item.quantity) || 0
+        transferVal += issueQty * valuation
+
+        if (originProd) {
+          let remainingToDeduct = issueQty
+          const updatedBatches = (originProd.batches || []).map((b) => {
+            if (remainingToDeduct > 0 && (!item.batch_no || b.batchNo === item.batch_no)) {
+              const deduct = Math.min(Number(b.qty || 0), remainingToDeduct)
+              remainingToDeduct -= deduct
+              return { ...b, qty: Math.max(0, Number(b.qty || 0) - deduct) }
             }
-            if (sb.warehouse === transfer.to_warehouse) {
-              return { ...sb, qty: sb.qty + item.quantity }
+            return b
+          })
+
+          const prevQty = Number(originProd.quantity || 0)
+          const newBalance = Math.max(0, prevQty - issueQty)
+
+          const updatedBreakdown = (originProd.stockBreakdown || []).map((sb) => {
+            if (matchesWarehouse(sb.warehouse, transfer.from_warehouse)) {
+              return { ...sb, qty: Math.max(0, Number(sb.qty || 0) - issueQty) }
             }
             return sb
           })
 
-          // Ensure destination warehouse exists in breakdown
-          if (!updatedBreakdown.some((sb) => sb.warehouse === transfer.to_warehouse)) {
-            updatedBreakdown.push({ warehouse: transfer.to_warehouse, qty: item.quantity })
+          const currentBinEntries = originProd.binCardEntries || []
+          const leaveEntry: BinCardMovementEntry = {
+            id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: "leave",
+            date: transfer.date || new Date().toISOString().slice(0, 10),
+            voucherNo: transfer.reference_number,
+            batchNo: item.batch_no || originProd.batch || originProd.batches?.[0]?.batchNo || "BATCH-WH",
+            qtyReceived: 0,
+            qtyIssued: issueQty,
+            balance: newBalance,
+            expiryDate: item.expiry || originProd.batches?.[0]?.expiry || originProd.expiry || "",
+            party: `Transfer to ${transfer.to_warehouse}`,
+            unitPrice: item.unit_price || originProd.unitCost,
+            remark: item.remark || `Stock Transfer Dispatch (${transfer.reference_number})`,
+            createdAt: new Date().toISOString(),
           }
 
-          this.updateProduct(prod.id, {
+          await this.updateProductDetails(originProd.id, {
+            quantity: newBalance,
+            batches: updatedBatches,
             stockBreakdown: updatedBreakdown,
+            binCardEntries: [...currentBinEntries, leaveEntry],
           })
         }
 
         // Record Stock Movement Log
-        this.stockMovements.unshift({
+        const movement: StockMovementLog = {
           id: `SM-${Date.now().toString().slice(-4)}`,
           date: transfer.date || new Date().toISOString().split("T")[0],
           type: "TRANSFER",
-          productId: prod?.id,
+          productId: originProd?.id,
           productName: item.item,
           fromWarehouse: transfer.from_warehouse,
           toWarehouse: transfer.to_warehouse,
-          qty: item.quantity,
+          qty: issueQty,
           unit: item.UOM,
           reference: transfer.reference_number,
           remarks: item.remark || `Transfer from ${transfer.from_warehouse} to ${transfer.to_warehouse}`,
-        })
-      })
+        }
+        await createResource<StockMovementLog>("stock_movements", movement).catch(() => {})
+        this.stockMovements.unshift(movement)
+      }
 
       // Post Double-Entry Journal Voucher in Finance Store for inter-warehouse inventory asset transfer
       const stockAcc = financeStore.getAccounts().find((a) => a.code === "1410-01" || a.code === "1410-03" || a.code === "1410" || a.account_type === "Asset") || financeStore.getAccounts()[0]
@@ -859,30 +1216,279 @@ class ErpStore {
     }
 
     this.transfers.unshift(transfer)
+    await createResource<PersistedTransfer>("store_transfers", { id: transfer.reference_number, ...transfer }).catch((err) =>
+      console.error("Failed to persist store transfer:", err)
+    )
     this.notify()
     return { success: true, journalEntryId: jeId }
   }
 
-  public updateTransferStatus(
+  public async updateTransferStatus(
     refNum: string,
     status: TransferStatus,
     receivedBy?: string,
     remark?: string,
     receivedSignature?: string,
     receivedAt?: string
-  ) {
-    const todayStr = receivedAt || new Date().toISOString().replace("T", " ").substring(0, 16)
-    this.transfers = this.transfers.map((t) => {
-      if (t.reference_number !== refNum) return t
-      return {
-        ...t,
-        status,
-        received_by: receivedBy || t.received_by,
-        received_at: todayStr,
-        received_signature: receivedSignature || t.received_signature || receivedBy,
-        discrepancy_remark: remark || t.discrepancy_remark,
+  ): Promise<void> {
+    const currentTransfer = this.transfers.find((t) => t.reference_number === refNum)
+    if (!currentTransfer) return
+    const prevStatus = currentTransfer.status
+
+    const matchesWarehouse = (whA?: string, whB?: string): boolean => {
+      if (!whA || !whB) return false
+      const a = whA.toLowerCase().trim()
+      const b = whB.toLowerCase().trim()
+      if (a === b) return true
+      if (a.includes("wh2") && b.includes("wh2")) return true
+      if (a.includes("wh3") && b.includes("wh3")) return true
+      return a.includes(b) || b.includes(a)
+    }
+
+    // 1. If moving from Draft to Issued: deduct origin stock and record leave in stock ledger
+    if (status === "Issued" && prevStatus === "Draft") {
+      for (const item of currentTransfer.line_items) {
+        const originProd = this.products.find(
+          (p) =>
+            matchesWarehouse(p.warehouse, currentTransfer.from_warehouse) &&
+            (p.id === item.productId || p.name.toLowerCase().trim() === item.item.toLowerCase().trim() || p.sku === item.item)
+        ) || this.products.find(
+          (p) => p.id === item.productId || p.name.toLowerCase().trim() === item.item.toLowerCase().trim()
+        )
+
+        if (originProd) {
+          const issueQty = Number(item.quantity) || 0
+          let remainingToDeduct = issueQty
+          const updatedBatches = (originProd.batches || []).map((b) => {
+            if (remainingToDeduct > 0 && (!item.batch_no || b.batchNo === item.batch_no)) {
+              const deduct = Math.min(Number(b.qty || 0), remainingToDeduct)
+              remainingToDeduct -= deduct
+              return { ...b, qty: Math.max(0, Number(b.qty || 0) - deduct) }
+            }
+            return b
+          })
+          const newBalance = Math.max(0, Number(originProd.quantity || 0) - issueQty)
+          const updatedBreakdown = (originProd.stockBreakdown || []).map((sb) => {
+            if (matchesWarehouse(sb.warehouse, currentTransfer.from_warehouse)) {
+              return { ...sb, qty: Math.max(0, Number(sb.qty || 0) - issueQty) }
+            }
+            return sb
+          })
+          const leaveEntry: BinCardMovementEntry = {
+            id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: "leave",
+            date: currentTransfer.date || new Date().toISOString().slice(0, 10),
+            voucherNo: currentTransfer.reference_number,
+            batchNo: item.batch_no || originProd.batch || originProd.batches?.[0]?.batchNo || "BATCH-WH",
+            qtyReceived: 0,
+            qtyIssued: issueQty,
+            balance: newBalance,
+            expiryDate: item.expiry || originProd.batches?.[0]?.expiry || originProd.expiry || "",
+            party: `Transfer to ${currentTransfer.to_warehouse}`,
+            unitPrice: item.unit_price || originProd.unitCost,
+            remark: item.remark || `Stock Transfer Dispatch (${currentTransfer.reference_number})`,
+            createdAt: new Date().toISOString(),
+          }
+          await this.updateProductDetails(originProd.id, {
+            quantity: newBalance,
+            batches: updatedBatches,
+            stockBreakdown: updatedBreakdown,
+            binCardEntries: [...(originProd.binCardEntries || []), leaveEntry],
+          })
+        }
       }
-    })
+    }
+
+    // 2. If status is Received and wasn't received yet: post entry into destination warehouse stock
+    if (status === "Received" && prevStatus !== "Received") {
+      // If it skipped Issued (e.g. from Draft), deduct origin stock first
+      if (prevStatus === "Draft") {
+        for (const item of currentTransfer.line_items) {
+          const originProd = this.products.find(
+            (p) =>
+              matchesWarehouse(p.warehouse, currentTransfer.from_warehouse) &&
+              (p.id === item.productId || p.name.toLowerCase().trim() === item.item.toLowerCase().trim() || p.sku === item.item)
+          ) || this.products.find(
+            (p) => p.id === item.productId || p.name.toLowerCase().trim() === item.item.toLowerCase().trim()
+          )
+
+          if (originProd) {
+            const issueQty = Number(item.quantity) || 0
+            const newBalance = Math.max(0, Number(originProd.quantity || 0) - issueQty)
+            const leaveEntry: BinCardMovementEntry = {
+              id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              type: "leave",
+              date: currentTransfer.date || new Date().toISOString().slice(0, 10),
+              voucherNo: currentTransfer.reference_number,
+              batchNo: item.batch_no || originProd.batch || "BATCH-WH",
+              qtyReceived: 0,
+              qtyIssued: issueQty,
+              balance: newBalance,
+              expiryDate: item.expiry || originProd.expiry || "",
+              party: `Transfer to ${currentTransfer.to_warehouse}`,
+              unitPrice: item.unit_price || originProd.unitCost,
+              remark: item.remark || `Stock Transfer Dispatch (${currentTransfer.reference_number})`,
+              createdAt: new Date().toISOString(),
+            }
+            await this.updateProductDetails(originProd.id, {
+              quantity: newBalance,
+              binCardEntries: [...(originProd.binCardEntries || []), leaveEntry],
+            })
+          }
+        }
+      }
+
+      // Add stock entry to destination warehouse
+      for (const item of currentTransfer.line_items) {
+        const destProd = this.products.find(
+          (p) =>
+            matchesWarehouse(p.warehouse, currentTransfer.to_warehouse) &&
+            (p.name.toLowerCase().trim() === item.item.toLowerCase().trim() || p.sku === item.item)
+        )
+        const incQty = Number(item.quantity) || 0
+
+        if (destProd) {
+          const nextQty = Number(destProd.quantity || 0) + incQty
+          let batchMatched = false
+          const updatedBatches = (destProd.batches || []).map((b) => {
+            if (item.batch_no && b.batchNo === item.batch_no) {
+              batchMatched = true
+              return { ...b, qty: Number(b.qty || 0) + incQty }
+            }
+            return b
+          })
+          if (!batchMatched) {
+            updatedBatches.push({
+              batchNo: item.batch_no || "BATCH-01",
+              qty: incQty,
+              expiry: item.expiry || "",
+              status: "Released",
+            })
+          }
+
+          let breakdownMatched = false
+          const updatedBreakdown = (destProd.stockBreakdown || []).map((sb) => {
+            if (matchesWarehouse(sb.warehouse, currentTransfer.to_warehouse)) {
+              breakdownMatched = true
+              return { ...sb, qty: Number(sb.qty || 0) + incQty }
+            }
+            return sb
+          })
+          if (!breakdownMatched) {
+            updatedBreakdown.push({ warehouse: currentTransfer.to_warehouse, qty: incQty })
+          }
+
+          const entryRecord: BinCardMovementEntry = {
+            id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: "entry",
+            date: new Date().toISOString().slice(0, 10),
+            voucherNo: currentTransfer.reference_number,
+            batchNo: item.batch_no || destProd.batch || (destProd.batches?.[0]?.batchNo) || "BATCH-01",
+            qtyReceived: incQty,
+            qtyIssued: 0,
+            balance: nextQty,
+            expiryDate: item.expiry || (destProd.batches?.[0]?.expiry) || destProd.expiry || "",
+            party: `Transfer from ${currentTransfer.from_warehouse}`,
+            unitPrice: item.unit_price || destProd.unitCost,
+            remark: `Transfer received from ${currentTransfer.from_warehouse} (${currentTransfer.reference_number})${remark ? ` - Note: ${remark}` : ""}`,
+            createdAt: new Date().toISOString(),
+          }
+
+          await this.updateProductDetails(destProd.id, {
+            quantity: nextQty,
+            batches: updatedBatches,
+            stockBreakdown: updatedBreakdown,
+            binCardEntries: [...(destProd.binCardEntries || []), entryRecord],
+          })
+        } else {
+          // Destination product does not exist yet: create it in to_warehouse
+          const originProd = this.products.find(
+            (p) => p.id === item.productId || p.name.toLowerCase().trim() === item.item.toLowerCase().trim()
+          )
+          const newProdId = `P-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+          const entryRecord: BinCardMovementEntry = {
+            id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: "entry",
+            date: new Date().toISOString().slice(0, 10),
+            voucherNo: currentTransfer.reference_number,
+            batchNo: item.batch_no || "BATCH-01",
+            qtyReceived: incQty,
+            qtyIssued: 0,
+            balance: incQty,
+            expiryDate: item.expiry || "",
+            party: `Transfer from ${currentTransfer.from_warehouse}`,
+            unitPrice: item.unit_price || (originProd?.unitCost || 0),
+            remark: `Transfer received from ${currentTransfer.from_warehouse} (${currentTransfer.reference_number})${remark ? ` - Note: ${remark}` : ""}`,
+            createdAt: new Date().toISOString(),
+          }
+          const newProd: Product = {
+            id: newProdId,
+            name: item.item,
+            sku: originProd ? `${originProd.sku}-${currentTransfer.to_warehouse.split("-")[0]}` : `SKU-${Date.now().toString().slice(-4)}`,
+            category: originProd?.category || "Commercial Drugs",
+            unit: item.UOM || originProd?.unit || "Pieces",
+            unitCost: item.unit_price || originProd?.unitCost || 0,
+            sellingPrice: originProd?.sellingPrice || item.unit_price || 0,
+            reorderLevel: originProd?.reorderLevel || 10,
+            quantity: incQty,
+            status: "In Stock",
+            warehouse: currentTransfer.to_warehouse,
+            warehouseName: currentTransfer.to_warehouse,
+            batch: item.batch_no || "BATCH-01",
+            expiry: item.expiry || "",
+            batches: [
+              {
+                batchNo: item.batch_no || "BATCH-01",
+                qty: incQty,
+                expiry: item.expiry || "",
+                status: "Released",
+              },
+            ],
+            stockBreakdown: [
+              {
+                warehouse: currentTransfer.to_warehouse,
+                qty: incQty,
+              },
+            ],
+            binCardEntries: [entryRecord],
+            origin: originProd?.origin || "Imported",
+            supplierName: originProd?.supplierName || "Internal Transfer",
+          }
+          await this.addProduct(newProd)
+        }
+
+        // Record stock movement log for receipt
+        const movement: StockMovementLog = {
+          id: `SM-${Date.now().toString().slice(-4)}`,
+          date: new Date().toISOString().split("T")[0],
+          type: "RECEIPT",
+          productName: item.item,
+          fromWarehouse: currentTransfer.from_warehouse,
+          toWarehouse: currentTransfer.to_warehouse,
+          qty: incQty,
+          unit: item.UOM,
+          reference: currentTransfer.reference_number,
+          remarks: `Transfer received from ${currentTransfer.from_warehouse} (${currentTransfer.reference_number})`,
+        }
+        await createResource<StockMovementLog>("stock_movements", movement).catch(() => {})
+        this.stockMovements.unshift(movement)
+      }
+    }
+
+    const todayStr = receivedAt || new Date().toISOString().replace("T", " ").substring(0, 16)
+    const updatedTransfer: Transfer = {
+      ...currentTransfer,
+      status,
+      received_by: receivedBy || currentTransfer.received_by,
+      received_at: todayStr,
+      received_signature: receivedSignature || currentTransfer.received_signature || receivedBy,
+      discrepancy_remark: remark || currentTransfer.discrepancy_remark,
+    }
+
+    this.transfers = this.transfers.map((t) => (t.reference_number === refNum ? updatedTransfer : t))
+    await updateResource<PersistedTransfer>("store_transfers", refNum, { id: refNum, ...updatedTransfer }).catch((err) =>
+      console.error("Failed to update store transfer in DB:", err)
+    )
     this.notify()
   }
 
@@ -1128,6 +1734,29 @@ class ErpStore {
     const issueQty = Number(leaveData.quantityIssued || 0)
     if (issueQty <= 0) throw new Error("Leave quantity must be greater than 0")
 
+    // Guard: Prevent double-deducting a sales issue that already has a leave record
+    const cleanVoucher = (leaveData.voucherNo || "").trim().toLowerCase()
+    if (cleanVoucher) {
+      const rawVoucher = cleanVoucher.replace(/^fs-/, "")
+      const alreadyExists = (prod.binCardEntries || []).some((b) => {
+        if (b.type !== "leave") return false
+        const bVoucher = (b.voucherNo || "").toLowerCase().trim()
+        const bRawVoucher = bVoucher.replace(/^fs-/, "")
+        const bRemark = (b.remark || "").toLowerCase().trim()
+        return (
+          bVoucher === cleanVoucher ||
+          bRawVoucher === rawVoucher ||
+          (cleanVoucher && bVoucher.includes(cleanVoucher)) ||
+          (rawVoucher && bVoucher.includes(rawVoucher)) ||
+          (cleanVoucher && bRemark.includes(cleanVoucher)) ||
+          (rawVoucher && bRemark.includes(rawVoucher))
+        )
+      })
+      if (alreadyExists) {
+        throw new Error(`Sales Issue ${leaveData.voucherNo} has already been deducted and recorded in the ledger. Duplicate deduction prevented.`)
+      }
+    }
+
     // FIFO deduction on wh1Entries
     let remaining = issueQty
     const currentWH1Entries = [...(prod.wh1Entries || [])]
@@ -1246,7 +1875,16 @@ class ErpStore {
   }
 
   public recalculateBinCardLedger(entries: BinCardMovementEntry[] = []) {
-    const sorted = [...entries].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    const sorted = [...entries].sort((a, b) => {
+      const timeA = new Date(a.date && a.date !== "—" ? a.date : 0).getTime()
+      const timeB = new Date(b.date && b.date !== "—" ? b.date : 0).getTime()
+      if (timeA !== timeB) return timeA - timeB
+      const aIsEntry = a.type === "entry" || Number(a.qtyReceived || 0) > 0
+      const bIsEntry = b.type === "entry" || Number(b.qtyReceived || 0) > 0
+      if (aIsEntry && !bIsEntry) return -1
+      if (!aIsEntry && bIsEntry) return 1
+      return 0
+    })
     let currentBalance = 0
     let totalReceived = 0
     let totalIssued = 0

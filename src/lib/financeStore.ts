@@ -66,6 +66,8 @@ export interface JournalEntryLine {
   party_type?: "Customer" | "Supplier" | "Employee" | null
   party_id?: string | null
   party_name?: string | null
+  is_cleared?: boolean
+  cleared_date?: string | null
 }
 
 export interface InvoiceLineItem {
@@ -144,8 +146,17 @@ export interface OneOffExpense {
   status: "APPROVED" | "PENDING" | "REJECTED"
   cost_center?: string
   gl_account_id?: string
+  payment_account_id?: string
+  payment_method?: "Cash" | "Bank Transfer" | "Cheque" | "CPO" | "Telebirr"
   receipt_ref?: string
+  cheque_no?: string
+  apply_vat?: boolean
   tax_amount?: number
+  apply_wht?: boolean
+  wht_amount?: number
+  wht_rate?: number
+  net_disbursed?: number
+  notes?: string
 }
 
 export interface VehicleMaintenance {
@@ -338,6 +349,119 @@ export function helperGenerateDeprSchedule(
   return schedule
 }
 
+export const INITIAL_EXPENSES: OneOffExpense[] = [
+  {
+    id: "EXP-2026-001",
+    merchant: "Mega Printing & Stationery Enterprise",
+    employee: "Finance Officer",
+    category: "Stationery",
+    cost_center: "CC-100 Corporate HQ",
+    gl_account_id: "8000-07",
+    payment_account_id: "1000-01-01",
+    payment_method: "Cash",
+    receipt_ref: "PV-2026-081",
+    date: "2026-09-01",
+    amount: 4500,
+    currency: "ETB",
+    status: "APPROVED",
+    apply_vat: true,
+    tax_amount: 675,
+    apply_wht: true,
+    wht_amount: 90,
+    wht_rate: 0.02,
+    net_disbursed: 5085,
+    notes: "Office printing paper, voucher booklets and ledger registers.",
+  },
+  {
+    id: "EXP-2026-002",
+    merchant: "Ethio Telecom",
+    employee: "Finance Officer",
+    category: "Utilities & Comm",
+    cost_center: "CC-100 Corporate HQ",
+    gl_account_id: "8000-09",
+    payment_account_id: "1000-02-26",
+    payment_method: "Bank Transfer",
+    receipt_ref: "CBE-TRF-90412",
+    date: "2026-09-02",
+    amount: 12800,
+    currency: "ETB",
+    status: "APPROVED",
+    apply_vat: true,
+    tax_amount: 1920,
+    apply_wht: false,
+    wht_amount: 0,
+    wht_rate: 0,
+    net_disbursed: 14720,
+    notes: "HQ leased-line fiber internet and telephone communications.",
+  },
+  {
+    id: "EXP-2026-003",
+    merchant: "Getachew Transport Services",
+    employee: "Operations Team",
+    category: "Transportation",
+    cost_center: "CC-200 Warehouse Logistics",
+    gl_account_id: "6000-08",
+    payment_account_id: "1000-01-01",
+    payment_method: "Cash",
+    receipt_ref: "PV-2026-094",
+    date: "2026-09-03",
+    amount: 8000,
+    currency: "ETB",
+    status: "PENDING",
+    apply_vat: false,
+    tax_amount: 0,
+    apply_wht: true,
+    wht_amount: 160,
+    wht_rate: 0.02,
+    net_disbursed: 7840,
+    notes: "Inter-store coffee bag transfer logistics.",
+  },
+  {
+    id: "EXP-2026-004",
+    merchant: "Bole Tower Landlord Association",
+    employee: "Finance Officer",
+    category: "Office Rent",
+    cost_center: "CC-100 Corporate HQ",
+    gl_account_id: "8000-08",
+    payment_account_id: "1000-02-13",
+    payment_method: "Bank Transfer",
+    receipt_ref: "AIB-CHK-4109",
+    date: "2026-09-04",
+    amount: 75000,
+    currency: "ETB",
+    status: "PENDING",
+    apply_vat: true,
+    tax_amount: 11250,
+    apply_wht: true,
+    wht_amount: 1500,
+    wht_rate: 0.02,
+    net_disbursed: 84750,
+    notes: "Monthly headquarters office lease rental.",
+  },
+  {
+    id: "EXP-2026-005",
+    merchant: "Addis Loading & Unloading Association",
+    employee: "Warehouse Supervisor",
+    category: "Handling & Freight",
+    cost_center: "CC-200 Warehouse Logistics",
+    gl_account_id: "6000-10",
+    payment_account_id: "1000-01-01",
+    payment_method: "Cash",
+    receipt_ref: "PV-2026-102",
+    date: "2026-09-04",
+    amount: 3200,
+    currency: "ETB",
+    status: "APPROVED",
+    apply_vat: false,
+    tax_amount: 0,
+    apply_wht: false,
+    wht_amount: 0,
+    wht_rate: 0,
+    net_disbursed: 3200,
+    notes: "Casual day-labor loading and unloading at warehouse gate.",
+  },
+]
+
 // Finance starts empty and is hydrated exclusively from the Finance API.
 class FinanceStore {
   private accounts: AccountItem[] = []
@@ -346,7 +470,7 @@ class FinanceStore {
   private invoices: Invoice[] = []
   private payments: Payment[] = []
   private recurringSchedules: RecurringExpenseSchedule[] = []
-  private expenses: OneOffExpense[] = []
+  private expenses: OneOffExpense[] = [...INITIAL_EXPENSES]
   private vehicles: Vehicle[] = []
   private periods: AccountingPeriod[] = []
   private companySettings: CompanySettings = emptyCompanySettings
@@ -391,7 +515,9 @@ class FinanceStore {
   public async loadFromApi(force = false) {
     const user = useAuthStore.getState().user
     const roles = user?.roles || []
-    const isAuthorized = roles.includes("finance_manager") || roles.includes("superadmin")
+    const isFullFinance = roles.includes("finance_manager") || roles.includes("superadmin")
+    const isOperationalFinance = roles.some((r) => ["sales_manager", "hkc_docs_manager", "inventory_admin"].includes(r))
+    const isAuthorized = isFullFinance || isOperationalFinance
 
     if (!useAuthStore.getState().token || !isAuthorized) {
       this._isLoading = false
@@ -419,13 +545,13 @@ class FinanceStore {
         taxRules,
       ] = await Promise.all([
         loadResource<AccountItem>("chart_of_accounts").catch(() => []),
-        loadResource<JournalEntry>("journal_entries").catch(() => []),
-        loadResource<JournalEntryLine>("journal_entry_lines").catch(() => []),
+        isFullFinance ? loadResource<JournalEntry>("journal_entries").catch(() => []) : Promise.resolve([]),
+        isFullFinance ? loadResource<JournalEntryLine>("journal_entry_lines").catch(() => []) : Promise.resolve([]),
         loadResource<Invoice>("invoices").catch(() => []),
         loadResource<Payment>("payments").catch(() => []),
-        loadResource<RecurringExpenseSchedule>("recurring_expense_schedules").catch(() => []),
-        loadResource<OneOffExpense>("expenses").catch(() => []),
-        loadResource<Vehicle>("vehicles").catch(() => []),
+        isFullFinance ? loadResource<RecurringExpenseSchedule>("recurring_expense_schedules").catch(() => []) : Promise.resolve([]),
+        isFullFinance ? loadResource<OneOffExpense>("expenses").catch(() => []) : Promise.resolve([]),
+        isFullFinance ? loadResource<Vehicle>("vehicles").catch(() => []) : Promise.resolve([]),
         loadResource<CompanySettings & { id?: string }>("company_settings").catch(() => []),
         loadResource<TaxRule>("tax_rules").catch(() => []),
       ])
@@ -450,6 +576,8 @@ class FinanceStore {
         credit_amount: Number(l.credit_amount ?? l.credit ?? 0),
         currency: l.currency || "ETB",
         exchange_rate_at_time: Number(l.exchange_rate_at_time || 1.0),
+        is_cleared: Boolean(l.is_cleared),
+        cleared_date: l.cleared_date || (l.is_cleared ? new Date().toISOString().slice(0, 10) : null),
       }))
       this.invoices = sortNewestFirst(invoices.map((inv: any) => {
         const rawItems = Array.isArray(inv.line_items) ? inv.line_items : []
@@ -484,11 +612,19 @@ class FinanceStore {
       }))
       this.payments = sortNewestFirst(payments)
       this.recurringSchedules = sortNewestFirst(recurringSchedules)
-      this.expenses = sortNewestFirst(expenses.map((exp: any) => ({
-        ...exp,
-        amount: Number(exp.amount ?? 0),
-        status: exp.status || "Approved",
-      })))
+      if (!Array.isArray(expenses) || expenses.length === 0) {
+        this.expenses = INITIAL_EXPENSES
+        void persistResources([{ resource: "expenses", items: INITIAL_EXPENSES }])
+      } else {
+        this.expenses = sortNewestFirst(expenses.map((exp: any) => ({
+          ...exp,
+          amount: Number(exp.amount ?? 0),
+          tax_amount: Number(exp.tax_amount ?? 0),
+          wht_amount: Number(exp.wht_amount ?? 0),
+          net_disbursed: Number(exp.net_disbursed ?? exp.amount ?? 0),
+          status: exp.status || "PENDING",
+        })))
+      }
       this.vehicles = sortNewestFirst(vehicles)
       const { id: _settingsId, ...companySettings } = companySettingsRows[0] || { id: "default", ...emptyCompanySettings }
       this.companySettings = companySettings as CompanySettings
@@ -847,12 +983,22 @@ class FinanceStore {
             }
           })
 
-          // C. Sync Expenses → Expense & Cash GL Entries
+          // C. Sync Expenses → ONLY for APPROVED expenses!
           this.expenses.forEach((ec: any, idx: number) => {
             const expId = ec.id || `EXP-${idx + 1}`
             const jeId = `JE-EXP-${expId}`
             const expAmt = Number(ec.amount || 0)
-            if (expAmt <= 0 || ec.status === "REJECTED") return  // Skip zero or rejected expenses
+
+            // STRICT RULE: Only APPROVED expenses may exist in GL / Journal Entries
+            if (ec.status !== "APPROVED" || expAmt <= 0) {
+              // If an unapproved / pending / rejected expense has an entry in GL, remove it
+              if (this.entries.some((e) => e.id === jeId || e.source_id === expId)) {
+                this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== expId)
+                this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
+                hasNewSync = true
+              }
+              return
+            }
 
             const hasExpEntry = this.entries.some((e) => e.id === jeId || e.source_id === expId)
             const hasExpLines = this.lines.some((l) => l.journal_entry_id === jeId)
@@ -861,29 +1007,104 @@ class FinanceStore {
               this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== expId)
               this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
 
-              const expAcc = acc("8000-30") || acc("8000-01") || this.accounts.find((a) => a.account_type === "Expense" && !a.is_group) // Miscellaneous / Expenses
-              const cashAcc = acc("1000-01-01") || acc("1000-02-26") || acc("1000") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group) // Cash/Bank
-
-              if (!expAcc || !cashAcc) {
-                console.warn(`[FinanceSync] Missing accounts for Expense ${expId} — skipping.`)
-              } else {
-                this.entries.push({
-                  id: jeId,
-                  entry_date: ec.date || new Date().toISOString().split("T")[0],
-                  source_type: "Payment Voucher",
-                  source_id: expId,
-                  created_by: ec.employee || ec.employee_name || "System Synced",
-                  currency: "ETB",
-                  exchange_rate: 1.0,
-                  description: `Expense ${expId} — ${ec.merchant || ec.category || "Vendor"} (${ec.employee || "Employee"})`,
-                  is_reversal_of: null,
-                })
-                this.lines.push(
-                  { id: `${jeId}-1`, journal_entry_id: jeId, account_id: expAcc.id, debit_amount: expAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
-                  { id: `${jeId}-2`, journal_entry_id: jeId, account_id: cashAcc.id, debit_amount: 0, credit_amount: expAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: null, party_id: null, party_name: ec.merchant || null }
-                )
-                hasNewSync = true
+              // 1. Resolve Expense GL Account (Debit)
+              let targetAcc = ec.gl_account_id ? this.accounts.find(a => a.id === ec.gl_account_id || a.code === ec.gl_account_id) : null
+              if (!targetAcc) {
+                targetAcc = this.accounts.find((a) => a.code === "8000-30") ||
+                  this.accounts.find((a) => a.code === "8000-08") ||
+                  this.accounts.find((a) => a.account_type === "Expense" && !a.is_group) ||
+                  this.accounts[0]
               }
+
+              // 2. Resolve Cash/Bank Account (Credit)
+              let cashAcc = ec.payment_account_id ? this.accounts.find(a => a.id === ec.payment_account_id || a.code === ec.payment_account_id) : null
+              if (!cashAcc) {
+                cashAcc = this.accounts.find((a) => a.code === "1000-01-01") ||
+                  this.accounts.find((a) => a.code === "1000-02-26") ||
+                  this.accounts.find((a) => a.account_type === "Asset" && (a.peachtree_type === "Cash" || a.code.startsWith("1000")) && !a.is_group) ||
+                  this.accounts[0]
+              }
+
+              // 3. Resolve VAT Receivable Account (Debit)
+              const vatAcc = this.accounts.find((a) => a.code === "1320-06-02") ||
+                this.accounts.find((a) => a.name.toLowerCase().includes("vat rec")) ||
+                this.accounts[0]
+
+              // 4. Resolve WHT Payable Account (Credit)
+              const whtAcc = this.accounts.find((a) => a.code === "2000-04") ||
+                this.accounts.find((a) => a.name.toLowerCase().includes("wht pay")) ||
+                this.accounts[0]
+
+              const baseAmt = expAmt
+              const vatAmt = (ec.apply_vat && Number(ec.tax_amount) > 0) ? Number(ec.tax_amount) : 0
+              const whtAmt = (ec.apply_wht && Number(ec.wht_amount) > 0) ? Number(ec.wht_amount) : 0
+              const netDisbursed = Number(ec.net_disbursed ?? Math.round(Math.max(0, baseAmt + vatAmt - whtAmt) * 100) / 100)
+
+              this.entries.push({
+                id: jeId,
+                entry_date: ec.date || new Date().toISOString().split("T")[0],
+                source_type: "Payment Voucher",
+                source_id: expId,
+                created_by: ec.employee || ec.employee_name || "Finance Treasury",
+                currency: ec.currency || "ETB",
+                exchange_rate: 1.0,
+                description: `Expense ${expId}: ${ec.merchant || "Vendor"} (${ec.category}${ec.cost_center ? " - " + ec.cost_center : ""}) [Ref: ${ec.receipt_ref || expId}]`,
+                is_reversal_of: null,
+              })
+
+              let lineIdx = 1
+              this.lines.push({
+                id: `${jeId}-${lineIdx++}`,
+                journal_entry_id: jeId,
+                account_id: targetAcc.id,
+                debit_amount: baseAmt,
+                credit_amount: 0,
+                currency: "ETB",
+                exchange_rate_at_time: 1.0,
+                warehouse_id: null,
+              })
+
+              if (vatAmt > 0) {
+                this.lines.push({
+                  id: `${jeId}-${lineIdx++}`,
+                  journal_entry_id: jeId,
+                  account_id: vatAcc.id,
+                  debit_amount: vatAmt,
+                  credit_amount: 0,
+                  currency: "ETB",
+                  exchange_rate_at_time: 1.0,
+                  warehouse_id: null,
+                })
+              }
+
+              if (whtAmt > 0) {
+                this.lines.push({
+                  id: `${jeId}-${lineIdx++}`,
+                  journal_entry_id: jeId,
+                  account_id: whtAcc.id,
+                  debit_amount: 0,
+                  credit_amount: whtAmt,
+                  currency: "ETB",
+                  exchange_rate_at_time: 1.0,
+                  warehouse_id: null,
+                })
+              }
+
+              this.lines.push({
+                id: `${jeId}-${lineIdx++}`,
+                journal_entry_id: jeId,
+                account_id: cashAcc.id,
+                debit_amount: 0,
+                credit_amount: netDisbursed,
+                currency: "ETB",
+                exchange_rate_at_time: 1.0,
+                warehouse_id: null,
+                party_type: null,
+                party_id: null,
+                party_name: ec.merchant || null,
+              })
+
+              hasNewSync = true
             }
           })
 
@@ -1011,7 +1232,7 @@ class FinanceStore {
   }
 
   public async reloadFromApi() {
-    await this.loadFromApi()
+    await this.loadFromApi(true)
   }
 
   public isLoading(): boolean {
@@ -1048,6 +1269,28 @@ class FinanceStore {
 
   public getJournalEntryLines(): JournalEntryLine[] {
     return [...this.lines]
+  }
+
+  public setBankLineCleared(lineId: string, isCleared: boolean, clearedDate?: string) {
+    let changed = false
+    this.lines = this.lines.map((l) => {
+      if (l.id === lineId) {
+        changed = true
+        return {
+          ...l,
+          is_cleared: isCleared,
+          cleared_date: isCleared ? (clearedDate || new Date().toISOString().slice(0, 10)) : null,
+        }
+      }
+      return l
+    })
+
+    if (changed) {
+      void persistResources([{ resource: "journal_entry_lines", items: this.lines }]).catch((err) => {
+        console.error("Failed to persist reconciled line to database:", err)
+      })
+      this.listeners.forEach((l) => l())
+    }
   }
 
   public getInvoices(): Invoice[] {
@@ -1801,11 +2044,23 @@ class FinanceStore {
 
   // --- Expenses Actions ---
   public addOneOffExpense(exp: Omit<OneOffExpense, "id">): OneOffExpense {
+    const baseAmt = Number(exp.amount) || 0
+    const vatAmt = exp.apply_vat ? (Number(exp.tax_amount) || Math.round(baseAmt * 0.15 * 100) / 100) : 0
+    const whtAmt = exp.apply_wht ? (Number(exp.wht_amount) || Math.round(baseAmt * (exp.wht_rate || 0.02) * 100) / 100) : 0
+    const netDisbursed = exp.net_disbursed ?? Math.round(Math.max(0, baseAmt + vatAmt - whtAmt) * 100) / 100
+
     const newExp: OneOffExpense = {
       ...exp,
       id: `EXP-${Math.floor(1000 + Math.random() * 9000)}`,
+      amount: baseAmt,
+      apply_vat: exp.apply_vat ?? false,
+      tax_amount: vatAmt,
+      apply_wht: exp.apply_wht ?? false,
+      wht_amount: whtAmt,
+      net_disbursed: netDisbursed,
     }
     this.expenses = [newExp, ...this.expenses]
+    persistResources([{ resource: "expenses", items: this.expenses }])
     this.notify()
     return newExp
   }
@@ -1813,44 +2068,71 @@ class FinanceStore {
   public approveOneOffExpense(id: string) {
     this.expenses = this.expenses.map((e) => {
       if (e.id === id) {
-        const approved = { ...e, status: "APPROVED" as const }
+        const baseAmt = Number(e.amount) || 0
+        const vatAmt = (e.apply_vat && Number(e.tax_amount) > 0) ? Number(e.tax_amount) : 0
+        const whtAmt = (e.apply_wht && Number(e.wht_amount) > 0) ? Number(e.wht_amount) : 0
+        const netDisbursed = e.net_disbursed ?? Math.round(Math.max(0, baseAmt + vatAmt - whtAmt) * 100) / 100
+
+        const approved: OneOffExpense = {
+          ...e,
+          status: "APPROVED" as const,
+          net_disbursed: netDisbursed,
+        }
         
+        // 1. Resolve Expense GL Account (Debit)
         let targetAcc = e.gl_account_id ? this.accounts.find(a => a.id === e.gl_account_id || a.code === e.gl_account_id) : null
         if (!targetAcc) {
-          if (e.category === "Office Rent" || e.category === "Rent") {
-            targetAcc = this.accounts.find((a) => a.code === "5100") || this.accounts[0]
-          } else if (e.category === "Vehicle Cost" || e.category === "Fleet") {
-            targetAcc = this.accounts.find((a) => a.code === "5400") || this.accounts[0]
-          } else if (e.category === "Software & SaaS" || e.category === "Infrastructure" || e.category === "Utilities") {
-            targetAcc = this.accounts.find((a) => a.code === "5200") || this.accounts[0]
-          } else {
-            targetAcc = this.accounts.find((a) => a.code === "5300") || this.accounts.find((a) => a.code === "5200") || this.accounts[0]
-          }
+          targetAcc = this.accounts.find((a) => a.code === "8000-30") ||
+            this.accounts.find((a) => a.code === "8000-08") ||
+            this.accounts.find((a) => a.account_type === "Expense" && !a.is_group) ||
+            this.accounts[0]
         }
 
-        const cashAcc = this.accounts.find((a) => a.code === "1000") || this.accounts[0]
-        const taxAcc = this.accounts.find((a) => a.code === "2210") || this.accounts[0]
-        
-        const taxVal = e.tax_amount || 0
-        const netExp = Math.max(0, e.amount - taxVal)
+        // 2. Resolve Cash/Bank Account (Credit)
+        let cashAcc = e.payment_account_id ? this.accounts.find(a => a.id === e.payment_account_id || a.code === e.payment_account_id) : null
+        if (!cashAcc) {
+          cashAcc = this.accounts.find((a) => a.code === "1000-01-01") ||
+            this.accounts.find((a) => a.code === "1000-02-26") ||
+            this.accounts.find((a) => a.account_type === "Asset" && (a.peachtree_type === "Cash" || a.code.startsWith("1000")) && !a.is_group) ||
+            this.accounts[0]
+        }
+
+        // 3. Resolve VAT Receivable Account (Debit)
+        const vatAcc = this.accounts.find((a) => a.code === "1320-06-02") ||
+          this.accounts.find((a) => a.name.toLowerCase().includes("vat rec")) ||
+          this.accounts[0]
+
+        // 4. Resolve WHT Payable Account (Credit)
+        const whtAcc = this.accounts.find((a) => a.code === "2000-04") ||
+          this.accounts.find((a) => a.name.toLowerCase().includes("wht pay")) ||
+          this.accounts[0]
 
         const rawLines: Array<{ account_id: string; debit_amount: number; credit_amount: number; party_type?: any; party_id?: string; party_name?: string }> = [
-          { account_id: targetAcc.id, debit_amount: netExp, credit_amount: 0 },
+          { account_id: targetAcc.id, debit_amount: baseAmt, credit_amount: 0 },
         ]
 
-        if (taxVal > 0) {
-          rawLines.push({ account_id: taxAcc.id, debit_amount: taxVal, credit_amount: 0 })
+        if (vatAmt > 0) {
+          rawLines.push({ account_id: vatAcc.id, debit_amount: vatAmt, credit_amount: 0 })
         }
 
-        rawLines.push({ account_id: cashAcc.id, debit_amount: 0, credit_amount: e.amount })
+        if (whtAmt > 0) {
+          rawLines.push({ account_id: whtAcc.id, debit_amount: 0, credit_amount: whtAmt })
+        }
+
+        rawLines.push({
+          account_id: cashAcc.id,
+          debit_amount: 0,
+          credit_amount: netDisbursed,
+          party_name: e.merchant || undefined,
+        })
 
         this.postJournalEntry(
           {
             entry_date: e.date,
-            description: `Expense claim approval: ${e.merchant} (${e.category}${e.cost_center ? " - " + e.cost_center : ""})`,
-            source_type: "Purchase Invoice",
+            description: `Expense approval: ${e.merchant} (${e.category}${e.cost_center ? " - " + e.cost_center : ""}) [Ref: ${e.receipt_ref || e.id}]`,
+            source_type: "Payment Voucher",
             source_id: e.id,
-            created_by: "Finance Auditor",
+            created_by: "Finance Treasury",
             currency: e.currency,
             exchange_rate: 1.0,
           },
@@ -1860,11 +2142,20 @@ class FinanceStore {
       }
       return e
     })
+    persistResources([{ resource: "expenses", items: this.expenses }])
     this.notify()
   }
 
   public rejectOneOffExpense(id: string) {
+    const jeId = `JE-EXP-${id}`
+    this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== id)
+    this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
     this.expenses = this.expenses.map((e) => (e.id === id ? { ...e, status: "REJECTED" as const } : e))
+    persistResources([
+      { resource: "expenses", items: this.expenses },
+      { resource: "journal_entries", items: this.entries },
+      { resource: "journal_entry_lines", items: this.lines },
+    ])
     this.notify()
   }
 
@@ -2794,13 +3085,31 @@ class FinanceStore {
 
   // --- Expense, Schedule, and Vehicle CRUD ---
   public updateOneOffExpense(id: string, updated: Partial<OneOffExpense>) {
+    if (updated.status && updated.status !== "APPROVED") {
+      const jeId = `JE-EXP-${id}`
+      this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== id)
+      this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
+    }
     this.expenses = this.expenses.map((e) => (e.id === id ? { ...e, ...updated } : e))
+    persistResources([
+      { resource: "expenses", items: this.expenses },
+      { resource: "journal_entries", items: this.entries },
+      { resource: "journal_entry_lines", items: this.lines },
+    ])
     this.notify()
   }
 
   public deleteOneOffExpense(id: string) {
+    const jeId = `JE-EXP-${id}`
+    this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== id)
+    this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
     this.expenses = this.expenses.filter((e) => e.id !== id)
     void deleteResource("expenses", id)
+    persistResources([
+      { resource: "expenses", items: this.expenses },
+      { resource: "journal_entries", items: this.entries },
+      { resource: "journal_entry_lines", items: this.lines },
+    ])
     this.notify()
   }
 

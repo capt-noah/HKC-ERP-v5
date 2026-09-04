@@ -18,6 +18,7 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import StoreTransfersTab from "@/components/StoreTransfersTab"
+import QuarantineTab from "@/components/stock/QuarantineTab"
 import { useErpStore, type Product, type WH1Entry, type BinCardMovementEntry } from "@/lib/erpStore"
 import {
   withOperatingWarehouses,
@@ -134,18 +135,20 @@ export default function StockProducts() {
 
   const [searchParams] = useSearchParams()
   const initialSearch = searchParams.get("search") || ""
-  const [activeTab, setActiveTab] = useState<"Register" | "Store Transfer">("Register")
+  const [activeTab, setActiveTab] = useState<"Register" | "Store Transfer" | "Quarantine">("Register")
+
+  const defaultWarehouse = (isInventoryAdminOnly && warehouseRecords.length === 1)
+    ? (warehouseRecords[0].code || warehouseRecords[0].id)
+    : "ALL"
+  const [selectedWarehouse, setSelectedWarehouse] = useState(defaultWarehouse)
 
   useEffect(() => {
     if (!hasCommercialStoreAccess && activeTab !== "Register") {
       setActiveTab("Register")
     }
   }, [hasCommercialStoreAccess, activeTab])
+
   const [searchQuery, setSearchQuery] = useState(initialSearch)
-  const defaultWarehouse = (isInventoryAdminOnly && warehouseRecords.length === 1)
-    ? (warehouseRecords[0].code || warehouseRecords[0].id)
-    : "ALL"
-  const [selectedWarehouse, setSelectedWarehouse] = useState(defaultWarehouse)
   const [expiryFilter, setExpiryFilter] = useState<string>("ALL")
   
   useEffect(() => {
@@ -818,6 +821,7 @@ export default function StockProducts() {
             {[
               { id: "Register", label: "Stock" },
               { id: "Store Transfer", label: "Store Transfer" },
+              { id: "Quarantine", label: "Quarantine" },
             ].map((tab) => {
               const isActive = activeTab === tab.id
               return (
@@ -1103,7 +1107,6 @@ export default function StockProducts() {
                                       <WH1ChildMovementLedger
                                         product={prod}
                                         onEditEntry={openEditSubEntry}
-                                        onPrintGRV={(product) => setWh1VoucherModal({ isOpen: true, product })}
                                       />
                                     </td>
                                   </tr>
@@ -1238,10 +1241,17 @@ export default function StockProducts() {
                               {isExpanded && (
                                 <tr className="bg-zinc-50/60">
                                   <td colSpan={currentProductColumns.length} className="px-6 py-3">
-                                    <StockBinCardLedger
-                                      product={prod}
-                                      onEditEntry={(product, entry) => setBinEntryModal({ isOpen: true, product, entry })}
-                                    />
+                                    {isWH1(prod.warehouse) ? (
+                                      <WH1ChildMovementLedger
+                                        product={prod}
+                                        onEditEntry={openEditSubEntry}
+                                      />
+                                    ) : (
+                                      <StockBinCardLedger
+                                        product={prod}
+                                        onEditEntry={(product, entry) => setBinEntryModal({ isOpen: true, product, entry })}
+                                      />
+                                    )}
                                   </td>
                                 </tr>
                               )}
@@ -1313,6 +1323,18 @@ export default function StockProducts() {
               transition={{ duration: 0.15 }}
             >
               <StoreTransfersTab />
+            </motion.div>
+          )}
+
+          {activeTab === "Quarantine" && (
+            <motion.div
+              key="quarantine-tab"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.15 }}
+            >
+              <QuarantineTab warehouseId={selectedWarehouse} />
             </motion.div>
           )}
         </AnimatePresence>

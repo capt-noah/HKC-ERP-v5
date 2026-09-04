@@ -240,6 +240,19 @@ async function getTableColumns(tableName) {
   }
 }
 
+function sanitizeSqlValue(val) {
+  if (val === undefined) return null
+  if (val instanceof Date) return val
+  if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) {
+    const d = new Date(val)
+    if (!isNaN(d.getTime())) return d
+  }
+  if (typeof val === "object" && val !== null) {
+    return JSON.stringify(val)
+  }
+  return val
+}
+
 export async function drizzleCreateRow({ resource, body }) {
   if (!resource || !resource.table) {
     return { status: 404, body: { error: `Invalid resource specification.` } }
@@ -264,11 +277,7 @@ export async function drizzleCreateRow({ resource, body }) {
       if (fields.length === 0) {
         return { status: 200, body: { id, ...body } }
       }
-      const values = fields.map((k) => {
-        const val = body[k]
-        if (typeof val === "object" && val !== null) return JSON.stringify(val)
-        return val
-      })
+      const values = fields.map((k) => sanitizeSqlValue(body[k]))
       const placeholders = fields.map(() => "?").join(", ")
       const colNames = fields.map((f) => `\`${f}\``).join(", ")
 
@@ -318,11 +327,7 @@ export async function drizzleUpdateRow({ resource, id, body }) {
       }
 
       const setClauses = fields.map((f) => `\`${f}\` = ?`).join(", ")
-      const values = fields.map((k) => {
-        const val = body[k]
-        if (typeof val === "object" && val !== null) return JSON.stringify(val)
-        return val
-      })
+      const values = fields.map((k) => sanitizeSqlValue(body[k]))
       values.push(String(targetDbId))
 
       await pool.query(`UPDATE \`${tableName}\` SET ${setClauses} WHERE id = ?`, values)

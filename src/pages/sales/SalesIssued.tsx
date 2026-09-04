@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useRef } from "react"
+import { useSearchParams } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import { FileText, Plus, Send, Trash2, X, Download, Upload, CheckCircle2, Receipt, ArrowRight, Pencil, AlertCircle, Lock, ExternalLink } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
@@ -128,10 +129,21 @@ export default function SalesIssued() {
     ]
   }, [financeStore])
 
+  const [searchParams, setSearchParams] = useSearchParams()
+  const editIdParam = searchParams.get("editId")
+  const searchParam = searchParams.get("search")
+
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [batchFilter, setBatchFilter] = useState("ALL")
-  const [search, setSearch] = useState("")
+  const [search, setSearch] = useState(() => searchParam || "")
+  const openedEditIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (searchParam !== null && searchParam !== undefined && searchParam !== search) {
+      setSearch(searchParam)
+    }
+  }, [searchParam])
 
   const [rows, setRows] = useState<SalesIssue[]>([])
   const [total, setTotal] = useState(0)
@@ -328,7 +340,7 @@ export default function SalesIssued() {
 
       const [result] = await Promise.all([
         listSalesIssues(params),
-        financeStore.getInvoices().length === 0 ? financeStore.reloadFromApi() : Promise.resolve(),
+        financeStore.reloadFromApi().catch(() => {}),
       ])
       const sorted = sortNewestFirst(result.rows)
       setRows(sorted)
@@ -502,6 +514,51 @@ export default function SalesIssued() {
       showToast("Load failed", "warning", err instanceof Error ? err.message : "Could not open edit form.")
     }
   }
+
+  // Auto-open edit modal if editId was provided via URL (e.g. from Control Center customer receivables)
+  useEffect(() => {
+    if (!editIdParam) {
+      openedEditIdRef.current = null
+      return
+    }
+    if (openedEditIdRef.current === editIdParam) return
+
+    let cancelled = false
+    const triggerAutoEdit = async () => {
+      try {
+        const full = await getSalesIssue(editIdParam)
+        if (!cancelled && full) {
+          openedEditIdRef.current = editIdParam
+          await openEdit(full)
+          const nextParams = new URLSearchParams(searchParams)
+          nextParams.delete("editId")
+          setSearchParams(nextParams, { replace: true })
+          return
+        }
+      } catch {
+        // Fallback: match from loaded rows
+        const match = rows.find(
+          (r) =>
+            r.id === editIdParam ||
+            (r.fs_no && r.fs_no.toLowerCase() === editIdParam.toLowerCase()) ||
+            (r.reference_no && r.reference_no.toLowerCase() === editIdParam.toLowerCase())
+        )
+        if (!cancelled && match) {
+          openedEditIdRef.current = editIdParam
+          await openEdit(match)
+          const nextParams = new URLSearchParams(searchParams)
+          nextParams.delete("editId")
+          setSearchParams(nextParams, { replace: true })
+        }
+      }
+    }
+
+    void triggerAutoEdit()
+
+    return () => {
+      cancelled = true
+    }
+  }, [editIdParam, searchParams, setSearchParams, rows])
 
   // Open Record Installment Modal for Credit issue
   const openRecordPayment = (issue: SalesIssue) => {
@@ -843,7 +900,10 @@ export default function SalesIssued() {
       confirmLabel: "Post",
       onConfirm: async () => {
         try {
-          await postSalesIssue(issue.id || issue.fs_no)
+          const res = await postSalesIssue(issue.id || issue.fs_no)
+          if ((res as any)?.status >= 400 || (res as any)?.error) {
+            throw new Error((res as any)?.error || "Could not post sales issue.")
+          }
           const refStr = issue.reference_no || ""
           const matchingOrders = salesOrders.filter((so) => refStr.includes(so.id))
           matchingOrders.forEach((so) => {

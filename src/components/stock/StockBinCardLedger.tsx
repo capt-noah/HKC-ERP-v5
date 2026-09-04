@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { Edit3 } from "lucide-react"
 import type { BinCardMovementEntry, Product } from "@/lib/erpStore"
 
@@ -10,7 +11,31 @@ export default function StockBinCardLedger({
   product,
   onEditEntry
 }: StockBinCardLedgerProps) {
-  const entries = product.binCardEntries || []
+  const entries = useMemo(() => {
+    const raw = [...(product.binCardEntries || [])]
+    raw.sort((a, b) => {
+      const timeA = new Date(a.date && a.date !== "—" ? a.date : 0).getTime()
+      const timeB = new Date(b.date && b.date !== "—" ? b.date : 0).getTime()
+      if (timeA !== timeB) return timeA - timeB
+      const aIsEntry = a.type === "entry" || Number(a.qtyReceived || 0) > 0
+      const bIsEntry = b.type === "entry" || Number(b.qtyReceived || 0) > 0
+      if (aIsEntry && !bIsEntry) return -1
+      if (!aIsEntry && bIsEntry) return 1
+      return 0
+    })
+
+    let runningBal = 0
+    return raw.map((rec) => {
+      const inQty = Number(rec.qtyReceived || 0)
+      const outQty = Number(rec.qtyIssued || 0)
+      runningBal += inQty - outQty
+      return {
+        ...rec,
+        balance: runningBal,
+      }
+    })
+  }, [product.binCardEntries])
+
   const totalReceived = entries.reduce((sum, e) => sum + Number(e.qtyReceived || 0), 0)
   const totalIssued = entries.reduce((sum, e) => sum + Number(e.qtyIssued || 0), 0)
   const currentBalance = entries.length > 0 ? entries[entries.length - 1].balance : product.quantity
@@ -46,19 +71,32 @@ export default function StockBinCardLedger({
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-150">
-              {entries.map((rec) => (
-                <tr key={rec.id} className="hover:bg-zinc-50 transition-colors">
-                  <td className="py-2.5 px-4 font-mono text-[11px] text-zinc-800 font-bold border-r border-zinc-100">{rec.date}</td>
-                  <td className="py-2.5 px-4 font-mono text-zinc-950 font-bold border-r border-zinc-100">{rec.batchNo}</td>
-                  <td className={`py-2.5 px-4 text-right font-mono font-bold border-r border-zinc-100 ${rec.qtyReceived > 0 ? "text-emerald-700 font-black" : "text-zinc-400"}`}>
-                    {rec.qtyReceived > 0 ? `+${rec.qtyReceived.toLocaleString()}` : "-"}
-                  </td>
-                  <td className={`py-2.5 px-4 text-right font-mono font-bold border-r border-zinc-100 ${rec.qtyIssued > 0 ? "text-rose-700 font-black" : "text-zinc-400"}`}>
-                    {rec.qtyIssued > 0 ? `-${rec.qtyIssued.toLocaleString()}` : "-"}
-                  </td>
-                  <td className="py-2.5 px-4 text-right font-mono font-black text-zinc-950 bg-zinc-50 border-r border-zinc-100">
-                    {rec.balance.toLocaleString()}
-                  </td>
+              {entries.map((rec) => {
+                const isQuarantine = rec.type === "quarantine"
+                const isEntry = !isQuarantine && (rec.type === "entry" || Number(rec.qtyReceived || 0) > 0)
+                const isLeave = !isQuarantine && (rec.type === "leave" || Number(rec.qtyIssued || 0) > 0)
+
+                const rowBg = isQuarantine
+                  ? "bg-amber-50/40 hover:bg-amber-50/70"
+                  : isEntry
+                  ? "bg-emerald-50/30 hover:bg-emerald-50/60"
+                  : isLeave
+                  ? "bg-rose-50/30 hover:bg-rose-50/60"
+                  : "hover:bg-zinc-50"
+
+                return (
+                  <tr key={rec.id} className={`${rowBg} transition-colors`}>
+                    <td className="py-2.5 px-4 font-mono text-[11px] text-zinc-800 font-bold border-r border-zinc-100">{rec.date}</td>
+                    <td className="py-2.5 px-4 font-mono text-zinc-950 font-bold border-r border-zinc-100">{rec.batchNo}</td>
+                    <td className={`py-2.5 px-4 text-right font-mono font-bold border-r border-zinc-100 ${rec.qtyReceived > 0 ? "text-emerald-700 font-black" : "text-zinc-400"}`}>
+                      {rec.qtyReceived > 0 ? `+${rec.qtyReceived.toLocaleString()}` : "-"}
+                    </td>
+                    <td className={`py-2.5 px-4 text-right font-mono font-bold border-r border-zinc-100 ${rec.qtyIssued > 0 ? (rec.type === "quarantine" ? "text-amber-800 font-black" : "text-rose-700 font-black") : "text-zinc-400"}`}>
+                      {rec.qtyIssued > 0 ? `-${rec.qtyIssued.toLocaleString()}` : "-"}
+                    </td>
+                    <td className="py-2.5 px-4 text-right font-mono font-black text-zinc-950 bg-black/[0.02] border-r border-zinc-100">
+                      {rec.balance.toLocaleString()}
+                    </td>
                   <td className="py-2.5 px-4 text-right font-mono font-bold text-zinc-800 border-r border-zinc-100">
                     {rec.unitPrice != null && Number(rec.unitPrice) > 0
                       ? `ETB ${Number(rec.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -68,7 +106,16 @@ export default function StockBinCardLedger({
                   </td>
                   <td className="py-2.5 px-4 font-mono text-zinc-600 border-r border-zinc-100">{rec.mfgDate || "-"}</td>
                   <td className="py-2.5 px-4 font-mono text-zinc-600 border-r border-zinc-100">{rec.expiryDate || "-"}</td>
-                  <td className="py-2.5 px-4 font-semibold text-zinc-800 border-r border-zinc-100">{rec.party || "-"}</td>
+                  <td className="py-2.5 px-4 font-semibold text-zinc-800 border-r border-zinc-100">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {rec.type === "quarantine" && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
+                          QUARANTINE
+                        </span>
+                      )}
+                      <span>{rec.party || "-"}</span>
+                    </div>
+                  </td>
                   <td className="py-2.5 px-4 text-zinc-500 max-w-xs truncate border-r border-zinc-100">{rec.remark || "-"}</td>
                   <td className="py-2.5 px-4 text-center">
                     <button
@@ -81,7 +128,8 @@ export default function StockBinCardLedger({
                     </button>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
             <tfoot>
               <tr className="bg-zinc-100 border-t-2 border-zinc-200 text-xs font-mono font-bold text-zinc-950">

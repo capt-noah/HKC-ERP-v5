@@ -8,9 +8,44 @@ import {
   drizzleDeleteRow,
   drizzleReplaceRows,
 } from "../../db/drizzleCrud.js"
+import { pool } from "../../db/client.js"
 import crypto from "node:crypto"
 
 // ── Service Logic ─────────────────────────────────────────────────────────────
+
+function matchPaymentsForIssue(allPayments, issueId, fsNo, refNo) {
+  if (!Array.isArray(allPayments) || allPayments.length === 0) return []
+  const cleanId = String(issueId || "").trim()
+  const cleanFs = String(fsNo || "").trim()
+  const cleanRef = String(refNo || "").trim()
+
+  return allPayments.filter((raw) => {
+    const p = raw?.payload ? { ...raw.payload, ...raw } : raw
+    const pIssueId = String(p.sales_issue_id || p.salesIssueId || "").trim()
+    const pInvId = String(p.linked_invoice_id || p.linkedInvoiceId || "").trim()
+    const pRef = String(p.reference || "").trim()
+    const pOrderId = String(p.sales_order_id || p.salesOrderId || "").trim()
+
+    // 1. Match on sales_issue_id
+    if (cleanId && pIssueId && (pIssueId === cleanId || pIssueId.toLowerCase() === cleanId.toLowerCase())) return true
+    if (cleanFs && pIssueId && (pIssueId === cleanFs || pIssueId.toLowerCase() === cleanFs.toLowerCase())) return true
+
+    // 2. Match on linked_invoice_id (e.g. INV-SI-FS-2026-9560 or INV-SI-4122)
+    if (cleanId && pInvId && (pInvId === cleanId || pInvId === `INV-SI-${cleanId}` || pInvId === `INV-${cleanId}` || pInvId.toLowerCase().includes(cleanId.toLowerCase()))) return true
+    if (cleanFs && pInvId && (pInvId === `INV-SI-${cleanFs}` || pInvId === `INV-${cleanFs}` || pInvId.toLowerCase().includes(cleanFs.toLowerCase()))) return true
+
+    // 3. Match on reference string if it contains cleanId or cleanFs
+    if (cleanId && pRef && pRef.toLowerCase().includes(cleanId.toLowerCase())) return true
+    if (cleanFs && pRef && pRef.toLowerCase().includes(cleanFs.toLowerCase())) return true
+
+    // 4. Fallback for unlinked payments having order ID
+    if (!pIssueId && (!pInvId || pInvId === "INV-GENERAL")) {
+      if (cleanRef && pOrderId && (pOrderId === cleanRef || pOrderId.toLowerCase() === cleanRef.toLowerCase())) return true
+    }
+
+    return false
+  })
+}
 
 export async function listSalesIssues(query = {}) {
   try {
@@ -24,11 +59,12 @@ export async function listSalesIssues(query = {}) {
     })
 
     const issues = Array.isArray(issuesRes.body) ? issuesRes.body : []
-    const [itemsRes, customersRes, ordersRes, productsRes] = await Promise.all([
+    const [itemsRes, customersRes, ordersRes, productsRes, paymentsRes] = await Promise.all([
       drizzleListRows({ resource: getResource("sales_issue_items") }),
       drizzleListRows({ resource: getResource("customers") }).catch(() => ({ body: [] })),
       drizzleListRows({ resource: getResource("sales_orders") }).catch(() => ({ body: [] })),
       drizzleListRows({ resource: getResource("inventory_products") }).catch(() => ({ body: [] })),
+      drizzleListRows({ resource: getResource("payments") }).catch(() => ({ body: [] })),
     ])
 
     const allCustomers = Array.isArray(customersRes.body) ? customersRes.body : []
@@ -39,6 +75,8 @@ export async function listSalesIssues(query = {}) {
 
     const allProducts = Array.isArray(productsRes.body) ? productsRes.body : []
     const productMap = new Map(allProducts.map((p) => [p.id, p.payload ? { ...p.payload, ...p } : p]))
+
+    const allPayments = Array.isArray(paymentsRes.body) ? paymentsRes.body : []
 
     const allItems = Array.isArray(itemsRes.body) ? itemsRes.body : []
     const itemsByIssueId = new Map()
@@ -96,8 +134,32 @@ export async function listSalesIssues(query = {}) {
       const vat_rate = Number(issue.vat_rate !== undefined ? issue.vat_rate : (vat_amount > 0 && subtotal > 0 ? Math.round((vat_amount / subtotal) * 100) : (isWh1 ? 0 : 15)))
       const total_amount = Number(issue.total_amount || issue.totalAmount || (subtotal + vat_amount) || 0)
       const total_quantity = Number(issue.total_quantity || issue.totalQuantity || issueItems.reduce((s, i) => s + (i.quantity || 0), 0) || 0)
-      const amount_paid = Number(issue.amount_paid || issue.amountPaid || 0)
-      const balance_due = Number(issue.balance_due || issue.balanceDue || Math.max(0, total_amount - amount_paid))
+
+      // Aggregate payments recorded for this sales issue
+      const matchedPayments = matchPaymentsForIssue(allPayments, primaryId, fs_no, reference_no)
+      const paidFromPayments = matchedPayments.reduce((sum, p) => {
+        const pObj = p?.payload ? { ...p.payload, ...p } : p
+        return sum + Number(pObj.amount || 0)
+      }, 0)
+
+      const isCredit = (payment_type || "").toLowerCase().includes("credit")
+      const isCash = !isCredit
+
+      const amount_paid = isCash
+        ? total_amount
+        : Math.max(paidFromPayments, Number(issue.amount_paid || issue.amountPaid || 0))
+
+      const balance_due = isCash
+        ? 0
+        : Number(Math.max(0, total_amount - amount_paid).toFixed(2))
+
+      const settlement_status = isCash || (total_amount > 0 && balance_due <= 0.01 && amount_paid > 0)
+        ? "Fully Settled"
+        : (amount_paid > 0 ? "Ongoing" : "Unpaid")
+
+      const payment_status = settlement_status === "Fully Settled"
+        ? "Paid"
+        : (amount_paid > 0 ? "Ongoing" : (issue.payment_status || "Unpaid"))
 
       return {
         ...issue,
@@ -133,8 +195,13 @@ export async function listSalesIssues(query = {}) {
         total_quantity,
         totalQuantity: total_quantity,
         amount_paid,
+        amountPaid: amount_paid,
         balance_due,
-        settlement_status: issue.settlement_status || (payment_type === "Cash" ? "Fully Settled" : (total_amount > 0 && amount_paid >= total_amount ? "Fully Settled" : amount_paid > 0 ? "Ongoing" : "Unpaid")),
+        balanceDue: balance_due,
+        settlement_status,
+        settlementStatus: settlement_status,
+        payment_status,
+        paymentStatus: payment_status,
         created_by: issue.created_by || issue.createdBy || "System",
         items: issueItems,
         savedToDb: true,
@@ -210,11 +277,12 @@ export async function getSalesIssue(id) {
     }
 
     const rawIssue = issueRes.body
-    const [itemsRes, customersRes, ordersRes, productsRes] = await Promise.all([
+    const [itemsRes, customersRes, ordersRes, productsRes, paymentsRes] = await Promise.all([
       drizzleListRows({ resource: getResource("sales_issue_items") }),
       drizzleListRows({ resource: getResource("customers") }).catch(() => ({ body: [] })),
       drizzleListRows({ resource: getResource("sales_orders") }).catch(() => ({ body: [] })),
       drizzleListRows({ resource: getResource("inventory_products") }).catch(() => ({ body: [] })),
+      drizzleListRows({ resource: getResource("payments") }).catch(() => ({ body: [] })),
     ])
 
     const allCustomers = Array.isArray(customersRes.body) ? customersRes.body : []
@@ -225,6 +293,8 @@ export async function getSalesIssue(id) {
 
     const allProducts = Array.isArray(productsRes.body) ? productsRes.body : []
     const productMap = new Map(allProducts.map((p) => [p.id, p.payload ? { ...p.payload, ...p } : p]))
+
+    const allPayments = Array.isArray(paymentsRes.body) ? paymentsRes.body : []
 
     const issue = rawIssue?.payload ? { ...rawIssue.payload, ...rawIssue } : rawIssue
     const fs_no = issue.fs_no || issue.fsNo || issue.issue_number || issue.issueNumber || String(issue.id)
@@ -290,8 +360,32 @@ export async function getSalesIssue(id) {
     const vat_rate = Number(issue.vat_rate !== undefined ? issue.vat_rate : (vat_amount > 0 && subtotal > 0 ? Math.round((vat_amount / subtotal) * 100) : (isWh1 ? 0 : 15)))
     const total_amount = Number(issue.total_amount || issue.totalAmount || (subtotal + vat_amount) || 0)
     const total_quantity = Number(issue.total_quantity || issue.totalQuantity || items.reduce((s, i) => s + (i.quantity || 0), 0) || 0)
-    const amount_paid = Number(issue.amount_paid || issue.amountPaid || 0)
-    const balance_due = Number(issue.balance_due || issue.balanceDue || Math.max(0, total_amount - amount_paid))
+
+    // Aggregate payments recorded for this sales issue
+    const matchedPayments = matchPaymentsForIssue(allPayments, primaryId, fs_no, reference_no)
+    const paidFromPayments = matchedPayments.reduce((sum, p) => {
+      const pObj = p?.payload ? { ...p.payload, ...p } : p
+      return sum + Number(pObj.amount || 0)
+    }, 0)
+
+    const isCredit = (payment_type || "").toLowerCase().includes("credit")
+    const isCash = !isCredit
+
+    const amount_paid = isCash
+      ? total_amount
+      : Math.max(paidFromPayments, Number(issue.amount_paid || issue.amountPaid || 0))
+
+    const balance_due = isCash
+      ? 0
+      : Number(Math.max(0, total_amount - amount_paid).toFixed(2))
+
+    const settlement_status = isCash || (total_amount > 0 && balance_due <= 0.01 && amount_paid > 0)
+      ? "Fully Settled"
+      : (amount_paid > 0 ? "Ongoing" : "Unpaid")
+
+    const payment_status = settlement_status === "Fully Settled"
+      ? "Paid"
+      : (amount_paid > 0 ? "Ongoing" : (issue.payment_status || "Unpaid"))
 
     return {
       status: 200,
@@ -329,8 +423,13 @@ export async function getSalesIssue(id) {
         total_quantity,
         totalQuantity: total_quantity,
         amount_paid,
+        amountPaid: amount_paid,
         balance_due,
-        settlement_status: issue.settlement_status || (payment_type === "Cash" ? "Fully Settled" : (total_amount > 0 && amount_paid >= total_amount ? "Fully Settled" : amount_paid > 0 ? "Ongoing" : "Unpaid")),
+        balanceDue: balance_due,
+        settlement_status,
+        settlementStatus: settlement_status,
+        payment_status,
+        paymentStatus: payment_status,
         created_by: issue.created_by || issue.createdBy || "System",
         items,
         savedToDb: true,
@@ -688,11 +787,11 @@ export async function postSalesIssue(arg1, arg2) {
 
         totalQty += issueQty
         totalAmount += issueQty * unitPrice
-        totalCost += issueQty * unitCost
 
         const isWH1 = (prod.warehouse || existing.warehouse_id || "").toUpperCase().startsWith("WH1")
         let newQty = Math.max(0, Number(prod.quantity || 0) - issueQty)
         let updatedWH1Entries = prod.wh1Entries || []
+        let itemActualCost = 0
 
         if (isWH1 && Array.isArray(prod.wh1Entries) && prod.wh1Entries.length > 0) {
           let remaining = issueQty
@@ -703,13 +802,22 @@ export async function postSalesIssue(arg1, arg2) {
             if (remaining <= 0) return entry
             const deduct = Math.min(entry.quantityRemaining, remaining)
             remaining -= deduct
+            const entryPrice = Number(entry.unitPrice || entry.unit_price || unitCost || 0)
+            itemActualCost += deduct * entryPrice
             return {
               ...entry,
               quantityRemaining: Math.max(0, entry.quantityRemaining - deduct),
             }
           })
+          if (remaining > 0) {
+            itemActualCost += remaining * unitCost
+          }
           newQty = updatedWH1Entries.reduce((sum, e) => sum + Number(e.quantityRemaining || 0), 0)
+        } else {
+          itemActualCost = issueQty * unitCost
         }
+
+        totalCost += itemActualCost
 
         const newSold = Number(prod.quantitySold || prod.quantity_sold || 0) + issueQty
         const targetWh = existing.warehouse_id || existing.warehouse || prod.warehouse
@@ -752,7 +860,7 @@ export async function postSalesIssue(arg1, arg2) {
           party: existing.customer_name || existing.customer || "Customer Dispatch",
           plateNumber: existing.plate_number || existing.plateNumber || item.plate_number || item.plateNumber || "—",
           unitPrice: unitPrice > 0 ? unitPrice : unitCost,
-          remark: `Sales Issue FS-${existing.fs_no || id} (Ref: ${existing.reference_no || 'Direct Dispatch'})`,
+          remark: existing.remarks || existing.remark || existing.notes || "",
           createdAt: new Date().toISOString(),
         }
         updatedBinCardEntries = [...updatedBinCardEntries, autoIssueBinEntry]
@@ -800,12 +908,12 @@ export async function postSalesIssue(arg1, arg2) {
   const paymentStatus = isFullySettled ? "Paid" : (existingPaid > 0 ? "Partially Paid" : "Unpaid")
   const settlementStatus = isFullySettled ? "Fully Settled" : (existingPaid > 0 ? "Ongoing" : "Unpaid")
 
-  await drizzleUpdateRow({
+  const updateIssueRes = await drizzleUpdateRow({
     resource: getResource("sales_issues"),
     id,
     body: {
       status: "Posted",
-      posted_at: new Date().toISOString(),
+      posted_at: new Date(),
       posted_by: "Sales Officer",
       total_quantity: totalQty || existing.total_quantity,
       totalQuantity: totalQty || existing.total_quantity,
@@ -830,23 +938,54 @@ export async function postSalesIssue(arg1, arg2) {
     },
   })
 
+  if (updateIssueRes.status >= 400) {
+    console.error(`[postSalesIssue] Failed to update sales_issues status:`, updateIssueRes.body)
+    return { status: updateIssueRes.status || 500, body: { error: updateIssueRes.body?.error || "Failed to update sales issue status." } }
+  }
+
   // 3. Post Double-Entry Journal Entries
   try {
     const coaRes = await drizzleListRows({ resource: getResource("chart_of_accounts") }).catch(() => ({ body: [] }))
     const allAccounts = Array.isArray(coaRes.body) ? coaRes.body.map(a => a?.payload ? { ...a.payload, ...a } : a) : []
     const findAcc = (code) => allAccounts.find(a => (a.code || a.account_code) === code)?.id || null
 
+    const isWH1Issue = (existing.warehouse_id || "").toUpperCase().startsWith("WH1") ||
+      (existing.items || []).some(it => {
+        const name = (it.item_name || it.product_name || "").toLowerCase()
+        return name.includes("sesame") || name.includes("mung") || name.includes("soy") || name.includes("coffee")
+      })
+
     const isCredit = existing.payment_type === "Credit"
     const debitAccId = isCredit
-      ? (findAcc("1300-03") || findAcc("1200-03") || findAcc("1100-03") || "ACC-1200")
+      ? (isWH1Issue ? (findAcc("1200") || findAcc("1200-03") || "ACC-1200") : (findAcc("1300-03") || findAcc("1200") || "ACC-1200"))
       : (findAcc("1000-02-26") || findAcc("1000-01-01") || findAcc("1000") || "ACC-1000")
-    const revenueAccId = findAcc("4000-01-01") || findAcc("4000-03-02") || findAcc("4000") || "ACC-4000"
+
+    const revenueAccId = isWH1Issue
+      ? (findAcc("4010") || findAcc("4000") || "ACC-4010")
+      : (findAcc("4000-01-01") || findAcc("4000") || "ACC-4000")
+
     const vatAccId = findAcc("2000-05") || "ACC-2200"
-    const cogsAccId = findAcc("6000-04") || findAcc("6000") || "ACC-5000"
-    const inventoryAccId = findAcc("1410-01") || findAcc("1410-03") || findAcc("1410") || "ACC-1010"
+    const cogsAccId = findAcc("5001") || findAcc("6000") || "ACC-5001"
+
+    // Map inventory account to specific commodity stock account if available
+    let inventoryAccId = null
+    const firstItemName = ((existing.items?.[0]?.item_name || existing.items?.[0]?.product_name || "")).toLowerCase()
+    if (firstItemName.includes("sesame")) {
+      inventoryAccId = findAcc("1410-03") || findAcc("1410") || "ACC-1410"
+    } else if (firstItemName.includes("mung")) {
+      inventoryAccId = findAcc("1410-01") || findAcc("1410") || "ACC-1410"
+    } else {
+      inventoryAccId = isWH1Issue ? (findAcc("1410-03") || findAcc("1410") || "ACC-1410") : (findAcc("1410") || "ACC-1410")
+    }
 
     const saleJeId = `JE-SALE-${id}`
     const cogsJeId = `JE-COGS-${id}`
+
+    // Idempotently clean up prior journal entries for this issue before inserting
+    try {
+      await pool.query("DELETE FROM `journal_entries` WHERE `id` IN (?, ?)", [saleJeId, cogsJeId]).catch(() => {})
+      await pool.query("DELETE FROM `journal_entry_lines` WHERE `id` LIKE CONCAT(?, '%') OR `id` LIKE CONCAT(?, '%')", [saleJeId, cogsJeId]).catch(() => {})
+    } catch {}
 
     // A. Sales Journal Entry
     await drizzleCreateRow({

@@ -1,8 +1,9 @@
 import { useRef, useState } from "react"
 import type { ChangeEvent } from "react"
-import { File, Paperclip, X, Download, Camera, Image as ImageIcon, Eye } from "lucide-react"
+import { File, Paperclip, X, Download, Camera, Image as ImageIcon, Eye, Trash2 } from "lucide-react"
 import type { HkcDocAttachment } from "@/lib/erpStore"
 import CameraCaptureModal from "./CameraCaptureModal"
+import { useFeedback } from "@/context/FeedbackContext"
 
 interface HkcDocAttachmentPanelProps {
   attachments: HkcDocAttachment[]
@@ -16,9 +17,23 @@ export default function HkcDocAttachmentPanel({
   onAddAttachments,
   onRemoveAttachment,
 }: HkcDocAttachmentPanelProps) {
+  const { confirm } = useFeedback()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isCameraOpen, setIsCameraOpen] = useState(false)
   const [previewImage, setPreviewImage] = useState<{ fileName: string; fileUrl: string } | null>(null)
+
+  const handleDeleteAttachment = (file: HkcDocAttachment) => {
+    confirm({
+      title: "Delete Attached File?",
+      message: `Are you sure you want to delete "${file.fileName}"? This attachment will be permanently removed.`,
+      confirmLabel: "Delete File",
+      cancelLabel: "Cancel",
+      isDestructive: true,
+      onConfirm: () => {
+        onRemoveAttachment(file.attachmentId)
+      },
+    })
+  }
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return
@@ -169,11 +184,11 @@ export default function HkcDocAttachmentPanel({
                   )}
                   <button
                     type="button"
-                    onClick={() => onRemoveAttachment(file.attachmentId)}
+                    onClick={() => handleDeleteAttachment(file)}
                     className="p-1.5 hover:bg-rose-50 text-zinc-400 hover:text-rose-600 rounded-lg cursor-pointer transition-colors"
-                    title="Remove attachment"
+                    title="Delete attached file"
                   >
-                    <X className="size-3.5" />
+                    <Trash2 className="size-3.5 text-rose-500" />
                   </button>
                 </div>
               </div>

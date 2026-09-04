@@ -896,7 +896,7 @@ export default function ControlCenter() {
         navigate("/finance/expenses")
         break
       case "fixed-assets":
-        navigate("/finance/assets")
+        navigate("/finance")
         break
       case "tax-rules":
         navigate("/finance/taxes")
@@ -1365,7 +1365,11 @@ export default function ControlCenter() {
                         filteredReceivables.map((si) => (
                           <div
                             key={si.id}
-                            onClick={() => navigate(`/sales/sales-issued?search=${encodeURIComponent(si.fs_no || si.customer_name || "")}`)}
+                            onClick={() => {
+                              const editTarget = si.sales_issue_id || si.id || si.fs_no || ""
+                              const searchTarget = si.fs_no || si.customer_name || ""
+                              navigate(`/sales/sales-issued?search=${encodeURIComponent(searchTarget)}&editId=${encodeURIComponent(editTarget)}`)
+                            }}
                             className="pt-2 first:pt-0 group cursor-pointer hover:bg-black/[0.02] p-2 rounded-xl transition-all"
                           >
                             <div className="flex items-start justify-between gap-2">

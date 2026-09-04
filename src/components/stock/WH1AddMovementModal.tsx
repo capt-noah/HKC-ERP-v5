@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { X, ArrowDownLeft, ArrowUpRight, Info } from "lucide-react"
+import { X, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2 } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { loadResource } from "@/lib/apiPersistence"
 import type { Product, WH1Entry } from "@/lib/erpStore"
@@ -95,6 +95,35 @@ export default function WH1AddMovementModal({
     }
   }, [isOpen, product])
 
+  const isVoucherAlreadyReconciled = (voucher: string) => {
+    if (!product || !voucher) return false
+    const clean = voucher.toLowerCase().trim()
+    if (!clean) return false
+    const raw = clean.replace(/^fs-/, "")
+    return (product.binCardEntries || []).some((b) => {
+      if (b.type !== "leave") return false
+      const bVoucher = (b.voucherNo || "").toLowerCase().trim()
+      const bRawVoucher = bVoucher.replace(/^fs-/, "")
+      const bRemark = (b.remark || "").toLowerCase().trim()
+
+      return (
+        bVoucher === clean ||
+        bRawVoucher === raw ||
+        (clean && bVoucher.includes(clean)) ||
+        (raw && bVoucher.includes(raw)) ||
+        (clean && bRemark.includes(clean)) ||
+        (raw && bRemark.includes(raw))
+      )
+    })
+  }
+
+  const isIssueAlreadyReconciled = (iss: any) => {
+    const fsNo = String(iss.fs_no || iss.id || "").toLowerCase().trim()
+    return isVoucherAlreadyReconciled(fsNo)
+  }
+
+  const isCurrentVoucherAlreadyReconciled = isVoucherAlreadyReconciled(leaveVoucherNo)
+
   const handleSelectIssue = (issueId: string) => {
     setSelectedIssueId(issueId)
     const found = existingSalesIssues.find((i) => i.id === issueId || String(i.fs_no) === issueId)
@@ -144,7 +173,7 @@ export default function WH1AddMovementModal({
       showToast("Success", "success", `Inbound entry of ${finalQty.toLocaleString()} Quintals recorded.`)
       onClose()
     } catch (err: any) {
-      showToast("Save Error", "warning", err.message || "Failed to record entry.")
+      showToast("Save Error", "warning", err.message || "Failed to record inbound entry.")
     } finally {
       setIsSaving(false)
     }
@@ -155,6 +184,15 @@ export default function WH1AddMovementModal({
     const rawQty = Number(leaveQuantity)
     if (!leaveDate || !Number.isFinite(rawQty) || rawQty <= 0) {
       showToast("Validation Error", "warning", "Please provide a valid leave date and positive quantity.")
+      return
+    }
+
+    if (isCurrentVoucherAlreadyReconciled) {
+      showToast(
+        "Already Reconciled",
+        "warning",
+        `Sales Issue ${leaveVoucherNo} has already been deducted and recorded in the movement ledger. Duplicate deduction prevented.`
+      )
       return
     }
 
@@ -220,7 +258,7 @@ export default function WH1AddMovementModal({
               }`}
             >
               <ArrowDownLeft className="size-3.5 text-emerald-600" />
-              📥 Inbound Entry (GRV Receipt)
+              Inbound Entry (GRV Receipt)
             </button>
             <button
               type="button"
@@ -232,7 +270,7 @@ export default function WH1AddMovementModal({
               }`}
             >
               <ArrowUpRight className="size-3.5 text-amber-600" />
-              📤 Reconcile Sales Issue (Outbound)
+              Reconcile Sales Issue (Outbound)
             </button>
           </div>
 
@@ -365,9 +403,16 @@ export default function WH1AddMovementModal({
               <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200/80 flex items-start gap-2 text-amber-900 text-[11px]">
                 <Info className="size-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <span className="font-black">Automatic Reconciliation:</span> When a Sales Issue is posted in <span className="font-bold">Sales Issued</span>, the leave record is automatically created. Use this form only if you need to manually reconcile an existing sales issue.
+                  <span className="font-black">Fallback Reconciliation:</span> When a Sales Issue is posted in <span className="font-bold">Sales Issued</span>, the outbound leave record is automatically created and stock is deducted. Use this form only if an existing sales issue is missing its leave record. Sales issues that have already been deducted are locked to prevent duplicate deduction.
                 </div>
               </div>
+
+              {isCurrentVoucherAlreadyReconciled && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-2 text-emerald-900 text-[11px] font-bold">
+                  <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
+                  <span>Sales Issue {leaveVoucherNo} has already been deducted and recorded in the movement ledger. No additional deduction is needed.</span>
+                </div>
+              )}
 
               {existingSalesIssues.length > 0 && (
                 <label className="space-y-1 block">
@@ -377,12 +422,15 @@ export default function WH1AddMovementModal({
                     onChange={(e) => handleSelectIssue(e.target.value)}
                     className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono cursor-pointer bg-zinc-50/50"
                   >
-                    <option value="">-- Choose from open sales issues --</option>
-                    {existingSalesIssues.map((iss) => (
-                      <option key={iss.id} value={iss.id}>
-                        FS-{iss.fs_no || iss.id} &bull; {iss.customer_name || iss.customer} &bull; {iss.sale_date || "—"}
-                      </option>
-                    ))}
+                    <option value="">-- Choose from sales issues --</option>
+                    {existingSalesIssues.map((iss) => {
+                      const alreadyDone = isIssueAlreadyReconciled(iss)
+                      return (
+                        <option key={iss.id} value={iss.id}>
+                          FS-{iss.fs_no || iss.id} &bull; {iss.customer_name || iss.customer} &bull; {iss.sale_date || "—"} {alreadyDone ? "✓ (Already Deducted)" : "⚠️ (Missing Leave Deduction)"}
+                        </option>
+                      )
+                    })}
                   </select>
                 </label>
               )}
@@ -470,10 +518,18 @@ export default function WH1AddMovementModal({
                 </button>
                 <button
                   type="submit"
-                  disabled={isSaving}
-                  className="px-5 py-2 rounded-xl bg-amber-700 hover:bg-amber-800 text-white font-bold text-xs shadow-sm transition-all cursor-pointer"
+                  disabled={isSaving || isCurrentVoucherAlreadyReconciled}
+                  className={`px-5 py-2 rounded-xl font-bold text-xs shadow-sm transition-all cursor-pointer ${
+                    isCurrentVoucherAlreadyReconciled
+                      ? "bg-zinc-200 text-zinc-400 cursor-not-allowed"
+                      : "bg-amber-700 hover:bg-amber-800 text-white"
+                  }`}
                 >
-                  {isSaving ? "Reconciling Leave..." : "Reconcile Outbound Leave"}
+                  {isSaving
+                    ? "Reconciling Leave..."
+                    : isCurrentVoucherAlreadyReconciled
+                    ? "Already Deducted"
+                    : "Reconcile Outbound Leave"}
                 </button>
               </div>
             </form>

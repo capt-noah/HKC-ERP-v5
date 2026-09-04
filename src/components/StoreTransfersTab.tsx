@@ -14,8 +14,8 @@ import {
   Edit3
 } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
-import { useErpStore, type Transfer, type TransferLineItem, type TransferStatus } from "@/lib/erpStore"
-import { withOperatingWarehouses } from "@/lib/warehouses"
+import { useErpStore, type Transfer, type TransferLineItem, type TransferStatus, type Product } from "@/lib/erpStore"
+import { withOperatingWarehouses, isWH1, resolveWarehouseScope } from "@/lib/warehouses"
 import { type TableColumn } from "@/components/ResizableTable"
 import { DataTable } from "@/components/DataTable"
 import { useAuthStore } from "@/lib/authStore"
@@ -45,6 +45,69 @@ export default function StoreTransfersTab() {
     return (user?.warehouse_ids || ((user as any)?.warehouse_id ? [(user as any).warehouse_id] : [])).map((id: string) => String(id).toUpperCase())
   }, [user])
 
+  // Dynamic user warehouse privileges for WH2 and WH3
+  const hasWH2Privilege = useMemo(() => {
+    if (isSuperAdmin) return true
+    if (userWarehouseIds.length === 0) return false
+    const resolved = resolveWarehouseScope(userWarehouseIds, erp.getWarehouses())
+    return (
+      resolved.some((id) => {
+        const upper = id.toUpperCase()
+        return upper === "WH2" || upper.includes("WH2") || upper.includes("WH-02") || upper.includes("WH 2")
+      }) ||
+      userWarehouseIds.some((id) => {
+        const upper = id.toUpperCase()
+        return upper === "WH2" || upper.includes("WH2") || upper.includes("WH-02")
+      })
+    )
+  }, [isSuperAdmin, userWarehouseIds, erp])
+
+  const hasWH3Privilege = useMemo(() => {
+    if (isSuperAdmin) return true
+    if (userWarehouseIds.length === 0) return false
+    const resolved = resolveWarehouseScope(userWarehouseIds, erp.getWarehouses())
+    return (
+      resolved.some((id) => {
+        const upper = id.toUpperCase()
+        return upper === "WH3" || upper.includes("WH3") || upper.includes("WH-03") || upper.includes("WH 3")
+      }) ||
+      userWarehouseIds.some((id) => {
+        const upper = id.toUpperCase()
+        return upper === "WH3" || upper.includes("WH3") || upper.includes("WH-03")
+      })
+    )
+  }, [isSuperAdmin, userWarehouseIds, erp])
+
+  // Warehouse classification helpers
+  const isWH2Warehouse = (whNameOrCode?: string): boolean => {
+    if (!whNameOrCode) return false
+    const upper = whNameOrCode.toUpperCase()
+    return upper.includes("WH2") || upper.includes("WH-02") || upper.includes("WH 2") || upper.includes("INDIA") || upper.includes("IND")
+  }
+
+  const isWH3Warehouse = (whNameOrCode?: string): boolean => {
+    if (!whNameOrCode) return false
+    const upper = whNameOrCode.toUpperCase()
+    return upper.includes("WH3") || upper.includes("WH-03") || upper.includes("WH 3") || upper.includes("CHINA") || upper.includes("CHN")
+  }
+
+  // Strict permission guards:
+  // A user can ONLY send/dispatch from a warehouse they have privilege for
+  const canSendFrom = (warehouse?: string): boolean => {
+    if (isSuperAdmin) return true
+    if (isWH2Warehouse(warehouse)) return hasWH2Privilege
+    if (isWH3Warehouse(warehouse)) return hasWH3Privilege
+    return false
+  }
+
+  // A user can ONLY approve/receive for a warehouse they have privilege for
+  const canApproveReceiptFor = (warehouse?: string): boolean => {
+    if (isSuperAdmin) return true
+    if (isWH2Warehouse(warehouse)) return hasWH2Privilege
+    if (isWH3Warehouse(warehouse)) return hasWH3Privilege
+    return false
+  }
+
   // --- TRANSFERS & PRODUCTS DATA ---
   const transfers = erp.getTransfers()
   const products = erp.getProducts()
@@ -52,28 +115,19 @@ export default function StoreTransfersTab() {
   // Store-to-store transfers exist strictly between WH2 and WH3 since they share commercial products
   const transferWarehouses = useMemo(() => {
     const rawWhs = withOperatingWarehouses(erp.getWarehouses())
-    const wh2And3 = rawWhs.filter((w) => {
-      const idOrCode = (w.code || w.id || w.name || "").toUpperCase()
+    return rawWhs.filter((w) => {
+      const code = (w.code || w.id || w.name || "").toUpperCase()
+      if (isWH1(code)) return false
       return (
-        idOrCode.includes("WH2") ||
-        idOrCode.includes("WH3") ||
-        idOrCode.includes("WH-02") ||
-        idOrCode.includes("WH-03") ||
-        idOrCode.includes("WAREHOUSE 2") ||
-        idOrCode.includes("WAREHOUSE 3")
+        code.includes("WH2") ||
+        code.includes("WH3") ||
+        code.includes("WH-02") ||
+        code.includes("WH-03") ||
+        code.includes("WAREHOUSE 2") ||
+        code.includes("WAREHOUSE 3") ||
+        code.includes("VET")
       )
     })
-    if (wh2And3.length >= 2) return wh2And3
-    const nonWh1 = rawWhs.filter(
-      (w) =>
-        !((w.code || w.id || "").toUpperCase().includes("WH1") ||
-          (w.code || w.id || "").toUpperCase().includes("WH-01"))
-    )
-    if (nonWh1.length >= 2) return nonWh1
-    return [
-      { id: "WH2", code: "WH2", name: "Warehouse 2 (Store)", location: "Addis Ababa", type: "Commercial Store", specialization: "Veterinary Pharmaceuticals & Finished Products", targetMarkets: "Local/Export", manager: "Store Manager", status: "Active" },
-      { id: "WH3", code: "WH3", name: "Warehouse 3 (Store)", location: "Addis Ababa", type: "Commercial Store", specialization: "Veterinary Vaccines & Soluble Powders", targetMarkets: "Local/Export", manager: "Store Manager", status: "Active" },
-    ]
   }, [erp])
 
   const warehouseOptions = useMemo(
@@ -81,20 +135,16 @@ export default function StoreTransfersTab() {
     [transferWarehouses]
   )
 
-  // Identify user's locked origin if assigned to a single warehouse
-  const isAssignedOnlyToWH2 = userWarehouseIds.some(id => id.includes("WH2") || id.includes("WH-02")) && !userWarehouseIds.some(id => id.includes("WH3") || id.includes("WH-03"))
-  const isAssignedOnlyToWH3 = userWarehouseIds.some(id => id.includes("WH3") || id.includes("WH-03")) && !userWarehouseIds.some(id => id.includes("WH2") || id.includes("WH-02"))
+  // Identify user's locked origin if assigned strictly to a single warehouse
+  const isAssignedOnlyToWH2 = hasWH2Privilege && !hasWH3Privilege && !isSuperAdmin
+  const isAssignedOnlyToWH3 = hasWH3Privilege && !hasWH2Privilege && !isSuperAdmin
 
-  const defaultOrigin = isAssignedOnlyToWH3 ? "WH3" : (warehouseOptions[0] || "WH2")
-  const defaultDestination = isAssignedOnlyToWH3 ? "WH2" : (warehouseOptions.find(w => w !== defaultOrigin) || "WH3")
-
-  // Products available in WH2 / WH3 commercial stores
-  const transferProducts = useMemo(() => {
-    return products.filter((p) => {
-      if (warehouseOptions.includes(p.warehouse)) return true
-      return (p.stockBreakdown || []).some((sb) => warehouseOptions.includes(sb.warehouse) && sb.qty > 0)
-    })
-  }, [products, warehouseOptions])
+  const defaultOrigin = isAssignedOnlyToWH3 
+    ? (warehouseOptions.find(w => w.toUpperCase().includes("WH3")) || "WH3-VET-CHN") 
+    : (warehouseOptions.find(w => w.toUpperCase().includes("WH2")) || "WH2-VET-IND")
+  const defaultDestination = isAssignedOnlyToWH3 
+    ? (warehouseOptions.find(w => w.toUpperCase().includes("WH2")) || "WH2-VET-IND") 
+    : (warehouseOptions.find(w => w.toUpperCase().includes("WH3")) || "WH3-VET-CHN")
 
   // --- LIST FILTER STATE ---
   const [searchQuery, setSearchQuery] = useState("")
@@ -109,7 +159,30 @@ export default function StoreTransfersTab() {
   const [formRefNum, setFormRefNum] = useState("")
   const [formFromW, setFormFromW] = useState(defaultOrigin)
   const [formToW, setFormToW] = useState(defaultDestination)
+  const [formDate, setFormDate] = useState(new Date().toISOString().split("T")[0])
   const [formLineItems, setFormLineItems] = useState<TransferLineItem[]>([])
+
+  // Products available in selected Origin Store
+  const originProducts = useMemo(() => {
+    if (!formFromW) return []
+    const originUpper = formFromW.toUpperCase()
+    return products.filter((p) => {
+      const pWh = (p.warehouse || "").toUpperCase()
+      const matchesWh = pWh === originUpper ||
+        (originUpper.includes("WH2") && pWh.includes("WH2")) ||
+        (originUpper.includes("WH3") && pWh.includes("WH3"))
+      if (matchesWh && (p.quantity || 0) > 0) return true
+
+      const hasBreakdown = (p.stockBreakdown || []).some((sb) => {
+        const sbWh = (sb.warehouse || "").toUpperCase()
+        const matchesSb = sbWh === originUpper ||
+          (originUpper.includes("WH2") && sbWh.includes("WH2")) ||
+          (originUpper.includes("WH3") && sbWh.includes("WH3"))
+        return matchesSb && Number(sb.qty || 0) > 0
+      })
+      return hasBreakdown
+    })
+  }, [products, formFromW])
 
   // --- RECEIPT MODAL STATE ---
   const [receivingTransfer, setReceivingTransfer] = useState<Transfer | null>(null)
@@ -139,16 +212,79 @@ export default function StoreTransfersTab() {
   }, [formLineItems])
 
   // Helpers: check user relation to transfer (Sender vs Receiver)
+  // Sender privilege is strictly tied to origin warehouse (from_warehouse)
   const isSender = (transfer: Transfer) => {
-    if (isSuperAdmin) return true
-    const origin = (transfer.from_warehouse || "").toUpperCase()
-    return userWarehouseIds.length === 0 || userWarehouseIds.some(id => origin.includes(id) || id.includes(origin))
+    return canSendFrom(transfer.from_warehouse)
   }
 
+  // Receiver approval privilege is strictly tied to destination warehouse (to_warehouse)
+  // A sender with privilege for Warehouse 2 CANNOT approve for Warehouse 3, and vice versa!
   const isReceiver = (transfer: Transfer) => {
-    if (isSuperAdmin) return true
-    const destination = (transfer.to_warehouse || "").toUpperCase()
-    return userWarehouseIds.length === 0 || userWarehouseIds.some(id => destination.includes(id) || id.includes(destination))
+    return canApproveReceiptFor(transfer.to_warehouse)
+  }
+
+  // Helper to extract clean positive batches for a product, deduplicated by batchNo
+  const getAvailableBatches = (prod?: Product) => {
+    if (!prod) return []
+    const batchMap = new Map<string, { batchNo: string; qty: number; expiry: string }>()
+
+    if (prod.batches && prod.batches.length > 0) {
+      for (const b of prod.batches) {
+        const bNo = (b.batchNo || "").trim()
+        if (!bNo) continue
+        const q = Number(b.qty || 0)
+        if (batchMap.has(bNo)) {
+          const existing = batchMap.get(bNo)!
+          existing.qty += q
+          if (!existing.expiry && b.expiry) existing.expiry = b.expiry
+        } else {
+          batchMap.set(bNo, { batchNo: bNo, qty: q, expiry: b.expiry || "" })
+        }
+      }
+    } else if (prod.batch) {
+      const bNo = prod.batch.trim()
+      batchMap.set(bNo, { batchNo: bNo, qty: Number(prod.quantity || 0), expiry: prod.expiry || "" })
+    }
+
+    // Exclude batches with 0 or negative stock completely
+    return Array.from(batchMap.values()).filter((b) => b.qty > 0)
+  }
+
+  const getRowAvailableStock = (row: TransferLineItem, currentIndex?: number): number => {
+    if (!row.productId && !row.item) return 0
+    const prod = originProducts.find((p) => p.id === row.productId || p.name === row.item)
+    if (!prod) return 0
+
+    let totalStock = 0
+    if (row.batch_no) {
+      const activeBatches = getAvailableBatches(prod)
+      const b = activeBatches.find((x) => x.batchNo === row.batch_no)
+      totalStock = b ? b.qty : 0
+    }
+    if (totalStock === 0) {
+      const originUpper = formFromW.toUpperCase()
+      const breakdownEntry = prod.stockBreakdown?.find((sb) => {
+        const sbWh = (sb.warehouse || "").toUpperCase()
+        return sbWh === originUpper || (originUpper.includes("WH2") && sbWh.includes("WH2")) || (originUpper.includes("WH3") && sbWh.includes("WH3"))
+      })
+      totalStock = breakdownEntry != null ? Number(breakdownEntry.qty || 0) : Number(prod.quantity || 0)
+    }
+
+    // Deduct stock allocated by other rows for the same product and batch
+    const allocatedInOtherRows = formLineItems.reduce((sum, item, idx) => {
+      if (currentIndex !== undefined && idx === currentIndex) return sum
+      const sameProduct = (row.productId && item.productId === row.productId) || (row.item && item.item === row.item)
+      if (!sameProduct) return sum
+      if (row.batch_no && item.batch_no) {
+        if (row.batch_no === item.batch_no) {
+          return sum + (Number(item.quantity) || 0)
+        }
+        return sum
+      }
+      return sum + (Number(item.quantity) || 0)
+    }, 0)
+
+    return Math.max(0, totalStock - allocatedInOtherRows)
   }
 
   // --- START NEW TRANSFER ---
@@ -161,9 +297,10 @@ export default function StoreTransfersTab() {
     setFormRefNum(refNum)
     setFormFromW(defaultOrigin)
     setFormToW(defaultDestination)
+    setFormDate(new Date().toISOString().split("T")[0])
 
     setFormLineItems([
-      { line_no: 1, item: "", UOM: "Pieces", quantity: 0, remark: "" }
+      { line_no: 1, productId: "", item: "", UOM: "Pieces", batch_no: "", expiry: "", quantity: 0, unit_price: 0, remark: "" }
     ])
 
     setIsFormOpen(true)
@@ -174,7 +311,7 @@ export default function StoreTransfersTab() {
     const nextLineNo = formLineItems.length + 1
     setFormLineItems(prev => [
       ...prev,
-      { line_no: nextLineNo, item: "", UOM: "Pieces", quantity: 0, remark: "" }
+      { line_no: nextLineNo, productId: "", item: "", UOM: "Pieces", batch_no: "", expiry: "", quantity: 0, unit_price: 0, remark: "" }
     ])
   }
 
@@ -188,26 +325,58 @@ export default function StoreTransfersTab() {
     setFormLineItems(updated)
   }
 
-  const getAvailableStock = (itemName: string) => {
-    if (!itemName || !formFromW) return 0
-    const prod = transferProducts.find(p => p.name.toLowerCase() === itemName.toLowerCase() || p.id === itemName)
-    if (!prod) return 0
-    return prod.stockBreakdown?.find(sb => sb.warehouse === formFromW)?.qty ?? (prod.warehouse === formFromW ? prod.quantity : 0)
+  const handleSelectProduct = (index: number, selectedProductId: string) => {
+    const selectedProd = originProducts.find(p => p.id === selectedProductId)
+    setFormLineItems(prev => prev.map((row, idx) => {
+      if (idx !== index) return row
+      if (!selectedProd) {
+        return {
+          ...row,
+          productId: "",
+          item: "",
+          UOM: "Pieces",
+          batch_no: "",
+          expiry: "",
+          quantity: 0,
+          unit_price: 0,
+        }
+      }
+      const activeBatches = getAvailableBatches(selectedProd)
+      const firstBatch = activeBatches[0]
+      const defaultBatchNo = firstBatch?.batchNo || ""
+      const defaultExpiry = firstBatch?.expiry || selectedProd.expiry || ""
+
+      return {
+        ...row,
+        productId: selectedProd.id,
+        item: selectedProd.name,
+        UOM: selectedProd.unit || "Pieces",
+        unit_price: selectedProd.unitCost || 0,
+        batch_no: defaultBatchNo,
+        expiry: defaultExpiry,
+        quantity: row.quantity > 0 ? row.quantity : 1,
+      }
+    }))
+  }
+
+  const handleSelectBatch = (index: number, batchNo: string) => {
+    setFormLineItems(prev => prev.map((row, idx) => {
+      if (idx !== index) return row
+      const prod = originProducts.find(p => p.id === row.productId || p.name === row.item)
+      const batches = getAvailableBatches(prod)
+      const matchedBatch = batches.find(b => b.batchNo === batchNo)
+      return {
+        ...row,
+        batch_no: batchNo,
+        expiry: matchedBatch?.expiry || row.expiry || "",
+      }
+    }))
   }
 
   const handleUpdateLineItem = (index: number, field: keyof TransferLineItem, value: any) => {
     setFormLineItems(prev => prev.map((row, idx) => {
       if (idx === index) {
-        const updatedRow = { ...row, [field]: value }
-        
-        // Smart auto-fill UOM from product
-        if (field === "item" && value) {
-          const matchedProd = transferProducts.find(p => p.name.toLowerCase() === value.toLowerCase() || p.id === value)
-          if (matchedProd && matchedProd.unit) {
-            updatedRow.UOM = matchedProd.unit
-          }
-        }
-        return updatedRow
+        return { ...row, [field]: value }
       }
       return row
     }))
@@ -223,6 +392,10 @@ export default function StoreTransfersTab() {
       showToast("Validation Error", "warning", "Origin and destination warehouses must be different.")
       return false
     }
+    if (formLineItems.length === 0) {
+      showToast("Validation Error", "warning", "Please add at least one line item.")
+      return false
+    }
     const hasEmptyItem = formLineItems.some(item => !item.item || !item.item.trim())
     if (hasEmptyItem) {
       showToast("Validation Error", "warning", "All line items must have a product selected.")
@@ -233,9 +406,8 @@ export default function StoreTransfersTab() {
       showToast("Validation Error", "warning", "All line item quantities must be greater than zero.")
       return false
     }
-    const hasExceededQty = formLineItems.some(item => {
-      if (!item.item) return false
-      const avail = getAvailableStock(item.item)
+    const hasExceededQty = formLineItems.some((item, idx) => {
+      const avail = getRowAvailableStock(item, idx)
       return Number(item.quantity) > avail
     })
     if (hasExceededQty) {
@@ -246,8 +418,17 @@ export default function StoreTransfersTab() {
   }
 
   // --- SAVE AS DRAFT ---
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     if (!validateForm()) return
+
+    if (!canSendFrom(formFromW)) {
+      showToast(
+        "Privilege Restriction",
+        "warning",
+        `You do not have permission to initiate transfers from ${formFromW}. You can only initiate transfers from your authorized warehouse.`
+      )
+      return
+    }
 
     const payload: Transfer = {
       reference_number: formRefNum,
@@ -256,20 +437,29 @@ export default function StoreTransfersTab() {
       status: "Draft",
       line_items: formLineItems,
       total_quantity: formTotalQuantity,
-      date: new Date().toISOString().split("T")[0],
+      date: formDate || new Date().toISOString().split("T")[0],
       issued_by: currentUserName,
       issued_at: new Date().toISOString().replace("T", " ").substring(0, 16),
       issued_signature: currentUserName,
     }
 
-    erp.addStockTransfer(payload)
+    await erp.addStockTransfer(payload)
     showToast("Transfer Saved", "success", `Draft transfer ${formRefNum} recorded.`)
     setIsFormOpen(false)
   }
 
   // --- SIGN & DISPATCH DIRECTLY ---
-  const handleSignAndDispatch = () => {
+  const handleSignAndDispatch = async () => {
     if (!validateForm()) return
+
+    if (!canSendFrom(formFromW)) {
+      showToast(
+        "Privilege Restriction",
+        "warning",
+        `You do not have permission to dispatch stock from ${formFromW}. You can only dispatch transfers from your authorized warehouse.`
+      )
+      return
+    }
 
     const todayStr = new Date().toISOString().replace("T", " ").substring(0, 16)
     const payload: Transfer = {
@@ -279,13 +469,13 @@ export default function StoreTransfersTab() {
       status: "Issued",
       line_items: formLineItems,
       total_quantity: formTotalQuantity,
-      date: new Date().toISOString().split("T")[0],
+      date: formDate || new Date().toISOString().split("T")[0],
       issued_by: currentUserName,
       issued_at: todayStr,
       issued_signature: currentUserName,
     }
 
-    const res = erp.addStockTransfer(payload)
+    const res = await erp.addStockTransfer(payload)
     showToast(
       "Transfer Dispatched",
       "success",
@@ -295,8 +485,19 @@ export default function StoreTransfersTab() {
   }
 
   // --- CONFIRM RECEIPT (MATCH OR DISCREPANCY) ---
-  const handleConfirmReceipt = () => {
+  const handleConfirmReceipt = async () => {
     if (!receivingTransfer) return
+
+    if (!canApproveReceiptFor(receivingTransfer.to_warehouse)) {
+      showToast(
+        "Privilege Restriction",
+        "warning",
+        `You do not have permission to approve stock receipt for ${receivingTransfer.to_warehouse}. Only authorized store managers for this destination warehouse can confirm receipt.`
+      )
+      setIsReceiptOpen(false)
+      setReceivingTransfer(null)
+      return
+    }
 
     if (receiptMode === "discrepancy" && !discrepancyText.trim()) {
       showToast("Input Required", "warning", "Please specify the discrepancy details.")
@@ -307,7 +508,7 @@ export default function StoreTransfersTab() {
     const todayStr = new Date().toISOString().replace("T", " ").substring(0, 16)
     const newStatus: TransferStatus = receiptMode === "match" ? "Received" : "Discrepancy"
 
-    erp.updateTransferStatus(
+    await erp.updateTransferStatus(
       receivingTransfer.reference_number,
       newStatus,
       currentUserName,
@@ -315,36 +516,6 @@ export default function StoreTransfersTab() {
       currentUserName,
       todayStr
     )
-
-    // Stock Ledger Transfer Execution: Only move stock if not already moved during dispatch
-    if (newStatus === "Received" && receivingTransfer.status === "Draft") {
-      receivingTransfer.line_items.forEach((line) => {
-        const prod = transferProducts.find(p => p.name.toLowerCase() === line.item.toLowerCase() || p.id === line.item)
-        if (prod) {
-          const qty = Number(line.quantity) || 0
-          const currentBreakdown = prod.stockBreakdown || []
-          const toEntry = currentBreakdown.find(sb => sb.warehouse === receivingTransfer.to_warehouse)
-
-          const updatedBreakdown = currentBreakdown.map(sb => {
-            if (sb.warehouse === receivingTransfer.from_warehouse) {
-              return { ...sb, qty: Math.max(0, Number(sb.qty || 0) - qty) }
-            }
-            if (sb.warehouse === receivingTransfer.to_warehouse) {
-              return { ...sb, qty: Number(sb.qty || 0) + qty }
-            }
-            return sb
-          })
-
-          if (!toEntry) {
-            updatedBreakdown.push({ warehouse: receivingTransfer.to_warehouse, qty: qty })
-          }
-
-          erp.updateProduct(prod.id, {
-            stockBreakdown: updatedBreakdown,
-          })
-        }
-      })
-    }
 
     const refNum = receivingTransfer.reference_number
     const destWh = receivingTransfer.to_warehouse
@@ -374,14 +545,11 @@ export default function StoreTransfersTab() {
   const filteredTransfers = useMemo(() => {
     return transfers.filter(t => {
       // 1. Role / Facility Scope: WH2/WH3 users see transfers where their warehouse is sender or receiver
-      if (!isSuperAdmin && userWarehouseIds.length > 0) {
-        const fromUpper = (t.from_warehouse || "").toUpperCase()
-        const toUpper = (t.to_warehouse || "").toUpperCase()
-        const hasMatch = userWarehouseIds.some(id => 
-          fromUpper.includes(id) || id.includes(fromUpper) ||
-          toUpper.includes(id) || id.includes(toUpper)
-        )
-        if (!hasMatch) return false
+      if (!isSuperAdmin) {
+        if (!hasWH2Privilege && !hasWH3Privilege) return false
+        const matchesFrom = canSendFrom(t.from_warehouse)
+        const matchesTo = canApproveReceiptFor(t.to_warehouse)
+        if (!matchesFrom && !matchesTo) return false
       }
 
       // 2. Status filter
@@ -523,7 +691,7 @@ export default function StoreTransfersTab() {
                     </button>
                   )}
 
-                  {isSender(transfer) && (transfer.status === "Draft" || transfer.status === "Issued") && (
+                  {isSender(transfer) && transfer.status === "Draft" && (
                     <button
                       type="button"
                       onClick={() => {
@@ -552,59 +720,54 @@ export default function StoreTransfersTab() {
           ========================================================================= */}
       <AnimatePresence>
         {isFormOpen && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-            {/* Backdrop Overlay */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsFormOpen(false)}
-              className="absolute inset-0 bg-black/40 backdrop-blur-xs"
-            />
-
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
             {/* Modal Body */}
             <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              transition={{ duration: 0.2 }}
-              className="relative w-full max-w-3xl rounded-3xl bg-white dark:bg-zinc-900 p-6 shadow-2xl z-[121] border border-zinc-200/80 dark:border-zinc-800 max-h-[90vh] flex flex-col overflow-hidden"
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 flex flex-col text-xs"
             >
               {/* Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-zinc-150 dark:border-zinc-800 shrink-0">
+              <div className="flex items-center justify-between pb-4 mb-6 border-b border-zinc-200 shrink-0">
                 <div>
-                  <h2 className="text-xl font-black text-zinc-950 dark:text-white tracking-tight leading-tight">
-                    {formMode === "create" ? "New Store-to-Store Transfer" : "Edit Store Transfer"}
-                  </h2>
-                  <p className="text-xs font-mono font-bold text-zinc-400 mt-0.5">
-                    Ref: {formRefNum} &bull; Commercial Store Transfer (WH2 $\leftrightarrow$ WH3)
+                  <div className="flex items-center gap-2.5">
+                    <h3 className="text-xl font-black text-zinc-900">
+                      {formMode === "create" ? "Initiate Store-to-Store Transfer" : "Edit Store Transfer"}
+                    </h3>
+                    <span className="font-mono text-xs font-black bg-zinc-100 text-zinc-700 px-2.5 py-0.5 rounded-full border border-zinc-200">
+                      {formRefNum}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Record commercial inventory movement between Warehouse 2 and Warehouse 3.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsFormOpen(false)}
-                  className="size-8 rounded-full border border-zinc-200 hover:bg-zinc-100 flex items-center justify-center transition-colors text-zinc-500 cursor-pointer"
+                  className="p-2 rounded-full hover:bg-zinc-100 text-zinc-400 cursor-pointer transition-colors"
                 >
-                  <X className="size-4" />
+                  <X className="size-5" />
                 </button>
               </div>
 
               {/* Scrollable Form Content */}
-              <div className="flex-1 overflow-y-auto py-5 space-y-5 text-xs">
-                {/* 1. Origin & Destination Facilities Card */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200/60 dark:border-zinc-700/60">
+              <div className="flex-1 overflow-y-auto space-y-6">
+                {/* 1. Origin, Destination & Date Card */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-zinc-50 p-4.5 rounded-2xl border border-zinc-200">
                   {/* Origin Warehouse */}
                   <div className="space-y-1">
-                    <span className="block text-[11px] font-black uppercase text-zinc-500">
+                    <span className="block text-[11px] font-black uppercase text-zinc-700">
                       Origin Warehouse (Sender) <span className="text-rose-600">*</span>
                     </span>
                     {isAssignedOnlyToWH2 ? (
-                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-3 flex items-center text-xs font-black text-zinc-900 dark:text-zinc-100 font-mono">
-                        WH2 (Veterinary Import Hub)
+                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-800">
+                        {transferWarehouses.find(w => (w.code || w.id || "").toUpperCase().includes("WH2"))?.name || "WH2 (Veterinary Import Hub)"}
                       </div>
                     ) : isAssignedOnlyToWH3 ? (
-                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-3 flex items-center text-xs font-black text-zinc-900 dark:text-zinc-100 font-mono">
-                        WH3 (Veterinary Import Hub)
+                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-800">
+                        {transferWarehouses.find(w => (w.code || w.id || "").toUpperCase().includes("WH3"))?.name || "WH3 (Veterinary Import Hub)"}
                       </div>
                     ) : (
                       <select
@@ -612,14 +775,19 @@ export default function StoreTransfersTab() {
                         onChange={(e) => {
                           const newFrom = e.target.value
                           setFormFromW(newFrom)
-                          if (formToW === newFrom) {
-                            setFormToW(warehouseOptions.find(w => w !== newFrom) || "")
-                          }
+                          const other = transferWarehouses.find(w => (w.code || w.id) !== newFrom)
+                          if (other) setFormToW(other.code || other.id)
+                          // Reset line item product selections since origin warehouse changed
+                          setFormLineItems([
+                            { line_no: 1, productId: "", item: "", UOM: "Pieces", batch_no: "", expiry: "", quantity: 0, unit_price: 0, remark: "" }
+                          ])
                         }}
-                        className="h-11 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-3 text-xs font-bold text-zinc-900 dark:text-zinc-100 outline-none focus:border-emerald-500 cursor-pointer"
+                        className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-900 outline-none focus:border-emerald-500 cursor-pointer shadow-xs"
                       >
-                        {warehouseOptions.map((w) => (
-                          <option key={w} value={w}>{w}</option>
+                        {transferWarehouses.map((w) => (
+                          <option key={w.id || w.code} value={w.code || w.id}>
+                            {w.name || w.code || w.id}
+                          </option>
                         ))}
                       </select>
                     )}
@@ -627,142 +795,210 @@ export default function StoreTransfersTab() {
 
                   {/* Destination Warehouse */}
                   <div className="space-y-1">
-                    <span className="block text-[11px] font-black uppercase text-zinc-500">
+                    <span className="block text-[11px] font-black uppercase text-zinc-700">
                       Destination Warehouse (Receiver) <span className="text-rose-600">*</span>
                     </span>
                     {isAssignedOnlyToWH2 ? (
-                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-3 flex items-center text-xs font-black text-zinc-900 dark:text-zinc-100 font-mono">
-                        WH3 (Veterinary Import Hub)
+                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-800">
+                        {transferWarehouses.find(w => (w.code || w.id || "").toUpperCase().includes("WH3"))?.name || "WH3 (Veterinary Import Hub)"}
                       </div>
                     ) : isAssignedOnlyToWH3 ? (
-                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-3 flex items-center text-xs font-black text-zinc-900 dark:text-zinc-100 font-mono">
-                        WH2 (Veterinary Import Hub)
+                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-800">
+                        {transferWarehouses.find(w => (w.code || w.id || "").toUpperCase().includes("WH2"))?.name || "WH2 (Veterinary Import Hub)"}
                       </div>
                     ) : (
                       <select
                         value={formToW}
                         onChange={(e) => setFormToW(e.target.value)}
-                        className="h-11 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-3 text-xs font-bold text-zinc-900 dark:text-zinc-100 outline-none focus:border-emerald-500 cursor-pointer"
+                        className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-900 outline-none focus:border-emerald-500 cursor-pointer shadow-xs"
                       >
-                        {warehouseOptions.filter(w => w !== formFromW).map((w) => (
-                          <option key={w} value={w}>{w}</option>
+                        {transferWarehouses.filter(w => (w.code || w.id) !== formFromW).map((w) => (
+                          <option key={w.id || w.code} value={w.code || w.id}>
+                            {w.name || w.code || w.id}
+                          </option>
                         ))}
                       </select>
                     )}
                   </div>
+
+                  {/* Transfer Date */}
+                  <div className="space-y-1">
+                    <span className="block text-[11px] font-black uppercase text-zinc-700">
+                      Transfer Date <span className="text-rose-600">*</span>
+                    </span>
+                    <input
+                      type="date"
+                      value={formDate}
+                      onChange={(e) => setFormDate(e.target.value)}
+                      className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-900 outline-none focus:border-emerald-500 shadow-xs"
+                    />
+                  </div>
                 </div>
 
-                {/* 2. Line Items Table Card */}
+                {/* 2. Line Items Section */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black uppercase text-zinc-700 dark:text-zinc-300">
-                      Transfer Line Items <span className="text-rose-600">*</span>
-                    </span>
+                    <div>
+                      <span className="text-[11px] font-black uppercase text-zinc-700 block">
+                        Transfer Line Items <span className="text-rose-600">*</span>
+                      </span>
+                      <span className="text-[10px] text-zinc-400 font-medium">
+                        Select product items and lots available in {formFromW}.
+                      </span>
+                    </div>
                     <button
                       type="button"
                       onClick={handleAddLineRow}
-                      className="px-3 py-1.5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-xs font-bold text-zinc-800 inline-flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+                      className="px-3.5 py-1.5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-xs font-bold text-zinc-800 inline-flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
                     >
                       <Plus className="size-3.5 text-emerald-700" /> Add Product Row
                     </button>
                   </div>
 
-                  <div className="space-y-2.5">
+                  <div className="space-y-3">
                     {formLineItems.map((row, idx) => {
-                      const avail = getAvailableStock(row.item)
-                      const isOverStock = row.item && row.quantity && Number(row.quantity) > avail
+                      const prod = originProducts.find(p => p.id === row.productId || p.name === row.item)
+                      const availStock = getRowAvailableStock(row, idx)
+                      const isOverStock = row.quantity > 0 && Number(row.quantity) > availStock
+                      const availableBatches = getAvailableBatches(prod)
+
                       return (
                         <div
                           key={idx}
-                          className="grid grid-cols-12 gap-2.5 p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/70 dark:border-zinc-700/70 items-start font-semibold"
+                          className={`p-4 rounded-2xl border transition-all ${
+                            isOverStock ? "bg-rose-50/40 border-rose-300" : "bg-zinc-50/80 border-zinc-200"
+                          }`}
                         >
-                          {/* Product Selection */}
-                          <div className="col-span-5 space-y-1">
-                            <div className="flex items-center min-h-[16px]">
-                              <label className="text-[10px] font-black uppercase text-zinc-400 block truncate">
-                                Product
-                                {row.item && (
-                                  <span className={`ml-1 font-bold lowercase ${isOverStock ? "text-rose-600" : "text-zinc-500 font-mono"}`}>
-                                    (avail: {avail.toLocaleString()} {row.UOM || "units"})
+                          <div className="grid grid-cols-12 gap-3 items-start">
+                            {/* Product Selector */}
+                            <div className="col-span-12 sm:col-span-4 space-y-1">
+                              <span className="text-[10px] font-black uppercase text-zinc-500 block">
+                                Product Item <span className="text-rose-600">*</span>
+                              </span>
+                              <select
+                                value={row.productId || (prod?.id || "")}
+                                onChange={(e) => handleSelectProduct(idx, e.target.value)}
+                                className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-900 outline-none focus:border-emerald-500 cursor-pointer shadow-xs"
+                              >
+                                <option value="">Select product...</option>
+                                {originProducts.map((p) => {
+                                  const stockInOrigin = p.warehouse === formFromW
+                                    ? p.quantity
+                                    : (p.stockBreakdown?.find(sb => sb.warehouse === formFromW)?.qty ?? p.quantity)
+                                  return (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name} ({stockInOrigin} {p.unit} available)
+                                    </option>
+                                  )
+                                })}
+                              </select>
+                            </div>
+
+                            {/* Batch Selector */}
+                            <div className="col-span-12 sm:col-span-3 space-y-1">
+                              <span className="text-[10px] font-black uppercase text-zinc-500 block">
+                                Batch / Lot No.
+                              </span>
+                              {availableBatches.length > 0 ? (
+                                <select
+                                  value={row.batch_no}
+                                  onChange={(e) => handleSelectBatch(idx, e.target.value)}
+                                  className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2.5 text-xs font-mono font-bold text-zinc-900 outline-none focus:border-emerald-500 cursor-pointer shadow-xs"
+                                >
+                                  {availableBatches.map((b) => (
+                                    <option key={b.batchNo} value={b.batchNo}>
+                                      {b.batchNo}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <div className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-2.5 flex items-center text-xs font-mono text-zinc-600">
+                                  {row.batch_no || prod?.batch || "Standard Lot"}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Locked UOM */}
+                            <div className="col-span-4 sm:col-span-2 space-y-1">
+                              <span className="text-[10px] font-black uppercase text-zinc-500 block text-center">
+                                UOM
+                              </span>
+                              <div className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-2 flex items-center justify-center text-xs font-bold text-zinc-700">
+                                {row.UOM || prod?.unit || "Pieces"}
+                              </div>
+                            </div>
+
+                            {/* Quantity */}
+                            <div className="col-span-6 sm:col-span-2 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black uppercase text-zinc-500 block">
+                                  Quantity <span className="text-rose-600">*</span>
+                                </span>
+                                {row.productId && (
+                                  <span className="text-[9px] font-bold text-zinc-400 font-mono">
+                                    Max: {availStock}
                                   </span>
                                 )}
-                              </label>
+                              </div>
+                              <input
+                                type="number"
+                                min="1"
+                                max={availStock || undefined}
+                                value={row.quantity || ""}
+                                onChange={(e) => handleUpdateLineItem(idx, "quantity", e.target.value === "" ? "" : Number(e.target.value))}
+                                placeholder="0"
+                                className={`h-10 w-full rounded-xl border px-2.5 text-xs font-mono font-black text-right outline-none shadow-xs ${
+                                  isOverStock
+                                    ? "border-rose-500 bg-rose-50 text-rose-800 focus:border-rose-600"
+                                    : "border-zinc-200 bg-white text-zinc-900 focus:border-emerald-500"
+                                }`}
+                              />
                             </div>
-                            <input
-                              type="text"
-                              list="transfer-products-suggestions"
-                              placeholder="Type product name..."
-                              value={row.item}
-                              onChange={(e) => handleUpdateLineItem(idx, "item", e.target.value)}
-                              className="h-10 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-3 text-xs font-bold text-zinc-900 dark:text-zinc-100 outline-none focus:border-emerald-500"
-                            />
+
+                            {/* Delete Button */}
+                            <div className="col-span-2 sm:col-span-1 space-y-1 flex flex-col items-center">
+                              <span className="text-[10px] font-black uppercase text-transparent block select-none">
+                                Del
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveLineRow(idx)}
+                                className="h-10 w-10 rounded-xl text-zinc-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
+                                title="Remove row"
+                              >
+                                <Trash2 className="size-4" />
+                              </button>
+                            </div>
                           </div>
 
-                          {/* UOM */}
-                          <div className="col-span-2 space-y-1">
-                            <div className="flex items-center min-h-[16px]">
-                              <label className="text-[10px] font-black uppercase text-zinc-400 block">UOM</label>
+                          {/* Sub-row: Expiry & Remark */}
+                          <div className="mt-2.5 pt-2 border-t border-zinc-200/60 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                            <div className="flex items-center gap-3 text-zinc-500 font-medium">
+                              {row.expiry && (
+                                <span className="inline-flex items-center gap-1 font-mono text-[10px] text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded border border-zinc-200">
+                                  Expiry: {row.expiry}
+                                </span>
+                              )}
+                              {isOverStock && (
+                                <span className="text-rose-600 font-bold flex items-center gap-1 text-[10px]">
+                                  <AlertTriangle className="size-3" /> Exceeds available stock in {formFromW}
+                                </span>
+                              )}
                             </div>
-                            <input
-                              type="text"
-                              value={row.UOM || "Pieces"}
-                              onChange={(e) => handleUpdateLineItem(idx, "UOM", e.target.value)}
-                              className="h-10 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-2.5 text-xs font-bold text-zinc-700 dark:text-zinc-300 outline-none focus:border-emerald-500 text-center"
-                            />
-                          </div>
-
-                          {/* Quantity */}
-                          <div className="col-span-2 space-y-1">
-                            <div className="flex items-center min-h-[16px]">
-                              <label className="text-[10px] font-black uppercase text-zinc-400 block">Qty</label>
+                            <div className="flex-1 max-w-sm">
+                              <input
+                                type="text"
+                                placeholder="Optional line note or instructions..."
+                                value={row.remark || ""}
+                                onChange={(e) => handleUpdateLineItem(idx, "remark", e.target.value)}
+                                className="h-7 w-full rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] text-zinc-700 outline-none focus:border-emerald-500"
+                              />
                             </div>
-                            <input
-                              type="number"
-                              min="1"
-                              value={row.quantity || ""}
-                              onChange={(e) => handleUpdateLineItem(idx, "quantity", e.target.value === "" ? "" : Number(e.target.value))}
-                              className={`h-10 w-full rounded-xl border px-2.5 text-xs font-mono font-black text-zinc-900 dark:text-zinc-100 outline-none ${
-                                isOverStock ? "border-rose-500 bg-rose-50/50" : "border-zinc-200 bg-white dark:bg-zinc-900 focus:border-emerald-500"
-                              }`}
-                            />
-                          </div>
-
-                          {/* Remark */}
-                          <div className="col-span-2 space-y-1">
-                            <div className="flex items-center min-h-[16px]">
-                              <label className="text-[10px] font-black uppercase text-zinc-400 block">Remark</label>
-                            </div>
-                            <input
-                              type="text"
-                              placeholder="Batch / note"
-                              value={row.remark || ""}
-                              onChange={(e) => handleUpdateLineItem(idx, "remark", e.target.value)}
-                              className="h-10 w-full rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 px-2.5 text-xs font-medium text-zinc-600 outline-none focus:border-emerald-500"
-                            />
-                          </div>
-
-                          {/* Remove */}
-                          <div className="col-span-1 space-y-1 flex flex-col items-center">
-                            <div className="min-h-[16px]" />
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveLineRow(idx)}
-                              className="h-10 w-10 rounded-xl text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/20 flex items-center justify-center transition-colors cursor-pointer"
-                              title="Remove row"
-                            >
-                              <Trash2 className="size-4" />
-                            </button>
                           </div>
                         </div>
                       )
                     })}
                   </div>
-
-                  <datalist id="transfer-products-suggestions">
-                    {transferProducts.map((p) => (
-                      <option key={p.id} value={p.name} />
-                    ))}
-                  </datalist>
                 </div>
 
                 {/* 3. Live Total Quantity Banner */}
@@ -774,17 +1010,17 @@ export default function StoreTransfersTab() {
                 </div>
 
                 {/* 4. Digital Certification & Dispatcher Signature Box */}
-                <div className="p-4.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 space-y-3">
+                <div className="p-4.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-2.5">
                   <div className="flex items-center gap-2">
-                    <Shield className="size-4.5 text-emerald-700" />
-                    <h4 className="text-xs font-black text-emerald-950 dark:text-emerald-300 uppercase tracking-wider">
+                    <Shield className="size-4 text-emerald-700" />
+                    <h4 className="text-xs font-black text-emerald-950 uppercase tracking-wider">
                       Authorized Dispatcher Digital Signature
                     </h4>
                   </div>
-                  <div className="bg-white dark:bg-zinc-900 p-3.5 rounded-xl border border-emerald-100 dark:border-emerald-900/40 flex items-center justify-between shadow-xs">
+                  <div className="bg-white p-3 rounded-xl border border-emerald-100 flex items-center justify-between shadow-xs">
                     <div>
                       <span className="text-[9px] font-black uppercase text-zinc-400 block">Issuing Officer</span>
-                      <span className="text-xs font-black text-zinc-950 dark:text-zinc-100">{currentUserName}</span>
+                      <span className="text-xs font-black text-zinc-900">{currentUserName}</span>
                     </div>
                     <div className="text-right">
                       <span className="text-[9px] font-black uppercase text-zinc-400 block mb-0.5">Verified Signature</span>
@@ -797,7 +1033,7 @@ export default function StoreTransfersTab() {
               </div>
 
               {/* Footer Actions (Matching Stock Modal button format) */}
-              <div className="pt-4 border-t border-zinc-150 dark:border-zinc-800 shrink-0 flex items-center justify-end gap-2.5">
+              <div className="pt-4 border-t border-zinc-200 shrink-0 flex items-center justify-end gap-2.5 mt-5">
                 <button
                   type="button"
                   onClick={() => setIsFormOpen(false)}
@@ -844,12 +1080,12 @@ export default function StoreTransfersTab() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 10 }}
               transition={{ duration: 0.2 }}
-              className="relative w-full max-w-3xl rounded-3xl bg-white dark:bg-zinc-900 p-6 shadow-2xl z-[121] border border-zinc-200/80 dark:border-zinc-800 max-h-[90vh] flex flex-col overflow-hidden text-xs"
+              className="relative w-full max-w-3xl rounded-3xl bg-white p-6 shadow-2xl z-[121] border border-zinc-200 max-h-[90vh] flex flex-col overflow-hidden text-xs"
             >
               {/* Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-zinc-150 dark:border-zinc-800 shrink-0">
+              <div className="flex items-center justify-between pb-4 border-b border-zinc-200 shrink-0">
                 <div>
-                  <h2 className="text-xl font-black text-zinc-950 dark:text-white tracking-tight leading-tight">
+                  <h2 className="text-xl font-black text-zinc-900 tracking-tight leading-tight">
                     Material Transfer Note
                   </h2>
                   <p className="text-xs font-mono font-bold text-zinc-400 mt-0.5">
@@ -868,22 +1104,22 @@ export default function StoreTransfersTab() {
               {/* Body */}
               <div className="flex-1 overflow-y-auto py-5 space-y-5">
                 {/* Movement Route Card */}
-                <div className="grid grid-cols-2 gap-4 bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200/60 dark:border-zinc-700/60 font-semibold">
+                <div className="grid grid-cols-2 gap-4 bg-zinc-50 p-4 rounded-2xl border border-zinc-200 font-semibold">
                   <div>
                     <span className="text-[10px] font-black uppercase text-zinc-400 block mb-0.5">Origin Facility (Sender)</span>
-                    <span className="text-xs font-black text-zinc-950 dark:text-zinc-100">{selectedTransfer.from_warehouse}</span>
+                    <span className="text-xs font-black text-zinc-900">{selectedTransfer.from_warehouse}</span>
                   </div>
                   <div>
                     <span className="text-[10px] font-black uppercase text-zinc-400 block mb-0.5">Destination Facility (Receiver)</span>
-                    <span className="text-xs font-black text-zinc-950 dark:text-zinc-100">{selectedTransfer.to_warehouse}</span>
+                    <span className="text-xs font-black text-zinc-900">{selectedTransfer.to_warehouse}</span>
                   </div>
                 </div>
 
                 {/* Items Ledger Table */}
-                <div className="border border-zinc-200 dark:border-zinc-700 rounded-2xl overflow-hidden">
+                <div className="border border-zinc-200 rounded-2xl overflow-hidden">
                   <table className="w-full text-left">
                     <thead>
-                      <tr className="bg-zinc-50 dark:bg-zinc-800/70 border-b border-zinc-200 dark:border-zinc-700 text-[10px] font-black uppercase text-zinc-400">
+                      <tr className="bg-zinc-50 border-b border-zinc-200 text-[10px] font-black uppercase text-zinc-400">
                         <th className="py-2.5 px-4">No.</th>
                         <th className="py-2.5 px-4">Item Description</th>
                         <th className="py-2.5 px-4 text-center">UOM</th>
@@ -891,13 +1127,13 @@ export default function StoreTransfersTab() {
                         <th className="py-2.5 px-4">Remarks</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800 font-bold text-zinc-800 dark:text-zinc-200">
+                    <tbody className="divide-y divide-zinc-100 font-bold text-zinc-800">
                       {selectedTransfer.line_items.map((line, i) => (
                         <tr key={i}>
                           <td className="py-2.5 px-4 font-mono text-zinc-400">{line.line_no}</td>
-                          <td className="py-2.5 px-4 text-zinc-950 dark:text-white">{line.item}</td>
+                          <td className="py-2.5 px-4 text-zinc-900">{line.item}</td>
                           <td className="py-2.5 px-4 text-center text-zinc-500">{line.UOM}</td>
-                          <td className="py-2.5 px-4 text-right font-mono font-black text-zinc-950 dark:text-white">{line.quantity.toLocaleString()}</td>
+                          <td className="py-2.5 px-4 text-right font-mono font-black text-zinc-900">{line.quantity.toLocaleString()}</td>
                           <td className="py-2.5 px-4 text-zinc-400 font-medium text-[11px]">{line.remark || "—"}</td>
                         </tr>
                       ))}
@@ -914,11 +1150,11 @@ export default function StoreTransfersTab() {
                 {/* Two-Party Sign-off Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* Issuance Sign-off */}
-                  <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/60 dark:border-zinc-700/60 space-y-2">
+                  <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-2">
                     <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">1. Origin Issuance Sign-off</span>
                     <div className="text-xs space-y-1 font-semibold">
                       <p><span className="text-zinc-400">Date:</span> {selectedTransfer.issued_at || selectedTransfer.date}</p>
-                      <p><span className="text-zinc-400">Dispatcher:</span> <strong className="text-zinc-900 dark:text-zinc-100">{selectedTransfer.issued_by || "Store Manager"}</strong></p>
+                      <p><span className="text-zinc-400">Dispatcher:</span> <strong className="text-zinc-900">{selectedTransfer.issued_by || "Store Manager"}</strong></p>
                       <div className="pt-1">
                         <span className="font-serif italic text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-200">
                           {selectedTransfer.issued_signature || selectedTransfer.issued_by || "Authorized"}
@@ -928,12 +1164,12 @@ export default function StoreTransfersTab() {
                   </div>
 
                   {/* Receipt Sign-off */}
-                  <div className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/60 dark:border-zinc-700/60 space-y-2">
+                  <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-2">
                     <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">2. Receiver Verification Sign-off</span>
                     {selectedTransfer.status === "Received" ? (
                       <div className="text-xs space-y-1 font-semibold">
                         <p><span className="text-zinc-400">Date:</span> {selectedTransfer.received_at || selectedTransfer.date}</p>
-                        <p><span className="text-zinc-400">Verified By:</span> <strong className="text-zinc-900 dark:text-zinc-100">{selectedTransfer.received_by}</strong></p>
+                        <p><span className="text-zinc-400">Verified By:</span> <strong className="text-zinc-900">{selectedTransfer.received_by}</strong></p>
                         <div className="pt-1">
                           <span className="font-serif italic text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-200">
                             {selectedTransfer.received_signature}
@@ -955,7 +1191,7 @@ export default function StoreTransfersTab() {
               </div>
 
               {/* Footer Toolbar (Export PDF & Action buttons) */}
-              <div className="pt-4 border-t border-zinc-150 dark:border-zinc-800 shrink-0 flex items-center justify-end gap-2.5">
+              <div className="pt-4 border-t border-zinc-200 shrink-0 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => handleDownloadPDF(selectedTransfer.reference_number)}
@@ -967,20 +1203,27 @@ export default function StoreTransfersTab() {
                 </button>
 
                 {/* Receiver Process Receipt Action */}
-                {selectedTransfer.status === "Issued" && isReceiver(selectedTransfer) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const t = selectedTransfer
-                      setSelectedTransfer(null)
-                      setReceivingTransfer(t)
-                      setReceiptMode("match")
-                      setIsReceiptOpen(true)
-                    }}
-                    className="h-11 px-6 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-md active:scale-95 cursor-pointer transition-all flex items-center gap-1.5"
-                  >
-                    <Check className="size-4" /> Process Receipt
-                  </button>
+                {selectedTransfer.status === "Issued" && (
+                  isReceiver(selectedTransfer) ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const t = selectedTransfer
+                        setSelectedTransfer(null)
+                        setReceivingTransfer(t)
+                        setReceiptMode("match")
+                        setIsReceiptOpen(true)
+                      }}
+                      className="h-11 px-6 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-md active:scale-95 cursor-pointer transition-all flex items-center gap-1.5"
+                    >
+                      <Check className="size-4" /> Process Receipt
+                    </button>
+                  ) : (
+                    <div className="text-[11px] font-bold text-zinc-500 bg-zinc-100 px-3.5 py-2.5 rounded-xl border border-zinc-200 flex items-center gap-1.5">
+                      <Shield className="size-3.5 text-zinc-400" />
+                      Awaiting confirmation by {selectedTransfer.to_warehouse} receiver
+                    </div>
+                  )
                 )}
               </div>
             </motion.div>
@@ -1010,12 +1253,12 @@ export default function StoreTransfersTab() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 12 }}
               transition={{ duration: 0.2 }}
-              className="relative w-full max-w-lg rounded-3xl bg-white dark:bg-zinc-900 p-6 shadow-2xl z-[131] border border-zinc-200/80 dark:border-zinc-800 text-xs"
+              className="relative w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl z-[131] border border-zinc-200 text-xs"
             >
               {/* Header */}
-              <div className="flex items-center justify-between pb-3.5 border-b border-zinc-150 dark:border-zinc-800 mb-4">
+              <div className="flex items-center justify-between pb-3.5 border-b border-zinc-200 mb-4">
                 <div>
-                  <h3 className="text-base font-black text-zinc-950 dark:text-white uppercase tracking-tight">
+                  <h3 className="text-base font-black text-zinc-900 uppercase tracking-tight">
                     Confirm Stock Receipt
                   </h3>
                   <p className="text-xs font-mono font-bold text-zinc-400 mt-0.5">
@@ -1035,9 +1278,9 @@ export default function StoreTransfersTab() {
               </div>
 
               {/* Receiving Officer Banner */}
-              <div className="bg-zinc-50 dark:bg-zinc-800/60 p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 mb-4 font-semibold">
+              <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200 mb-4 font-semibold">
                 <span className="text-[10px] font-black uppercase text-zinc-400 block">Receiving Officer</span>
-                <span className="text-xs font-black text-zinc-900 dark:text-zinc-100">{currentUserName}</span>
+                <span className="text-xs font-black text-zinc-900">{currentUserName}</span>
               </div>
 
               {/* Verification Choices */}
@@ -1048,7 +1291,7 @@ export default function StoreTransfersTab() {
                     onClick={() => setReceiptMode("match")}
                     className={`p-4 rounded-2xl border transition-all text-left flex flex-col justify-between h-28 cursor-pointer ${
                       receiptMode === "match"
-                        ? "border-emerald-600 bg-emerald-50/60 dark:bg-emerald-950/20 ring-2 ring-emerald-500/20"
+                        ? "border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-500/20"
                         : "border-zinc-200 bg-white hover:bg-zinc-50"
                     }`}
                   >
@@ -1056,7 +1299,7 @@ export default function StoreTransfersTab() {
                       <Check className="size-4" />
                     </div>
                     <div>
-                      <h4 className="font-black text-zinc-900 dark:text-white text-xs">Quantities Match</h4>
+                      <h4 className="font-black text-zinc-900 text-xs">Quantities Match</h4>
                       <p className="text-[10px] text-zinc-400 mt-0.5">Physical goods match transfer manifest</p>
                     </div>
                   </button>
@@ -1066,7 +1309,7 @@ export default function StoreTransfersTab() {
                     onClick={() => setReceiptMode("discrepancy")}
                     className={`p-4 rounded-2xl border transition-all text-left flex flex-col justify-between h-28 cursor-pointer ${
                       receiptMode === "discrepancy"
-                        ? "border-amber-600 bg-amber-50/60 dark:bg-amber-950/20 ring-2 ring-amber-500/20"
+                        ? "border-amber-600 bg-amber-50/60 ring-2 ring-amber-500/20"
                         : "border-zinc-200 bg-white hover:bg-zinc-50"
                     }`}
                   >
@@ -1074,7 +1317,7 @@ export default function StoreTransfersTab() {
                       <AlertTriangle className="size-4" />
                     </div>
                     <div>
-                      <h4 className="font-black text-zinc-900 dark:text-white text-xs">Discrepancy</h4>
+                      <h4 className="font-black text-zinc-900 text-xs">Discrepancy</h4>
                       <p className="text-[10px] text-zinc-400 mt-0.5">Variance or damaged goods observed</p>
                     </div>
                   </button>
@@ -1097,7 +1340,7 @@ export default function StoreTransfersTab() {
               </div>
 
               {/* Actions */}
-              <div className="pt-5 mt-5 border-t border-zinc-150 dark:border-zinc-800 flex items-center justify-end gap-2.5">
+              <div className="pt-5 mt-5 border-t border-zinc-200 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={() => {
