@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
-import { BadgeCheck, Ban, CheckCircle2, Eye, MoreHorizontal, Pencil, Printer, X } from "lucide-react"
+import { BadgeCheck, CheckCircle2, Eye, MoreHorizontal, Pencil, Printer, Trash2, X } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { HRPageSkeleton } from "@/components/HRSkeleton"
@@ -38,13 +38,15 @@ function blankRecord(employee: Employee, periodId: string): PayrollRecord {
     : DEFAULT_ETHIOPIAN_TAX_BRACKETS
 
   const basicSalary = Number(employee.basic_salary || 0)
-  const allowances = 0
+  const taxableAllowances = 0
+  const nonTaxableAllowances = 0
 
   const ethiopian = calculateEthiopianPayroll({
     employeeId: employee.id,
     employeeName: employee.full_name,
     basicSalary,
-    allowances,
+    taxableAllowances,
+    nonTaxableAllowances,
     pensionConfig,
     taxBrackets,
   })
@@ -54,7 +56,9 @@ function blankRecord(employee: Employee, periodId: string): PayrollRecord {
     payroll_period_id: periodId,
     employee_id: employee.id,
     basic_salary: basicSalary,
-    allowances,
+    taxable_allowances: taxableAllowances,
+    non_taxable_allowances: nonTaxableAllowances,
+    allowances: 0,
     overtime_pay: 0,
     bonus: 0,
     other_earnings: 0,
@@ -77,7 +81,6 @@ export default function Payroll() {
   const [error, setError] = useState("")
   const [selectedPeriod, setSelectedPeriod] = useState("")
   const [search, setSearch] = useState("")
-  const [payrollStatus, setPayrollStatus] = useState("All")
   const [paymentStatus, setPaymentStatus] = useState("All")
   const [warehouse, setWarehouse] = useState("All")
   const [showPeriodForm, setShowPeriodForm] = useState(false)
@@ -114,13 +117,19 @@ export default function Payroll() {
     return currentRecords.filter((record) => {
       const employee = employeeById.get(record.employee_id)
       const period = periodById.get(record.payroll_period_id)
-      const matchesSearch = !query || [employee?.full_name, employee?.employee_number, period?.name, employee?.warehouse_id, employee?.status].some((value) => String(value || "").toLowerCase().includes(query))
-      const matchesPayrollStatus = payrollStatus === "All" || period?.status === payrollStatus
+      const matchesSearch = !query || [
+        employee?.full_name,
+        employee?.employee_number,
+        period?.name,
+        employee?.warehouse_id,
+        employee?.status,
+        record.payment_status,
+      ].some((value) => String(value || "").toLowerCase().includes(query))
       const matchesPaymentStatus = paymentStatus === "All" || record.payment_status === paymentStatus
       const matchesWarehouse = warehouse === "All" || employee?.warehouse_id === warehouse
-      return matchesSearch && matchesPayrollStatus && matchesPaymentStatus && matchesWarehouse
+      return matchesSearch && matchesPaymentStatus && matchesWarehouse
     })
-  }, [currentRecords, employeeById, periodById, payrollStatus, paymentStatus, search, warehouse])
+  }, [currentRecords, employeeById, periodById, paymentStatus, search, warehouse])
 
   const totals = {
     employees: currentRecords.length,
@@ -140,7 +149,7 @@ export default function Payroll() {
 
   useEffect(() => {
     setPage(1)
-  }, [search, selectedPeriod, payrollStatus, paymentStatus, warehouse, filtered.length])
+  }, [search, selectedPeriod, paymentStatus, warehouse, filtered.length])
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
   const displayedRecords = sorted.slice((page - 1) * pageSize, page * pageSize)
@@ -162,8 +171,8 @@ export default function Payroll() {
   const createPeriod = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!periodForm.name.trim()) return showToast("Period Not Saved", "warning", "Period name is required.")
-    if (periods.some((period) => period.month === periodForm.month && period.year === periodForm.year && period.status !== "Cancelled")) {
-      return showToast("Period Not Saved", "warning", "Only one active payroll period can exist for the same month and year.")
+    if (periods.some((period) => period.month === periodForm.month && period.year === periodForm.year)) {
+      return showToast("Period Not Saved", "warning", "A payroll period for this month and year already exists.")
     }
     try {
       const period = await hrApi.createPayrollPeriod({ id: makeId("PER"), ...periodForm })
@@ -207,7 +216,8 @@ export default function Payroll() {
         const newSalary = Number(emp.basic_salary || 0)
         const calculated = calculateEthiopianPayroll({
           basicSalary: newSalary,
-          allowances: Number(record.allowances || 0),
+          taxableAllowances: Number(record.taxable_allowances ?? record.allowances ?? 0),
+          nonTaxableAllowances: Number(record.non_taxable_allowances || 0),
           overtimePay: Number(record.overtime_pay || 0),
           bonus: Number(record.bonus || 0),
           otherEarnings: Number(record.other_earnings || 0),
@@ -255,12 +265,10 @@ export default function Payroll() {
   }
 
   const updateRecord = async (record: PayrollRecord, changes: Partial<PayrollRecord>) => {
-    const period = periodById.get(record.payroll_period_id)
-    const editable = record.payment_status === "Pending" && period?.status !== "Cancelled"
+    const editable = record.payment_status === "Pending"
     if ("payment_status" in changes) {
       if (changes.payment_status === "Paid" && record.payment_status !== "Approved") return showToast("Approval Required", "warning", "Approve the payroll record before marking it paid.")
       if (changes.payment_status === "Approved" && record.payment_status !== "Pending") return showToast("Payroll Locked", "warning", "Only pending payroll records can be approved.")
-      if (changes.payment_status === "Cancelled" && record.payment_status === "Paid") return showToast("Payroll Locked", "warning", "Paid payroll records cannot be cancelled.")
     } else if (!editable) {
       return showToast("Payroll Locked", "warning", "Only pending payroll records can be edited.")
     }
@@ -279,7 +287,8 @@ export default function Payroll() {
     const ethiopian = calculateEthiopianPayroll({
       employeeId: merged.employee_id,
       basicSalary: Number(merged.basic_salary || 0),
-      allowances: Number(merged.allowances || 0),
+      taxableAllowances: Number(merged.taxable_allowances ?? merged.allowances ?? 0),
+      nonTaxableAllowances: Number(merged.non_taxable_allowances || 0),
       overtimePay: Number(merged.overtime_pay || 0),
       bonus: Number(merged.bonus || 0),
       otherEarnings: Number(merged.other_earnings || 0),
@@ -307,18 +316,11 @@ export default function Payroll() {
   }
 
   const transitionPaymentStatus = async (record: PayrollRecord, nextStatus: PayrollRecord["payment_status"]) => {
-    const period = periodById.get(record.payroll_period_id)
-    if (period?.status === "Cancelled" || record.payment_status === "Cancelled") {
-      return showToast("Payroll Cancelled", "warning", "Cancelled payroll records cannot be updated or printed.")
-    }
     if (nextStatus === "Approved" && record.payment_status !== "Pending") {
       return showToast("Payroll Not Editable", "warning", "Only pending payroll records can be approved.")
     }
     if (nextStatus === "Paid" && record.payment_status !== "Approved") {
       return showToast("Approval Required", "warning", "Approve the payroll record before marking it paid.")
-    }
-    if (nextStatus === "Cancelled" && record.payment_status === "Paid") {
-      return showToast("Payroll Locked", "warning", "Paid payroll records cannot be cancelled.")
     }
     if (nextStatus === record.payment_status) return
     if (nextStatus === "Paid") {
@@ -336,10 +338,6 @@ export default function Payroll() {
   }
 
   const printPayslip = (record: PayrollRecord) => {
-    const period = periodById.get(record.payroll_period_id)
-    if (record.payment_status === "Cancelled" || period?.status === "Cancelled") {
-      return showToast("Payslip Unavailable", "warning", "Cancelled payroll records do not generate payslips.")
-    }
     setPayslip(record)
     window.setTimeout(() => window.print(), 100)
   }
@@ -405,30 +403,29 @@ export default function Payroll() {
         <GlassCard className="p-0 overflow-hidden border border-black/5 shadow-xs">
           <HRTableToolbar
             title="Payroll Records"
-            subtitle={currentPeriod ? `${currentPeriod.name} - ${currentPeriod.status}` : "No payroll period has been created yet."}
+            subtitle={currentPeriod ? `${currentPeriod.name} (${currentPeriod.status})` : "No payroll period has been created yet."}
             searchValue={search}
             onSearchChange={setSearch}
             searchPlaceholder="Search employee or period..."
             filters={[
               { value: selectedPeriod, onChange: setSelectedPeriod, options: periods.length ? periods.map((period) => ({ value: period.id, label: period.name })) : [{ value: "", label: "No Periods" }] },
-              { value: payrollStatus, onChange: setPayrollStatus, options: ["All", ...PAYROLL_PERIOD_STATUSES].map((item) => ({ value: item, label: item })) },
-              { value: paymentStatus, onChange: setPaymentStatus, options: ["All", ...PAYMENT_STATUSES].map((item) => ({ value: item, label: item })) },
-              { value: warehouse, onChange: setWarehouse, options: ["All", ...Array.from(new Set(employees.map((employee) => employee.warehouse_id).filter(Boolean)))].map((item) => ({ value: item, label: item })) },
+              { value: paymentStatus, onChange: setPaymentStatus, options: ["All", ...PAYMENT_STATUSES].map((item) => ({ value: item, label: item === "All" ? "All Statuses" : item })) },
+              { value: warehouse, onChange: setWarehouse, options: ["All", ...Array.from(new Set(employees.map((employee) => employee.warehouse_id).filter(Boolean)))].map((item) => ({ value: item, label: item === "All" ? "All Warehouses" : item })) },
             ]}
             actions={[{ label: "Create Period", onClick: () => setShowPeriodForm(true), variant: "secondary" }, { label: "Load Active Employees", onClick: loadActiveEmployees }]}
-            secondary={currentPeriod && <div className="flex flex-wrap gap-2">{PAYROLL_PERIOD_STATUSES.filter((item) => item !== currentPeriod.status).map((item) => <button key={item} onClick={() => updatePeriodStatus(item)} className="rounded-full bg-black/[0.04] px-3 py-1.5 text-[10px] font-black uppercase text-zinc-700">{item}</button>)}</div>}
+            secondary={currentPeriod && <div className="flex flex-wrap gap-2">{PAYROLL_PERIOD_STATUSES.filter((item) => item !== currentPeriod.status).map((item) => <button key={item} onClick={() => updatePeriodStatus(item)} className="rounded-full bg-black/[0.04] px-3 py-1.5 text-[10px] font-black uppercase text-zinc-700 hover:bg-black/10 transition-colors">{item}</button>)}</div>}
           />
           <TableScrollWrapper>
             <table className="w-full text-left border-collapse table-fixed">
               <ResizableTableHeader columns={columns} colWidths={colWidths} onResizeStart={handleResizeStart} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} onClearSort={handleClearSort} />
               <tbody className="divide-y divide-black/5 text-xs">
-                {!loading && sorted.length === 0 ? <tr><td colSpan={10} className="py-12 text-center text-zinc-400 font-medium">No payroll records have been created yet.</td></tr> : displayedRecords.map((record) => {
+                {!loading && sorted.length === 0 ? <tr><td colSpan={10} className="py-12 text-center text-zinc-400 font-medium">No payroll records match the selected filters.</td></tr> : displayedRecords.map((record) => {
                   const employee = employeeById.get(record.employee_id)
                   const period = periodById.get(record.payroll_period_id)
-                  const canApprove = record.payment_status === "Pending" && period?.status !== "Cancelled"
-                  const canMarkPaid = record.payment_status === "Approved" && period?.status !== "Cancelled"
-                  const canEdit = record.payment_status === "Pending" && period?.status !== "Cancelled"
-                  const canPrint = record.payment_status !== "Cancelled" && period?.status !== "Cancelled"
+                  const canApprove = record.payment_status === "Pending"
+                  const canMarkPaid = record.payment_status === "Approved"
+                  const canEdit = record.payment_status === "Pending"
+                  const canPrint = true
                   return <tr key={record.id} className="hover:bg-black/[0.02] transition-colors">
                     <Cell width={colWidths.employee}>{employee ? `${employee.full_name} (${employee.employee_number})` : "Unknown employee"}</Cell>
                     <Cell width={colWidths.warehouse}>{employee?.warehouse_id || "-"}</Cell>
@@ -437,7 +434,17 @@ export default function Payroll() {
                     <Cell width={colWidths.gross_pay} align="right">ETB {money(record.gross_pay)}</Cell>
                     <Cell width={colWidths.total_deductions} align="right">ETB {money(record.total_deductions)}</Cell>
                     <Cell width={colWidths.net_pay} align="right">ETB {money(record.net_pay)}</Cell>
-                    <Cell width={colWidths.payment_status} align="center">{record.payment_status}</Cell>
+                    <Cell width={colWidths.payment_status} align="center">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        record.payment_status === "Paid"
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : record.payment_status === "Approved"
+                          ? "bg-blue-50 text-blue-700 border border-blue-200"
+                          : "bg-amber-50 text-amber-700 border border-amber-200"
+                      }`}>
+                        {record.payment_status}
+                      </span>
+                    </Cell>
                     <Cell width={colWidths.payroll_period_id}>{period?.name || record.payroll_period_id}</Cell>
                     <Cell width={colWidths.actions} align="right">
                       <div className="flex items-center justify-end gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
@@ -489,7 +496,7 @@ export default function Payroll() {
                             <Printer className="size-3 text-zinc-700" /> Print
                           </button>
                         )}
-                        {record.payment_status !== "Paid" && period?.status !== "Cancelled" && (
+                        {record.payment_status !== "Paid" && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button
@@ -504,18 +511,25 @@ export default function Payroll() {
                               <DropdownMenuItem
                                 onClick={() => {
                                   const empName = employee?.full_name || record.employee_id
-                                  const periodName = period?.name || record.payroll_period_id
                                   confirm({
-                                    title: "Cancel Payroll Record",
-                                    message: `Are you sure you want to cancel the payroll record for ${empName} in ${periodName}? This will mark the record as Cancelled.`,
-                                    confirmLabel: "Cancel Record",
+                                    title: "Delete Payroll Record",
+                                    message: `Are you sure you want to delete the payroll record for ${empName}? This will permanently remove this record.`,
+                                    confirmLabel: "Delete Record",
                                     isDestructive: true,
-                                    onConfirm: () => transitionPaymentStatus(record, "Cancelled"),
+                                    onConfirm: async () => {
+                                      try {
+                                        await hrApi.deletePayrollRecord(record.id)
+                                        showToast("Record Deleted", "success", `Payroll record for ${empName} was deleted.`)
+                                        await refresh()
+                                      } catch (err) {
+                                        showToast("Delete Failed", "warning", err instanceof Error ? err.message : "Could not delete record.")
+                                      }
+                                    },
                                   })
                                 }}
                                 className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl cursor-pointer"
                               >
-                                <Ban className="size-3.5" /> Cancel Payroll Record
+                                <Trash2 className="size-3.5" /> Delete Payroll Record
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -611,9 +625,12 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
 
   // Initialize form with live Ethiopian calculations applied immediately
   const [form, setForm] = useState(() => {
+    const taxAllow = Number(record.taxable_allowances ?? record.allowances ?? 0)
+    const nonTaxAllow = Number(record.non_taxable_allowances || 0)
     const initialCalculated = calculateEthiopianPayroll({
       basicSalary: Number(record.basic_salary || 0),
-      allowances: Number(record.allowances || 0),
+      taxableAllowances: taxAllow,
+      nonTaxableAllowances: nonTaxAllow,
       overtimePay: Number(record.overtime_pay || 0),
       bonus: Number(record.bonus || 0),
       otherEarnings: Number(record.other_earnings || 0),
@@ -626,6 +643,9 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
 
     return {
       ...record,
+      taxable_allowances: taxAllow,
+      non_taxable_allowances: nonTaxAllow,
+      allowances: initialCalculated.totalAllowances,
       pension: initialCalculated.employeePension,
       tax: initialCalculated.incomeTaxDeducted,
       gross_pay: initialCalculated.grossSalary,
@@ -637,7 +657,8 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
   // Compute live Ethiopian breakdown
   const ethiopian = useMemo(() => calculateEthiopianPayroll({
     basicSalary: Number(form.basic_salary || 0),
-    allowances: Number(form.allowances || 0),
+    taxableAllowances: Number(form.taxable_allowances ?? form.allowances ?? 0),
+    nonTaxableAllowances: Number(form.non_taxable_allowances || 0),
     overtimePay: Number(form.overtime_pay || 0),
     bonus: Number(form.bonus || 0),
     otherEarnings: Number(form.other_earnings || 0),
@@ -646,12 +667,13 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
     otherDeductions: Number(form.other_deductions || 0),
     pensionConfig,
     taxBrackets,
-  }), [form.basic_salary, form.allowances, form.overtime_pay, form.bonus, form.other_earnings, form.absence_deduction, form.loan_deduction, form.other_deductions, pensionConfig, taxBrackets])
+  }), [form.basic_salary, form.taxable_allowances, form.non_taxable_allowances, form.allowances, form.overtime_pay, form.bonus, form.other_earnings, form.absence_deduction, form.loan_deduction, form.other_deductions, pensionConfig, taxBrackets])
 
   const setField = (key: keyof PayrollRecord, value: string | number) => {
     const nextValue = typeof value === "number" ? value : Number(value) || 0
     const bSalary = key === "basic_salary" ? nextValue : Number(form.basic_salary || 0)
-    const allow = key === "allowances" ? nextValue : Number(form.allowances || 0)
+    const taxAllow = key === "taxable_allowances" ? nextValue : Number(form.taxable_allowances ?? form.allowances ?? 0)
+    const nonTaxAllow = key === "non_taxable_allowances" ? nextValue : Number(form.non_taxable_allowances || 0)
     const ot = key === "overtime_pay" ? nextValue : Number(form.overtime_pay || 0)
     const bon = key === "bonus" ? nextValue : Number(form.bonus || 0)
     const otherEarn = key === "other_earnings" ? nextValue : Number(form.other_earnings || 0)
@@ -661,7 +683,8 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
 
     const calculated = calculateEthiopianPayroll({
       basicSalary: bSalary,
-      allowances: allow,
+      taxableAllowances: taxAllow,
+      nonTaxableAllowances: nonTaxAllow,
       overtimePay: ot,
       bonus: bon,
       otherEarnings: otherEarn,
@@ -676,7 +699,9 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
       ...form,
       [key]: value,
       basic_salary: bSalary,
-      allowances: allow,
+      taxable_allowances: taxAllow,
+      non_taxable_allowances: nonTaxAllow,
+      allowances: calculated.totalAllowances,
       overtime_pay: ot,
       bonus: bon,
       other_earnings: otherEarn,
@@ -708,38 +733,47 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
             </span>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5 text-xs font-mono">
             <div className="bg-white/[0.06] p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Gross Basic Salary</span>
+              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Gross Basic</span>
               <span className="text-sm font-black text-white">{money(ethiopian.grossBasicSalary)} ETB</span>
             </div>
             <div className="bg-white/[0.06] p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Total Allowances</span>
-              <span className="text-sm font-black text-white">{money(ethiopian.totalAllowances)} ETB</span>
+              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Taxable Allowances</span>
+              <span className="text-sm font-black text-white">{money(ethiopian.taxableAllowances)} ETB</span>
             </div>
             <div className="bg-white/[0.06] p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Employee Pension ({pensionConfig.employeeRatePercent}%)</span>
-              <span className="text-sm font-black text-amber-400">{money(ethiopian.employeePension)} ETB</span>
+              <span className="block text-[9px] uppercase text-emerald-400 font-sans font-bold">Tax-Free Allowances</span>
+              <span className="text-sm font-black text-emerald-300">{money(ethiopian.nonTaxableAllowances)} ETB</span>
             </div>
             <div className="bg-white/[0.06] p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Employer Pension ({pensionConfig.employerRatePercent}%)</span>
-              <span className="text-sm font-black text-amber-200">{money(ethiopian.employerPension)} ETB</span>
+              <span className="block text-[9px] uppercase text-amber-400 font-sans font-bold">Employee Pension (7%)</span>
+              <span className="text-sm font-black text-amber-300">{money(ethiopian.employeePension)} ETB</span>
             </div>
             <div className="bg-white/[0.06] p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Taxable Income Base</span>
-              <span className="text-sm font-black text-sky-400">{money(ethiopian.taxableIncomeBase)} ETB</span>
+              <span className="block text-[9px] uppercase text-sky-400 font-sans font-bold">Taxable Base</span>
+              <span className="text-sm font-black text-sky-300">{money(ethiopian.taxableIncomeBase)} ETB</span>
             </div>
             <div className="bg-white/[0.06] p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Income Tax Deducted</span>
-              <span className="text-sm font-black text-rose-400">{money(ethiopian.incomeTaxDeducted)} ETB</span>
+              <span className="block text-[9px] uppercase text-rose-400 font-sans font-bold">Income Tax</span>
+              <span className="text-sm font-black text-rose-300">{money(ethiopian.incomeTaxDeducted)} ETB</span>
             </div>
             <div className="bg-white/[0.06] p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Total Deductions</span>
+              <span className="block text-[9px] uppercase text-zinc-400 font-sans font-bold">Employer Pension (11%)</span>
+              <span className="text-sm font-black text-zinc-300">{money(ethiopian.employerPension)} ETB</span>
+            </div>
+            <div className="bg-white/[0.06] p-2.5 rounded-xl">
+              <span className="block text-[9px] uppercase text-rose-400 font-sans font-bold">Total Deductions</span>
               <span className="text-sm font-black text-rose-300">{money(form.total_deductions)} ETB</span>
             </div>
-            <div className="bg-emerald-600/30 border border-emerald-500/40 p-2.5 rounded-xl">
-              <span className="block text-[9px] uppercase text-emerald-300 font-sans font-bold">Net Take-Home Pay</span>
-              <span className="text-sm font-black text-emerald-400">{money(form.net_pay)} ETB</span>
+            <div className="col-span-2 bg-emerald-600/30 border border-emerald-500/40 p-2.5 rounded-xl flex items-center justify-between">
+              <div>
+                <span className="block text-[9px] uppercase text-emerald-300 font-sans font-bold">Net Take-Home Pay</span>
+                <span className="text-base font-black text-emerald-400">{money(form.net_pay)} ETB</span>
+              </div>
+              <div className="text-right text-[10px] text-zinc-300 font-sans">
+                Gross: ETB {money(form.gross_pay)}
+              </div>
             </div>
           </div>
         </div>
@@ -763,7 +797,8 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
         {/* Input Fields */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Input label="Basic Salary (ETB)" type="number" value={form.basic_salary} onChange={(value) => setField("basic_salary", value)} />
-          <Input label="Allowances (ETB)" type="number" value={form.allowances} onChange={(value) => setField("allowances", value)} />
+          <Input label="Taxable Allowances (ETB)" subtitle="Position, Housing, etc. (Taxed)" type="number" value={form.taxable_allowances ?? form.allowances ?? 0} onChange={(value) => setField("taxable_allowances", value)} />
+          <Input label="Tax-Free Allowances (ETB)" subtitle="Transport under cap, Per Diem (Tax-Free)" type="number" value={form.non_taxable_allowances ?? 0} onChange={(value) => setField("non_taxable_allowances", value)} />
           <Input label="Overtime Pay (ETB)" type="number" value={form.overtime_pay} onChange={(value) => setField("overtime_pay", value)} />
           <Input label="Bonus (ETB)" type="number" value={form.bonus} onChange={(value) => setField("bonus", value)} />
           <Input label="Other Earnings (ETB)" type="number" value={form.other_earnings} onChange={(value) => setField("other_earnings", value)} />
@@ -774,7 +809,7 @@ function PayrollRecordForm({ record, employee, onClose, onSubmit }: { record: Pa
           {/* Automatic Read-Only Statutory Calculated Fields */}
           <ReadOnlyField label="Employee Pension (7% - Auto)" value={`ETB ${money(form.pension)}`} subtitle="Computed on Basic Salary" />
           <ReadOnlyField label="Income Tax (Auto - Proc. 1395/2025)" value={`ETB ${money(form.tax)}`} subtitle="Computed on Taxable Base" />
-          <ReadOnlyField label="Gross Pay (Calculated)" value={`ETB ${money(form.gross_pay)}`} subtitle="Basic + Allowances + Extras" />
+          <ReadOnlyField label="Gross Pay (Calculated)" value={`ETB ${money(form.gross_pay)}`} subtitle="Basic + All Allowances + Extras" />
           <ReadOnlyField label="Total Deductions (Calculated)" value={`ETB ${money(form.total_deductions)}`} subtitle="Tax + Pension + Deductions" />
           <ReadOnlyField label="Net Pay (Take-Home)" value={`ETB ${money(form.net_pay)}`} subtitle="Gross Pay - Deductions" highlight />
 
@@ -801,11 +836,17 @@ function ReadOnlyField({ label, value, subtitle, highlight = false }: { label: s
 }
 
 function Payslip({ record, employee, period, onClose }: { record: PayrollRecord; employee?: Employee; period?: PayrollPeriod; onClose: () => void }) {
+  const taxAllow = Number(record.taxable_allowances ?? record.allowances ?? 0)
+  const nonTaxAllow = Number(record.non_taxable_allowances || 0)
   return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm print:static print:bg-white print:p-0"><motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-2xl bg-white rounded-3xl p-6 shadow-2xl border border-black/10 print:shadow-none print:border-0 print:rounded-none"><div className="flex items-center justify-between mb-5 print:hidden"><h3 className="text-lg font-black">Payslip</h3><div className="flex gap-2"><button onClick={() => window.print()} className="px-3 py-1.5 rounded-full bg-black text-white text-xs font-bold flex items-center gap-1"><Printer className="size-3.5" />Print</button><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div></div>
     <div className="text-center border-b border-black/10 pb-4 mb-4"><h2 className="text-xl font-black">HKC Trading ERP</h2><p className="text-xs font-bold text-zinc-500">{period?.name || "Payroll period"} Payslip</p></div>
     <div className="grid grid-cols-2 gap-3 text-xs">
       <Line label="Employee Number" value={employee?.employee_number || "-"} /><Line label="Employee Name" value={employee?.full_name || "-"} /><Line label="Warehouse" value={employee?.warehouse_id || "-"} /><Line label="Payment Status" value={record.payment_status} />
-      <Line label="Basic Salary" value={`ETB ${money(record.basic_salary)}`} /><Line label="Allowances" value={`ETB ${money(record.allowances)}`} /><Line label="Overtime Pay" value={`ETB ${money(record.overtime_pay)}`} /><Line label="Bonus" value={`ETB ${money(record.bonus)}`} /><Line label="Other Earnings" value={`ETB ${money(record.other_earnings)}`} /><Line label="Gross Pay" value={`ETB ${money(record.gross_pay)}`} />
+      <Line label="Basic Salary" value={`ETB ${money(record.basic_salary)}`} />
+      {taxAllow > 0 && <Line label="Taxable Allowances" value={`ETB ${money(taxAllow)}`} />}
+      {nonTaxAllow > 0 && <Line label="Tax-Free / Transport Allowances" value={`ETB ${money(nonTaxAllow)}`} />}
+      {taxAllow === 0 && nonTaxAllow === 0 && <Line label="Allowances" value={`ETB ${money(record.allowances)}`} />}
+      <Line label="Overtime Pay" value={`ETB ${money(record.overtime_pay)}`} /><Line label="Bonus" value={`ETB ${money(record.bonus)}`} /><Line label="Other Earnings" value={`ETB ${money(record.other_earnings)}`} /><Line label="Gross Pay" value={`ETB ${money(record.gross_pay)}`} />
       <Line label="Tax" value={`ETB ${money(record.tax)}`} /><Line label="Pension" value={`ETB ${money(record.pension)}`} /><Line label="Absence Deduction" value={`ETB ${money(record.absence_deduction)}`} /><Line label="Loan Deduction" value={`ETB ${money(record.loan_deduction)}`} /><Line label="Other Deductions" value={`ETB ${money(record.other_deductions)}`} /><Line label="Total Deductions" value={`ETB ${money(record.total_deductions)}`} />
       <div className="col-span-2 rounded-2xl bg-black text-white p-4 flex items-center justify-between"><span className="text-sm font-black">Net Pay</span><span className="text-xl font-black">ETB {money(record.net_pay)}</span></div>
     </div>
@@ -820,8 +861,8 @@ function Actions({ onClose, label }: { onClose: () => void; label: string }) {
   return <div className="md:col-span-3 flex justify-end gap-3 pt-2"><button type="button" onClick={onClose} className="px-4 py-2 rounded-full bg-black/5 text-xs font-bold">Cancel</button><button type="submit" className="px-5 py-2 rounded-full bg-black text-white text-xs font-bold">{label}</button></div>
 }
 
-function Input({ label, value, onChange, type = "text", required = false }: { label: string; value: string | number; onChange: (value: string) => void; type?: string; required?: boolean }) {
-  return <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}<input type={type} required={required} value={value} onChange={(event) => onChange(event.target.value)} readOnly={onChange.toString().includes("undefined")} className="mt-1 w-full rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 text-xs font-bold outline-none read-only:bg-zinc-100" /></label>
+function Input({ label, value, onChange, type = "text", required = false, subtitle }: { label: string; value: string | number; onChange: (value: string) => void; type?: string; required?: boolean; subtitle?: string }) {
+  return <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}{subtitle && <span className="block text-[8.5px] font-semibold text-zinc-400 capitalize -mt-0.5 mb-0.5">{subtitle}</span>}<input type={type} required={required} value={value} onChange={(event) => onChange(event.target.value)} readOnly={onChange.toString().includes("undefined")} className="mt-1 w-full rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 text-xs font-bold outline-none read-only:bg-zinc-100" /></label>
 }
 
 function Select({ label, value, options, onChange }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void }) {

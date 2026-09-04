@@ -862,7 +862,7 @@ export default function AdminSettings() {
                           <div>
                             <h3 className="text-lg font-bold text-black">Employment Income Tax Brackets</h3>
                             <p className="text-xs text-gray-400">
-                              Progressive tax rates and deductibles under Proclamation No. 1395/2025 applied to Taxable Base ((Basic + Allowances) - 7% Pension).
+                              Progressive tax rates and deductibles under Proclamation No. 1395/2025 applied to Taxable Base (Basic Salary + Taxable Allowances + Extras).
                             </p>
                           </div>
                         </div>
