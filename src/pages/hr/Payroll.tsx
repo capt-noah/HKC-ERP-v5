@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
-import { BadgeCheck, Ban, CheckCircle2, Eye, MoreHorizontal, Pencil, Printer, X } from "lucide-react"
+import { BadgeCheck, CheckCircle2, Eye, MoreHorizontal, Pencil, Printer, Trash2, X } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { HRPageSkeleton } from "@/components/HRSkeleton"
@@ -81,7 +81,6 @@ export default function Payroll() {
   const [error, setError] = useState("")
   const [selectedPeriod, setSelectedPeriod] = useState("")
   const [search, setSearch] = useState("")
-  const [payrollStatus, setPayrollStatus] = useState("All")
   const [paymentStatus, setPaymentStatus] = useState("All")
   const [warehouse, setWarehouse] = useState("All")
   const [showPeriodForm, setShowPeriodForm] = useState(false)
@@ -118,13 +117,19 @@ export default function Payroll() {
     return currentRecords.filter((record) => {
       const employee = employeeById.get(record.employee_id)
       const period = periodById.get(record.payroll_period_id)
-      const matchesSearch = !query || [employee?.full_name, employee?.employee_number, period?.name, employee?.warehouse_id, employee?.status].some((value) => String(value || "").toLowerCase().includes(query))
-      const matchesPayrollStatus = payrollStatus === "All" || period?.status === payrollStatus
+      const matchesSearch = !query || [
+        employee?.full_name,
+        employee?.employee_number,
+        period?.name,
+        employee?.warehouse_id,
+        employee?.status,
+        record.payment_status,
+      ].some((value) => String(value || "").toLowerCase().includes(query))
       const matchesPaymentStatus = paymentStatus === "All" || record.payment_status === paymentStatus
       const matchesWarehouse = warehouse === "All" || employee?.warehouse_id === warehouse
-      return matchesSearch && matchesPayrollStatus && matchesPaymentStatus && matchesWarehouse
+      return matchesSearch && matchesPaymentStatus && matchesWarehouse
     })
-  }, [currentRecords, employeeById, periodById, payrollStatus, paymentStatus, search, warehouse])
+  }, [currentRecords, employeeById, periodById, paymentStatus, search, warehouse])
 
   const totals = {
     employees: currentRecords.length,
@@ -144,7 +149,7 @@ export default function Payroll() {
 
   useEffect(() => {
     setPage(1)
-  }, [search, selectedPeriod, payrollStatus, paymentStatus, warehouse, filtered.length])
+  }, [search, selectedPeriod, paymentStatus, warehouse, filtered.length])
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize))
   const displayedRecords = sorted.slice((page - 1) * pageSize, page * pageSize)
@@ -166,8 +171,8 @@ export default function Payroll() {
   const createPeriod = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!periodForm.name.trim()) return showToast("Period Not Saved", "warning", "Period name is required.")
-    if (periods.some((period) => period.month === periodForm.month && period.year === periodForm.year && period.status !== "Cancelled")) {
-      return showToast("Period Not Saved", "warning", "Only one active payroll period can exist for the same month and year.")
+    if (periods.some((period) => period.month === periodForm.month && period.year === periodForm.year)) {
+      return showToast("Period Not Saved", "warning", "A payroll period for this month and year already exists.")
     }
     try {
       const period = await hrApi.createPayrollPeriod({ id: makeId("PER"), ...periodForm })
@@ -260,12 +265,10 @@ export default function Payroll() {
   }
 
   const updateRecord = async (record: PayrollRecord, changes: Partial<PayrollRecord>) => {
-    const period = periodById.get(record.payroll_period_id)
-    const editable = record.payment_status === "Pending" && period?.status !== "Cancelled"
+    const editable = record.payment_status === "Pending"
     if ("payment_status" in changes) {
       if (changes.payment_status === "Paid" && record.payment_status !== "Approved") return showToast("Approval Required", "warning", "Approve the payroll record before marking it paid.")
       if (changes.payment_status === "Approved" && record.payment_status !== "Pending") return showToast("Payroll Locked", "warning", "Only pending payroll records can be approved.")
-      if (changes.payment_status === "Cancelled" && record.payment_status === "Paid") return showToast("Payroll Locked", "warning", "Paid payroll records cannot be cancelled.")
     } else if (!editable) {
       return showToast("Payroll Locked", "warning", "Only pending payroll records can be edited.")
     }
@@ -313,18 +316,11 @@ export default function Payroll() {
   }
 
   const transitionPaymentStatus = async (record: PayrollRecord, nextStatus: PayrollRecord["payment_status"]) => {
-    const period = periodById.get(record.payroll_period_id)
-    if (period?.status === "Cancelled" || record.payment_status === "Cancelled") {
-      return showToast("Payroll Cancelled", "warning", "Cancelled payroll records cannot be updated or printed.")
-    }
     if (nextStatus === "Approved" && record.payment_status !== "Pending") {
       return showToast("Payroll Not Editable", "warning", "Only pending payroll records can be approved.")
     }
     if (nextStatus === "Paid" && record.payment_status !== "Approved") {
       return showToast("Approval Required", "warning", "Approve the payroll record before marking it paid.")
-    }
-    if (nextStatus === "Cancelled" && record.payment_status === "Paid") {
-      return showToast("Payroll Locked", "warning", "Paid payroll records cannot be cancelled.")
     }
     if (nextStatus === record.payment_status) return
     if (nextStatus === "Paid") {
@@ -342,10 +338,6 @@ export default function Payroll() {
   }
 
   const printPayslip = (record: PayrollRecord) => {
-    const period = periodById.get(record.payroll_period_id)
-    if (record.payment_status === "Cancelled" || period?.status === "Cancelled") {
-      return showToast("Payslip Unavailable", "warning", "Cancelled payroll records do not generate payslips.")
-    }
     setPayslip(record)
     window.setTimeout(() => window.print(), 100)
   }
@@ -411,30 +403,29 @@ export default function Payroll() {
         <GlassCard className="p-0 overflow-hidden border border-black/5 shadow-xs">
           <HRTableToolbar
             title="Payroll Records"
-            subtitle={currentPeriod ? `${currentPeriod.name} - ${currentPeriod.status}` : "No payroll period has been created yet."}
+            subtitle={currentPeriod ? `${currentPeriod.name} (${currentPeriod.status})` : "No payroll period has been created yet."}
             searchValue={search}
             onSearchChange={setSearch}
             searchPlaceholder="Search employee or period..."
             filters={[
               { value: selectedPeriod, onChange: setSelectedPeriod, options: periods.length ? periods.map((period) => ({ value: period.id, label: period.name })) : [{ value: "", label: "No Periods" }] },
-              { value: payrollStatus, onChange: setPayrollStatus, options: ["All", ...PAYROLL_PERIOD_STATUSES].map((item) => ({ value: item, label: item })) },
-              { value: paymentStatus, onChange: setPaymentStatus, options: ["All", ...PAYMENT_STATUSES].map((item) => ({ value: item, label: item })) },
-              { value: warehouse, onChange: setWarehouse, options: ["All", ...Array.from(new Set(employees.map((employee) => employee.warehouse_id).filter(Boolean)))].map((item) => ({ value: item, label: item })) },
+              { value: paymentStatus, onChange: setPaymentStatus, options: ["All", ...PAYMENT_STATUSES].map((item) => ({ value: item, label: item === "All" ? "All Statuses" : item })) },
+              { value: warehouse, onChange: setWarehouse, options: ["All", ...Array.from(new Set(employees.map((employee) => employee.warehouse_id).filter(Boolean)))].map((item) => ({ value: item, label: item === "All" ? "All Warehouses" : item })) },
             ]}
             actions={[{ label: "Create Period", onClick: () => setShowPeriodForm(true), variant: "secondary" }, { label: "Load Active Employees", onClick: loadActiveEmployees }]}
-            secondary={currentPeriod && <div className="flex flex-wrap gap-2">{PAYROLL_PERIOD_STATUSES.filter((item) => item !== currentPeriod.status).map((item) => <button key={item} onClick={() => updatePeriodStatus(item)} className="rounded-full bg-black/[0.04] px-3 py-1.5 text-[10px] font-black uppercase text-zinc-700">{item}</button>)}</div>}
+            secondary={currentPeriod && <div className="flex flex-wrap gap-2">{PAYROLL_PERIOD_STATUSES.filter((item) => item !== currentPeriod.status).map((item) => <button key={item} onClick={() => updatePeriodStatus(item)} className="rounded-full bg-black/[0.04] px-3 py-1.5 text-[10px] font-black uppercase text-zinc-700 hover:bg-black/10 transition-colors">{item}</button>)}</div>}
           />
           <TableScrollWrapper>
             <table className="w-full text-left border-collapse table-fixed">
               <ResizableTableHeader columns={columns} colWidths={colWidths} onResizeStart={handleResizeStart} sortKey={sortKey} sortDir={sortDir} onSort={handleSort} onClearSort={handleClearSort} />
               <tbody className="divide-y divide-black/5 text-xs">
-                {!loading && sorted.length === 0 ? <tr><td colSpan={10} className="py-12 text-center text-zinc-400 font-medium">No payroll records have been created yet.</td></tr> : displayedRecords.map((record) => {
+                {!loading && sorted.length === 0 ? <tr><td colSpan={10} className="py-12 text-center text-zinc-400 font-medium">No payroll records match the selected filters.</td></tr> : displayedRecords.map((record) => {
                   const employee = employeeById.get(record.employee_id)
                   const period = periodById.get(record.payroll_period_id)
-                  const canApprove = record.payment_status === "Pending" && period?.status !== "Cancelled"
-                  const canMarkPaid = record.payment_status === "Approved" && period?.status !== "Cancelled"
-                  const canEdit = record.payment_status === "Pending" && period?.status !== "Cancelled"
-                  const canPrint = record.payment_status !== "Cancelled" && period?.status !== "Cancelled"
+                  const canApprove = record.payment_status === "Pending"
+                  const canMarkPaid = record.payment_status === "Approved"
+                  const canEdit = record.payment_status === "Pending"
+                  const canPrint = true
                   return <tr key={record.id} className="hover:bg-black/[0.02] transition-colors">
                     <Cell width={colWidths.employee}>{employee ? `${employee.full_name} (${employee.employee_number})` : "Unknown employee"}</Cell>
                     <Cell width={colWidths.warehouse}>{employee?.warehouse_id || "-"}</Cell>
@@ -443,7 +434,17 @@ export default function Payroll() {
                     <Cell width={colWidths.gross_pay} align="right">ETB {money(record.gross_pay)}</Cell>
                     <Cell width={colWidths.total_deductions} align="right">ETB {money(record.total_deductions)}</Cell>
                     <Cell width={colWidths.net_pay} align="right">ETB {money(record.net_pay)}</Cell>
-                    <Cell width={colWidths.payment_status} align="center">{record.payment_status}</Cell>
+                    <Cell width={colWidths.payment_status} align="center">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        record.payment_status === "Paid"
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          : record.payment_status === "Approved"
+                          ? "bg-blue-50 text-blue-700 border border-blue-200"
+                          : "bg-amber-50 text-amber-700 border border-amber-200"
+                      }`}>
+                        {record.payment_status}
+                      </span>
+                    </Cell>
                     <Cell width={colWidths.payroll_period_id}>{period?.name || record.payroll_period_id}</Cell>
                     <Cell width={colWidths.actions} align="right">
                       <div className="flex items-center justify-end gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
@@ -495,7 +496,7 @@ export default function Payroll() {
                             <Printer className="size-3 text-zinc-700" /> Print
                           </button>
                         )}
-                        {record.payment_status !== "Paid" && period?.status !== "Cancelled" && (
+                        {record.payment_status !== "Paid" && (
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button
@@ -510,18 +511,25 @@ export default function Payroll() {
                               <DropdownMenuItem
                                 onClick={() => {
                                   const empName = employee?.full_name || record.employee_id
-                                  const periodName = period?.name || record.payroll_period_id
                                   confirm({
-                                    title: "Cancel Payroll Record",
-                                    message: `Are you sure you want to cancel the payroll record for ${empName} in ${periodName}? This will mark the record as Cancelled.`,
-                                    confirmLabel: "Cancel Record",
+                                    title: "Delete Payroll Record",
+                                    message: `Are you sure you want to delete the payroll record for ${empName}? This will permanently remove this record.`,
+                                    confirmLabel: "Delete Record",
                                     isDestructive: true,
-                                    onConfirm: () => transitionPaymentStatus(record, "Cancelled"),
+                                    onConfirm: async () => {
+                                      try {
+                                        await hrApi.deletePayrollRecord(record.id)
+                                        showToast("Record Deleted", "success", `Payroll record for ${empName} was deleted.`)
+                                        await refresh()
+                                      } catch (err) {
+                                        showToast("Delete Failed", "warning", err instanceof Error ? err.message : "Could not delete record.")
+                                      }
+                                    },
                                   })
                                 }}
                                 className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl cursor-pointer"
                               >
-                                <Ban className="size-3.5" /> Cancel Payroll Record
+                                <Trash2 className="size-3.5" /> Delete Payroll Record
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>

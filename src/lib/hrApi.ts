@@ -7,8 +7,8 @@ export const EMPLOYEE_STATUSES = ["Active", "Inactive", "On Leave", "Suspended",
 export const ATTENDANCE_STATUSES = ["Present", "Absent", "Late", "Half Day", "On Leave", "Holiday", "Weekend"] as const
 export const LEAVE_TYPES = ["Annual Leave", "Sick Leave", "Emergency Leave", "Maternity Leave", "Paternity Leave", "Unpaid Leave", "Other"] as const
 export const LEAVE_STATUSES = ["Draft", "Pending", "Approved", "Rejected", "Cancelled"] as const
-export const PAYROLL_PERIOD_STATUSES = ["Draft", "Prepared", "Approved", "Paid", "Cancelled"] as const
-export const PAYMENT_STATUSES = ["Pending", "Approved", "Paid", "Cancelled"] as const
+export const PAYROLL_PERIOD_STATUSES = ["Draft", "Prepared", "Approved", "Paid"] as const
+export const PAYMENT_STATUSES = ["Pending", "Approved", "Paid"] as const
 
 export interface Employee {
   id: string
@@ -391,8 +391,10 @@ export const hrApi = {
   updateLeave: (id: string, request: Partial<LeaveRequest>) => updateResource<LeaveRequest>("leave_requests", id, request),
   createPayrollPeriod: (period: PayrollPeriod) => createResource<PayrollPeriod>("payroll_periods", period),
   updatePayrollPeriod: (id: string, period: Partial<PayrollPeriod>) => updateResource<PayrollPeriod>("payroll_periods", id, period),
+  deletePayrollPeriod: (id: string) => deleteResource("payroll_periods", id),
   createPayrollRecord: (record: PayrollRecord) => createResource<PayrollRecord>("payroll_records", record),
   updatePayrollRecord: (id: string, record: Partial<PayrollRecord>) => updateResource<PayrollRecord>("payroll_records", id, record),
+  deletePayrollRecord: (id: string) => deleteResource("payroll_records", id),
   payPayrollRecord: async (id: string) => {
     const response = await fetch(`${API_BASE}/api/payroll-records/${encodeURIComponent(id)}/pay`, { method: "POST" })
     const body = await response.json().catch(() => null)
