@@ -47,8 +47,11 @@ export interface WH1Entry {
 
 export interface BinCardMovementEntry {
   id: string
+  type?: "entry" | "leave"
   date: string
   batchNo: string
+  voucherNo?: string
+  plateNumber?: string
   qtyReceived: number
   qtyIssued: number
   balance: number
@@ -1075,6 +1078,25 @@ class ErpStore {
     const updatedBreakdown = [{ warehouse: prod.warehouse, qty: nextQty }]
     const updatedBatches = [{ batchNo: prod.batch || "BATCH-WH1", qty: nextQty, expiry: "", status: "Released" as const }]
 
+    const currentBinEntries = prod.binCardEntries || []
+    const newBinEntry: BinCardMovementEntry = {
+      id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type: "entry",
+      date: entry.entryDate || new Date().toISOString().slice(0, 10),
+      batchNo: entry.voucherNo ? `GRV-${entry.voucherNo}` : "COMMODITY-WH1",
+      voucherNo: entry.voucherNo,
+      plateNumber: entry.plateNumber,
+      qtyReceived: Number(entry.quantityReceived || 0),
+      qtyIssued: 0,
+      balance: nextQty,
+      expiryDate: "",
+      party: entry.customer || "Supplier Arrival",
+      unitPrice: entry.unitPrice,
+      remark: entry.notes || `Goods Received Voucher ${entry.voucherNo ? `No. ${entry.voucherNo}` : ""}`.trim(),
+      createdAt: new Date().toISOString(),
+    }
+    const updatedBinEntries = [...currentBinEntries, newBinEntry]
+
     await this.updateProductDetails(productId, {
       quantity: nextQty,
       totalQuantity: nextQty + (prod.quantitySold || 0),
@@ -1084,6 +1106,78 @@ class ErpStore {
       stockBreakdown: updatedBreakdown,
       batches: updatedBatches,
       wh1Entries: updatedEntries,
+      binCardEntries: updatedBinEntries,
+    })
+  }
+
+  public async addWH1LeaveEntry(
+    productId: string,
+    leaveData: {
+      date: string
+      voucherNo?: string
+      party: string
+      plateNumber?: string
+      quantityIssued: number
+      remark?: string
+      unitPrice?: number
+    }
+  ) {
+    const prod = this.products.find((p) => p.id === productId)
+    if (!prod) throw new Error("Product not found")
+
+    const issueQty = Number(leaveData.quantityIssued || 0)
+    if (issueQty <= 0) throw new Error("Leave quantity must be greater than 0")
+
+    // FIFO deduction on wh1Entries
+    let remaining = issueQty
+    const currentWH1Entries = [...(prod.wh1Entries || [])]
+    const updatedWH1Entries = currentWH1Entries.map((entry) => {
+      if (remaining <= 0) return entry
+      const deduct = Math.min(entry.quantityRemaining, remaining)
+      remaining -= deduct
+      return {
+        ...entry,
+        quantityRemaining: Math.max(0, entry.quantityRemaining - deduct),
+      }
+    })
+
+    const nextQty = Math.max(0, Number(prod.quantity || 0) - issueQty)
+    const nextVal = updatedWH1Entries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || 0)), 0)
+    const weightedCost = nextQty > 0 ? Math.round((nextVal / nextQty) * 100) / 100 : Number(prod.unitCost || 0)
+
+    const currentBinEntries = prod.binCardEntries || []
+    const newBinEntry: BinCardMovementEntry = {
+      id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type: "leave",
+      date: leaveData.date || new Date().toISOString().slice(0, 10),
+      voucherNo: leaveData.voucherNo,
+      batchNo: "COMMODITY-WH1",
+      plateNumber: leaveData.plateNumber,
+      qtyReceived: 0,
+      qtyIssued: issueQty,
+      balance: nextQty,
+      expiryDate: "",
+      party: leaveData.party || "Customer Dispatch",
+      unitPrice: leaveData.unitPrice || weightedCost,
+      remark: leaveData.remark || `Outbound Dispatch ${leaveData.voucherNo ? `FS-${leaveData.voucherNo}` : ""}`.trim(),
+      createdAt: new Date().toISOString(),
+    }
+    const updatedBinEntries = [...currentBinEntries, newBinEntry]
+
+    const updatedBreakdown = [{ warehouse: prod.warehouse, qty: nextQty }]
+    const updatedBatches = [{ batchNo: prod.batch || "BATCH-WH1", qty: nextQty, expiry: "", status: "Released" as const }]
+
+    await this.updateProductDetails(productId, {
+      quantity: nextQty,
+      quantitySold: (prod.quantitySold || 0) + issueQty,
+      totalQuantity: nextQty + (prod.quantitySold || 0) + issueQty,
+      unitCost: weightedCost,
+      sellingPrice: weightedCost,
+      totalStockValue: nextVal,
+      stockBreakdown: updatedBreakdown,
+      batches: updatedBatches,
+      wh1Entries: updatedWH1Entries,
+      binCardEntries: updatedBinEntries,
     })
   }
 

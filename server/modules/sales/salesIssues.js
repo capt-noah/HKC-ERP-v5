@@ -740,14 +740,17 @@ export async function postSalesIssue(arg1, arg2) {
         let updatedBinCardEntries = Array.isArray(prod.binCardEntries) ? prod.binCardEntries : []
         const autoIssueBinEntry = {
           id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          type: "leave",
           date: existing.sale_date || new Date().toISOString().slice(0, 10),
-          batchNo: targetBatch || "BATCH-ISSUE",
+          voucherNo: existing.fs_no || id,
+          batchNo: targetBatch || (isWH1 ? "COMMODITY-WH1" : "BATCH-ISSUE"),
           qtyReceived: 0,
           qtyIssued: issueQty,
           balance: newQty,
           expiryDate: item.expiryDate || item.expiry || "",
           mfgDate: item.mfgDate || item.manufacturingDate || "",
           party: existing.customer_name || existing.customer || "Customer Dispatch",
+          plateNumber: existing.plate_number || existing.plateNumber || item.plate_number || item.plateNumber || "—",
           unitPrice: unitPrice > 0 ? unitPrice : unitCost,
           remark: `Sales Issue FS-${existing.fs_no || id} (Ref: ${existing.reference_no || 'Direct Dispatch'})`,
           createdAt: new Date().toISOString(),

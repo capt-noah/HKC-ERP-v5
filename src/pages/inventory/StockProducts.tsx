@@ -37,6 +37,8 @@ import StockBinEntryModal from "@/components/stock/StockBinEntryModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import StockBinCardPrintModal from "@/components/stock/StockBinCardPrintModal"
 import WH1ReceivingVoucherPrintModal from "@/components/stock/WH1ReceivingVoucherPrintModal"
+import WH1ChildMovementLedger from "@/components/stock/WH1ChildMovementLedger"
+import WH1AddMovementModal from "@/components/stock/WH1AddMovementModal"
 import { getExpiryStatus, getExpiringItemsSummary } from "@/lib/expiryUtils"
 
 const packagingUnits = ["Box", "Bottle", "Vial", "Sachet"]
@@ -570,35 +572,24 @@ export default function StockProducts() {
     }
   }
 
-  // Handle saving direct slim sub-entry modal
-  const handleSaveSlimEntry = async () => {
-    if (!slimAddEntryProduct || !addEntryDate || !addQuantity || Number(addQuantity) <= 0) {
-      showToast("Validation failed", "warning", "Provide a valid quantity and entry date.")
-      return
+  // Handle saving direct slim sub-entry modal (WH1)
+  const handleSaveWH1Entry = async (productId: string, entryData: Omit<WH1Entry, "entryId">) => {
+    await erp.addWH1Entry(productId, entryData)
+  }
+
+  const handleSaveWH1Leave = async (
+    productId: string,
+    leaveData: {
+      date: string
+      voucherNo?: string
+      party: string
+      plateNumber?: string
+      quantityIssued: number
+      remark?: string
+      unitPrice?: number
     }
-    setIsSavingAdd(true)
-    try {
-      const finalQty = addPackagingUnit === "Ton" ? Number(addQuantity) * TON_TO_QUINTAL : Number(addQuantity)
-      const newEntryPayload: Omit<WH1Entry, "entryId"> = {
-        voucherNo: addVoucherNo.trim() || undefined,
-        customer: addCustomer.trim() || undefined,
-        plateNumber: addPlateNumber.trim() || undefined,
-        entryDate: addEntryDate,
-        leaveDate: undefined,
-        quantityReceived: finalQty,
-        quantityRemaining: finalQty,
-        unitPrice: Number(addUnitPrice || 0),
-        notes: addNotes.trim() || undefined,
-      }
-      await erp.addWH1Entry(slimAddEntryProduct.id, newEntryPayload)
-      showToast("Stock entry added", "success", `New entry added for ${slimAddEntryProduct.name}.`)
-      setSlimAddEntryProduct(null)
-      resetAddForm()
-    } catch (error) {
-      showToast("Save failed", "warning", error instanceof Error ? error.message : "Failed to add entry.")
-    } finally {
-      setIsSavingAdd(false)
-    }
+  ) => {
+    await erp.addWH1LeaveEntry(productId, leaveData)
   }
 
   // Handle Edit/Delete Sub Entry
@@ -1109,55 +1100,11 @@ export default function StockProducts() {
                                 {isExpanded && (
                                   <tr className="bg-zinc-50/60">
                                     <td colSpan={currentProductColumns.length} className="px-6 py-3">
-                                      <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden shadow-xs">
-                                        {entries.length === 0 ? (
-                                          <div className="text-zinc-400 text-xs py-3 px-4 text-center font-medium">No active sub-entries.</div>
-                                        ) : (
-                                          <div className="overflow-x-auto">
-                                            <table className="w-full text-left border-collapse text-xs font-semibold">
-                                              <thead>
-                                                <tr className="bg-zinc-50/90 border-b border-zinc-200 text-[10px] font-black uppercase text-zinc-500 tracking-wider">
-                                                  <th className="py-2.5 px-4">Entry ID</th>
-                                                  <th className="py-2.5 px-4">Voucher No</th>
-                                                  <th className="py-2.5 px-4">Customer</th>
-                                                  <th className="py-2.5 px-4">Plate No</th>
-                                                  <th className="py-2.5 px-4">Entry Date</th>
-                                                  <th className="py-2.5 px-4">Leave Date</th>
-                                                  <th className="py-2.5 px-4 text-right">Qty Received</th>
-                                                  <th className="py-2.5 px-4 text-right">Qty Remaining</th>
-                                                  <th className="py-2.5 px-4 text-right">Unit Price</th>
-                                                  <th className="py-2.5 px-4 text-center">Actions</th>
-                                                </tr>
-                                              </thead>
-                                              <tbody className="divide-y divide-zinc-150">
-                                                {entries.map((entry) => (
-                                                  <tr key={entry.entryId} className="hover:bg-zinc-50 transition-colors">
-                                                    <td className="py-2.5 px-4 font-mono text-[11px] text-zinc-600 font-bold">{entry.entryId}</td>
-                                                    <td className="py-2.5 px-4 font-mono text-rose-700 font-bold">{entry.voucherNo ? `No. ${entry.voucherNo}` : "—"}</td>
-                                                    <td className="py-2.5 px-4 font-bold text-zinc-800">{entry.customer || "—"}</td>
-                                                    <td className="py-2.5 px-4 font-mono text-zinc-600">{entry.plateNumber || "—"}</td>
-                                                    <td className="py-2.5 px-4 font-mono text-zinc-800">{entry.entryDate || prod.entryDate || "—"}</td>
-                                                    <td className="py-2.5 px-4 font-mono text-zinc-500">{entry.leaveDate || "—"}</td>
-                                                    <td className="py-2.5 px-4 text-right font-mono text-zinc-700">{entry.quantityReceived.toLocaleString()}</td>
-                                                    <td className="py-2.5 px-4 text-right font-mono text-zinc-950 font-black">{entry.quantityRemaining.toLocaleString()}</td>
-                                                    <td className="py-2.5 px-4 text-right font-mono text-emerald-700 font-bold">ETB {money(entry.unitPrice)}</td>
-                                                    <td className="py-2.5 px-4 text-center">
-                                                      <button
-                                                        type="button"
-                                                        onClick={() => openEditSubEntry(prod, entry)}
-                                                        className="px-2.5 py-1 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-800 text-[10px] font-extrabold inline-flex items-center gap-1 transition-all shadow-xs cursor-pointer"
-                                                        title="Edit sub-entry details"
-                                                      >
-                                                        <Edit3 className="size-3 text-zinc-500" /> Edit
-                                                      </button>
-                                                    </td>
-                                                  </tr>
-                                                ))}
-                                              </tbody>
-                                            </table>
-                                          </div>
-                                        )}
-                                      </div>
+                                      <WH1ChildMovementLedger
+                                        product={prod}
+                                        onEditEntry={openEditSubEntry}
+                                        onPrintGRV={(product) => setWh1VoucherModal({ isOpen: true, product })}
+                                      />
                                     </td>
                                   </tr>
                                 )}
@@ -1888,144 +1835,14 @@ export default function StockProducts() {
         )}
       </AnimatePresence>
 
-      {/* SLIM ADD ENTRY MODAL */}
-      <AnimatePresence>
-        {slimAddEntryProduct && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.96 }}
-              className="bg-white rounded-3xl p-6 sm:p-8 max-w-3xl w-full shadow-2xl border border-zinc-200"
-            >
-              <div className="flex items-center justify-between pb-3 mb-4 border-b border-zinc-150">
-                <div>
-                  <h3 className="font-black text-zinc-900 text-base">Add New Entry to {slimAddEntryProduct.name}</h3>
-                  <p className="text-xs text-zinc-500">Record a new daily batch receipt into stock.</p>
-                </div>
-                <button onClick={() => setSlimAddEntryProduct(null)} className="p-1.5 rounded-full hover:bg-zinc-100 text-zinc-400"><X className="size-5" /></button>
-              </div>
-
-              <div className="space-y-4 text-xs font-semibold">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="space-y-1 block">
-                    <span className="text-zinc-500 uppercase text-[10px] font-black">Voucher No / ID (Optional)</span>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. 1251" 
-                      value={addVoucherNo} 
-                      onChange={(e) => setAddVoucherNo(e.target.value)} 
-                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
-                    />
-                  </label>
-
-                  <label className="space-y-1 block">
-                    <span className="text-zinc-500 uppercase text-[10px] font-black">Customer (Optional)</span>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Samii" 
-                      value={addCustomer} 
-                      onChange={(e) => setAddCustomer(e.target.value)} 
-                      className="h-10 w-full border border-zinc-200 rounded-xl px-3"
-                    />
-                  </label>
-
-                  <label className="space-y-1 block">
-                    <span className="text-zinc-500 uppercase text-[10px] font-black">Plate Number (Optional)</span>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. A52735" 
-                      value={addPlateNumber} 
-                      onChange={(e) => setAddPlateNumber(e.target.value)} 
-                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
-                    />
-                  </label>
-
-                  <label className="space-y-1 block">
-                    <span className="text-zinc-500 uppercase text-[10px] font-black">UOM</span>
-                    <select 
-                      value={addPackagingUnit} 
-                      onChange={(e) => setAddPackagingUnit(e.target.value)} 
-                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 cursor-pointer"
-                    >
-                      <option value="Quintal">Quintal</option>
-                      <option value="Ton">Ton</option>
-                    </select>
-                  </label>
-
-                  <label className="space-y-1 block">
-                    <span className="text-zinc-500 uppercase text-[10px] font-black">Quantity</span>
-                    <input 
-                      type="number" 
-                      placeholder="Quantity" 
-                      value={addQuantity} 
-                      onChange={(e) => setAddQuantity(e.target.value)} 
-                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
-                    />
-                  </label>
-
-                  <label className="space-y-1 block">
-                    <span className="text-zinc-500 uppercase text-[10px] font-black">Unit Price (ETB)</span>
-                    <input 
-                      type="number" 
-                      placeholder="0.00" 
-                      value={addUnitPrice} 
-                      onChange={(e) => setAddUnitPrice(e.target.value)} 
-                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
-                    />
-                  </label>
-
-                  <label className="space-y-1 block">
-                    <span className="text-zinc-500 uppercase text-[10px] font-black">Entry Date</span>
-                    <input 
-                      type="date" 
-                      value={addEntryDate} 
-                      onChange={(e) => setAddEntryDate(e.target.value)} 
-                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
-                    />
-                  </label>
-
-                  <label className="space-y-1 block">
-                    <span className="text-zinc-500 uppercase text-[10px] font-black">Notes (Optional)</span>
-                    <input 
-                      type="text" 
-                      placeholder="Notes" 
-                      value={addNotes} 
-                      onChange={(e) => setAddNotes(e.target.value)} 
-                      className="h-10 w-full border border-zinc-200 rounded-xl px-3"
-                    />
-                  </label>
-                </div>
-
-                {addPackagingUnit === "Ton" && (
-                  <p className="text-[10px] text-emerald-800 font-bold bg-emerald-50 border border-emerald-100 p-2 rounded-lg">
-                    Converts automatically: {addQuantity || 0} Tons = {(Number(addQuantity || 0) * TON_TO_QUINTAL).toLocaleString()} Quintals.
-                  </p>
-                )}
-
-                <div className="flex justify-end gap-2 border-t border-zinc-150 pt-4 mt-6">
-                  <button 
-                    type="button"
-                    disabled={isSavingAdd}
-                    onClick={() => setSlimAddEntryProduct(null)} 
-                    className="h-9 rounded-xl border border-zinc-200 px-4 text-xs font-bold disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    type="button"
-                    disabled={isSavingAdd} 
-                    onClick={handleSaveSlimEntry} 
-                    className="h-9 min-w-[100px] inline-flex items-center justify-center rounded-xl bg-zinc-950 hover:bg-zinc-800 text-white px-5 text-xs font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {isSavingAdd ? <LoadingDots color="bg-white" size="sm" /> : "Add Entry"}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      {/* WH1 ADD MOVEMENT MODAL (INBOUND & RECONCILE LEAVE) */}
+      <WH1AddMovementModal
+        isOpen={Boolean(slimAddEntryProduct)}
+        product={slimAddEntryProduct}
+        onClose={() => setSlimAddEntryProduct(null)}
+        onSaveEntry={handleSaveWH1Entry}
+        onSaveLeave={handleSaveWH1Leave}
+      />
 
       {/* EDIT WH1 SUB ENTRY MODAL */}
       <AnimatePresence>
