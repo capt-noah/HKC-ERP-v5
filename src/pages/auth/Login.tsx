@@ -5,6 +5,37 @@ import { API_BASE } from "@/lib/apiPersistence"
 import { useFeedback } from "@/context/FeedbackContext"
 import { KeyRound, User, Eye, EyeOff, AlertCircle, ShieldAlert, ArrowLeft } from "lucide-react"
 import { LoadingDots } from "@/components/ui/LoadingDots"
+import { cn } from "@/lib/utils"
+
+interface PasswordStrength {
+  score: number
+  label: "Weak" | "Medium" | "Strong"
+  color: string
+  width: string
+}
+
+function getPasswordStrength(password: string): PasswordStrength {
+  if (!password) {
+    return { score: 0, label: "Weak", color: "bg-red-500", width: "0%" }
+  }
+  let score = 0
+  if (password.length >= 8) score++
+  if (password.length >= 10) score++
+  if (/[a-z]/.test(password)) score++
+  if (/[A-Z]/.test(password)) score++
+  if (/[0-9]/.test(password)) score++
+  if (/[^a-zA-Z0-9]/.test(password)) score++
+
+  const finalScore = Math.min(score, 5)
+
+  if (password.length < 8 || finalScore <= 3) {
+    return { score: finalScore, label: "Weak", color: "bg-red-500", width: "33%" }
+  }
+  if (password.length >= 8 && finalScore === 4) {
+    return { score: finalScore, label: "Medium", color: "bg-yellow-500", width: "66%" }
+  }
+  return { score: finalScore, label: "Strong", color: "bg-green-600", width: "100%" }
+}
 
 export default function Login() {
   const [username, setUsername] = useState("")
@@ -95,8 +126,13 @@ export default function Login() {
       showToast("Recovery Key Required", "warning", "Please enter the Master Recovery Key.")
       return
     }
-    if (newPassword.length < 6) {
-      showToast("Password Too Short", "warning", "New password must be at least 6 characters.")
+    if (newPassword.length < 10) {
+      showToast("Password Too Short", "warning", "New password must be at least 10 characters long.")
+      return
+    }
+    const strength = getPasswordStrength(newPassword)
+    if (strength.label !== "Strong") {
+      showToast("Weak Password", "warning", "Password must be strong. Add uppercase, lowercase, numbers, and special symbols (min 10 chars).")
       return
     }
     if (newPassword !== confirmPassword) {
@@ -295,7 +331,7 @@ export default function Login() {
                     type={showNewPassword ? "text" : "password"}
                     required
                     className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-3.5 py-3 text-xs font-semibold text-black outline-none focus:border-green-750 focus:bg-white transition-colors"
-                    placeholder="Min 6 characters"
+                    placeholder="Min 10 characters"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                   />
@@ -321,6 +357,31 @@ export default function Login() {
                 />
               </div>
             </div>
+
+            {newPassword && (
+              <div className="space-y-1.5 px-0.5">
+                <div className="flex justify-between items-center text-[10px] font-bold tracking-wider uppercase">
+                  <span className="text-zinc-500">Password Strength</span>
+                  <span className={
+                    getPasswordStrength(newPassword).label === "Weak" ? "text-red-500" :
+                    getPasswordStrength(newPassword).label === "Medium" ? "text-yellow-600" : "text-green-600"
+                  }>
+                    {getPasswordStrength(newPassword).label}
+                  </span>
+                </div>
+                <div className="h-1.5 w-full bg-black/[0.05] rounded-full overflow-hidden">
+                  <div 
+                    className={cn("h-full transition-all duration-300", getPasswordStrength(newPassword).color)}
+                    style={{ width: getPasswordStrength(newPassword).width }}
+                  />
+                </div>
+                {getPasswordStrength(newPassword).label !== "Strong" && (
+                  <p className="text-[10px] font-semibold text-red-500 leading-normal">
+                    Password must be strong. Add uppercase, lowercase, numbers, and special symbols (min 10 chars).
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="pt-2 flex flex-col gap-2.5">
               <button
