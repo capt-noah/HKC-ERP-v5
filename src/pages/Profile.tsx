@@ -1,17 +1,14 @@
 import { useState, useEffect, useMemo } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion } from "framer-motion"
 import {
   User,
   ShieldCheck,
-  KeyRound,
   Check,
   LogOut,
   Briefcase,
   Mail,
   Calendar,
   Lock,
-  Eye,
-  EyeOff,
   Loader2,
   ArrowLeft,
   BadgeCheck,
@@ -137,13 +134,6 @@ export default function Profile() {
   const [linkedEmployee, setLinkedEmployee] = useState<LinkedEmployee | null>(null)
   const [warehouses, setWarehouses] = useState<WarehouseType[]>([])
 
-  // Password Change Modal State
-  const [showPasswordModal, setShowPasswordModal] = useState(false)
-  const [newPassword, setNewPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [showPass, setShowPass] = useState(false)
-  const [updatingPassword, setUpdatingPassword] = useState(false)
-
   // Edit Name State
   const [isEditingName, setIsEditingName] = useState(false)
   const [newName, setNewName] = useState("")
@@ -254,47 +244,6 @@ export default function Profile() {
     return []
   }, [warehouses, isSuperAdmin, profileData, authUser, userRoles])
 
-  const handleUpdatePassword = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newPassword) {
-      showToast("Please enter a new password.", "warning")
-      return
-    }
-    if (newPassword.length < 6) {
-      showToast("Password must be at least 6 characters.", "warning")
-      return
-    }
-    if (newPassword !== confirmPassword) {
-      showToast("Passwords do not match.", "warning")
-      return
-    }
-
-    setUpdatingPassword(true)
-    try {
-      const res = await fetch(`${API_BASE}/api/auth/me`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token || useAuthStore.getState().token}`,
-        },
-        body: JSON.stringify({ password: newPassword }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || "Failed to update password.")
-      }
-
-      showToast("Password updated successfully.", "success")
-      setShowPasswordModal(false)
-      setNewPassword("")
-      setConfirmPassword("")
-    } catch (err: any) {
-      showToast(err?.message || "Failed to update password.", "warning")
-    } finally {
-      setUpdatingPassword(false)
-    }
-  }
 
   const handleSaveName = async () => {
     if (!newName.trim()) return
@@ -485,13 +434,6 @@ export default function Profile() {
 
                 {/* Top Action Buttons */}
                 <div className="flex flex-row sm:flex-col gap-2 shrink-0 w-full sm:w-auto">
-                  <button
-                    onClick={() => setShowPasswordModal(true)}
-                    className="flex-1 sm:flex-initial h-10 px-4 rounded-xl bg-white hover:bg-zinc-50 border border-zinc-200 text-xs font-bold text-zinc-800 shadow-xs flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
-                  >
-                    <KeyRound className="size-4 text-emerald-700" />
-                    <span>Change Password</span>
-                  </button>
                   <button
                     onClick={handleLogoutConfirm}
                     className="flex-1 sm:flex-initial h-10 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs font-bold text-rose-700 shadow-xs flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
@@ -742,92 +684,6 @@ export default function Profile() {
         )}
       </main>
 
-      {/* ========================================================================= */}
-      {/* CHANGE PASSWORD MODAL                                                     */}
-      {/* ========================================================================= */}
-      <AnimatePresence>
-        {showPasswordModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/40 backdrop-blur-xs"
-              onClick={() => setShowPasswordModal(false)}
-            />
-
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 12 }}
-              transition={{ duration: 0.2 }}
-              className="relative z-10 w-full max-w-md bg-white rounded-3xl p-6 md:p-8 shadow-2xl border border-zinc-100 text-zinc-900"
-            >
-              <div className="flex items-center gap-3 mb-5">
-                <div className="size-11 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-700">
-                  <KeyRound className="size-5" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-black text-zinc-950">Update Password</h3>
-                  <p className="text-xs text-zinc-500">Enter a secure new password for your account</p>
-                </div>
-              </div>
-
-              <form onSubmit={handleUpdatePassword} className="space-y-4 text-xs">
-                <div>
-                  <label className="font-bold text-zinc-700 block mb-1.5">New Password</label>
-                  <div className="relative">
-                    <input
-                      type={showPass ? "text" : "password"}
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="At least 6 characters"
-                      required
-                      className="w-full h-11 px-3.5 pr-10 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPass(!showPass)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 cursor-pointer"
-                    >
-                      {showPass ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="font-bold text-zinc-700 block mb-1.5">Confirm New Password</label>
-                  <input
-                    type={showPass ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Re-enter new password"
-                    required
-                    className="w-full h-11 px-3.5 rounded-xl bg-zinc-50 border border-zinc-200 text-zinc-900 font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2 pt-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowPasswordModal(false)}
-                    className="flex-1 h-11 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold transition-all cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={updatingPassword}
-                    className="flex-1 h-11 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold shadow-md shadow-emerald-900/20 flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-60 cursor-pointer"
-                  >
-                    {updatingPassword ? <Loader2 className="size-4 animate-spin" /> : "Save Password"}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
     </div>
   )
 }
