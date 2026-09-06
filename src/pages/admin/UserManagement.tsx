@@ -397,7 +397,7 @@ export default function UserManagement() {
   const handleDeleteUser = (id: string, username: string) => {
     confirm({
       title: "Delete System Account",
-      message: `Are you absolutely sure you want to permanently delete the system credentials for ${username}?`,
+      message: `Are you absolutely sure you want to permanently delete the system credentials for ${username}? This action cannot be undone.`,
       confirmLabel: "Delete User",
       cancelLabel: "Cancel",
       isDestructive: true,
@@ -405,6 +405,8 @@ export default function UserManagement() {
         try {
           await deleteResource("users", id)
           showToast("User Deleted Successfully", "warning", `${username} has been removed.`)
+          setShowEditModal(false)
+          setEditingUser(null)
           fetchAllData()
         } catch (err: any) {
           showToast(err.message, "warning")
@@ -689,18 +691,10 @@ export default function UserManagement() {
                                     setShowEditingUserPassword(false)
                                     setShowEditModal(true)
                                   }}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                                  title="Edit Roles"
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                                  title="Edit User Settings & Privileges"
                                 >
                                   <Edit className="size-3 text-zinc-700" /> Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteUser(user.id, user.username)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[11px] transition-all border border-rose-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                                  title="Delete User"
-                                >
-                                  <Trash2 className="size-3 text-rose-600" /> Delete
                                 </button>
                               </div>
                             </td>
@@ -1406,24 +1400,34 @@ export default function UserManagement() {
               </div>
 
               {/* Action Buttons */}
-              <div className="pt-4 flex items-center justify-end gap-3 border-t border-black/5">
+              <div className="pt-4 flex items-center justify-between gap-3 border-t border-black/5">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowEditModal(false)
-                    setEditingUser(null)
-                  }}
-                  className="px-5 py-2.5 rounded-full border border-black/10 text-xs font-bold hover:bg-black/5 transition-all"
+                  onClick={() => handleDeleteUser(editingUser.id, editingUser.username)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 hover:text-rose-700 transition-all border border-rose-200/80 active:scale-95 cursor-pointer"
                 >
-                  Cancel
+                  <Trash2 className="size-3.5" /> Delete User
                 </button>
-                <button
-                  type="submit"
-                  disabled={actionLoading || (editPassword !== "" && getPasswordStrength(editPassword).label !== "Strong")}
-                  className="min-w-[125px] flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full bg-green-700 hover:bg-green-800 text-white text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-75 disabled:cursor-not-allowed"
-                >
-                  {actionLoading ? <LoadingDots color="bg-white" size="sm" /> : "Save Changes"}
-                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditModal(false)
+                      setEditingUser(null)
+                    }}
+                    className="px-5 py-2.5 rounded-full border border-black/10 text-xs font-bold hover:bg-black/5 transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={actionLoading || (editPassword !== "" && getPasswordStrength(editPassword).label !== "Strong")}
+                    className="min-w-[125px] flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-full bg-green-700 hover:bg-green-800 text-white text-xs font-bold shadow-sm transition-all active:scale-95 disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {actionLoading ? <LoadingDots color="bg-white" size="sm" /> : "Save Changes"}
+                  </button>
+                </div>
               </div>
             </form>
           </motion.div>
