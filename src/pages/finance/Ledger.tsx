@@ -1010,10 +1010,15 @@ export default function Ledger() {
                                 <div className="flex flex-col gap-1 max-w-sm">
                                   {entryLines.map((l) => {
                                     const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id)
+                                    const isDr = Number(l.debit_amount || 0) > 0
+                                    const lineAmt = isDr ? Number(l.debit_amount) : Number(l.credit_amount)
                                     return (
-                                      <div key={l.id} className="flex items-center text-[11px] truncate">
+                                      <div key={l.id} className="flex items-center justify-between gap-2 text-[11px] truncate bg-zinc-50 dark:bg-zinc-800/40 px-1.5 py-0.5 rounded">
                                         <span className="font-mono text-zinc-700 truncate">
                                           {acc ? `${acc.code} - ${acc.name}` : l.account_id}
+                                        </span>
+                                        <span className={`font-mono font-bold shrink-0 text-[10px] ${isDr ? "text-blue-700" : "text-emerald-700"}`}>
+                                          {isDr ? "Dr " : "Cr "}ETB {lineAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </span>
                                       </div>
                                     )

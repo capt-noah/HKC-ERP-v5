@@ -178,9 +178,12 @@ export default function InventoryDashboard() {
 
   const totalInventoryValue = useMemo(() => {
     if (selectedWarehouse === "ALL") {
-      return products.reduce((sum, p) => sum + Number(p.totalStockValue ?? Number(p.quantity || 0) * Number(p.unitCost || 0)), 0)
+      return products.reduce((sum, p) => sum + Number(p.totalStockValue ?? (Number(p.quantity || 0) * Number(p.unitCost || 0))), 0)
     }
     return products.reduce((sum, p) => {
+      if (p.warehouse === selectedWarehouse) {
+        return sum + Number(p.totalStockValue ?? (Number(p.quantity || 0) * Number(p.unitCost || 0)))
+      }
       const match = p.stockBreakdown.filter(entry => entry.warehouse === selectedWarehouse)
       const qtyInWarehouse = match.reduce((entrySum, entry) => entrySum + Number(entry.qty || 0), 0)
       const cost = Number(p.unitCost || p.valuationRate || 0)

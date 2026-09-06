@@ -34,8 +34,8 @@ export async function uploadFile(
   const token = useAuthStore.getState().token
 
   const formData = new FormData()
-  formData.append("file", file)
   formData.append("folder", folder)
+  formData.append("file", file)
 
   try {
     const headers: Record<string, string> = {}
@@ -43,7 +43,8 @@ export async function uploadFile(
       headers["Authorization"] = `Bearer ${token}`
     }
 
-    const res = await fetch(`${API_BASE}/api/upload`, {
+    const uploadUrl = `${API_BASE}/api/upload?folder=${encodeURIComponent(folder)}`
+    const res = await fetch(uploadUrl, {
       method: "POST",
       headers,
       body: formData,

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useRef } from "react"
+import { useSearchParams } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import { FileText, Plus, Send, Trash2, X, Download, Upload, CheckCircle2, Receipt, ArrowRight, Pencil, AlertCircle, Lock, ExternalLink } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
@@ -8,7 +9,7 @@ import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, getTradeLicenseStatus } from "@/lib/erpStore"
-import { financeStore } from "@/lib/financeStore"
+import { useFinanceStore } from "@/lib/financeStore"
 import { withOperatingWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { sortNewestFirst } from "@/lib/utils"
@@ -58,6 +59,24 @@ function money(value: number) {
   return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function formatDate(d?: string | Date | null) {
+  if (!d) return "—"
+  try {
+    const str = typeof d === "string" ? (d.includes("T") ? d.split("T")[0] : d) : new Date(d).toISOString().split("T")[0]
+    const [y, m, day] = str.split("-")
+    if (y && m && day) {
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+      const mIdx = parseInt(m, 10) - 1
+      if (mIdx >= 0 && mIdx < 12) {
+        return `${monthNames[mIdx]} ${parseInt(day, 10)}, ${y}`
+      }
+    }
+    return str
+  } catch {
+    return String(d)
+  }
+}
+
 const isWH1 = (w?: string) => {
   if (!w) return false
   const upper = w.toUpperCase()
@@ -94,15 +113,37 @@ function SalesIssuedSkeletonRows() {
 
 export default function SalesIssued() {
   const erp = useErpStore()
+  const financeStore = useFinanceStore()
   const { showToast, confirm } = useFeedback()
   const products = erp.getProducts()
   const warehouses = withOperatingWarehouses(erp.getWarehouses())
-  const bankAccounts = financeStore.getAccounts().filter((a) => !a.is_group && (a.code.startsWith("1000") || a.account_type === "Asset"))
+  const bankAccounts = useMemo(() => {
+    const raw = financeStore.getAccounts().filter((a) => !a.is_group && (a.code.startsWith("1000") || a.account_type === "Asset"))
+    if (raw.length > 0) return raw
+    return [
+      { id: "1000-02-26", code: "1000-02-26", name: "Commercial Bank of Ethiopia (CBE)", account_type: "Asset" },
+      { id: "1000-02-27", code: "1000-02-27", name: "Awash Bank", account_type: "Asset" },
+      { id: "1000-02-28", code: "1000-02-28", name: "Dashen Bank", account_type: "Asset" },
+      { id: "1000-02-29", code: "1000-02-29", name: "Bank of Abyssinia", account_type: "Asset" },
+      { id: "1000-01-01", code: "1000-01-01", name: "Cash on Hand / Main Cash", account_type: "Asset" },
+    ]
+  }, [financeStore])
+
+  const [searchParams, setSearchParams] = useSearchParams()
+  const editIdParam = searchParams.get("editId")
+  const searchParam = searchParams.get("search")
 
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [batchFilter, setBatchFilter] = useState("ALL")
-  const [search, setSearch] = useState("")
+  const [search, setSearch] = useState(() => searchParam || "")
+  const openedEditIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (searchParam !== null && searchParam !== undefined && searchParam !== search) {
+      setSearch(searchParam)
+    }
+  }, [searchParam])
 
   const [rows, setRows] = useState<SalesIssue[]>([])
   const [total, setTotal] = useState(0)
@@ -208,9 +249,11 @@ export default function SalesIssued() {
     setCustomerName(so.customer)
     const matchedWh = warehouses.find((w) => w.code === so.warehouse || w.id === so.warehouse || w.name === so.warehouse)
     const targetWhId = matchedWh ? matchedWh.id : canonicalWarehouseId(so.warehouse)
-    const targetIsWh1 = isWH1(so.warehouse) || isWH1(targetWhId)
     setWarehouseId(targetWhId)
-    setPaymentType(so.paymentType === "Cash" ? "Cash" : (targetIsWh1 ? "Credit" : "Cash"))
+    const targetIsWh1 = isWH1(so.warehouse) || isWH1(targetWhId)
+    const explicitPaymentType = (so.paymentType || so.payment_type || so.payment_method || so.paymentMethod || "").toString().trim().toLowerCase()
+    const targetIsCash = explicitPaymentType === "cash" || (!explicitPaymentType && (so.payment_terms || so.paymentTerms || "").toString().toLowerCase() === "cash")
+    setPaymentType(targetIsCash ? "Cash" : "Credit")
     setReferenceNo(so.id)
     if (!saleDate) setSaleDate(new Date().toISOString().split("T")[0])
     setIssueFormErrors({})
@@ -295,7 +338,10 @@ export default function SalesIssued() {
       if (batchFilter !== "ALL") params.set("batch", batchFilter)
       if (search.trim()) params.set("search", search.trim())
 
-      const result = await listSalesIssues(params)
+      const [result] = await Promise.all([
+        listSalesIssues(params),
+        financeStore.reloadFromApi().catch(() => {}),
+      ])
       const sorted = sortNewestFirst(result.rows)
       setRows(sorted)
       setTotal(result.total)
@@ -330,7 +376,9 @@ export default function SalesIssued() {
       const targetWhId = matchedWh ? matchedWh.id : canonicalWarehouseId(preselectedSo.warehouse)
       const targetIsWh1 = isWH1(preselectedSo.warehouse) || isWH1(targetWhId)
       setWarehouseId(targetWhId)
-      setPaymentType(preselectedSo.paymentType === "Cash" ? "Cash" : (targetIsWh1 ? "Credit" : "Cash"))
+      const explicitPaymentType = (preselectedSo.paymentType || preselectedSo.payment_type || preselectedSo.payment_method || preselectedSo.paymentMethod || "").toString().trim().toLowerCase()
+      const targetIsCash = explicitPaymentType === "cash" || (!explicitPaymentType && (preselectedSo.payment_terms || preselectedSo.paymentTerms || "").toString().toLowerCase() === "cash")
+      setPaymentType(targetIsCash ? "Cash" : "Credit")
       setReferenceNo(preselectedSo.id)
       const allProducts = erp.getProducts()
 
@@ -397,15 +445,38 @@ export default function SalesIssued() {
 
   const openEdit = async (issue: SalesIssue) => {
     try {
-      const full = await getSalesIssue(issue.id)
+      let full: SalesIssue
+      try {
+        full = await getSalesIssue(issue.id || issue.fs_no)
+      } catch {
+        full = issue
+      }
       setEditing(full)
-      setFsNo(full.fs_no || "")
+      setFsNo(full.fs_no || full.id || "")
       setReferenceNo(full.reference_no || "")
-      setSaleDate(full.sale_date || "")
-      setCustomerName(full.customer_name || "")
-      setWarehouseId(canonicalWarehouseId(full.warehouse_id || ""))
+      setSaleDate(full.sale_date ? (typeof full.sale_date === "string" ? full.sale_date.split("T")[0] : new Date(full.sale_date).toISOString().split("T")[0]) : "")
+      setCustomerName(full.customer_name || (full as any).customer || "")
+      const canonicalWh = canonicalWarehouseId(full.warehouse_id || "")
+      setWarehouseId(canonicalWh)
       setPaymentType(((full.payment_type || (full as any).paymentType || "Cash") === "Credit" ? "Credit" : "Cash") as PaymentType)
-      setItems(full.items && full.items.length > 0 ? full.items : [blankItem()])
+      
+      const mappedItems = (full.items && full.items.length > 0 ? full.items : [blankItem()]).map((item: any) => {
+        const qty = Number(item.quantity || item.qty || 1)
+        const price = Number(item.unit_price || item.price || 0)
+        const amt = Number(item.amount || (qty * price))
+        return {
+          ...item,
+          item_id: item.item_id || item.product_id || item.id,
+          item_name: item.item_name || item.product_name || item.name || "Item",
+          quantity: qty,
+          unit_price: price,
+          amount: amt,
+          packaging_unit: item.packaging_unit || item.packagingUnit || item.unit || (isWH1(canonicalWh) ? "Quintal" : "Box"),
+          batch_no: item.batch_no || item.batch_id || item.batch_number || item.batch || (isWH1(canonicalWh) ? "N/A" : "BATCH-MAIN"),
+          batch_id: item.batch_id || item.batch_no || item.batch_number || item.batch || (isWH1(canonicalWh) ? "N/A" : "BATCH-MAIN"),
+        }
+      })
+      setItems(mappedItems)
 
       setIsDocsLoading(true)
       fetchTradeAndAdviceDocs({
@@ -444,6 +515,51 @@ export default function SalesIssued() {
     }
   }
 
+  // Auto-open edit modal if editId was provided via URL (e.g. from Control Center customer receivables)
+  useEffect(() => {
+    if (!editIdParam) {
+      openedEditIdRef.current = null
+      return
+    }
+    if (openedEditIdRef.current === editIdParam) return
+
+    let cancelled = false
+    const triggerAutoEdit = async () => {
+      try {
+        const full = await getSalesIssue(editIdParam)
+        if (!cancelled && full) {
+          openedEditIdRef.current = editIdParam
+          await openEdit(full)
+          const nextParams = new URLSearchParams(searchParams)
+          nextParams.delete("editId")
+          setSearchParams(nextParams, { replace: true })
+          return
+        }
+      } catch {
+        // Fallback: match from loaded rows
+        const match = rows.find(
+          (r) =>
+            r.id === editIdParam ||
+            (r.fs_no && r.fs_no.toLowerCase() === editIdParam.toLowerCase()) ||
+            (r.reference_no && r.reference_no.toLowerCase() === editIdParam.toLowerCase())
+        )
+        if (!cancelled && match) {
+          openedEditIdRef.current = editIdParam
+          await openEdit(match)
+          const nextParams = new URLSearchParams(searchParams)
+          nextParams.delete("editId")
+          setSearchParams(nextParams, { replace: true })
+        }
+      }
+    }
+
+    void triggerAutoEdit()
+
+    return () => {
+      cancelled = true
+    }
+  }, [editIdParam, searchParams, setSearchParams, rows])
+
   // Open Record Installment Modal for Credit issue
   const openRecordPayment = (issue: SalesIssue) => {
     const paymentsForIssue = financeStore.getPaymentsForSalesIssue(issue.id)
@@ -462,7 +578,7 @@ export default function SalesIssued() {
 
   const handleRecordInstallmentSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!payingIssue) return
+    if (!payingIssue || isSubmittingPayment) return
     const numAmount = parseFloat(payAmount)
     if (isNaN(numAmount) || numAmount <= 0) {
       showToast("Invalid Amount", "warning", "Please enter a valid installment payment amount.")
@@ -604,7 +720,11 @@ export default function SalesIssued() {
   }
 
   const totalQuantity = useMemo(() => items.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [items])
-  const grandTotal = useMemo(() => items.reduce((sum, item) => sum + Number(item.amount || 0), 0), [items])
+  const subtotal = useMemo(() => items.reduce((sum, item) => sum + Number(item.amount || 0), 0), [items])
+  const isWh1Export = isWH1(warehouseId)
+  const vatRate = isWh1Export ? 0 : 15
+  const vatAmount = useMemo(() => Math.round(subtotal * (vatRate / 100)), [subtotal, vatRate])
+  const grandTotal = useMemo(() => subtotal + vatAmount, [subtotal, vatAmount])
 
   const selectableProducts = useMemo(() => {
     if (!warehouseId) return []
@@ -645,6 +765,7 @@ export default function SalesIssued() {
   }, [products, warehouseId])
 
   const handleSave = async () => {
+    if (isSaving) return
     const isWh1Active = isWH1(warehouseId)
     const errors: Record<string, string> = {}
     if (!fsNo.trim()) errors.fsNo = "FS Number is required."
@@ -698,6 +819,10 @@ export default function SalesIssued() {
           warehouse_id: canonicalWarehouseId(warehouseId),
           payment_type: paymentType,
           items: validItems,
+          subtotal,
+          vat_rate: vatRate,
+          vat_amount: vatAmount,
+          total_amount: grandTotal,
         })
       } else {
         const created = await createSalesIssue({
@@ -708,6 +833,10 @@ export default function SalesIssued() {
           warehouse_id: canonicalWarehouseId(warehouseId),
           payment_type: paymentType,
           items: validItems,
+          subtotal,
+          vat_rate: vatRate,
+          vat_amount: vatAmount,
+          total_amount: grandTotal,
         })
         issueId = created.id
       }
@@ -766,19 +895,22 @@ export default function SalesIssued() {
 
   const doPost = (issue: SalesIssue) => {
     confirm({
-      title: `Post Sales Issue ${issue.fs_no}?`,
+      title: `Post Sales Issue ${issue.fs_no || issue.id}?`,
       message: "Posting reduces batch stock and creates balanced journal entries. This can happen only once.",
       confirmLabel: "Post",
       onConfirm: async () => {
         try {
-          await postSalesIssue(issue.id)
+          const res = await postSalesIssue(issue.id || issue.fs_no)
+          if ((res as any)?.status >= 400 || (res as any)?.error) {
+            throw new Error((res as any)?.error || "Could not post sales issue.")
+          }
           const refStr = issue.reference_no || ""
           const matchingOrders = salesOrders.filter((so) => refStr.includes(so.id))
           matchingOrders.forEach((so) => {
             erp.updateSalesOrderStage(so.id, "Shipped")
           })
 
-          showToast("Sales issue posted", "success", `${issue.fs_no} posted, inventory stock reduced, and linked Sales Orders fulfilled.`)
+          showToast("Sales issue posted", "success", `${issue.fs_no || issue.id} posted, inventory stock reduced, and linked Sales Orders fulfilled.`)
           await erp.reloadFromApi()
           await financeStore.reloadFromApi()
           await load()
@@ -792,12 +924,12 @@ export default function SalesIssued() {
   const doDelete = (issue: SalesIssue) => {
     confirm({
       title: "Delete Draft?",
-      message: `Delete ${issue.fs_no}? Only draft records can be deleted.`,
+      message: `Delete ${issue.fs_no || issue.id}? Only draft records can be deleted.`,
       isDestructive: true,
       confirmLabel: "Delete",
       onConfirm: async () => {
-        await deleteSalesIssue(issue.id)
-        showToast("Draft deleted", "success", `${issue.fs_no} removed.`)
+        await deleteSalesIssue(issue.id || issue.fs_no)
+        showToast("Draft deleted", "success", `${issue.fs_no || issue.id} removed.`)
         await load()
       },
     })
@@ -883,18 +1015,28 @@ export default function SalesIssued() {
                 ) : salesTable.sorted().length === 0 ? (
                   <tr><td colSpan={salesIssueColumns.length} className="py-16 text-center text-xs font-bold text-zinc-400">No sales issued records match your filters.</td></tr>
                 ) : salesTable.sorted().map((row) => {
-                  const isCash = (row.payment_type || "Cash") === "Cash"
-                  const paymentsForIssue = financeStore.getPaymentsForSalesIssue(row.id)
-                  const totalAmt = Number(row.total_amount || 0)
-                  const paidAmt = paymentsForIssue.reduce((s, p) => s + p.amount, 0) || Number(row.amount_paid || 0)
-                  const dueAmt = Number(Math.max(0, totalAmt - paidAmt).toFixed(2))
-                  const pct = totalAmt > 0 ? Math.min(100, Math.round((paidAmt / totalAmt) * 100)) : 0
+                  const isCredit = (row.payment_type || (row as any).paymentType || "").toString().toLowerCase().includes("credit")
+                  const isCash = !isCredit
+                  const matchingInvoice = financeStore.getInvoices().find(
+                    (inv) =>
+                      inv.sales_issue_id === row.id ||
+                      inv.id === `INV-SI-${row.id}` ||
+                      (row.fs_no && (inv.fs_no === row.fs_no || inv.invoice_number?.includes(row.fs_no))) ||
+                      (row.reference_no && (inv.sales_order_id === row.reference_no || inv.invoice_number?.includes(row.reference_no)))
+                  )
+                  const paymentsForIssue = financeStore.getPaymentsForSalesIssue(row.id, row.fs_no, row.reference_no)
+                  const totalAmt = Number(row.total_amount || matchingInvoice?.total || 0)
+                  const paidFromPayments = paymentsForIssue.reduce((s, p) => s + Number(p.amount || 0), 0)
+                  const paidAmt = isCash ? totalAmt : Math.max(Number(row.amount_paid || 0), Number(matchingInvoice?.amount_paid || 0), paidFromPayments)
+                  const dueAmt = isCash ? 0 : Number(Math.max(0, totalAmt - paidAmt).toFixed(2))
+                  const pct = totalAmt > 0 ? Math.min(100, Math.round((paidAmt / totalAmt) * 100)) : (isCash ? 100 : 0)
+                  const isFullySettled = isCash || (totalAmt > 0 && dueAmt <= 0.01 && paidAmt > 0) || row.settlement_status === "Fully Settled" || row.payment_status === "Paid" || matchingInvoice?.status === "Paid" || matchingInvoice?.settlement_status === "Fully Settled"
 
                   return (
                     <tr key={row.id} className="border-b border-zinc-150/40 hover:bg-zinc-50/60 transition-colors text-xs">
                       <td style={{ width: `${salesTable.colWidths.fs_no}px` }} className="px-3 py-3 font-mono text-xs font-black text-zinc-950 truncate">{row.fs_no}</td>
                       <td style={{ width: `${salesTable.colWidths.reference_no}px` }} className="px-3 py-3 font-mono text-xs font-bold text-zinc-700 truncate">{row.reference_no}</td>
-                      <td style={{ width: `${salesTable.colWidths.sale_date}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">{row.sale_date}</td>
+                      <td style={{ width: `${salesTable.colWidths.sale_date}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">{formatDate(row.sale_date)}</td>
                       <td style={{ width: `${salesTable.colWidths.item}px` }} className="px-3 py-3 text-xs font-black text-zinc-900 truncate">{row.items?.[0]?.item_name || "Multiple items"}</td>
                       <td style={{ width: `${salesTable.colWidths.customer_name}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">{row.customer_name}</td>
                       
@@ -904,7 +1046,7 @@ export default function SalesIssued() {
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
                             Cash
                           </span>
-                        ) : dueAmt <= 0 && paidAmt > 0 ? (
+                        ) : isFullySettled ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200">
                             <CheckCircle2 className="size-3 text-emerald-600" /> Credit • Fully Settled
                           </span>
@@ -923,7 +1065,7 @@ export default function SalesIssued() {
                               Credit • Unpaid (0%)
                             </span>
                             <span className="text-[10px] font-mono text-rose-600 font-bold">
-                              Due: {money(dueAmt)}
+                              Due: {money(dueAmt || totalAmt)}
                             </span>
                           </div>
                         )}
@@ -1054,15 +1196,15 @@ export default function SalesIssued() {
                 </div>
               )}
 
-              {/* FINANCIAL SUMMARY & SETTLEMENT KPI CARD FOR EDITING */}
-              {editing && (
+              {/* FINANCIAL SUMMARY & SETTLEMENT KPI CARD FOR EDITING (CREDIT ONLY) */}
+              {editing && (editing.payment_type || "Cash") === "Credit" && (
                 (() => {
                   const issuePayments = financeStore.getPaymentsForSalesIssue(editing.id)
                   const totalAmt = Number(editing.total_amount || 0)
                   const paidAmt = issuePayments.reduce((s, p) => s + p.amount, 0) || Number(editing.amount_paid || 0)
                   const dueAmt = Number(Math.max(0, totalAmt - paidAmt).toFixed(2))
                   const pct = totalAmt > 0 ? Math.min(100, Math.round((paidAmt / totalAmt) * 100)) : 0
-                  const isCredit = (editing.payment_type || "Cash") === "Credit"
+                  const isCredit = true
 
                   return (
                     <div className="mb-5 p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
@@ -1200,7 +1342,7 @@ export default function SalesIssued() {
                                     ? "bg-white/20 text-white" 
                                     : (isCredit ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800")
                                 }`}>
-                                  {isCredit ? "Credit" : "Sales"}
+                                  {isCredit ? "Credit" : "Cash"}
                                 </span>
                               </div>
                               <div className={`text-[10px] mt-0.5 ${isSelected ? "text-emerald-100" : "text-zinc-500"}`}>
@@ -1441,8 +1583,8 @@ export default function SalesIssued() {
                         )}
                       </div>
 
-                      {/* Payment Advice Dropzone - Shown when Cash */}
-                      {paymentType === "Cash" && (
+                      {/* Payment Advice Dropzone - Shown when Cash or when Credit has slip attached / is settled */}
+                      {(paymentType === "Cash" || Boolean(stagedPaymentAdviceName || stagedPaymentAdviceUrl || (editing && (editing.payment_type || "Cash") === "Credit"))) && (
                         <div className={`p-3 rounded-xl border shadow-sm space-y-1.5 transition-colors ${
                           issueFormErrors.paymentAdvice 
                             ? "bg-rose-50/40 border-rose-400" 
@@ -1458,9 +1600,13 @@ export default function SalesIssued() {
                               </span>
                             ) : isDocsLoading ? (
                               <Skeleton className="h-4 w-16 bg-zinc-200/80 rounded-full" />
-                            ) : (
+                            ) : paymentType === "Cash" ? (
                               <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
                                 Required for Cash
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold text-zinc-500 bg-zinc-100 border border-zinc-200 px-2 py-0.5 rounded-full">
+                                Optional / Settled Slip
                               </span>
                             )}
                           </div>
@@ -1598,7 +1744,15 @@ export default function SalesIssued() {
                             className="h-10 w-full rounded-xl border border-zinc-200 bg-white px-2 text-xs font-bold disabled:cursor-not-allowed disabled:bg-zinc-100"
                           >
                             <option value="">{warehouseId ? "Select item" : "Select warehouse first"}</option>
-                            {selectableProducts.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            {(() => {
+                              const hasSelected = selectableProducts.some((p) => p.id === item.item_id)
+                              const extra = item.item_id && !hasSelected ? [{ id: item.item_id, name: item.item_name || item.item_id }] : []
+                              return [...selectableProducts, ...extra].map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name}
+                                </option>
+                              ))
+                            })()}
                           </select>
                         )}
                       </label>
@@ -1695,7 +1849,24 @@ export default function SalesIssued() {
                 <div className="text-xs font-bold text-zinc-500">
                   {isPostedEditing ? "Stock balances are already updated in GL ledger." : "Posting deducts the selected batch quantity from inventory in one server transaction."}
                 </div>
-                <div className="flex gap-4 text-sm font-black"><span>Total Quantity: {totalQuantity.toLocaleString()}</span><span>Grand Total: {money(grandTotal)}</span></div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="px-3 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200">
+                    <span className="text-zinc-400 text-[9px] uppercase font-black block">Total Qty</span>
+                    <span className="font-mono font-black text-zinc-800 text-xs">{totalQuantity.toLocaleString()}</span>
+                  </div>
+                  <div className="px-3 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200">
+                    <span className="text-zinc-400 text-[9px] uppercase font-black block">Subtotal (Net)</span>
+                    <span className="font-mono font-black text-zinc-800 text-xs">ETB {money(subtotal)}</span>
+                  </div>
+                  <div className="px-3 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200">
+                    <span className="text-zinc-400 text-[9px] uppercase font-black block">VAT ({vatRate}%)</span>
+                    <span className="font-mono font-black text-zinc-800 text-xs">ETB {money(vatAmount)}</span>
+                  </div>
+                  <div className="px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 shadow-2xs">
+                    <span className="text-emerald-700 text-[9px] uppercase font-black block">Total Payable</span>
+                    <span className="font-mono font-black text-emerald-800 text-sm">ETB {money(grandTotal)}</span>
+                  </div>
+                </div>
               </div>
 
               {Object.keys(issueFormErrors).length > 0 && (

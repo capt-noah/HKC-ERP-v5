@@ -28,9 +28,13 @@ export interface SalesIssue {
   payment_type: PaymentType
   status: SalesIssueStatus
   total_quantity: number
+  subtotal?: number
+  vat_rate?: number
+  vat_amount?: number
   total_amount: number
   amount_paid?: number
   balance_due?: number
+  payment_status?: string
   settlement_status?: "Unpaid" | "Ongoing" | "Fully Settled"
   created_by: string
   posted_by?: string | null

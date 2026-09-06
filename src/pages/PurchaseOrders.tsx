@@ -252,6 +252,7 @@ export default function PurchaseOrders() {
   // Save Create Voucher
   const handleCreateVoucher = (e: React.FormEvent) => {
     e.preventDefault()
+    if (isSubmittingVoucher) return
 
     if (!voucherNo.trim()) {
       showToast("Missing Information", "warning", "Please enter Cheque Payment Voucher number.")
@@ -321,7 +322,7 @@ export default function PurchaseOrders() {
   // Save Edit Voucher
   const handleSaveEditVoucher = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!editingPo) return
+    if (!editingPo || isSavingEditVoucher) return
 
     if (!voucherNo.trim()) {
       showToast("Missing Information", "warning", "Please enter Cheque Payment Voucher number.")

@@ -1033,17 +1033,19 @@ export function printWH1ReceivingVoucherDocument(v: PrintWH1ReceivingVoucherOpti
   }
 
   const logoUrl = typeof window !== "undefined" && window.location?.origin ? `${window.location.origin}/hkc_logo.png` : "/hkc_logo.png"
-  const totalQuantity = v.items.reduce((sum, i) => sum + Number(i.quantity || 0), 0)
-  const totalValue = v.items.reduce((sum, i) => sum + Number(i.totalPrice || 0), 0)
+  const totalReceived = v.items.filter(i => Number(i.quantity) > 0).reduce((sum, i) => sum + Number(i.quantity), 0)
+  const totalDispatched = v.items.filter(i => Number(i.quantity) < 0).reduce((sum, i) => sum + Math.abs(Number(i.quantity)), 0)
+  const currentBalance = totalReceived - totalDispatched
+  const totalValue = v.items.reduce((sum, i) => sum + (Number(i.quantity) < 0 ? -Number(i.totalPrice || 0) : Number(i.totalPrice || 0)), 0)
 
   const itemsRowsHtml = v.items.map((item) => `
     <tr>
       <td style="text-align: center; font-weight: 600;">${item.itemNo}</td>
       <td style="font-weight: 700; color: #0f172a;">${item.description}</td>
       <td style="text-align: center; text-transform: uppercase; font-weight: 600;">${item.unit}</td>
-      <td style="text-align: right; font-family: monospace; font-weight: 700;">${item.quantity.toLocaleString()}</td>
+      <td style="text-align: right; font-family: monospace; font-weight: 700; color: ${item.quantity < 0 ? '#b45309' : '#047857'};">${item.quantity > 0 ? `+${item.quantity.toLocaleString()}` : item.quantity.toLocaleString()}</td>
       <td style="text-align: right; font-family: monospace;">${item.unitPrice > 0 ? item.unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</td>
-      <td style="text-align: right; font-family: monospace; font-weight: 700;">${item.totalPrice > 0 ? item.totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</td>
+      <td style="text-align: right; font-family: monospace; font-weight: 700; color: ${item.quantity < 0 ? '#b45309' : '#047857'};">${item.totalPrice > 0 ? (item.quantity < 0 ? `-ETB ${item.totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : `ETB ${item.totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}`) : "—"}</td>
       <td style="color: #64748b; font-size: 11px;">${item.remarks || "—"}</td>
     </tr>
   `).join("")
@@ -1052,7 +1054,7 @@ export function printWH1ReceivingVoucherDocument(v: PrintWH1ReceivingVoucherOpti
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Receiving Voucher - ${v.voucherNo || "VOUCHER"}</title>
+  <title>Commodity Movement - ${v.voucherNo || "VOUCHER"}</title>
   <style>
     @page { size: A4 portrait; margin: 15mm 15mm; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1091,14 +1093,14 @@ export function printWH1ReceivingVoucherDocument(v: PrintWH1ReceivingVoucherOpti
         </div>
       </div>
       <div class="voucher-badge">
-        <div class="voucher-title">Goods Receiving Voucher</div>
+        <div class="voucher-title">Commodity Movement & Stock Card</div>
         <div class="voucher-no">No. ${v.voucherNo || "—"}</div>
       </div>
     </div>
 
     <div class="meta-grid">
       <div class="meta-item">
-        <span class="meta-label">Customer</span>
+        <span class="meta-label">Customer / Party</span>
         <span class="meta-value">${v.customer || "—"}</span>
       </div>
       <div class="meta-item">
@@ -1125,8 +1127,12 @@ export function printWH1ReceivingVoucherDocument(v: PrintWH1ReceivingVoucherOpti
     </table>
 
     <div class="totals-area">
-      <div>Total Items Received: <span style="color: #047857;">${totalQuantity.toLocaleString()}</span></div>
-      <div>Total Value: <span style="color: #0f172a; font-family: monospace;">${totalValue > 0 ? `ETB ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "—"}</span></div>
+      <div>
+        Total Received: <span style="color: #047857;">+${totalReceived.toLocaleString()}</span>
+        ${totalDispatched > 0 ? ` &bull; Dispatched: <span style="color: #b45309;">-${totalDispatched.toLocaleString()}</span>` : ""}
+        &bull; Current Balance: <span style="color: #0f172a;">${currentBalance.toLocaleString()}</span>
+      </div>
+      <div>Net Value: <span style="color: #0f172a; font-family: monospace;">${totalValue > 0 ? `ETB ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "—"}</span></div>
     </div>
 
     ${v.notes ? `<div style="font-size: 11px; color: #475569; margin-top: 12px;"><strong>Notes:</strong> ${v.notes}</div>` : ""}
@@ -1156,19 +1162,19 @@ export function exportWH1ReceivingVoucherExcel(v: PrintWH1ReceivingVoucherOption
     item.itemNo,
     item.description,
     item.unit,
-    item.quantity,
+    item.quantity > 0 ? `+${item.quantity}` : `${item.quantity}`,
     item.unitPrice > 0 ? item.unitPrice : "—",
-    item.totalPrice > 0 ? item.totalPrice : "—",
+    item.totalPrice > 0 ? (item.quantity < 0 ? -item.totalPrice : item.totalPrice) : "—",
     item.remarks || "—",
   ])
 
   exportToExcel({
-    fileName: `Receiving_Voucher_${v.voucherNo || "WH1"}_${(v.customer || "Commodity").replace(/\s+/g, "_")}.xls`,
+    fileName: `Commodity_Movement_${(v.voucherNo || "WH1").replace(/[^\w-]/g, "_")}_${(v.customer || "Ledger").replace(/\s+/g, "_")}.xls`,
     title: "Habtom Kebede Import & Export",
-    subtitle: `GOODS RECEIVING VOUCHER - No. ${v.voucherNo || "—"}`,
+    subtitle: `COMMODITY STOCK MOVEMENT & VOUCHER - ${v.voucherNo || "—"}`,
     metadata: [
-      { label: "Voucher Number", value: v.voucherNo || "—" },
-      { label: "Customer", value: v.customer || "—" },
+      { label: "Voucher / Card No", value: v.voucherNo || "—" },
+      { label: "Customer / Party", value: v.customer || "—" },
       { label: "Plate Number", value: v.plateNumber || "—" },
     ],
     headers,

@@ -6,7 +6,6 @@ import {
   Search,
   Plus,
   Edit,
-  Trash2,
   Upload,
   CheckCircle2,
   ShieldCheck,
@@ -600,14 +599,6 @@ export default function PartnersRegistry() {
                             >
                               <Edit className="size-3 text-zinc-700" /> Edit
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteCustomer(c)}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[11px] transition-all border border-rose-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                              title="Delete Customer"
-                            >
-                              <Trash2 className="size-3 text-rose-600" /> Delete
-                            </button>
                           </div>
                         </td>
                       </tr>
@@ -701,14 +692,6 @@ export default function PartnersRegistry() {
                               title="Edit Supplier"
                             >
                               <Edit className="size-3 text-zinc-700" /> Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteSupplier(s)}
-                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold text-[11px] transition-all border border-rose-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                              title="Delete Supplier"
-                            >
-                              <Trash2 className="size-3 text-rose-600" /> Delete
                             </button>
                           </div>
                         </td>
@@ -835,7 +818,7 @@ export default function PartnersRegistry() {
                 title={editingCustomer ? `Edit Customer: ${editingCustomer.name}` : "Onboard New Customer"}
                 subtitle={editingCustomer ? `ID: ${editingCustomer.id} • ${editingCustomer.category}` : "Register customer profile and default Trade License for future orders."}
                 onClose={() => setShowAddCustomerModal(false)}
-                onRequestDelete={editingCustomer ? () => setDeletingCustomer(editingCustomer) : undefined}
+                onRequestDelete={editingCustomer ? () => handleDeleteCustomer(editingCustomer) : undefined}
                 deleteLabel="Delete Customer Profile"
               />
 
@@ -1058,7 +1041,7 @@ export default function PartnersRegistry() {
                 title={editingSupplier ? `Edit Supplier: ${editingSupplier.name}` : "Onboard New Supplier"}
                 subtitle={editingSupplier ? `ID: ${editingSupplier.id} • ${editingSupplier.category}` : "Register supplier details and contact profile."}
                 onClose={() => setShowAddSupplierModal(false)}
-                onRequestDelete={editingSupplier ? () => setDeletingSupplier(editingSupplier) : undefined}
+                onRequestDelete={editingSupplier ? () => handleDeleteSupplier(editingSupplier) : undefined}
                 deleteLabel="Delete Supplier Profile"
               />
 

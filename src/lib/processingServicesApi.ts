@@ -116,34 +116,37 @@ export async function deleteProcessingService(id: string): Promise<void> {
   }
 }
 
+import { uploadFile } from "./fileUpload"
+
 export async function uploadProcessingServiceContract(
   id: string,
   file: File
 ): Promise<ProcessingServiceOrder> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/processing-services/${id}/upload-contract`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-          body: JSON.stringify({
-            contract_url: reader.result as string,
-            contract_file_name: file.name,
-          }),
-        })
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}))
-          reject(new Error(err.error || "Failed to upload contract."))
-        } else {
-          resolve(await res.json())
-        }
-      } catch (err) {
-        reject(err)
-      }
-    }
-    reader.onerror = () => reject(new Error("Failed to read contract file."))
-    reader.readAsDataURL(file)
+  let contractUrl = ""
+  try {
+    const upRes = await uploadFile(file, "processing_services")
+    contractUrl = upRes.url
+  } catch {
+    contractUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = () => reject(new Error("Failed to read contract file."))
+      reader.readAsDataURL(file)
+    })
+  }
+
+  const res = await fetch(`${API_BASE}/api/processing-services/${id}/upload-contract`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({
+      contract_url: contractUrl,
+      contract_file_name: file.name,
+    }),
   })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || "Failed to upload contract.")
+  }
+  return await res.json()
 }
 

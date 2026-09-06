@@ -34,7 +34,6 @@ import Ledger from "@/pages/finance/Ledger"
 import Invoices from "@/pages/finance/Invoices"
 import Expenses from "@/pages/finance/Expenses"
 import Banking from "@/pages/finance/Banking"
-import Assets from "@/pages/finance/Assets"
 import Taxes from "@/pages/finance/Taxes"
 import FinancialReports from "@/pages/finance/FinancialReports"
 import FinanceExport from "@/pages/finance/FinanceExport"
@@ -112,7 +111,6 @@ export function App() {
         <Route path="/finance/invoices" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><Invoices /></ProtectedRoute>} />
         <Route path="/finance/expenses" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><Expenses /></ProtectedRoute>} />
         <Route path="/finance/banking" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><Banking /></ProtectedRoute>} />
-        <Route path="/finance/assets" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><Assets /></ProtectedRoute>} />
         <Route path="/finance/taxes" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><Taxes /></ProtectedRoute>} />
         <Route path="/finance/reports" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><FinancialReports /></ProtectedRoute>} />
         <Route path="/finance/export" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><FinanceExport /></ProtectedRoute>} />

@@ -118,7 +118,8 @@ export default function FinanceOverview() {
             ) : (
               sortedInvoiceTimeline.map((inv) => {
                 const isOverdue = inv.status === "Overdue"
-                const isPaid = inv.status === "Paid"
+                const isPaid = inv.status === "Paid" || Number(inv.balance_due ?? 0) <= 0
+                const displayAmt = isPaid ? Number(inv.total || inv.amount_paid || 0) : Number(inv.balance_due || inv.total || 0)
                 return (
                   <div
                     key={inv.id}
@@ -139,14 +140,14 @@ export default function FinanceOverview() {
                           ? "bg-emerald-100 text-emerald-700"
                           : "bg-amber-100 text-amber-800"
                       }`}>
-                        {inv.status}
+                        {isPaid ? "Paid" : inv.status}
                       </span>
                     </div>
                     <p className="text-xs font-bold truncate">{inv.customer_name}</p>
                     <div className="flex items-center justify-between mt-2 pt-1 border-t border-black/5 text-[10px]">
-                      <span className="text-gray-400 font-semibold">Due {inv.due_date}</span>
+                      <span className="text-gray-400 font-semibold">{isPaid ? `Paid on ${inv.issue_date}` : `Due ${inv.due_date}`}</span>
                       <span className="font-mono font-black text-xs">
-                        ETB {inv.balance_due.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        ETB {displayAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
@@ -231,15 +232,9 @@ export default function FinanceOverview() {
                         </div>
 
                         <div className="text-right">
-                          <span className="text-xs font-black font-mono block text-black">
+                          <span className="text-xs font-black font-mono block text-rose-700">
                             ETB {inv.balance_due.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                           </span>
-                          <Link
-                            to="/finance/invoices"
-                            className="inline-block mt-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md hover:bg-emerald-100"
-                          >
-                            Collect
-                          </Link>
                         </div>
                       </div>
                     )

@@ -12,11 +12,24 @@ import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { Skeleton } from "@/components/ui/skeleton"
 import { loadResource, updateResource, deleteResource, API_BASE } from "@/lib/apiPersistence"
 import type { Role } from "@/lib/authStore"
+import { withOperatingWarehouses, isWarehouseInScope } from "@/lib/warehouses"
+
+export function normalizeRole(r: string): Role {
+  const clean = String(r || "").toLowerCase().trim()
+  if (clean === "admin" || clean === "super_admin" || clean === "superadmin") return "superadmin"
+  if (clean === "sales" || clean === "sales_manager") return "sales_manager"
+  if (clean === "hr" || clean === "hr_manager") return "hr_manager"
+  if (clean === "inventory" || clean === "inventory_admin" || clean === "inventory_manager") return "inventory_admin"
+  if (clean === "finance" || clean === "finance_manager") return "finance_manager"
+  if (clean === "hkc_docs" || clean === "hkc_docs_manager" || clean === "docs_specialist" || clean === "docs") return "hkc_docs_manager"
+  return clean as Role
+}
 
 export interface UserAccount {
   id: string
   username: string
   fullname: string
+  role?: string
   roles: Role[]
   status: "active" | "suspended"
   warehouse_id?: string | null
@@ -48,6 +61,34 @@ const roleLabels: Record<string, string> = {
   inventory_admin: "Inventory Admin",
   finance_manager: "Finance Manager",
   hkc_docs_manager: "HKC Docs Specialist",
+}
+
+export function isWarehouseChecked(wh: Warehouse, selectedIds: string[] | undefined): boolean {
+  if (!selectedIds || selectedIds.length === 0) return false
+  return selectedIds.some(
+    (id) =>
+      id === wh.id ||
+      id === wh.code ||
+      isWarehouseInScope(id, [wh.id, wh.code]) ||
+      isWarehouseInScope(wh.code, [id])
+  )
+}
+
+export function toggleWarehouse(wh: Warehouse, currentIds: string[] | undefined): string[] {
+  const ids = currentIds || []
+  const isSelected = isWarehouseChecked(wh, ids)
+  if (isSelected) {
+    return ids.filter(
+      (id) =>
+        id !== wh.id &&
+        id !== wh.code &&
+        !isWarehouseInScope(id, [wh.id, wh.code]) &&
+        !isWarehouseInScope(wh.code, [id])
+    )
+  } else {
+    const val = wh.code || wh.id
+    return [...ids, val]
+  }
 }
 
 const avatarBgPresets = [
@@ -194,6 +235,7 @@ export default function UserManagement() {
         if (!Array.isArray(roles) || roles.length === 0) {
           roles = [u.role || "viewer"]
         }
+        const cleanRoles: Role[] = roles.map(normalizeRole)
 
         let whIds = u.warehouse_ids || u.warehouseIds
         if (typeof whIds === "string") {
@@ -209,14 +251,14 @@ export default function UserManagement() {
 
         return {
           ...u,
-          roles,
+          roles: cleanRoles,
           warehouse_ids: whIds,
         }
       })
 
       setUsers(sortNewestFirst(normalizedUsers))
       setEmployees(sortNewestFirst(employeesData))
-      setWarehouses(sortNewestFirst(warehousesData))
+      setWarehouses(withOperatingWarehouses(warehousesData || []))
     } catch (err: any) {
       console.error(err)
       showToast("Error loading user management data", "warning")
@@ -253,6 +295,10 @@ export default function UserManagement() {
 
     setActionLoading(true)
     try {
+      const canonicalRoles = newUser.roles.map(normalizeRole)
+      const isSuper = canonicalRoles.includes("superadmin")
+      const targetWhIds = isSuper ? [] : (newUser.warehouse_ids || [])
+
       const response = await fetch(`${API_BASE}/api/auth/register`, {
         method: "POST",
         headers: {
@@ -261,11 +307,13 @@ export default function UserManagement() {
         body: JSON.stringify({
           username: newUser.username,
           password: newUser.password,
-          roles: newUser.roles,
+          role: canonicalRoles[0] || "viewer",
+          roles: canonicalRoles,
           status: newUser.status,
           fullname: finalFullname,
           employee_id: newUser.employee_id || null,
-          warehouse_ids: newUser.roles.includes("inventory_admin") ? newUser.warehouse_ids : [],
+          warehouse_ids: targetWhIds,
+          warehouse_id: targetWhIds[0] || null,
         }),
       })
 
@@ -312,12 +360,18 @@ export default function UserManagement() {
 
     setActionLoading(true)
     try {
+      const canonicalRoles = editingUser.roles.map(normalizeRole)
+      const isSuper = canonicalRoles.includes("superadmin")
+      const targetWhIds = isSuper ? [] : (editingUser.warehouse_ids || [])
+
       const updateData: any = {
         fullname: editingUser.fullname,
-        roles: editingUser.roles,
+        role: canonicalRoles[0] || "viewer",
+        roles: canonicalRoles,
         status: editingUser.status,
         employee_id: editingUser.employee_id || null,
-        warehouse_ids: editingUser.roles.includes("inventory_admin") ? editingUser.warehouse_ids || [] : [],
+        warehouse_ids: targetWhIds,
+        warehouse_id: targetWhIds[0] || null,
       }
       if (editPassword) {
         updateData.password = editPassword
@@ -516,12 +570,8 @@ export default function UserManagement() {
                         const initials = getInitials(user.fullname || user.username)
 
                         // Check warehouse names if assigned
+                        const isSuper = user.roles.includes("superadmin")
                         const whIds = user.warehouse_ids || (user.warehouse_id ? [user.warehouse_id] : [])
-                        const whDisplay = whIds.length > 0
-                          ? whIds
-                              .map(id => warehouses.find(w => w.id === id || w.code === id)?.name || id)
-                              .join(", ")
-                          : "HQ & All Warehouses"
 
                         return (
                           <tr key={user.id} className="hover:bg-black/[0.01] transition-colors">
@@ -557,9 +607,31 @@ export default function UserManagement() {
                               </div>
                             </td>
                             <td className="py-4 px-4">
-                              <span className="text-xs font-semibold text-zinc-600">
-                                {whDisplay}
-                              </span>
+                              {isSuper ? (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-purple-50 text-purple-800 border border-purple-200/80 shadow-2xs inline-block">
+                                  Global / Super Admin
+                                </span>
+                              ) : whIds.length === 0 ? (
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-zinc-100 text-zinc-700 border border-zinc-200/80 shadow-2xs inline-block">
+                                  HQ & All Warehouses
+                                </span>
+                              ) : (
+                                <div className="flex flex-wrap gap-1 max-w-sm">
+                                  {whIds.map((id) => {
+                                    const wh = warehouses.find((w) => w.id === id || w.code === id || isWarehouseInScope(id, [w.id, w.code]))
+                                    const label = wh ? (wh.code || wh.name) : id
+                                    return (
+                                      <span
+                                        key={id}
+                                        className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200/80 shadow-2xs"
+                                        title={wh?.name || id}
+                                      >
+                                        {label}
+                                      </span>
+                                    )
+                                  })}
+                                </div>
+                              )}
                             </td>
                             <td className="py-4 px-4 text-center">
                               <span className={cn(
@@ -597,10 +669,20 @@ export default function UserManagement() {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    const whIds = Array.isArray(user.warehouse_ids)
-                                      ? user.warehouse_ids
+                                    let rawWhIds: any = user.warehouse_ids
+                                    if (typeof rawWhIds === "string") {
+                                      try {
+                                        rawWhIds = JSON.parse(rawWhIds)
+                                      } catch {
+                                        rawWhIds = rawWhIds ? [rawWhIds] : []
+                                      }
+                                    }
+                                    const whIds = Array.isArray(rawWhIds)
+                                      ? rawWhIds
                                       : (user.warehouse_id ? [user.warehouse_id] : [])
-                                    setEditingUser({ ...user, warehouse_ids: whIds })
+                                    const rawRoles = (user.roles && user.roles.length > 0) ? user.roles : [user.role || "viewer"]
+                                    const cleanRoles = rawRoles.map(normalizeRole)
+                                    setEditingUser({ ...user, roles: cleanRoles, warehouse_ids: whIds })
                                     setEditPassword("")
                                     setShowEditingUserPassword(false)
                                     setShowEditModal(true)
@@ -800,81 +882,191 @@ export default function UserManagement() {
 
               {/* Multiple Roles Selector Checkboxes */}
               <div>
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Assign Access Roles</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    Assign Access Roles
+                  </label>
+                  <span className="text-[10px] font-bold text-gray-400">Select one or more</span>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 bg-black/[0.01] p-3 rounded-2xl border border-black/5">
                   {Object.keys(roleLabels).map((rKey) => {
                     const role = rKey as Role
                     const isChecked = newUser.roles.includes(role)
                     const isSuperadminChecked = newUser.roles.includes("superadmin")
-                    const isDisabled = role !== "superadmin" && isSuperadminChecked
 
                     return (
                       <label 
                         key={role} 
                         className={cn(
-                          "flex items-center gap-2.5 p-2 rounded-xl hover:bg-black/[0.02] cursor-pointer",
-                          isDisabled && "opacity-50 cursor-not-allowed"
+                          "flex items-center gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer",
+                          isChecked
+                            ? "bg-white border-green-700/40 shadow-2xs"
+                            : "bg-white/40 border-black/5 hover:bg-white"
                         )}
                       >
                         <input
                           type="checkbox"
                           checked={isChecked}
-                          disabled={isDisabled}
                           onChange={() => {
-                            if (isChecked) {
-                              setNewUser({ ...newUser, roles: newUser.roles.filter(r => r !== role) })
-                            } else {
-                              if (role === "superadmin") {
+                            if (role === "superadmin") {
+                              if (isChecked) {
+                                setNewUser({ ...newUser, roles: [] })
+                              } else {
                                 confirm({
                                   title: "Assign Super Admin Role",
-                                  message: "You have selected super admin this will give full access are you sure?",
+                                  message: "Assigning Super Admin grants unrestricted global access across all system modules and warehouses. Any other selected roles will be replaced.",
                                   confirmLabel: "Yes, Assign",
                                   cancelLabel: "Cancel",
                                   onConfirm: () => {
-                                    setNewUser({ ...newUser, roles: ["superadmin"] })
+                                    setNewUser({ ...newUser, roles: ["superadmin"], warehouse_ids: [] })
                                   }
                                 })
+                              }
+                            } else {
+                              if (isSuperadminChecked) {
+                                setNewUser({ ...newUser, roles: [role] })
                               } else {
-                                setNewUser({ ...newUser, roles: [...newUser.roles, role] })
+                                if (isChecked) {
+                                  setNewUser({ ...newUser, roles: newUser.roles.filter(r => r !== role) })
+                                } else {
+                                  setNewUser({ ...newUser, roles: [...newUser.roles, role] })
+                                }
                               }
                             }
                           }}
-                          className="accent-green-700 size-4 cursor-pointer disabled:cursor-not-allowed"
+                          className="accent-green-700 size-4 cursor-pointer"
                         />
-                        <span className="text-xs font-semibold text-black">{roleLabels[role]}</span>
+                        <div className="min-w-0 flex-1">
+                          <span className="text-xs font-semibold text-black block">{roleLabels[role]}</span>
+                          {role === "superadmin" && (
+                            <span className="text-[9px] font-bold text-purple-600 block">Full Global Privileges</span>
+                          )}
+                        </div>
                       </label>
                     )
                   })}
                 </div>
               </div>
 
-              {/* Warehouse Selection (Conditional on inventory_admin role) */}
-              {newUser.roles.includes("inventory_admin") && (
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Assigned Warehouse Scopes</label>
-                  <div className="grid grid-cols-1 gap-2 bg-black/[0.01] p-3 rounded-2xl border border-black/5">
-                    {warehouses.map((wh) => {
-                      const val = wh.code || wh.id
-                      const isChecked = newUser.warehouse_ids?.includes(wh.id) || newUser.warehouse_ids?.includes(wh.code)
-                      return (
-                        <label key={wh.id} className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-black/[0.02] cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => {
-                              if (isChecked) {
-                                setNewUser({ ...newUser, warehouse_ids: (newUser.warehouse_ids || []).filter(id => id !== wh.id && id !== wh.code) })
-                              } else {
-                                setNewUser({ ...newUser, warehouse_ids: [...(newUser.warehouse_ids || []), val] })
-                              }
-                            }}
-                            className="accent-green-700 size-4 cursor-pointer"
-                          />
-                          <span className="text-xs font-semibold text-black">{wh.name} ({wh.code})</span>
-                        </label>
-                      )
-                    })}
+              {/* Warehouse Scope Selection */}
+              {newUser.roles.includes("superadmin") ? (
+                <div className="p-3.5 rounded-2xl bg-purple-50/80 border border-purple-200/80 text-purple-900">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="size-4 text-purple-700 shrink-0" />
+                    <span className="text-xs font-bold">Global / Super Admin Scope</span>
                   </div>
+                  <p className="text-[11px] text-purple-700/90 mt-1 font-medium">
+                    Super Admin has full unrestricted access across all warehouses, financial records, and system settings. Warehouse restrictions do not apply.
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      Warehouse Access Scope
+                    </label>
+                    <span className="text-[10px] font-bold text-gray-500">
+                      {(newUser.warehouse_ids || []).length === 0 ? "All Warehouses & HQ" : `${newUser.warehouse_ids.length} Restricted`}
+                    </span>
+                  </div>
+
+                  {/* Scope Mode Selection */}
+                  <div className="grid grid-cols-2 gap-2 mb-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setNewUser({ ...newUser, warehouse_ids: [] })}
+                      className={cn(
+                        "flex flex-col items-start p-3 rounded-2xl border text-left transition-all cursor-pointer",
+                        (newUser.warehouse_ids || []).length === 0
+                          ? "bg-green-700/10 border-green-600 text-green-900 shadow-2xs ring-1 ring-green-600/30"
+                          : "bg-black/[0.01] border-black/10 text-gray-600 hover:bg-black/[0.03]"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "size-3 rounded-full border flex items-center justify-center",
+                          (newUser.warehouse_ids || []).length === 0 ? "border-green-700 bg-green-700" : "border-gray-400"
+                        )}>
+                          {(newUser.warehouse_ids || []).length === 0 && <span className="size-1.5 rounded-full bg-white" />}
+                        </span>
+                        <span className="text-xs font-bold text-black">HQ & All Warehouses</span>
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-1 pl-5">
+                        Access to operations across all warehouse facilities and HQ.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if ((newUser.warehouse_ids || []).length === 0) {
+                          setNewUser({ ...newUser, warehouse_ids: [warehouses[0]?.code || "WH1"] })
+                        }
+                      }}
+                      className={cn(
+                        "flex flex-col items-start p-3 rounded-2xl border text-left transition-all cursor-pointer",
+                        (newUser.warehouse_ids || []).length > 0
+                          ? "bg-green-700/10 border-green-600 text-green-900 shadow-2xs ring-1 ring-green-600/30"
+                          : "bg-black/[0.01] border-black/10 text-gray-600 hover:bg-black/[0.03]"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "size-3 rounded-full border flex items-center justify-center",
+                          (newUser.warehouse_ids || []).length > 0 ? "border-green-700 bg-green-700" : "border-gray-400"
+                        )}>
+                          {(newUser.warehouse_ids || []).length > 0 && <span className="size-1.5 rounded-full bg-white" />}
+                        </span>
+                        <span className="text-xs font-bold text-black">Specific Warehouses</span>
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-1 pl-5">
+                        Restrict operations to designated warehouse facilities only.
+                      </p>
+                    </button>
+                  </div>
+
+                  {/* Checklist of warehouses */}
+                  {(newUser.warehouse_ids || []).length > 0 && (
+                    <div className="space-y-1.5 bg-black/[0.01] p-3 rounded-2xl border border-black/5">
+                      <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                        Select Allowed Warehouses
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {warehouses.map((wh) => {
+                          const isChecked = isWarehouseChecked(wh, newUser.warehouse_ids)
+                          return (
+                            <label
+                              key={wh.id}
+                              className={cn(
+                                "flex items-center gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer",
+                                isChecked
+                                  ? "bg-white border-green-700/40 shadow-2xs"
+                                  : "bg-white/50 border-black/5 hover:bg-white"
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  if (isChecked && (newUser.warehouse_ids || []).length === 1) {
+                                    showToast("At least one warehouse must be selected for restricted scope, or select 'HQ & All Warehouses'", "warning")
+                                    return
+                                  }
+                                  const nextIds = toggleWarehouse(wh, newUser.warehouse_ids)
+                                  setNewUser({ ...newUser, warehouse_ids: nextIds })
+                                }}
+                                className="accent-green-700 size-4 cursor-pointer"
+                              />
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold text-black truncate">{wh.name}</div>
+                                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{wh.code}</div>
+                              </div>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -950,90 +1142,197 @@ export default function UserManagement() {
 
               {/* Multiple Roles Selector Checkboxes */}
               <div>
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Modify Assigned Roles</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    Modify Assigned Roles
+                  </label>
+                  <span className="text-[10px] font-bold text-gray-400">Select one or more</span>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 bg-black/[0.01] p-3 rounded-2xl border border-black/5">
                   {Object.keys(roleLabels).map((rKey) => {
                     const role = rKey as Role
                     const isChecked = editingUser.roles.includes(role)
                     const isSuperadminChecked = editingUser.roles.includes("superadmin")
-                    const isDisabled = role !== "superadmin" && isSuperadminChecked
 
                     return (
                       <label 
                         key={role} 
                         className={cn(
-                          "flex items-center gap-2.5 p-2 rounded-xl hover:bg-black/[0.02] cursor-pointer",
-                          isDisabled && "opacity-50 cursor-not-allowed"
+                          "flex items-center gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer",
+                          isChecked
+                            ? "bg-white border-green-700/40 shadow-2xs"
+                            : "bg-white/40 border-black/5 hover:bg-white"
                         )}
                       >
                         <input
                           type="checkbox"
                           checked={isChecked}
-                          disabled={isDisabled}
                           onChange={() => {
-                            if (isChecked) {
-                              setEditingUser({ ...editingUser, roles: editingUser.roles.filter(r => r !== role) })
-                            } else {
-                              if (role === "superadmin") {
+                            if (role === "superadmin") {
+                              if (isChecked) {
+                                setEditingUser({ ...editingUser, roles: [] })
+                              } else {
                                 confirm({
                                   title: "Assign Super Admin Role",
-                                  message: "You have selected super admin this will give full access are you sure?",
+                                  message: "Assigning Super Admin grants unrestricted global access across all system modules and warehouses. Any other selected roles will be replaced.",
                                   confirmLabel: "Yes, Assign",
                                   cancelLabel: "Cancel",
                                   onConfirm: () => {
-                                    setEditingUser({ ...editingUser, roles: ["superadmin"] })
+                                    setEditingUser({ ...editingUser, roles: ["superadmin"], warehouse_ids: [], warehouse_id: null })
                                   }
                                 })
+                              }
+                            } else {
+                              if (isSuperadminChecked) {
+                                setEditingUser({ ...editingUser, roles: [role] })
                               } else {
-                                setEditingUser({ ...editingUser, roles: [...editingUser.roles, role] })
+                                if (isChecked) {
+                                  setEditingUser({ ...editingUser, roles: editingUser.roles.filter(r => r !== role) })
+                                } else {
+                                  setEditingUser({ ...editingUser, roles: [...editingUser.roles, role] })
+                                }
                               }
                             }
                           }}
-                          className="accent-green-700 size-4 cursor-pointer disabled:cursor-not-allowed"
+                          className="accent-green-700 size-4 cursor-pointer"
                         />
-                        <span className="text-xs font-semibold text-black">{roleLabels[role]}</span>
+                        <div className="min-w-0 flex-1">
+                          <span className="text-xs font-semibold text-black block">{roleLabels[role]}</span>
+                          {role === "superadmin" && (
+                            <span className="text-[9px] font-bold text-purple-600 block">Full Global Privileges</span>
+                          )}
+                        </div>
                       </label>
                     )
                   })}
                 </div>
               </div>
 
-              {/* Warehouse Selection (Conditional on inventory_admin role) */}
-              {editingUser.roles.includes("inventory_admin") && (
-                <div>
-                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Assigned Warehouse Scopes</label>
-                  <div className="grid grid-cols-1 gap-2 bg-black/[0.01] p-3 rounded-2xl border border-black/5">
-                    {warehouses.map((wh) => {
-                      const val = wh.code || wh.id
-                      const isChecked = editingUser.warehouse_ids?.includes(wh.id) || editingUser.warehouse_ids?.includes(wh.code) || editingUser.warehouse_id === wh.id || editingUser.warehouse_id === wh.code
-                      return (
-                        <label key={wh.id} className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-black/[0.02] cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => {
-                              const currentIds = editingUser.warehouse_ids || (editingUser.warehouse_id ? [editingUser.warehouse_id] : [])
-                              if (isChecked) {
-                                setEditingUser({ 
-                                  ...editingUser, 
-                                  warehouse_ids: currentIds.filter(id => id !== wh.id && id !== wh.code),
-                                  warehouse_id: null
-                                })
-                              } else {
-                                setEditingUser({ 
-                                  ...editingUser, 
-                                  warehouse_ids: [...currentIds, val],
-                                  warehouse_id: null
-                                })
-                              }
-                            }}
-                            className="accent-green-700 size-4 cursor-pointer"
-                          />
-                          <span className="text-xs font-semibold text-black">{wh.name} ({wh.code})</span>
-                        </label>
-                      )
-                    })}
+              {/* Warehouse Scope Selection */}
+              {editingUser.roles.includes("superadmin") ? (
+                <div className="p-3.5 rounded-2xl bg-purple-50/80 border border-purple-200/80 text-purple-900">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="size-4 text-purple-700 shrink-0" />
+                    <span className="text-xs font-bold">Global / Super Admin Scope</span>
                   </div>
+                  <p className="text-[11px] text-purple-700/90 mt-1 font-medium">
+                    Super Admin has full unrestricted access across all warehouses, financial records, and system settings. Warehouse restrictions do not apply.
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      Warehouse Access Scope
+                    </label>
+                    <span className="text-[10px] font-bold text-gray-500">
+                      {(editingUser.warehouse_ids || []).length === 0 ? "All Warehouses & HQ" : `${(editingUser.warehouse_ids || []).length} Restricted`}
+                    </span>
+                  </div>
+
+                  {/* Scope Mode Selection */}
+                  <div className="grid grid-cols-2 gap-2 mb-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditingUser({ ...editingUser, warehouse_ids: [], warehouse_id: null })}
+                      className={cn(
+                        "flex flex-col items-start p-3 rounded-2xl border text-left transition-all cursor-pointer",
+                        (editingUser.warehouse_ids || []).length === 0
+                          ? "bg-green-700/10 border-green-600 text-green-900 shadow-2xs ring-1 ring-green-600/30"
+                          : "bg-black/[0.01] border-black/10 text-gray-600 hover:bg-black/[0.03]"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "size-3 rounded-full border flex items-center justify-center",
+                          (editingUser.warehouse_ids || []).length === 0 ? "border-green-700 bg-green-700" : "border-gray-400"
+                        )}>
+                          {(editingUser.warehouse_ids || []).length === 0 && <span className="size-1.5 rounded-full bg-white" />}
+                        </span>
+                        <span className="text-xs font-bold text-black">HQ & All Warehouses</span>
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-1 pl-5">
+                        Access to operations across all warehouse facilities and HQ.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if ((editingUser.warehouse_ids || []).length === 0) {
+                          const initialWh = warehouses[0]?.code || "WH1"
+                          setEditingUser({ ...editingUser, warehouse_ids: [initialWh], warehouse_id: initialWh })
+                        }
+                      }}
+                      className={cn(
+                        "flex flex-col items-start p-3 rounded-2xl border text-left transition-all cursor-pointer",
+                        (editingUser.warehouse_ids || []).length > 0
+                          ? "bg-green-700/10 border-green-600 text-green-900 shadow-2xs ring-1 ring-green-600/30"
+                          : "bg-black/[0.01] border-black/10 text-gray-600 hover:bg-black/[0.03]"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "size-3 rounded-full border flex items-center justify-center",
+                          (editingUser.warehouse_ids || []).length > 0 ? "border-green-700 bg-green-700" : "border-gray-400"
+                        )}>
+                          {(editingUser.warehouse_ids || []).length > 0 && <span className="size-1.5 rounded-full bg-white" />}
+                        </span>
+                        <span className="text-xs font-bold text-black">Specific Warehouses</span>
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-1 pl-5">
+                        Restrict operations to designated warehouse facilities only.
+                      </p>
+                    </button>
+                  </div>
+
+                  {/* Checklist of warehouses */}
+                  {(editingUser.warehouse_ids || []).length > 0 && (
+                    <div className="space-y-1.5 bg-black/[0.01] p-3 rounded-2xl border border-black/5">
+                      <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                        Select Allowed Warehouses
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {warehouses.map((wh) => {
+                          const isChecked = isWarehouseChecked(wh, editingUser.warehouse_ids)
+                          return (
+                            <label
+                              key={wh.id}
+                              className={cn(
+                                "flex items-center gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer",
+                                isChecked
+                                  ? "bg-white border-green-700/40 shadow-2xs"
+                                  : "bg-white/50 border-black/5 hover:bg-white"
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  const currentIds = editingUser.warehouse_ids || []
+                                  if (isChecked && currentIds.length === 1) {
+                                    showToast("At least one warehouse must be selected for restricted scope, or select 'HQ & All Warehouses'", "warning")
+                                    return
+                                  }
+                                  const nextIds = toggleWarehouse(wh, currentIds)
+                                  setEditingUser({ 
+                                    ...editingUser, 
+                                    warehouse_ids: nextIds,
+                                    warehouse_id: nextIds[0] || null
+                                  })
+                                }}
+                                className="accent-green-700 size-4 cursor-pointer"
+                              />
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold text-black truncate">{wh.name}</div>
+                                <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">{wh.code}</div>
+                              </div>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

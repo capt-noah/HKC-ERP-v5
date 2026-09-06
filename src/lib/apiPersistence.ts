@@ -71,7 +71,13 @@ export async function loadResource<T>(resource: string): Promise<T[]> {
     throw new Error(errorMessage(body, `Failed to load ${resource}.`))
   }
 
-  return Array.isArray(body) ? (body as T[]) : []
+  if (Array.isArray(body)) {
+    return body as T[]
+  }
+  if (body && typeof body === "object" && Array.isArray((body as any).rows)) {
+    return (body as any).rows as T[]
+  }
+  return []
 }
 
 export async function replaceResource<T extends Identified>(resource: string, items: T[]) {

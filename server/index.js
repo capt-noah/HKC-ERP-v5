@@ -101,14 +101,34 @@ app.get("/api/db-test", async (req, res) => {
   }
 })
 
+app.get("/api/db-test/sales-issues", async (req, res) => {
+  try {
+    const [issues] = await pool.query("SELECT * FROM `sales_issues` ORDER BY created_at DESC LIMIT 20").catch(async () => {
+      const [rows] = await pool.query("SELECT * FROM `sales_issues` LIMIT 20")
+      return [rows]
+    })
+    const [items] = await pool.query("SELECT * FROM `sales_issue_items` LIMIT 50")
+    res.json({
+      status: "success",
+      totalIssues: issues.length,
+      totalItems: items.length,
+      issues,
+      items,
+    })
+  } catch (err) {
+    res.status(500).json({ status: "error", message: err.message })
+  }
+})
+
 // 5. API & Backend routes
 app.use("/", masterRouter)
 
-// 6. Serve uploaded files statically with caching and security headers
+// 6. Serve uploaded files statically with caching, security headers, and cross-folder resolver fallback
 const uploadsPath = path.resolve(__dirname, "../uploads")
 if (!fs.existsSync(uploadsPath)) {
   fs.mkdirSync(uploadsPath, { recursive: true })
 }
+
 app.use(
   "/uploads",
   express.static(uploadsPath, {
@@ -118,6 +138,36 @@ app.use(
     },
   })
 )
+
+// Fallback resolver for legacy files or path mismatches under /uploads/
+app.use("/uploads", (req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next()
+
+  const rawPath = decodeURIComponent(req.path || "")
+  const filename = path.basename(rawPath)
+  if (!filename || filename === "." || filename === "/") return next()
+
+  // 1. Check directly under uploads root
+  const directPath = path.join(uploadsPath, filename)
+  if (fs.existsSync(directPath) && fs.statSync(directPath).isFile()) {
+    return res.sendFile(directPath)
+  }
+
+  // 2. Search all category subdirectories under uploads/
+  try {
+    const subdirs = fs.readdirSync(uploadsPath, { withFileTypes: true }).filter((d) => d.isDirectory())
+    for (const dir of subdirs) {
+      const candidate = path.join(uploadsPath, dir.name, filename)
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+        return res.sendFile(candidate)
+      }
+    }
+  } catch (err) {
+    console.warn("[Uploads Fallback Resolver Notice]:", err.message)
+  }
+
+  return res.status(404).json({ error: `File '${filename}' not found in server storage.` })
+})
 
 // 7. Serve static assets from pre-compiled dist/ directory (for Plesk / standalone hosting)
 if (fs.existsSync(distPath)) {

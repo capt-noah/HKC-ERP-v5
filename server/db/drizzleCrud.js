@@ -162,16 +162,95 @@ export async function drizzleGetRow({ resource, id }) {
   }
 
   const tableName = resource.table
+  const cleanId = String(id).trim()
   try {
-    const [rows] = await pool.query(`SELECT * FROM \`${tableName}\` WHERE id = ? LIMIT 1`, [String(id)])
+    // 1. Direct primary key query
+    const [rows] = await pool.query(`SELECT * FROM \`${tableName}\` WHERE id = ? LIMIT 1`, [cleanId])
     if (Array.isArray(rows) && rows.length > 0) {
       return { status: 200, body: unwrapRow(rows[0], resource.storage) }
     }
+
+    // 2. Dynamic multi-identifier column fallback
+    const validCols = await getTableColumns(tableName)
+    const possibleCols = [
+      "issue_number",
+      "issueNumber",
+      "fs_no",
+      "fsNo",
+      "sales_order_id",
+      "salesOrderId",
+      "reference_no",
+      "referenceNo",
+      "invoice_number",
+      "voucher_number",
+      "order_number",
+      "customer_id",
+    ]
+    const matchedCols = validCols
+      ? possibleCols.filter((c) => validCols.has(c))
+      : ["issue_number", "fs_no", "sales_order_id", "reference_no"]
+
+    for (const col of matchedCols) {
+      try {
+        const [altRows] = await pool.query(`SELECT * FROM \`${tableName}\` WHERE \`${col}\` = ? LIMIT 1`, [cleanId])
+        if (Array.isArray(altRows) && altRows.length > 0) {
+          return { status: 200, body: unwrapRow(altRows[0], resource.storage) }
+        }
+      } catch {}
+    }
+
+    // 3. Fallback: list rows and fuzzy match
+    const [allRows] = await pool.query(`SELECT * FROM \`${tableName}\` LIMIT 200`)
+    if (Array.isArray(allRows)) {
+      for (const raw of allRows) {
+        const r = unwrapRow(raw, resource.storage)
+        if (
+          String(r.id) === cleanId ||
+          String(r.issue_number || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(r.fs_no || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(r.reference_no || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(r.sales_order_id || "").toLowerCase() === cleanId.toLowerCase()
+        ) {
+          return { status: 200, body: r }
+        }
+      }
+    }
+
     return { status: 404, body: { error: `Row '${id}' not found in ${tableName}.` } }
   } catch (err) {
     console.error(`[MYSQL GET ERROR] ${tableName}:${id}:`, err)
     return { status: 500, body: { error: `Failed to get ${tableName}:${id}`, message: err.message } }
   }
+}
+
+const tableColumnsCache = new Map()
+
+async function getTableColumns(tableName) {
+  if (tableColumnsCache.has(tableName)) {
+    return tableColumnsCache.get(tableName)
+  }
+  try {
+    const [cols] = await pool.query(`SHOW COLUMNS FROM \`${tableName}\``)
+    const colNames = new Set(cols.map((c) => c.Field))
+    tableColumnsCache.set(tableName, colNames)
+    return colNames
+  } catch (err) {
+    console.warn(`[TABLE COLUMNS CHECK WARNING] \`${tableName}\`:`, err.message)
+    return null
+  }
+}
+
+function sanitizeSqlValue(val) {
+  if (val === undefined) return null
+  if (val instanceof Date) return val
+  if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) {
+    const d = new Date(val)
+    if (!isNaN(d.getTime())) return d
+  }
+  if (typeof val === "object" && val !== null) {
+    return JSON.stringify(val)
+  }
+  return val
 }
 
 export async function drizzleCreateRow({ resource, body }) {
@@ -193,12 +272,12 @@ export async function drizzleCreateRow({ resource, body }) {
       )
       return { status: 200, body: { id, ...payloadData } }
     } else {
-      const fields = Object.keys(body).filter((k) => k !== "created_at" && k !== "updated_at")
-      const values = fields.map((k) => {
-        const val = body[k]
-        if (typeof val === "object" && val !== null) return JSON.stringify(val)
-        return val
-      })
+      const validCols = await getTableColumns(tableName)
+      const fields = Object.keys(body).filter((k) => k !== "created_at" && k !== "updated_at" && (!validCols || validCols.has(k)))
+      if (fields.length === 0) {
+        return { status: 200, body: { id, ...body } }
+      }
+      const values = fields.map((k) => sanitizeSqlValue(body[k]))
       const placeholders = fields.map(() => "?").join(", ")
       const colNames = fields.map((f) => `\`${f}\``).join(", ")
 
@@ -221,38 +300,38 @@ export async function drizzleUpdateRow({ resource, id, body }) {
 
   const tableName = resource.table
   const isDoc = resource.storage === "jsonb_document" || resource.storage === "json_document"
+  const cleanId = String(id).trim()
 
   try {
     if (isDoc) {
-      const [existingRows] = await pool.query(`SELECT * FROM \`${tableName}\` WHERE id = ? LIMIT 1`, [String(id)])
-      let existingPayload = {}
-      if (Array.isArray(existingRows) && existingRows.length > 0) {
-        const row = existingRows[0]
-        existingPayload = typeof row.payload === "string" ? JSON.parse(row.payload) : (row.payload || {})
-      }
+      const getRes = await drizzleGetRow({ resource, id: cleanId })
+      const existingPayload = (getRes.status === 200 && getRes.body) ? getRes.body : {}
+      const targetId = existingPayload.id || cleanId
 
-      const mergedPayload = { ...existingPayload, ...body, id }
+      const mergedPayload = { ...existingPayload, ...body, id: targetId }
       await pool.query(
         `UPDATE \`${tableName}\` SET payload = ?, updated_at = NOW(3) WHERE id = ?`,
-        [JSON.stringify(mergedPayload), String(id)]
+        [JSON.stringify(mergedPayload), String(targetId)]
       )
       return { status: 200, body: mergedPayload }
     } else {
-      const fields = Object.keys(body).filter((k) => k !== "id" && k !== "created_at")
+      // Find actual existing row in DB to get real primary key
+      const getRes = await drizzleGetRow({ resource, id: cleanId })
+      const existingRow = (getRes.status === 200 && getRes.body) ? getRes.body : null
+      const targetDbId = existingRow?.id || cleanId
+
+      const validCols = await getTableColumns(tableName)
+      const fields = Object.keys(body).filter((k) => k !== "id" && k !== "created_at" && (!validCols || validCols.has(k)))
       if (fields.length === 0) {
-        return { status: 200, body: { id, ...body } }
+        return { status: 200, body: { id: targetDbId, ...body } }
       }
 
       const setClauses = fields.map((f) => `\`${f}\` = ?`).join(", ")
-      const values = fields.map((k) => {
-        const val = body[k]
-        if (typeof val === "object" && val !== null) return JSON.stringify(val)
-        return val
-      })
-      values.push(String(id))
+      const values = fields.map((k) => sanitizeSqlValue(body[k]))
+      values.push(String(targetDbId))
 
       await pool.query(`UPDATE \`${tableName}\` SET ${setClauses} WHERE id = ?`, values)
-      return { status: 200, body: { id, ...body } }
+      return { status: 200, body: { id: targetDbId, ...body } }
     }
   } catch (err) {
     console.error(`[MYSQL UPDATE ERROR] ${tableName}:${id}:`, err)
@@ -266,8 +345,11 @@ export async function drizzleDeleteRow({ resource, id }) {
   }
 
   const tableName = resource.table
+  const cleanId = String(id).trim()
   try {
-    await pool.query(`DELETE FROM \`${tableName}\` WHERE id = ?`, [String(id)])
+    const getRes = await drizzleGetRow({ resource, id: cleanId })
+    const targetDbId = getRes.body?.id || cleanId
+    await pool.query(`DELETE FROM \`${tableName}\` WHERE id = ?`, [String(targetDbId)])
     return { status: 200, body: { ok: true, deletedId: id } }
   } catch (err) {
     console.error(`[MYSQL DELETE ERROR] ${tableName}:${id}:`, err)

@@ -29,10 +29,8 @@ if (!fs.existsSync(UPLOADS_ROOT)) {
 // Multer Disk Storage Configuration
 const storage = multer.diskStorage({
   destination: (req, _file, cb) => {
-    let folder = (req.body?.folder || req.query?.folder || "general").toString().toLowerCase().trim()
-    if (!ALLOWED_FOLDERS.has(folder)) {
-      folder = "general"
-    }
+    let rawFolder = (req.query?.folder || req.body?.folder || "general").toString().toLowerCase().trim()
+    let folder = ALLOWED_FOLDERS.has(rawFolder) ? rawFolder : "general"
 
     const targetDir = path.join(UPLOADS_ROOT, folder)
     if (!fs.existsSync(targetDir)) {
@@ -93,12 +91,9 @@ uploadRouter.post("/upload", upload.single("file"), (req, res) => {
     return res.status(400).json({ error: "No file was uploaded" })
   }
 
-  let folder = (req.body?.folder || req.query?.folder || "general").toString().toLowerCase().trim()
-  if (!ALLOWED_FOLDERS.has(folder)) {
-    folder = "general"
-  }
-
-  const fileUrl = `/uploads/${folder}/${req.file.filename}`
+  const destinationDir = req.file.destination || ""
+  const actualFolder = path.basename(destinationDir) || "general"
+  const fileUrl = `/uploads/${actualFolder}/${req.file.filename}`
 
   res.status(201).json({
     success: true,
@@ -107,7 +102,7 @@ uploadRouter.post("/upload", upload.single("file"), (req, res) => {
     originalName: req.file.originalname,
     size: req.file.size,
     mimeType: req.file.mimetype,
-    folder,
+    folder: actualFolder,
   })
 })
 
@@ -120,23 +115,22 @@ uploadRouter.post("/upload/multiple", upload.array("files", 10), (req, res) => {
     return res.status(400).json({ error: "No files were uploaded" })
   }
 
-  let folder = (req.body?.folder || req.query?.folder || "general").toString().toLowerCase().trim()
-  if (!ALLOWED_FOLDERS.has(folder)) {
-    folder = "general"
-  }
-
-  const filesResult = req.files.map((file) => ({
-    url: `/uploads/${folder}/${file.filename}`,
-    filename: file.filename,
-    originalName: file.originalname,
-    size: file.size,
-    mimeType: file.mimetype,
-    folder,
-  }))
+  const results = req.files.map((file) => {
+    const destinationDir = file.destination || ""
+    const actualFolder = path.basename(destinationDir) || "general"
+    return {
+      url: `/uploads/${actualFolder}/${file.filename}`,
+      filename: file.filename,
+      originalName: file.originalname,
+      size: file.size,
+      mimeType: file.mimetype,
+      folder: actualFolder,
+    }
+  })
 
   res.status(201).json({
     success: true,
-    files: filesResult,
-    count: filesResult.length,
+    files: results,
+    count: results.length,
   })
 })

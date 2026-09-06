@@ -4,7 +4,7 @@ import {
   printWH1ReceivingVoucherDocument,
   exportWH1ReceivingVoucherExcel,
 } from "@/lib/exportUtils"
-import type { Product, WH1Entry } from "@/lib/erpStore"
+import type { Product } from "@/lib/erpStore"
 
 interface WH1ReceivingVoucherPrintModalProps {
   isOpen: boolean
@@ -19,45 +19,99 @@ export default function WH1ReceivingVoucherPrintModal({
 }: WH1ReceivingVoucherPrintModalProps) {
   if (!isOpen || !product) return null
 
-  const entries: WH1Entry[] = product.wh1Entries || []
+  const wh1Entries = product.wh1Entries || []
+  const binEntries = product.binCardEntries || []
 
   // Aggregate metadata for the parent product
-  const voucherNo = product.voucherNo || entries.map(e => e.voucherNo).filter(Boolean).join(", ") || "—"
-  const customer = product.customer || entries.map(e => e.customer).filter(Boolean).join(", ") || "—"
-  const plateNumber = product.plateNumber || entries.map(e => e.plateNumber).filter(Boolean).join(", ") || "—"
-  const date = product.entryDate || (entries.length > 0 ? entries[0].entryDate : new Date().toISOString().slice(0, 10))
+  const voucherNo = product.voucherNo || wh1Entries.map(e => e.voucherNo).filter(Boolean).join(", ") || "—"
+  const customer = product.customer || wh1Entries.map(e => e.customer).filter(Boolean).join(", ") || "—"
+  const plateNumber = product.plateNumber || wh1Entries.map(e => e.plateNumber).filter(Boolean).join(", ") || "—"
+  const date = product.entryDate || (wh1Entries.length > 0 ? wh1Entries[0].entryDate : new Date().toISOString().slice(0, 10))
   const warehouseName = product.warehouseName || product.warehouse || "WH1 - Commodity Store"
 
-  // Render all data/entries for the parent product
-  const itemsToRender = entries.length > 0
-    ? entries.map((entry, idx) => ({
+  // 1. Inbound arrival entries (truckloads)
+  const arrivalItems = wh1Entries.map((entry) => {
+    const qty = Number(entry.quantityReceived || 0)
+    const unitPrice = Number(entry.unitPrice || product.unitCost || 0)
+    const party = entry.customer || product.customer || "Supplier Arrival"
+    const voucher = entry.voucherNo ? (entry.voucherNo.startsWith("No.") ? entry.voucherNo : `No. ${entry.voucherNo}`) : ""
+    const plate = entry.plateNumber && entry.plateNumber !== "—" ? `[Plate: ${entry.plateNumber}]` : ""
+    
+    // Do NOT generate synthetic long remark if none was provided by user
+    const userRemark = (entry.notes || (entry as any).remark || "").trim()
+
+    return {
+      type: "Arrival" as const,
+      description: `${product.name} (Arrival: ${party}${voucher ? `, ${voucher}` : ""}${plate ? ` ${plate}` : ""})`,
+      unit: product.unit,
+      quantity: qty,
+      unitPrice,
+      totalPrice: qty * unitPrice,
+      remarks: userRemark || "—",
+    }
+  })
+
+  // 2. Outbound dispatch leaves from binCardEntries
+  const dispatchItems: Array<{
+    type: "Dispatch"
+    description: string
+    unit: string
+    quantity: number
+    unitPrice: number
+    totalPrice: number
+    remarks: string
+  }> = []
+
+  binEntries.forEach((rec) => {
+    const qtyOut = Number(rec.qtyIssued || 0)
+    if (qtyOut <= 0) return
+
+    const unitPrice = Number(rec.unitPrice || product.unitCost || 0)
+    const party = rec.party || "Customer Dispatch"
+    const voucher = rec.voucherNo ? `FS: ${rec.voucherNo}` : ""
+    const plate = rec.plateNumber && rec.plateNumber !== "—" && rec.plateNumber !== "" ? `[Plate: ${rec.plateNumber}]` : ""
+
+    // Strip auto-generated strings like "Sales Issue FS-..."
+    let rawRemark = (rec.remark || "").trim()
+    if (rawRemark.startsWith("Sales Issue FS-") || rawRemark.startsWith("Sales Issue FS")) {
+      rawRemark = ""
+    }
+
+    dispatchItems.push({
+      type: "Dispatch",
+      description: `${product.name} (Dispatch: ${party}${voucher ? `, ${voucher}` : ""}${plate ? ` ${plate}` : ""})`,
+      unit: product.unit,
+      quantity: -qtyOut,
+      unitPrice,
+      totalPrice: qtyOut * unitPrice,
+      remarks: rawRemark || "—",
+    })
+  })
+
+  // Combine both arrival and dispatch records
+  const allRecords = [...arrivalItems, ...dispatchItems]
+  const itemsToRender = allRecords.length > 0
+    ? allRecords.map((item, idx) => ({
+        ...item,
         itemNo: idx + 1,
-        description: entries.length > 1 ? `${product.name} (Entry: ${entry.entryId})` : product.name,
-        unit: product.unit,
-        quantity: entry.quantityReceived,
-        unitPrice: entry.unitPrice || product.unitCost || 0,
-        totalPrice: (entry.quantityReceived || 0) * (entry.unitPrice || product.unitCost || 0),
-        remarks: [
-          entry.voucherNo ? `Voucher: ${entry.voucherNo}` : null,
-          entry.customer ? `Customer: ${entry.customer}` : null,
-          entry.plateNumber ? `Plate: ${entry.plateNumber}` : null,
-          entry.notes || null,
-        ].filter(Boolean).join(" | ") || "—",
       }))
     : [
         {
           itemNo: 1,
+          type: "Stock" as const,
           description: product.name,
           unit: product.unit,
           quantity: product.quantity,
           unitPrice: product.unitCost || 0,
           totalPrice: (product.quantity || 0) * (product.unitCost || 0),
-          remarks: product.description || "—",
+          remarks: "—",
         },
       ]
 
-  const totalQuantity = itemsToRender.reduce((sum, i) => sum + Number(i.quantity || 0), 0)
-  const totalValue = itemsToRender.reduce((sum, i) => sum + Number(i.totalPrice || 0), 0)
+  const totalReceived = itemsToRender.filter(i => i.quantity > 0).reduce((sum, i) => sum + i.quantity, 0)
+  const totalDispatched = itemsToRender.filter(i => i.quantity < 0).reduce((sum, i) => sum + Math.abs(i.quantity), 0)
+  const currentBalance = totalReceived - totalDispatched
+  const totalValue = currentBalance * Number(product.unitCost || 0)
 
   const voucherOptions = {
     voucherNo,
@@ -134,7 +188,7 @@ export default function WH1ReceivingVoucherPrintModal({
                 </div>
               </div>
               <div className="text-right">
-                <div className="text-xs font-black uppercase tracking-wider text-zinc-800">Goods Receiving Voucher</div>
+                <div className="text-xs font-black uppercase tracking-wider text-zinc-800">Commodity Movement & Stock Card</div>
                 <div className="text-lg font-black font-mono text-rose-700">No. {voucherNo}</div>
               </div>
             </div>
@@ -171,9 +225,13 @@ export default function WH1ReceivingVoucherPrintModal({
                       <td className="py-2.5 px-3 text-center font-bold text-zinc-400">{item.itemNo}</td>
                       <td className="py-2.5 px-4 font-bold text-zinc-900">{item.description}</td>
                       <td className="py-2.5 px-3 text-center uppercase font-bold text-zinc-600">{item.unit}</td>
-                      <td className="py-2.5 px-4 text-right font-mono font-black text-zinc-900">{item.quantity.toLocaleString()}</td>
+                      <td className={`py-2.5 px-4 text-right font-mono font-black ${item.quantity < 0 ? "text-amber-800" : "text-emerald-700"}`}>
+                        {item.quantity > 0 ? `+${item.quantity.toLocaleString()}` : item.quantity.toLocaleString()}
+                      </td>
                       <td className="py-2.5 px-4 text-right font-mono text-zinc-700">{item.unitPrice > 0 ? item.unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</td>
-                      <td className="py-2.5 px-4 text-right font-mono font-black text-emerald-800">{item.totalPrice > 0 ? item.totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2 }) : "—"}</td>
+                      <td className={`py-2.5 px-4 text-right font-mono font-black ${item.quantity < 0 ? "text-amber-800" : "text-emerald-800"}`}>
+                        {item.totalPrice > 0 ? (item.quantity < 0 ? `-ETB ${item.totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : `ETB ${item.totalPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}`) : "—"}
+                      </td>
                       <td className="py-2.5 px-4 text-zinc-500">{item.remarks || "—"}</td>
                     </tr>
                   ))}
@@ -182,9 +240,15 @@ export default function WH1ReceivingVoucherPrintModal({
             </div>
 
             {/* Totals Summary */}
-            <div className="flex justify-between items-center bg-white p-3.5 rounded-xl border border-zinc-200 font-bold text-xs">
-              <div>Total Quantity: <span className="font-mono text-emerald-700 font-black">{totalQuantity.toLocaleString()} {product.unit}</span></div>
-              <div>Total Value: <span className="font-mono text-zinc-950 font-black">{totalValue > 0 ? `ETB ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "—"}</span></div>
+            <div className="flex flex-wrap justify-between items-center bg-white p-3.5 rounded-xl border border-zinc-200 font-bold text-xs gap-3">
+              <div className="flex items-center gap-4">
+                <div>Total Received: <span className="font-mono text-emerald-700 font-black">+{totalReceived.toLocaleString()} {product.unit}</span></div>
+                {totalDispatched > 0 && (
+                  <div>Total Dispatched: <span className="font-mono text-amber-700 font-black">-{totalDispatched.toLocaleString()} {product.unit}</span></div>
+                )}
+                <div>Current Balance: <span className="font-mono text-zinc-950 font-black">{currentBalance.toLocaleString()} {product.unit}</span></div>
+              </div>
+              <div>Current Stock Value: <span className="font-mono text-zinc-950 font-black">{totalValue > 0 ? `ETB ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "—"}</span></div>
             </div>
 
             {product.description && (

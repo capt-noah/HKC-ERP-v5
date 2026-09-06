@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { X, Save, Trash2 } from "lucide-react"
+import { Save } from "lucide-react"
 import type { HkcDocAttachment, HkcDocRecord } from "@/lib/erpStore"
 import HkcDocAttachmentPanel from "./HkcDocAttachmentPanel"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { updateHkcDocRecord, deleteHkcDocRecord } from "@/lib/hkcDocsApi"
 import { useFeedback } from "@/context/FeedbackContext"
+import { EditModalHeader } from "@/components/EditModalHeader"
 
 interface HkcDocEditModalProps {
   record: HkcDocRecord | null
@@ -112,21 +113,13 @@ export default function HkcDocEditModal({
         exit={{ opacity: 0, scale: 0.96, y: 12 }}
         className="bg-white rounded-2xl sm:rounded-3xl p-5 sm:p-7 max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-zinc-200"
       >
-        {/* Modal Header */}
-        <div className="flex items-start justify-between pb-3.5 mb-4 border-b border-zinc-200 shrink-0">
-          <div>
-            <h3 className="text-base sm:text-lg font-black text-zinc-900">Manage Shipment Documentation</h3>
-            <p className="text-[11px] sm:text-xs text-zinc-500">Record ID: {record.id}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-full hover:bg-zinc-100 text-zinc-400 cursor-pointer"
-            aria-label="Close modal"
-          >
-            <X className="size-5" />
-          </button>
-        </div>
+        <EditModalHeader
+          title="Manage Shipment Documentation"
+          subtitle={`Record ID: ${record.id} • ${record.shipmentId || ""}`}
+          onClose={onClose}
+          onRequestDelete={handleDelete}
+          deleteLabel="Delete Documentation Record"
+        />
 
         {/* Modal Body */}
         <div className="space-y-4 text-xs font-semibold overflow-y-auto pr-1 flex-1">
@@ -184,33 +177,23 @@ export default function HkcDocEditModal({
         </div>
 
         {/* Modal Footer */}
-        <div className="flex flex-col-reverse sm:flex-row justify-between items-stretch sm:items-center border-t border-zinc-200 pt-3.5 mt-4 gap-2.5 shrink-0">
+        <div className="flex justify-end items-center border-t border-zinc-200 pt-3.5 mt-4 gap-2.5 shrink-0">
           <button
             type="button"
-            disabled={isDeleting}
-            onClick={handleDelete}
-            className="h-11 rounded-xl border border-rose-200 hover:bg-rose-50 text-rose-700 font-black px-4 inline-flex items-center justify-center gap-1.5 cursor-pointer"
+            disabled={isSaving || isDeleting}
+            onClick={onClose}
+            className="h-11 px-5 rounded-xl border border-zinc-200 font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 cursor-pointer transition-colors"
           >
-            <Trash2 className="size-4" /> {isDeleting ? "Deleting..." : "Delete Record"}
+            Cancel
           </button>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={isSaving}
-              onClick={onClose}
-              className="h-11 flex-1 sm:flex-none rounded-xl border border-zinc-200 px-4 font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={isSaving}
-              onClick={handleSave}
-              className="h-11 flex-1 sm:flex-none min-w-[130px] rounded-xl bg-zinc-950 text-white font-bold px-5 inline-flex items-center justify-center gap-1.5 shadow-md hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-            >
-              {isSaving ? <LoadingDots color="bg-white" size="sm" /> : <><Save className="size-4" /> Save Changes</>}
-            </button>
-          </div>
+          <button
+            type="button"
+            disabled={isSaving || isDeleting}
+            onClick={handleSave}
+            className="h-11 min-w-[130px] rounded-xl bg-zinc-950 text-white font-bold px-6 inline-flex items-center justify-center gap-1.5 shadow-md hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+          >
+            {isSaving ? <LoadingDots color="bg-white" size="sm" /> : <><Save className="size-4" /> Save Changes</>}
+          </button>
         </div>
       </motion.div>
     </div>

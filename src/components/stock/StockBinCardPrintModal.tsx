@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { motion } from "framer-motion"
 import { Printer, Download, X } from "lucide-react"
 import { exportToExcel, printBinCardDocument } from "@/lib/exportUtils"
@@ -16,7 +17,31 @@ export default function StockBinCardPrintModal({
 }: StockBinCardPrintModalProps) {
   if (!isOpen || !product) return null
 
-  const entries = product.binCardEntries || []
+  const entries = useMemo(() => {
+    const raw = [...(product?.binCardEntries || [])]
+    raw.sort((a, b) => {
+      const timeA = new Date(a.date && a.date !== "—" ? a.date : 0).getTime()
+      const timeB = new Date(b.date && b.date !== "—" ? b.date : 0).getTime()
+      if (timeA !== timeB) return timeA - timeB
+      const aIsEntry = a.type === "entry" || Number(a.qtyReceived || 0) > 0
+      const bIsEntry = b.type === "entry" || Number(b.qtyReceived || 0) > 0
+      if (aIsEntry && !bIsEntry) return -1
+      if (!aIsEntry && bIsEntry) return 1
+      return 0
+    })
+
+    let runningBal = 0
+    return raw.map((rec) => {
+      const inQty = Number(rec.qtyReceived || 0)
+      const outQty = Number(rec.qtyIssued || 0)
+      runningBal += inQty - outQty
+      return {
+        ...rec,
+        balance: runningBal,
+      }
+    })
+  }, [product?.binCardEntries])
+
   const totalReceived = entries.reduce((sum, e) => sum + Number(e.qtyReceived || 0), 0)
   const totalIssued = entries.reduce((sum, e) => sum + Number(e.qtyIssued || 0), 0)
   const currentBalance = entries.length > 0 ? entries[entries.length - 1].balance : product.quantity
@@ -194,24 +219,40 @@ export default function StockBinCardPrintModal({
                       </td>
                     </tr>
                   ) : (
-                    entries.map((e) => (
-                      <tr key={e.id}>
-                        <td className="p-2 font-mono text-[10px] font-bold border-r border-zinc-200">{e.date}</td>
-                        <td className="p-2 font-mono text-zinc-900 font-bold border-r border-zinc-200">{e.batchNo}</td>
-                        <td className="p-2 text-right font-mono text-emerald-700 font-bold border-r border-zinc-200">
-                          {e.qtyReceived > 0 ? `+${e.qtyReceived.toLocaleString()}` : "-"}
-                        </td>
-                        <td className="p-2 text-right font-mono text-rose-700 font-bold border-r border-zinc-200">
-                          {e.qtyIssued > 0 ? `-${e.qtyIssued.toLocaleString()}` : "-"}
-                        </td>
-                        <td className="p-2 text-right font-mono font-black text-zinc-950 bg-zinc-50 border-r border-zinc-200">
-                          {e.balance.toLocaleString()}
-                        </td>
+                    entries.map((e) => {
+                      const isQuarantine = e.type === "quarantine"
+                      const isEntry = !isQuarantine && (e.type === "entry" || Number(e.qtyReceived || 0) > 0)
+                      const isLeave = !isQuarantine && (e.type === "leave" || Number(e.qtyIssued || 0) > 0)
+                      const rowBg = isQuarantine ? "bg-amber-50/50" : isEntry ? "bg-emerald-50/40" : isLeave ? "bg-rose-50/40" : ""
+
+                      return (
+                        <tr key={e.id} className={rowBg}>
+                          <td className="p-2 font-mono text-[10px] font-bold border-r border-zinc-200">{e.date}</td>
+                          <td className="p-2 font-mono text-zinc-900 font-bold border-r border-zinc-200">{e.batchNo}</td>
+                          <td className="p-2 text-right font-mono text-emerald-700 font-bold border-r border-zinc-200">
+                            {e.qtyReceived > 0 ? `+${e.qtyReceived.toLocaleString()}` : "-"}
+                          </td>
+                          <td className="p-2 text-right font-mono text-rose-700 font-bold border-r border-zinc-200">
+                            {e.qtyIssued > 0 ? `-${e.qtyIssued.toLocaleString()}` : "-"}
+                          </td>
+                          <td className="p-2 text-right font-mono font-black text-zinc-950 bg-black/[0.02] border-r border-zinc-200">
+                            {e.balance.toLocaleString()}
+                          </td>
                         <td className="p-2 font-mono border-r border-zinc-200">{e.expiryDate || "-"}</td>
-                        <td className="p-2 font-semibold text-zinc-800 border-r border-zinc-200">{e.party || "-"}</td>
+                        <td className="p-2 font-semibold text-zinc-800 border-r border-zinc-200">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {e.type === "quarantine" && (
+                              <span className="inline-flex items-center px-1.5 py-0.2 rounded-sm text-[8px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
+                                QUARANTINE
+                              </span>
+                            )}
+                            <span>{e.party || "-"}</span>
+                          </div>
+                        </td>
                         <td className="p-2 text-zinc-500">{e.remark || "-"}</td>
                       </tr>
-                    ))
+                      )
+                    })
                   )}
                 </tbody>
                 <tfoot>

@@ -32,6 +32,7 @@ import {
   savePaymentAdvice,
   fetchTradeAndAdviceDocs,
 } from "@/lib/tradeDocumentService"
+import { uploadFile } from "@/lib/fileUpload"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.08 } } }
@@ -332,11 +333,17 @@ export default function Invoices() {
 
       if (editAdviceFile) {
         stagedSlipName = editAdviceFile.name
-        stagedSlipUrl = await new Promise<string>((resolve) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result as string)
-          reader.readAsDataURL(editAdviceFile)
-        })
+        try {
+          const upRes = await uploadFile(editAdviceFile, "invoices")
+          stagedSlipUrl = upRes.url
+          stagedSlipName = upRes.filename || editAdviceFile.name
+        } catch {
+          stagedSlipUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result as string)
+            reader.readAsDataURL(editAdviceFile)
+          })
+        }
 
         try {
           await savePaymentAdvice({
@@ -559,13 +566,14 @@ export default function Invoices() {
                 {/* Financial Summary & Settlement Progress */}
                 {(() => {
                   const totalVal = Number(activeInvoice.total ?? 0)
-                  const subtotalVal = Number(activeInvoice.subtotal ?? totalVal)
-                  const taxVal = Number(activeInvoice.tax_amount ?? 0)
+                  const lineItemsSum = (activeInvoice.line_items || []).reduce((s, i) => s + (Number(i.line_total) || (Number(i.quantity) * Number(i.unit_price)) || 0), 0)
+                  const subtotalVal = Number(activeInvoice.subtotal ?? (lineItemsSum > 0 ? lineItemsSum : (totalVal > 0 ? Math.round(totalVal / 1.15) : 0)))
                   const discVal = Number(activeInvoice.discount_amount ?? 0)
+                  const taxVal = Number(activeInvoice.tax_amount !== undefined && activeInvoice.tax_amount > 0 ? activeInvoice.tax_amount : (totalVal > subtotalVal ? totalVal - subtotalVal : 0))
                   const paidVal = Number(activeInvoice.amount_paid ?? 0)
                   const dueVal = Number(activeInvoice.balance_due ?? Math.max(0, totalVal - paidVal))
                   const pct = totalVal > 0 ? Math.min(100, Math.round((paidVal / totalVal) * 100)) : 0
-                  const recordedTaxRate = activeInvoice.tax_rate !== undefined
+                  const recordedTaxRate = activeInvoice.tax_rate !== undefined && activeInvoice.tax_rate > 0
                     ? activeInvoice.tax_rate
                     : (subtotalVal > 0 && taxVal > 0 ? Math.round((taxVal / Math.max(1, subtotalVal - discVal)) * 100) : (taxVal > 0 ? 15 : 0))
 
@@ -597,7 +605,7 @@ export default function Invoices() {
 
                 {/* Recorded Installment Receipts History */}
                 {(() => {
-                  const invPayments = store.getPaymentsForInvoice(activeInvoice.id)
+                  const invPayments = store.getPaymentsForInvoice(activeInvoice.id, activeInvoice.sales_issue_id, activeInvoice.fs_no)
                   if (invPayments.length === 0) return null
                   return (
                     <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/50 space-y-2">
@@ -1269,6 +1277,17 @@ export default function Invoices() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Document Preview Modal */}
+      <DocumentPreviewModal
+        isOpen={Boolean(previewDocUrl)}
+        fileUrl={previewDocUrl}
+        fileName={previewDocName}
+        onClose={() => {
+          setPreviewDocUrl("")
+          setPreviewDocName("")
+        }}
+      />
     </div>
   )
 }

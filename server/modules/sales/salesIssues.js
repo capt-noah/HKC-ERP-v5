@@ -8,9 +8,44 @@ import {
   drizzleDeleteRow,
   drizzleReplaceRows,
 } from "../../db/drizzleCrud.js"
+import { pool } from "../../db/client.js"
 import crypto from "node:crypto"
 
 // ── Service Logic ─────────────────────────────────────────────────────────────
+
+function matchPaymentsForIssue(allPayments, issueId, fsNo, refNo) {
+  if (!Array.isArray(allPayments) || allPayments.length === 0) return []
+  const cleanId = String(issueId || "").trim()
+  const cleanFs = String(fsNo || "").trim()
+  const cleanRef = String(refNo || "").trim()
+
+  return allPayments.filter((raw) => {
+    const p = raw?.payload ? { ...raw.payload, ...raw } : raw
+    const pIssueId = String(p.sales_issue_id || p.salesIssueId || "").trim()
+    const pInvId = String(p.linked_invoice_id || p.linkedInvoiceId || "").trim()
+    const pRef = String(p.reference || "").trim()
+    const pOrderId = String(p.sales_order_id || p.salesOrderId || "").trim()
+
+    // 1. Match on sales_issue_id
+    if (cleanId && pIssueId && (pIssueId === cleanId || pIssueId.toLowerCase() === cleanId.toLowerCase())) return true
+    if (cleanFs && pIssueId && (pIssueId === cleanFs || pIssueId.toLowerCase() === cleanFs.toLowerCase())) return true
+
+    // 2. Match on linked_invoice_id (e.g. INV-SI-FS-2026-9560 or INV-SI-4122)
+    if (cleanId && pInvId && (pInvId === cleanId || pInvId === `INV-SI-${cleanId}` || pInvId === `INV-${cleanId}` || pInvId.toLowerCase().includes(cleanId.toLowerCase()))) return true
+    if (cleanFs && pInvId && (pInvId === `INV-SI-${cleanFs}` || pInvId === `INV-${cleanFs}` || pInvId.toLowerCase().includes(cleanFs.toLowerCase()))) return true
+
+    // 3. Match on reference string if it contains cleanId or cleanFs
+    if (cleanId && pRef && pRef.toLowerCase().includes(cleanId.toLowerCase())) return true
+    if (cleanFs && pRef && pRef.toLowerCase().includes(cleanFs.toLowerCase())) return true
+
+    // 4. Fallback for unlinked payments having order ID
+    if (!pIssueId && (!pInvId || pInvId === "INV-GENERAL")) {
+      if (cleanRef && pOrderId && (pOrderId === cleanRef || pOrderId.toLowerCase() === cleanRef.toLowerCase())) return true
+    }
+
+    return false
+  })
+}
 
 export async function listSalesIssues(query = {}) {
   try {
@@ -24,9 +59,24 @@ export async function listSalesIssues(query = {}) {
     })
 
     const issues = Array.isArray(issuesRes.body) ? issuesRes.body : []
-    const itemsRes = await drizzleListRows({
-      resource: getResource("sales_issue_items"),
-    })
+    const [itemsRes, customersRes, ordersRes, productsRes, paymentsRes] = await Promise.all([
+      drizzleListRows({ resource: getResource("sales_issue_items") }),
+      drizzleListRows({ resource: getResource("customers") }).catch(() => ({ body: [] })),
+      drizzleListRows({ resource: getResource("sales_orders") }).catch(() => ({ body: [] })),
+      drizzleListRows({ resource: getResource("inventory_products") }).catch(() => ({ body: [] })),
+      drizzleListRows({ resource: getResource("payments") }).catch(() => ({ body: [] })),
+    ])
+
+    const allCustomers = Array.isArray(customersRes.body) ? customersRes.body : []
+    const customerMap = new Map(allCustomers.map((c) => [c.id, c.payload ? { ...c.payload, ...c } : c]))
+
+    const allOrders = Array.isArray(ordersRes.body) ? ordersRes.body : []
+    const orderMap = new Map(allOrders.map((o) => [o.id, o.payload ? { ...o.payload, ...o } : o]))
+
+    const allProducts = Array.isArray(productsRes.body) ? productsRes.body : []
+    const productMap = new Map(allProducts.map((p) => [p.id, p.payload ? { ...p.payload, ...p } : p]))
+
+    const allPayments = Array.isArray(paymentsRes.body) ? paymentsRes.body : []
 
     const allItems = Array.isArray(itemsRes.body) ? itemsRes.body : []
     const itemsByIssueId = new Map()
@@ -36,15 +86,17 @@ export async function listSalesIssues(query = {}) {
       const issueId = item.sales_issue_id || item.salesIssueId || item.sales_order_id
       if (issueId) {
         const existing = itemsByIssueId.get(issueId) || []
+        const matchedProd = productMap.get(item.product_id) || productMap.get(item.item_id)
         existing.push({
           id: item.id,
           sales_issue_id: issueId,
-          item_id: item.item_id || item.productId || item.product_id || item.id,
-          item_name: item.item_name || item.name || "Item",
-          batch_id: item.batch_id || item.batch_no || item.batchNumber || item.batch || "BATCH-MAIN",
-          batch_no: item.batch_no || item.batch_id || item.batchNumber || item.batch || "BATCH-MAIN",
-          packaging_unit: item.packaging_unit || item.packagingUnit || item.unit || "Box",
-          available_quantity: Number(item.available_quantity || item.availableQuantity || 1000),
+          item_id: item.item_id || item.product_id || item.id,
+          product_id: item.product_id || item.item_id || item.id,
+          item_name: item.item_name || item.product_name || matchedProd?.name || item.name || "Item",
+          batch_id: item.batch_id || item.batch_no || item.batch_number || item.batch || "BATCH-MAIN",
+          batch_no: item.batch_no || item.batch_id || item.batch_number || item.batch || "BATCH-MAIN",
+          packaging_unit: item.packaging_unit || item.packagingUnit || item.unit || matchedProd?.unit || "Box",
+          available_quantity: Number(item.available_quantity || item.availableQuantity || matchedProd?.quantity || 1000),
           quantity: Number(item.quantity || item.qty || 0),
           unit_price: Number(item.unit_price || item.unitPrice || item.price || 0),
           amount: Number(item.amount || item.total_price || item.totalPrice || (Number(item.quantity || 0) * Number(item.unit_price || 0))),
@@ -55,45 +107,101 @@ export async function listSalesIssues(query = {}) {
 
     let fullIssues = issues.map((rawIssue) => {
       const issue = rawIssue?.payload ? { ...rawIssue.payload, ...rawIssue } : rawIssue
-      const issueItems = itemsByIssueId.get(issue.id) || issue.items || []
-      const fs_no = issue.fs_no || issue.fsNo || issue.issue_number || issue.issueNumber || issue.id
+      const issueItems = itemsByIssueId.get(issue.id) || itemsByIssueId.get(issue.issue_number) || itemsByIssueId.get(issue.fs_no) || issue.items || []
+      const fs_no = issue.fs_no || issue.fsNo || issue.issue_number || issue.issueNumber || String(issue.id)
+      const primaryId = fs_no || String(issue.id)
       const reference_no = issue.reference_no || issue.referenceNo || issue.sales_order_id || issue.salesOrderId || ""
-      const sale_date = issue.sale_date || issue.issueDate || issue.issue_date || (issue.created_at ? issue.created_at.split("T")[0] : new Date().toISOString().split("T")[0])
-      const customer_name = issue.customer_name || issue.customer || issue.customerName || "Customer"
-      const customer_id = issue.customer_id || issue.customerId || customer_name
-      const warehouse_id = issue.warehouse_id || issue.warehouseId || issue.warehouse || "WH1"
+      let rawDate = issue.sale_date || issue.issueDate || issue.issue_date || issue.created_at || new Date()
+      let sale_date = typeof rawDate === "string" 
+        ? (rawDate.includes("T") ? rawDate.split("T")[0] : rawDate)
+        : (rawDate instanceof Date ? rawDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
+
+      const matchedCust = customerMap.get(issue.customer_id)
+      const matchedOrder = orderMap.get(issue.sales_order_id) || orderMap.get(reference_no)
+      const firstItem = issueItems[0]
+      const matchedProd = firstItem ? (productMap.get(firstItem.product_id) || productMap.get(firstItem.item_id)) : null
+
+      const customer_name = issue.customer_name || matchedCust?.name || matchedOrder?.customer || issue.customer || issue.customerName || issue.customer_id || "Customer"
+      const customer_id = issue.customer_id || matchedCust?.id || matchedOrder?.customerId || customer_name
+      const warehouse_id = issue.warehouse_id || matchedOrder?.warehouse || matchedProd?.warehouse || issue.warehouseId || issue.warehouse || "WH1"
+      const isWh1 = (warehouse_id || "").toUpperCase().startsWith("WH1")
+
       const payment_type = issue.payment_type || issue.paymentType || issue.payment_method || issue.paymentMethod || "Cash"
       const status = issue.status || "Draft"
-      const total_amount = Number(issue.total_amount || issue.totalAmount || issueItems.reduce((s, i) => s + (i.amount || 0), 0) || 0)
+
+      const subtotal = Number(issue.subtotal_amount || issue.subtotal || issueItems.reduce((s, i) => s + (i.amount || 0), 0) || 0)
+      const vat_amount = Number(issue.tax_amount || issue.vat_amount || 0)
+      const vat_rate = Number(issue.vat_rate !== undefined ? issue.vat_rate : (vat_amount > 0 && subtotal > 0 ? Math.round((vat_amount / subtotal) * 100) : (isWh1 ? 0 : 15)))
+      const total_amount = Number(issue.total_amount || issue.totalAmount || (subtotal + vat_amount) || 0)
       const total_quantity = Number(issue.total_quantity || issue.totalQuantity || issueItems.reduce((s, i) => s + (i.quantity || 0), 0) || 0)
-      const amount_paid = Number(issue.amount_paid || issue.amountPaid || 0)
-      const balance_due = Number(issue.balance_due || issue.balanceDue || Math.max(0, total_amount - amount_paid))
+
+      // Aggregate payments recorded for this sales issue
+      const matchedPayments = matchPaymentsForIssue(allPayments, primaryId, fs_no, reference_no)
+      const paidFromPayments = matchedPayments.reduce((sum, p) => {
+        const pObj = p?.payload ? { ...p.payload, ...p } : p
+        return sum + Number(pObj.amount || 0)
+      }, 0)
+
+      const isCredit = (payment_type || "").toLowerCase().includes("credit")
+      const isCash = !isCredit
+
+      const amount_paid = isCash
+        ? total_amount
+        : Math.max(paidFromPayments, Number(issue.amount_paid || issue.amountPaid || 0))
+
+      const balance_due = isCash
+        ? 0
+        : Number(Math.max(0, total_amount - amount_paid).toFixed(2))
+
+      const settlement_status = isCash || (total_amount > 0 && balance_due <= 0.01 && amount_paid > 0)
+        ? "Fully Settled"
+        : (amount_paid > 0 ? "Ongoing" : "Unpaid")
+
+      const payment_status = settlement_status === "Fully Settled"
+        ? "Paid"
+        : (amount_paid > 0 ? "Ongoing" : (issue.payment_status || "Unpaid"))
 
       return {
         ...issue,
-        id: issue.id,
+        id: primaryId,
         fs_no,
         fsNo: fs_no,
+        issue_number: fs_no,
+        issueNumber: fs_no,
         reference_no,
         referenceNo: reference_no,
+        sales_order_id: reference_no,
+        salesOrderId: reference_no,
         sale_date,
+        issue_date: sale_date,
         issueDate: sale_date,
         customer_name,
         customer: customer_name,
         customer_id,
         customerId: customer_id,
         warehouse_id,
+        warehouseId: warehouse_id,
         warehouse: warehouse_id,
         payment_type,
         paymentType: payment_type,
         status,
+        subtotal,
+        subtotal_amount: subtotal,
+        vat_rate,
+        vat_amount,
+        tax_amount: vat_amount,
         total_amount,
         totalAmount: total_amount,
         total_quantity,
         totalQuantity: total_quantity,
         amount_paid,
+        amountPaid: amount_paid,
         balance_due,
-        settlement_status: issue.settlement_status || (payment_type === "Cash" ? "Fully Settled" : (amount_paid >= total_amount ? "Fully Settled" : amount_paid > 0 ? "Ongoing" : "Unpaid")),
+        balanceDue: balance_due,
+        settlement_status,
+        settlementStatus: settlement_status,
+        payment_status,
+        paymentStatus: payment_status,
         created_by: issue.created_by || issue.createdBy || "System",
         items: issueItems,
         savedToDb: true,
@@ -117,93 +225,211 @@ export async function listSalesIssues(query = {}) {
       )
     }
 
-    return { status: 200, body: fullIssues }
+    return {
+      status: 200,
+      body: {
+        rows: fullIssues,
+        total: fullIssues.length,
+        page: 1,
+        pageSize: fullIssues.length,
+      },
+    }
   } catch (err) {
-    console.warn("[sales_issues list exception]:", err?.message || err)
-    return { status: 200, body: [] }
+    console.error("[listSalesIssues exception]:", err)
+    return { status: 500, body: { error: "Failed to list sales issues", message: err.message } }
   }
 }
 
 export async function getSalesIssue(id) {
   try {
-    const issueRes = await drizzleGetRow({
+    const cleanId = String(id).trim()
+    let issueRes = await drizzleGetRow({
       resource: getResource("sales_issues"),
-      id,
+      id: cleanId,
     })
 
     if (issueRes.status >= 400 || !issueRes.body) {
-      return { status: 404, body: { error: `Sales issue '${id}' not found.` } }
+      // Robust Fallback: Search all rows by id, fs_no, issue_number, reference_no, or sales_order_id
+      const listRes = await drizzleListRows({
+        resource: getResource("sales_issues"),
+      })
+      const all = Array.isArray(listRes.body) ? listRes.body : []
+      const found = all.find((r) => {
+        const item = r?.payload ? { ...r.payload, ...r } : r
+        return (
+          String(item.id) === cleanId ||
+          String(item.fs_no || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(item.fsNo || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(item.issue_number || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(item.issueNumber || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(item.reference_no || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(item.referenceNo || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(item.sales_order_id || "").toLowerCase() === cleanId.toLowerCase() ||
+          String(item.salesOrderId || "").toLowerCase() === cleanId.toLowerCase()
+        )
+      })
+
+      if (found) {
+        issueRes = { status: 200, body: found }
+      } else {
+        return { status: 404, body: { error: `Sales issue '${id}' not found.` } }
+      }
     }
 
     const rawIssue = issueRes.body
+    const [itemsRes, customersRes, ordersRes, productsRes, paymentsRes] = await Promise.all([
+      drizzleListRows({ resource: getResource("sales_issue_items") }),
+      drizzleListRows({ resource: getResource("customers") }).catch(() => ({ body: [] })),
+      drizzleListRows({ resource: getResource("sales_orders") }).catch(() => ({ body: [] })),
+      drizzleListRows({ resource: getResource("inventory_products") }).catch(() => ({ body: [] })),
+      drizzleListRows({ resource: getResource("payments") }).catch(() => ({ body: [] })),
+    ])
+
+    const allCustomers = Array.isArray(customersRes.body) ? customersRes.body : []
+    const customerMap = new Map(allCustomers.map((c) => [c.id, c.payload ? { ...c.payload, ...c } : c]))
+
+    const allOrders = Array.isArray(ordersRes.body) ? ordersRes.body : []
+    const orderMap = new Map(allOrders.map((o) => [o.id, o.payload ? { ...o.payload, ...o } : o]))
+
+    const allProducts = Array.isArray(productsRes.body) ? productsRes.body : []
+    const productMap = new Map(allProducts.map((p) => [p.id, p.payload ? { ...p.payload, ...p } : p]))
+
+    const allPayments = Array.isArray(paymentsRes.body) ? paymentsRes.body : []
+
     const issue = rawIssue?.payload ? { ...rawIssue.payload, ...rawIssue } : rawIssue
-    const itemsRes = await drizzleListRows({
-      resource: getResource("sales_issue_items"),
-    })
+    const fs_no = issue.fs_no || issue.fsNo || issue.issue_number || issue.issueNumber || String(issue.id)
+    const primaryId = fs_no || String(issue.id)
 
     const allItems = Array.isArray(itemsRes.body) ? itemsRes.body : []
     const items = allItems
       .filter((i) => {
         const item = i?.payload ? { ...i.payload, ...i } : i
-        return (item.sales_issue_id || item.salesIssueId) === id
+        const parentId = item.sales_issue_id || item.salesIssueId || item.sales_order_id
+        return (
+          parentId === id ||
+          parentId === cleanId ||
+          parentId === issue.id ||
+          parentId === issue.fs_no ||
+          parentId === issue.fsNo ||
+          parentId === issue.issue_number ||
+          parentId === issue.issueNumber ||
+          (issue.reference_no && parentId === issue.reference_no) ||
+          (issue.sales_order_id && parentId === issue.sales_order_id)
+        )
       })
       .map((rawItem) => {
         const item = rawItem?.payload ? { ...rawItem.payload, ...rawItem } : rawItem
+        const matchedProd = productMap.get(item.product_id) || productMap.get(item.item_id)
         return {
           id: item.id,
-          sales_issue_id: id,
-          item_id: item.item_id || item.productId || item.product_id || item.id,
-          item_name: item.item_name || item.name || "Item",
-          batch_id: item.batch_id || item.batch_no || item.batchNumber || item.batch || "BATCH-MAIN",
-          batch_no: item.batch_no || item.batch_id || item.batchNumber || item.batch || "BATCH-MAIN",
-          packaging_unit: item.packaging_unit || item.packagingUnit || item.unit || "Box",
-          available_quantity: Number(item.available_quantity || item.availableQuantity || 1000),
+          sales_issue_id: primaryId,
+          item_id: item.item_id || item.product_id || item.id,
+          product_id: item.product_id || item.item_id || item.id,
+          item_name: item.item_name || item.product_name || matchedProd?.name || item.name || "Item",
+          batch_id: item.batch_id || item.batch_no || item.batch_number || item.batch || "BATCH-MAIN",
+          batch_no: item.batch_no || item.batch_id || item.batch_number || item.batch || "BATCH-MAIN",
+          packaging_unit: item.packaging_unit || item.packagingUnit || item.unit || matchedProd?.unit || "Box",
+          available_quantity: Number(item.available_quantity || item.availableQuantity || matchedProd?.quantity || 1000),
           quantity: Number(item.quantity || item.qty || 0),
           unit_price: Number(item.unit_price || item.unitPrice || item.price || 0),
           amount: Number(item.amount || item.total_price || item.totalPrice || (Number(item.quantity || 0) * Number(item.unit_price || 0))),
         }
       })
 
-    const fs_no = issue.fs_no || issue.fsNo || issue.issue_number || issue.issueNumber || issue.id
     const reference_no = issue.reference_no || issue.referenceNo || issue.sales_order_id || issue.salesOrderId || ""
-    const sale_date = issue.sale_date || issue.issueDate || issue.issue_date || (issue.created_at ? issue.created_at.split("T")[0] : new Date().toISOString().split("T")[0])
-    const customer_name = issue.customer_name || issue.customer || issue.customerName || "Customer"
-    const customer_id = issue.customer_id || issue.customerId || customer_name
-    const warehouse_id = issue.warehouse_id || issue.warehouseId || issue.warehouse || "WH1"
+    let rawDate = issue.sale_date || issue.issueDate || issue.issue_date || issue.created_at || new Date()
+    let sale_date = typeof rawDate === "string" 
+      ? (rawDate.includes("T") ? rawDate.split("T")[0] : rawDate)
+      : (rawDate instanceof Date ? rawDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
+
+    const matchedCust = customerMap.get(issue.customer_id)
+    const matchedOrder = orderMap.get(issue.sales_order_id) || orderMap.get(reference_no)
+    const firstItem = items[0]
+    const matchedProd = firstItem ? (productMap.get(firstItem.product_id) || productMap.get(firstItem.item_id)) : null
+
+    const customer_name = issue.customer_name || matchedCust?.name || matchedOrder?.customer || issue.customer || issue.customerName || issue.customer_id || "Customer"
+    const customer_id = issue.customer_id || matchedCust?.id || matchedOrder?.customerId || customer_name
+    const warehouse_id = issue.warehouse_id || matchedOrder?.warehouse || matchedProd?.warehouse || issue.warehouseId || issue.warehouse || "WH1"
+    const isWh1 = (warehouse_id || "").toUpperCase().startsWith("WH1")
+
     const payment_type = issue.payment_type || issue.paymentType || issue.payment_method || issue.paymentMethod || "Cash"
     const status = issue.status || "Draft"
-    const total_amount = Number(issue.total_amount || issue.totalAmount || items.reduce((s, i) => s + (i.amount || 0), 0) || 0)
+
+    const subtotal = Number(issue.subtotal_amount || issue.subtotal || items.reduce((s, i) => s + (i.amount || 0), 0) || 0)
+    const vat_amount = Number(issue.tax_amount || issue.vat_amount || 0)
+    const vat_rate = Number(issue.vat_rate !== undefined ? issue.vat_rate : (vat_amount > 0 && subtotal > 0 ? Math.round((vat_amount / subtotal) * 100) : (isWh1 ? 0 : 15)))
+    const total_amount = Number(issue.total_amount || issue.totalAmount || (subtotal + vat_amount) || 0)
     const total_quantity = Number(issue.total_quantity || issue.totalQuantity || items.reduce((s, i) => s + (i.quantity || 0), 0) || 0)
-    const amount_paid = Number(issue.amount_paid || issue.amountPaid || 0)
-    const balance_due = Number(issue.balance_due || issue.balanceDue || Math.max(0, total_amount - amount_paid))
+
+    // Aggregate payments recorded for this sales issue
+    const matchedPayments = matchPaymentsForIssue(allPayments, primaryId, fs_no, reference_no)
+    const paidFromPayments = matchedPayments.reduce((sum, p) => {
+      const pObj = p?.payload ? { ...p.payload, ...p } : p
+      return sum + Number(pObj.amount || 0)
+    }, 0)
+
+    const isCredit = (payment_type || "").toLowerCase().includes("credit")
+    const isCash = !isCredit
+
+    const amount_paid = isCash
+      ? total_amount
+      : Math.max(paidFromPayments, Number(issue.amount_paid || issue.amountPaid || 0))
+
+    const balance_due = isCash
+      ? 0
+      : Number(Math.max(0, total_amount - amount_paid).toFixed(2))
+
+    const settlement_status = isCash || (total_amount > 0 && balance_due <= 0.01 && amount_paid > 0)
+      ? "Fully Settled"
+      : (amount_paid > 0 ? "Ongoing" : "Unpaid")
+
+    const payment_status = settlement_status === "Fully Settled"
+      ? "Paid"
+      : (amount_paid > 0 ? "Ongoing" : (issue.payment_status || "Unpaid"))
 
     return {
       status: 200,
       body: {
         ...issue,
-        id: issue.id,
+        id: primaryId,
         fs_no,
         fsNo: fs_no,
+        issue_number: fs_no,
+        issueNumber: fs_no,
         reference_no,
         referenceNo: reference_no,
+        sales_order_id: reference_no,
+        salesOrderId: reference_no,
         sale_date,
+        issue_date: sale_date,
         issueDate: sale_date,
         customer_name,
         customer: customer_name,
         customer_id,
         customerId: customer_id,
         warehouse_id,
+        warehouseId: warehouse_id,
         warehouse: warehouse_id,
         payment_type,
         paymentType: payment_type,
         status,
+        subtotal,
+        subtotal_amount: subtotal,
+        vat_rate,
+        vat_amount,
+        tax_amount: vat_amount,
         total_amount,
         totalAmount: total_amount,
         total_quantity,
         totalQuantity: total_quantity,
         amount_paid,
+        amountPaid: amount_paid,
         balance_due,
-        settlement_status: issue.settlement_status || (payment_type === "Cash" ? "Fully Settled" : (amount_paid >= total_amount ? "Fully Settled" : amount_paid > 0 ? "Ongoing" : "Unpaid")),
+        balanceDue: balance_due,
+        settlement_status,
+        settlementStatus: settlement_status,
+        payment_status,
+        paymentStatus: payment_status,
         created_by: issue.created_by || issue.createdBy || "System",
         items,
         savedToDb: true,
@@ -216,8 +442,8 @@ export async function getSalesIssue(id) {
 }
 
 export async function createSalesIssue(input, existingId = null) {
-  const id = existingId || input?.id || `SI-${Date.now().toString().slice(-5)}`
-  const fs_no = input?.fs_no || input?.fsNo || id
+  const fs_no = input?.fs_no || input?.fsNo || input?.issue_number || input?.issueNumber || `FS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
+  const id = existingId || input?.id || fs_no
   const reference_no = input?.reference_no || input?.referenceNo || `REF-${fs_no}`
   const sale_date = input?.sale_date || input?.issueDate || new Date().toISOString().split("T")[0]
   const customer_name = input?.customer_name || input?.customer || input?.customer_id || "Walk-in Customer"
@@ -227,7 +453,13 @@ export async function createSalesIssue(input, existingId = null) {
   const items = Array.isArray(input?.items) ? input.items : []
 
   const total_quantity = items.reduce((sum, item) => sum + Number(item.quantity || item.qty || 0), 0)
-  const total_amount = items.reduce((sum, item) => sum + Number(item.amount || (item.quantity * item.unit_price) || 0), 0)
+  const itemTotal = items.reduce((sum, item) => sum + Number(item.amount || (item.quantity * item.unit_price) || 0), 0)
+
+  const isWh1 = (warehouse_id || "").toUpperCase().startsWith("WH1")
+  const subtotal = input?.subtotal !== undefined ? Number(input.subtotal) : itemTotal
+  const vat_rate = input?.vat_rate !== undefined ? Number(input.vat_rate) : (isWh1 ? 0 : 15)
+  const vat_amount = input?.vat_amount !== undefined ? Number(input.vat_amount) : (vat_rate > 0 ? Math.round(subtotal * (vat_rate / 100)) : 0)
+  const finalTotalAmount = input?.total_amount !== undefined ? Number(input.total_amount) : (subtotal + vat_amount)
 
   const doc = {
     ...input,
@@ -245,11 +477,14 @@ export async function createSalesIssue(input, existingId = null) {
     warehouse: warehouse_id,
     payment_type,
     paymentType: payment_type,
-    status: input?.status || "Draft",
+    status: (input?.status || "Draft").toString().charAt(0).toUpperCase() + (input?.status || "Draft").toString().slice(1).toLowerCase(),
     items,
     total_quantity,
-    total_amount,
-    totalAmount: total_amount,
+    subtotal,
+    vat_rate,
+    vat_amount,
+    total_amount: finalTotalAmount,
+    totalAmount: finalTotalAmount,
     createdAt: input?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
@@ -259,20 +494,49 @@ export async function createSalesIssue(input, existingId = null) {
     return { status: 400, body: { error: "Validation failed", details: errors } }
   }
 
-  // 1. Save Header
+  // 1. Save Header with exact MySQL relational schema columns (including all possible naming variants)
   const headerRow = {
     id,
-    fs_no,
-    reference_no,
-    sale_date,
-    customer_id,
-    customer_name,
-    warehouse_id,
-    payment_type,
-    status: doc.status,
-    total_quantity,
-    total_amount,
-    created_by: "Current User",
+    fs_no: fs_no,
+    fsNo: fs_no,
+    issue_number: fs_no,
+    issueNumber: fs_no,
+    reference_no: reference_no || null,
+    referenceNo: reference_no || null,
+    sales_order_id: reference_no || null,
+    salesOrderId: reference_no || null,
+    customer_id: customer_id || null,
+    customerId: customer_id || null,
+    customer_name: customer_name || null,
+    customer: customer_name || null,
+    warehouse_id: warehouse_id || null,
+    warehouseId: warehouse_id || null,
+    warehouse: warehouse_id || null,
+    sale_date: sale_date,
+    issue_date: sale_date,
+    issueDate: sale_date,
+    status: doc.status || "Draft",
+    total_quantity: total_quantity,
+    totalQuantity: total_quantity,
+    subtotal: subtotal,
+    subtotal_amount: subtotal,
+    subtotalAmount: subtotal,
+    vat_rate: vat_rate,
+    vatRate: vat_rate,
+    vat_amount: vat_amount,
+    vatAmount: vat_amount,
+    tax_amount: vat_amount,
+    taxAmount: vat_amount,
+    total_amount: finalTotalAmount,
+    totalAmount: finalTotalAmount,
+    payment_type: payment_type,
+    paymentType: payment_type,
+    payment_status: payment_type === "Cash" ? "Paid" : "Unpaid",
+    paymentStatus: payment_type === "Cash" ? "Paid" : "Unpaid",
+    payment_method: payment_type,
+    paymentMethod: payment_type,
+    created_by: doc.created_by || "Sales Officer",
+    createdBy: doc.created_by || "Sales Officer",
   }
 
   await drizzleCreateRow({
@@ -280,19 +544,47 @@ export async function createSalesIssue(input, existingId = null) {
     body: headerRow,
   })
 
-  // 2. Save Items
+  // 2. Save Items with exact MySQL relational schema columns
   if (items.length > 0) {
-    const itemRows = items.map((item, idx) => ({
-      id: String(item.id || `${id}-ITEM-${idx + 1}`),
-      sales_issue_id: id,
-      item_id: String(item.item_id || item.productId || `ITEM-${idx + 1}`),
-      item_name: String(item.item_name || item.name || "Item"),
-      batch_id: String(item.batch_id || item.batch_no || "BATCH-MAIN"),
-      batch_no: String(item.batch_no || item.batch_id || "BATCH-MAIN"),
-      quantity: Number(item.quantity || item.qty || 0),
-      unit_price: Number(item.unit_price || item.price || 0),
-      amount: Number(item.amount || (item.quantity * item.unit_price) || 0),
-    }))
+    const itemRows = items.map((item, idx) => {
+      const prodId = String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`)
+      const prodName = String(item.item_name || item.product_name || item.name || "Item")
+      const batchCode = String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN")
+      const packUnit = String(item.packaging_unit || item.unit || "Box")
+      const q = Number(item.quantity || item.qty || 0)
+      const p = Number(item.unit_price || item.price || 0)
+      const tot = Number(item.amount || item.total_price || (q * p) || 0)
+
+      return {
+        id: String(item.id || `${id}-ITEM-${idx + 1}`),
+        sales_issue_id: id,
+        salesIssueId: id,
+        item_id: prodId,
+        itemId: prodId,
+        product_id: prodId,
+        productId: prodId,
+        product_name: prodName,
+        productName: prodName,
+        item_name: prodName,
+        itemName: prodName,
+        batch_id: batchCode,
+        batchId: batchCode,
+        batch_number: batchCode,
+        batchNumber: batchCode,
+        batch_no: batchCode,
+        batchNo: batchCode,
+        quantity: q,
+        qty: q,
+        unit_price: p,
+        unitPrice: p,
+        total_price: tot,
+        totalPrice: tot,
+        amount: tot,
+        unit: packUnit,
+        packaging_unit: packUnit,
+        packagingUnit: packUnit,
+      }
+    })
 
     for (const itemRow of itemRows) {
       await drizzleCreateRow({
@@ -306,7 +598,8 @@ export async function createSalesIssue(input, existingId = null) {
 }
 
 export async function updateSalesIssue(input, id) {
-  const getRes = await getSalesIssue(id)
+  const cleanId = String(id).trim()
+  const getRes = await getSalesIssue(cleanId)
   if (getRes.status >= 400 || !getRes.body) {
     return { status: 404, body: { error: `Sales issue '${id}' not found.` } }
   }
@@ -314,24 +607,65 @@ export async function updateSalesIssue(input, id) {
   const existing = getRes.body
   const items = Array.isArray(input?.items) ? input.items : existing.items || []
   const total_quantity = items.reduce((sum, item) => sum + Number(item.quantity || item.qty || 0), 0)
-  const total_amount = items.reduce((sum, item) => sum + Number(item.amount || (item.quantity * item.unit_price) || 0), 0)
+  const itemTotal = items.reduce((sum, item) => sum + Number(item.amount || (item.quantity * item.unit_price) || 0), 0)
+
+  const warehouse_id = input?.warehouse_id || existing.warehouse_id
+  const isWh1 = (warehouse_id || "").toUpperCase().startsWith("WH1")
+  const subtotal = input?.subtotal !== undefined ? Number(input.subtotal) : itemTotal
+  const vat_rate = input?.vat_rate !== undefined ? Number(input.vat_rate) : (isWh1 ? 0 : 15)
+  const vat_amount = input?.vat_amount !== undefined ? Number(input.vat_amount) : (vat_rate > 0 ? Math.round(subtotal * (vat_rate / 100)) : 0)
+  const finalTotalAmount = input?.total_amount !== undefined ? Number(input.total_amount) : (subtotal + vat_amount)
 
   const updateHeader = {
-    fs_no: input?.fs_no || existing.fs_no,
-    reference_no: input?.reference_no || existing.reference_no,
-    sale_date: input?.sale_date || existing.sale_date,
-    customer_id: input?.customer_id || existing.customer_id,
-    customer_name: input?.customer_name || existing.customer_name,
-    warehouse_id: input?.warehouse_id || existing.warehouse_id,
-    payment_type: input?.payment_type || existing.payment_type,
-    status: input?.status || existing.status,
-    total_quantity,
-    total_amount,
+    fs_no: input?.fs_no || existing.fs_no || cleanId,
+    fsNo: input?.fs_no || existing.fs_no || cleanId,
+    issue_number: input?.fs_no || existing.fs_no || cleanId,
+    issueNumber: input?.fs_no || existing.fs_no || cleanId,
+    reference_no: (input?.reference_no || existing.reference_no) || null,
+    referenceNo: (input?.reference_no || existing.reference_no) || null,
+    sales_order_id: (input?.reference_no || existing.reference_no) || null,
+    salesOrderId: (input?.reference_no || existing.reference_no) || null,
+    customer_id: (input?.customer_id || existing.customer_id) || null,
+    customerId: (input?.customer_id || existing.customer_id) || null,
+    customer_name: (input?.customer_name || existing.customer_name) || null,
+    customer: (input?.customer_name || existing.customer_name) || null,
+    warehouse_id: warehouse_id || null,
+    warehouseId: warehouse_id || null,
+    warehouse: warehouse_id || null,
+    sale_date: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
+    issue_date: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
+    issueDate: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
+    status: input?.status || existing.status || "Draft",
+    total_quantity: total_quantity,
+    totalQuantity: total_quantity,
+    subtotal: subtotal,
+    subtotal_amount: subtotal,
+    subtotalAmount: subtotal,
+    vat_rate: vat_rate,
+    vatRate: vat_rate,
+    vat_amount: vat_amount,
+    vatAmount: vat_amount,
+    tax_amount: vat_amount,
+    taxAmount: vat_amount,
+    total_amount: finalTotalAmount,
+    totalAmount: finalTotalAmount,
+    amount_paid: input?.amount_paid !== undefined ? Number(input.amount_paid) : (existing.amount_paid !== undefined ? Number(existing.amount_paid) : ((input?.payment_type || existing.payment_type) === "Cash" ? finalTotalAmount : 0)),
+    amountPaid: input?.amount_paid !== undefined ? Number(input.amount_paid) : (existing.amount_paid !== undefined ? Number(existing.amount_paid) : ((input?.payment_type || existing.payment_type) === "Cash" ? finalTotalAmount : 0)),
+    balance_due: input?.balance_due !== undefined ? Number(input.balance_due) : (existing.balance_due !== undefined ? Number(existing.balance_due) : ((input?.payment_type || existing.payment_type) === "Cash" ? 0 : finalTotalAmount)),
+    balanceDue: input?.balance_due !== undefined ? Number(input.balance_due) : (existing.balance_due !== undefined ? Number(existing.balance_due) : ((input?.payment_type || existing.payment_type) === "Cash" ? 0 : finalTotalAmount)),
+    settlement_status: input?.settlement_status || existing.settlement_status || ((input?.payment_type || existing.payment_type) === "Cash" ? "Fully Settled" : "Unpaid"),
+    settlementStatus: input?.settlement_status || existing.settlement_status || ((input?.payment_type || existing.payment_type) === "Cash" ? "Fully Settled" : "Unpaid"),
+    payment_type: input?.payment_type || existing.payment_type || "Cash",
+    paymentType: input?.payment_type || existing.payment_type || "Cash",
+    payment_status: input?.payment_status || (input?.settlement_status === "Fully Settled" || (input?.payment_type || existing.payment_type) === "Cash" ? "Paid" : (existing.payment_status || "Unpaid")),
+    paymentStatus: input?.payment_status || (input?.settlement_status === "Fully Settled" || (input?.payment_type || existing.payment_type) === "Cash" ? "Paid" : (existing.payment_status || "Unpaid")),
+    payment_method: input?.payment_type || existing.payment_type || "Cash",
+    paymentMethod: input?.payment_type || existing.payment_type || "Cash",
   }
 
   await drizzleUpdateRow({
     resource: getResource("sales_issues"),
-    id,
+    id: cleanId,
     body: updateHeader,
   })
 
@@ -344,28 +678,56 @@ export async function updateSalesIssue(input, id) {
       }
     }
     for (const [idx, item] of items.entries()) {
+      const prodId = String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`)
+      const prodName = String(item.item_name || item.product_name || item.name || "Item")
+      const batchCode = String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN")
+      const packUnit = String(item.packaging_unit || item.unit || "Box")
+      const q = Number(item.quantity || item.qty || 0)
+      const p = Number(item.unit_price || item.price || 0)
+      const tot = Number(item.amount || item.total_price || (q * p) || 0)
+
       const itemRow = {
-        id: String(item.id || `${id}-ITEM-${idx + 1}`),
-        sales_issue_id: id,
-        item_id: String(item.item_id || item.productId || `ITEM-${idx + 1}`),
-        item_name: String(item.item_name || item.name || "Item"),
-        batch_id: String(item.batch_id || item.batch_no || "BATCH-MAIN"),
-        batch_no: String(item.batch_no || item.batch_id || "BATCH-MAIN"),
-        quantity: Number(item.quantity || item.qty || 0),
-        unit_price: Number(item.unit_price || item.price || 0),
-        amount: Number(item.amount || (item.quantity * item.unit_price) || 0),
+        id: String(item.id || `${cleanId}-ITEM-${idx + 1}`),
+        sales_issue_id: cleanId,
+        salesIssueId: cleanId,
+        item_id: prodId,
+        itemId: prodId,
+        product_id: prodId,
+        productId: prodId,
+        product_name: prodName,
+        productName: prodName,
+        item_name: prodName,
+        itemName: prodName,
+        batch_id: batchCode,
+        batchId: batchCode,
+        batch_number: batchCode,
+        batchNumber: batchCode,
+        batch_no: batchCode,
+        batchNo: batchCode,
+        quantity: q,
+        qty: q,
+        unit_price: p,
+        unitPrice: p,
+        total_price: tot,
+        totalPrice: tot,
+        amount: tot,
+        unit: packUnit,
+        packaging_unit: packUnit,
+        packagingUnit: packUnit,
       }
       await drizzleCreateRow({
         resource: getResource("sales_issue_items"),
         body: itemRow,
       })
     }
-  } catch (err) {
-    console.warn("Update items warning:", err.message)
+  } catch (itemErr) {
+    console.warn("Item update warning:", itemErr.message)
   }
 
-  return { status: 200, body: { ...existing, ...input, total_quantity, total_amount, items, savedToDb: true } }
+  return { status: 200, body: { ...existing, ...input, total_quantity, total_amount: finalTotalAmount, items, savedToDb: true } }
 }
+
+
 
 export async function deleteSalesIssue(id) {
   try {
@@ -404,43 +766,60 @@ export async function postSalesIssue(arg1, arg2) {
 
   // 1. Deduct Stock from inventory_products
   try {
-    for (const item of (existing.items || [])) {
-      const prodId = item.item_id || item.productId
-      if (!prodId) continue
+    const allProdRes = await drizzleListRows({ resource: getResource("inventory_products") }).catch(() => ({ body: [] }))
+    const allProducts = Array.isArray(allProdRes.body) ? allProdRes.body.map(p => p?.payload ? { ...p.payload, ...p } : p) : []
 
-      const prodRes = await drizzleGetRow({ resource: getResource("inventory_products"), id: prodId })
-      if (prodRes.status === 200 && prodRes.body) {
-        const prod = prodRes.body
+    for (const item of (existing.items || [])) {
+      const prodId = item.item_id || item.productId || item.product_id
+      const itemName = (item.item_name || item.product_name || "").toLowerCase().trim()
+      
+      let matchedProd = allProducts.find(p => p.id === prodId || p.product_id === prodId)
+      if (!matchedProd && itemName) {
+        matchedProd = allProducts.find(p => (p.name || p.product_name || "").toLowerCase().trim() === itemName)
+      }
+
+      if (matchedProd) {
+        const prod = matchedProd
+        const realProdId = prod.id || prodId
         const issueQty = Number(item.quantity || item.qty || 0)
         const unitPrice = Number(item.unit_price || item.unitPrice || 0)
-        const unitCost = Number(prod.unitCost || 0)
+        const unitCost = Number(prod.unitCost || prod.unit_cost || 0)
 
         totalQty += issueQty
         totalAmount += issueQty * unitPrice
-        totalCost += issueQty * unitCost
 
-        const isWH1 = prod.warehouse === "WH1" || prod.warehouse === "WH1-AGRI-EXP"
+        const isWH1 = (prod.warehouse || existing.warehouse_id || "").toUpperCase().startsWith("WH1")
         let newQty = Math.max(0, Number(prod.quantity || 0) - issueQty)
         let updatedWH1Entries = prod.wh1Entries || []
+        let itemActualCost = 0
 
         if (isWH1 && Array.isArray(prod.wh1Entries) && prod.wh1Entries.length > 0) {
           let remaining = issueQty
           const sorted = [...prod.wh1Entries].sort((a, b) =>
-            new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime()
+            new Date(a.entryDate || a.created_at || 0).getTime() - new Date(b.entryDate || b.created_at || 0).getTime()
           )
           updatedWH1Entries = sorted.map((entry) => {
             if (remaining <= 0) return entry
             const deduct = Math.min(entry.quantityRemaining, remaining)
             remaining -= deduct
+            const entryPrice = Number(entry.unitPrice || entry.unit_price || unitCost || 0)
+            itemActualCost += deduct * entryPrice
             return {
               ...entry,
               quantityRemaining: Math.max(0, entry.quantityRemaining - deduct),
             }
           })
+          if (remaining > 0) {
+            itemActualCost += remaining * unitCost
+          }
           newQty = updatedWH1Entries.reduce((sum, e) => sum + Number(e.quantityRemaining || 0), 0)
+        } else {
+          itemActualCost = issueQty * unitCost
         }
 
-        const newSold = Number(prod.quantitySold || 0) + issueQty
+        totalCost += itemActualCost
+
+        const newSold = Number(prod.quantitySold || prod.quantity_sold || 0) + issueQty
         const targetWh = existing.warehouse_id || existing.warehouse || prod.warehouse
         const targetWhBase = (targetWh || "").split("-")[0]
 
@@ -449,31 +828,53 @@ export async function postSalesIssue(arg1, arg2) {
             ? { ...sb, qty: Math.max(0, Number(sb.qty || 0) - issueQty) }
             : sb
         )
-        const targetBatch = item.batch_no || item.batch_id || prod.batch
+        const targetBatch = item.batch_no || item.batch_id || item.batch_number || prod.batch
         const updatedBatches = (prod.batches || []).map((b) =>
-          b.batchNo === targetBatch || b.batch_no === targetBatch
+          b.batchNo === targetBatch || b.batch_no === targetBatch || b.batch === targetBatch
             ? { ...b, qty: Math.max(0, Number(b.qty || 0) - issueQty) }
             : b
         )
-        const packSize = Number(prod.quantityPerPack || 1)
+        const packSize = Number(prod.quantityPerPack || prod.quantity_per_pack || 1)
         const newCartons = packSize > 0 ? Math.max(0, Math.floor(newQty / packSize)) : Math.max(0, (prod.numberOfCartons || 0) - issueQty)
         const updatedStatus = newQty === 0 ? "Out of Stock" : newQty < 20 ? "Low Stock" : "In Stock"
 
         let finalUnitCost = unitCost
         let finalStockValue = newQty * unitCost
         if (isWH1 && updatedWH1Entries.length > 0) {
-          finalStockValue = updatedWH1Entries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || 0)), 0)
+          finalStockValue = updatedWH1Entries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || e.unit_price || 0)), 0)
           finalUnitCost = newQty > 0 ? Math.round((finalStockValue / newQty) * 100) / 100 : unitCost
         }
+
+        let updatedBinCardEntries = Array.isArray(prod.binCardEntries) ? prod.binCardEntries : []
+        const autoIssueBinEntry = {
+          id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          type: "leave",
+          date: existing.sale_date || new Date().toISOString().slice(0, 10),
+          voucherNo: existing.fs_no || id,
+          batchNo: targetBatch || (isWH1 ? "COMMODITY-WH1" : "BATCH-ISSUE"),
+          qtyReceived: 0,
+          qtyIssued: issueQty,
+          balance: newQty,
+          expiryDate: item.expiryDate || item.expiry || "",
+          mfgDate: item.mfgDate || item.manufacturingDate || "",
+          party: existing.customer_name || existing.customer || "Customer Dispatch",
+          plateNumber: existing.plate_number || existing.plateNumber || item.plate_number || item.plateNumber || "—",
+          unitPrice: unitPrice > 0 ? unitPrice : unitCost,
+          remark: existing.remarks || existing.remark || existing.notes || "",
+          createdAt: new Date().toISOString(),
+        }
+        updatedBinCardEntries = [...updatedBinCardEntries, autoIssueBinEntry]
 
         const updatedProd = {
           ...prod,
           quantity: newQty,
           quantitySold: newSold,
+          quantity_sold: newSold,
           numberOfCartons: newCartons,
           stockBreakdown: updatedBreakdown,
           batches: updatedBatches,
           wh1Entries: updatedWH1Entries,
+          binCardEntries: updatedBinCardEntries,
           status: updatedStatus,
           unitCost: finalUnitCost,
           sellingPrice: finalUnitCost,
@@ -483,7 +884,7 @@ export async function postSalesIssue(arg1, arg2) {
 
         await drizzleUpdateRow({
           resource: getResource("inventory_products"),
-          id: prodId,
+          id: realProdId,
           body: updatedProd,
         })
       }
@@ -492,24 +893,99 @@ export async function postSalesIssue(arg1, arg2) {
     console.warn("Stock deduction warning during post:", err.message)
   }
 
-  // 2. Update status in sales_issues
-  await drizzleUpdateRow({
+  // 2. Update status in sales_issues while strictly preserving payment integrity
+  const isWh1 = (existing.warehouse_id || "").toUpperCase().startsWith("WH1")
+  const issueSubtotal = totalAmount || Number(existing.subtotal || existing.total_amount || 0)
+  const issueVatRate = isWh1 ? 0 : Number(existing.vat_rate !== undefined ? existing.vat_rate : 15)
+  const issueVatAmount = issueVatRate > 0 ? Number(existing.vat_amount || Math.round(issueSubtotal * (issueVatRate / 100))) : 0
+  const grandTotal = issueSubtotal + issueVatAmount
+
+  const isCash = (existing.payment_type || "").toString().toLowerCase() === "cash"
+  const existingPaid = Number(existing.amount_paid || existing.amountPaid || (isCash ? grandTotal : 0))
+  const existingBal = isCash ? 0 : Number(existing.balance_due !== undefined ? existing.balance_due : Math.max(0, grandTotal - existingPaid))
+  const isFullySettled = isCash || (grandTotal > 0 && existingPaid >= grandTotal) || existing.settlement_status === "Fully Settled"
+
+  const paymentStatus = isFullySettled ? "Paid" : (existingPaid > 0 ? "Partially Paid" : "Unpaid")
+  const settlementStatus = isFullySettled ? "Fully Settled" : (existingPaid > 0 ? "Ongoing" : "Unpaid")
+
+  const updateIssueRes = await drizzleUpdateRow({
     resource: getResource("sales_issues"),
     id,
     body: {
       status: "Posted",
-      posted_at: new Date().toISOString(),
+      posted_at: new Date(),
       posted_by: "Sales Officer",
       total_quantity: totalQty || existing.total_quantity,
-      total_amount: totalAmount || existing.total_amount,
+      totalQuantity: totalQty || existing.total_quantity,
+      subtotal: issueSubtotal,
+      subtotal_amount: issueSubtotal,
+      subtotalAmount: issueSubtotal,
+      vat_rate: issueVatRate,
+      vatRate: issueVatRate,
+      vat_amount: issueVatAmount,
+      vatAmount: issueVatAmount,
+      tax_amount: issueVatAmount,
+      taxAmount: issueVatAmount,
+      total_amount: grandTotal,
+      totalAmount: grandTotal,
+      amount_paid: existingPaid,
+      amountPaid: existingPaid,
+      balance_due: existingBal,
+      balanceDue: existingBal,
+      payment_status: paymentStatus,
+      paymentStatus: paymentStatus,
+      settlement_status: settlementStatus,
     },
   })
 
+  if (updateIssueRes.status >= 400) {
+    console.error(`[postSalesIssue] Failed to update sales_issues status:`, updateIssueRes.body)
+    return { status: updateIssueRes.status || 500, body: { error: updateIssueRes.body?.error || "Failed to update sales issue status." } }
+  }
+
   // 3. Post Double-Entry Journal Entries
   try {
+    const coaRes = await drizzleListRows({ resource: getResource("chart_of_accounts") }).catch(() => ({ body: [] }))
+    const allAccounts = Array.isArray(coaRes.body) ? coaRes.body.map(a => a?.payload ? { ...a.payload, ...a } : a) : []
+    const findAcc = (code) => allAccounts.find(a => (a.code || a.account_code) === code)?.id || null
+
+    const isWH1Issue = (existing.warehouse_id || "").toUpperCase().startsWith("WH1") ||
+      (existing.items || []).some(it => {
+        const name = (it.item_name || it.product_name || "").toLowerCase()
+        return name.includes("sesame") || name.includes("mung") || name.includes("soy") || name.includes("coffee")
+      })
+
     const isCredit = existing.payment_type === "Credit"
+    const debitAccId = isCredit
+      ? (isWH1Issue ? (findAcc("1200") || findAcc("1200-03") || "ACC-1200") : (findAcc("1300-03") || findAcc("1200") || "ACC-1200"))
+      : (findAcc("1000-02-26") || findAcc("1000-01-01") || findAcc("1000") || "ACC-1000")
+
+    const revenueAccId = isWH1Issue
+      ? (findAcc("4010") || findAcc("4000") || "ACC-4010")
+      : (findAcc("4000-01-01") || findAcc("4000") || "ACC-4000")
+
+    const vatAccId = findAcc("2000-05") || "ACC-2200"
+    const cogsAccId = findAcc("5001") || findAcc("6000") || "ACC-5001"
+
+    // Map inventory account to specific commodity stock account if available
+    let inventoryAccId = null
+    const firstItemName = ((existing.items?.[0]?.item_name || existing.items?.[0]?.product_name || "")).toLowerCase()
+    if (firstItemName.includes("sesame")) {
+      inventoryAccId = findAcc("1410-03") || findAcc("1410") || "ACC-1410"
+    } else if (firstItemName.includes("mung")) {
+      inventoryAccId = findAcc("1410-01") || findAcc("1410") || "ACC-1410"
+    } else {
+      inventoryAccId = isWH1Issue ? (findAcc("1410-03") || findAcc("1410") || "ACC-1410") : (findAcc("1410") || "ACC-1410")
+    }
+
     const saleJeId = `JE-SALE-${id}`
     const cogsJeId = `JE-COGS-${id}`
+
+    // Idempotently clean up prior journal entries for this issue before inserting
+    try {
+      await pool.query("DELETE FROM `journal_entries` WHERE `id` IN (?, ?)", [saleJeId, cogsJeId]).catch(() => {})
+      await pool.query("DELETE FROM `journal_entry_lines` WHERE `id` LIKE CONCAT(?, '%') OR `id` LIKE CONCAT(?, '%')", [saleJeId, cogsJeId]).catch(() => {})
+    } catch {}
 
     // A. Sales Journal Entry
     await drizzleCreateRow({
@@ -528,13 +1004,14 @@ export async function postSalesIssue(arg1, arg2) {
     })
 
     // B. Sales Journal Entry Lines
+    // 1. Debit Cash (1000) or Accounts Receivable (1300) for Grand Total
     await drizzleCreateRow({
       resource: getResource("journal_entry_lines"),
       body: {
         id: `${saleJeId}-DR`,
         journal_entry_id: saleJeId,
-        account_id: isCredit ? "ACC-1200" : "ACC-1000",
-        debit_amount: totalAmount || existing.total_amount,
+        account_id: debitAccId,
+        debit_amount: grandTotal,
         credit_amount: 0,
         currency: "ETB",
         exchange_rate_at_time: 1.0,
@@ -545,14 +1022,15 @@ export async function postSalesIssue(arg1, arg2) {
       },
     })
 
+    // 2. Credit Sales Revenue (4000) for Net Subtotal
     await drizzleCreateRow({
       resource: getResource("journal_entry_lines"),
       body: {
         id: `${saleJeId}-CR`,
         journal_entry_id: saleJeId,
-        account_id: "ACC-4000",
+        account_id: revenueAccId,
         debit_amount: 0,
-        credit_amount: totalAmount || existing.total_amount,
+        credit_amount: issueSubtotal,
         currency: "ETB",
         exchange_rate_at_time: 1.0,
         warehouse_id: existing.warehouse_id || null,
@@ -561,6 +1039,26 @@ export async function postSalesIssue(arg1, arg2) {
         party_name: existing.customer_name || existing.customer || null,
       },
     })
+
+    // 3. Credit Output VAT Payable (2000-05) if VAT is charged
+    if (issueVatAmount > 0) {
+      await drizzleCreateRow({
+        resource: getResource("journal_entry_lines"),
+        body: {
+          id: `${saleJeId}-VAT`,
+          journal_entry_id: saleJeId,
+          account_id: vatAccId,
+          debit_amount: 0,
+          credit_amount: issueVatAmount,
+          currency: "ETB",
+          exchange_rate_at_time: 1.0,
+          warehouse_id: existing.warehouse_id || null,
+          party_type: "Customer",
+          party_id: existing.customer_id || null,
+          party_name: existing.customer_name || existing.customer || null,
+        },
+      })
+    }
 
     // C. COGS Journal Entry
     if (totalCost > 0) {
@@ -584,7 +1082,7 @@ export async function postSalesIssue(arg1, arg2) {
         body: {
           id: `${cogsJeId}-DR`,
           journal_entry_id: cogsJeId,
-          account_id: "ACC-5000",
+          account_id: cogsAccId,
           debit_amount: totalCost,
           credit_amount: 0,
           currency: "ETB",
@@ -598,7 +1096,7 @@ export async function postSalesIssue(arg1, arg2) {
         body: {
           id: `${cogsJeId}-CR`,
           journal_entry_id: cogsJeId,
-          account_id: "ACC-1010",
+          account_id: inventoryAccId,
           debit_amount: 0,
           credit_amount: totalCost,
           currency: "ETB",
@@ -606,6 +1104,28 @@ export async function postSalesIssue(arg1, arg2) {
           warehouse_id: existing.warehouse_id || null,
         },
       })
+    }
+
+    // 4. Update Sales Order if referenced
+    if (existing.sales_order_id || existing.reference_no) {
+      const soId = existing.sales_order_id || existing.reference_no
+      try {
+        const soRes = await drizzleGetRow({ resource: getResource("sales_orders"), id: soId })
+        if (soRes.status === 200 && soRes.body) {
+          const soData = soRes.body
+          const updatedSo = {
+            ...soData,
+            stage: "Shipped",
+            deliveryStatus: "Fully Delivered",
+            deliveredAmount: grandTotal,
+            billingStatus: existing.payment_type === "Cash" ? "Fully Billed" : (soData.billingStatus || "Fully Billed"),
+            updatedAt: new Date().toISOString(),
+          }
+          await drizzleUpdateRow({ resource: getResource("sales_orders"), id: soId, body: updatedSo })
+        }
+      } catch (soErr) {
+        console.warn("SO sync warning:", soErr.message)
+      }
     }
   } catch (err) {
     console.warn("GL Journal posting warning:", err.message)
