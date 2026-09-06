@@ -18,23 +18,25 @@ function getPasswordStrength(password: string): PasswordStrength {
   if (!password) {
     return { score: 0, label: "Weak", color: "bg-red-500", width: "0%" }
   }
-  let score = 0
-  if (password.length >= 8) score++
-  if (password.length >= 10) score++
-  if (/[a-z]/.test(password)) score++
-  if (/[A-Z]/.test(password)) score++
-  if (/[0-9]/.test(password)) score++
-  if (/[^a-zA-Z0-9]/.test(password)) score++
 
-  const finalScore = Math.min(score, 5)
+  const hasLength = password.length >= 10
+  const hasLower = /[a-z]/.test(password)
+  const hasUpper = /[A-Z]/.test(password)
+  const hasNumber = /[0-9]/.test(password)
+  const hasSpecial = /[^a-zA-Z0-9]/.test(password)
 
-  if (password.length < 8 || finalScore <= 3) {
-    return { score: finalScore, label: "Weak", color: "bg-red-500", width: "33%" }
+  const passedCriteria = [hasLength, hasLower, hasUpper, hasNumber, hasSpecial].filter(Boolean).length
+
+  // All 5 criteria (length >= 10, lower, upper, number, special symbol) MUST be met for Strong / Green
+  if (hasLength && hasLower && hasUpper && hasNumber && hasSpecial) {
+    return { score: 5, label: "Strong", color: "bg-green-600", width: "100%" }
   }
-  if (password.length >= 8 && finalScore === 4) {
-    return { score: finalScore, label: "Medium", color: "bg-yellow-500", width: "66%" }
+
+  if (passedCriteria >= 3) {
+    return { score: passedCriteria, label: "Medium", color: "bg-yellow-500", width: `${passedCriteria * 20}%` }
   }
-  return { score: finalScore, label: "Strong", color: "bg-green-600", width: "100%" }
+
+  return { score: passedCriteria, label: "Weak", color: "bg-red-500", width: `${Math.max(passedCriteria * 20, 20)}%` }
 }
 
 export default function Login() {

@@ -1,6 +1,6 @@
 /**
  * Password validation rules:
- * - Minimum 8 characters
+ * - Minimum 10 characters
  * - At least one uppercase letter
  * - At least one lowercase letter
  * - At least one number
@@ -10,8 +10,8 @@ export function validateStrongPassword(password) {
   if (!password || typeof password !== "string") {
     return { valid: false, error: "Password is required." }
   }
-  if (password.length < 8) {
-    return { valid: false, error: "Password must be at least 8 characters long." }
+  if (password.length < 10) {
+    return { valid: false, error: "Password must be at least 10 characters long." }
   }
   if (!/[A-Z]/.test(password)) {
     return { valid: false, error: "Password must contain at least one uppercase letter." }

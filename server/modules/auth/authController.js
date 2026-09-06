@@ -5,6 +5,7 @@ import { drizzleListRows, drizzleGetRow, drizzleCreateRow, drizzleUpdateRow } fr
 import { getResource } from "../../db/resourceRegistry.js"
 import { logActivity } from "../common/activityLogger.js"
 import { config } from "../../config.js"
+import { validateStrongPassword } from "./authUtils.js"
 
 const JWT_SECRET = config.jwtSecret
 
@@ -262,6 +263,10 @@ export async function updateCurrentUserProfile(req, res) {
       }
     }
     if (password) {
+      const passCheck = validateStrongPassword(password)
+      if (!passCheck.valid) {
+        return res.status(400).json({ error: passCheck.error })
+      }
       updateBody.password_hash = await bcrypt.hash(password, 10)
     }
 
@@ -282,6 +287,11 @@ export async function register(req, res) {
 
   if (!username || !password) {
     return res.status(400).json({ error: "Username and password are required" })
+  }
+
+  const passCheck = validateStrongPassword(password)
+  if (!passCheck.valid) {
+    return res.status(400).json({ error: passCheck.error })
   }
 
   const assignedRoles = Array.isArray(roles) && roles.length > 0 ? roles : [role || "viewer"]
@@ -341,20 +351,9 @@ export async function recoverSuperadminPassword(req, res) {
     return res.status(400).json({ error: "Username, Master Recovery Key, and New Password are required." })
   }
 
-  if (String(newPassword).length < 10) {
-    return res.status(400).json({ error: "New password must be at least 10 characters long." })
-  }
-
-  // Enforce strong password complexity matching UserManagement
-  const hasLower = /[a-z]/.test(newPassword)
-  const hasUpper = /[A-Z]/.test(newPassword)
-  const hasNumber = /[0-9]/.test(newPassword)
-  const hasSpecial = /[^a-zA-Z0-9]/.test(newPassword)
-
-  if (!hasLower || !hasUpper || !hasNumber || !hasSpecial) {
-    return res.status(400).json({
-      error: "Password must be strong. It must contain uppercase letters, lowercase letters, numbers, and special symbols (min 10 characters).",
-    })
+  const passCheck = validateStrongPassword(newPassword)
+  if (!passCheck.valid) {
+    return res.status(400).json({ error: passCheck.error })
   }
 
   const expectedKey = String(config.superadminRecoveryKey || process.env.SUPERADMIN_RECOVERY_KEY || "HKC-MASTER-RECOVERY-2026-KEY").trim()
