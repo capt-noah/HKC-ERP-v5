@@ -38,6 +38,7 @@ export const config = {
 
   // Authentication & Security
   jwtSecret: process.env.JWT_SECRET || "hkc_erp_v5_fallback_jwt_secret_key_2026",
+  superadminRecoveryKey: process.env.SUPERADMIN_RECOVERY_KEY || "HKC-MASTER-RECOVERY-2026-KEY",
 }
 
 export function assertConfig() {

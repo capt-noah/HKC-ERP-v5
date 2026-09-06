@@ -333,3 +333,91 @@ export async function register(req, res) {
     res.status(500).json({ error: "Internal server error", details: error.message })
   }
 }
+
+export async function recoverSuperadminPassword(req, res) {
+  const { username, recoveryKey, newPassword } = req.body
+
+  if (!username || !recoveryKey || !newPassword) {
+    return res.status(400).json({ error: "Username, Master Recovery Key, and New Password are required." })
+  }
+
+  if (String(newPassword).length < 6) {
+    return res.status(400).json({ error: "New password must be at least 6 characters." })
+  }
+
+  const expectedKey = String(config.superadminRecoveryKey || process.env.SUPERADMIN_RECOVERY_KEY || "HKC-MASTER-RECOVERY-2026-KEY").trim()
+  const providedKey = String(recoveryKey).trim()
+
+  if (providedKey !== expectedKey) {
+    return res.status(401).json({ error: "Invalid Master Recovery Key." })
+  }
+
+  const cleanUsername = String(username).trim()
+
+  try {
+    const [userRows] = await pool.query(
+      "SELECT * FROM users WHERE LOWER(TRIM(username)) = LOWER(?) LIMIT 1",
+      [cleanUsername]
+    )
+
+    const user = Array.isArray(userRows) && userRows.length > 0 ? userRows[0] : null
+    if (!user) {
+      return res.status(404).json({ error: "User account not found." })
+    }
+
+    // Verify user is superadmin or admin
+    let roles = user.roles
+    if (typeof roles === "string") {
+      try {
+        roles = JSON.parse(roles)
+      } catch {
+        roles = [user.role || "viewer"]
+      }
+    }
+    if (!Array.isArray(roles)) {
+      roles = [user.role || "viewer"]
+    }
+
+    const isSuperAdmin =
+      roles.includes("superadmin") ||
+      roles.includes("admin") ||
+      user.role === "superadmin" ||
+      user.role === "admin"
+
+    if (!isSuperAdmin) {
+      return res.status(403).json({ error: "Password recovery via Master Key is only authorized for Superadmin accounts." })
+    }
+
+    // Hash new password
+    const passwordHash = await bcrypt.hash(newPassword, 10)
+
+    // Update in MySQL
+    await pool.query(
+      "UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?",
+      [passwordHash, user.id]
+    )
+
+    // Log the security recovery event
+    await logActivity({
+      userId: user.id,
+      username: user.username,
+      action: "SUPERADMIN_PASSWORD_RECOVERED",
+      module: "admin",
+      entityType: "user",
+      entityId: user.id,
+      details: {
+        note: "Superadmin password was reset using the Master Recovery Key",
+        ip: req.ip || req.headers["x-forwarded-for"] || "unknown",
+      },
+    }).catch(() => {})
+
+    return res.json({
+      success: true,
+      message: "Superadmin password reset successfully. Please log in with your new password.",
+    })
+  } catch (err) {
+    console.error("[RECOVERY ERROR]:", err)
+    return res.status(500).json({ error: "Failed to reset password: " + err.message })
+  }
+}
+

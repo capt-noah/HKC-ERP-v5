@@ -1,10 +1,11 @@
 import express from "express"
-import { login, register, getCurrentUser, updateCurrentUserProfile } from "./authController.js"
+import { login, register, getCurrentUser, updateCurrentUserProfile, recoverSuperadminPassword } from "./authController.js"
 import { authenticateToken, authorizeRoles } from "./authMiddleware.js"
 
 const authRouter = express.Router()
 
 authRouter.post("/login", login)
+authRouter.post("/recover-superadmin", recoverSuperadminPassword)
 authRouter.get("/me", authenticateToken, getCurrentUser)
 authRouter.put("/me", authenticateToken, updateCurrentUserProfile)
 
