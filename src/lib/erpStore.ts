@@ -542,13 +542,13 @@ class ErpStore {
           status: ((m as any).status || "Quarantined") as "Quarantined" | "Released" | "Disposed",
           createdAt: (m as any).createdAt || m.date || new Date().toISOString(),
         }))
-      const idSet = new Set(this.quarantineRecords.map(r => r.id))
-      for (const mq of movementQuarantines) {
-        if (!idSet.has(mq.id)) {
-          this.quarantineRecords.push(mq)
-          idSet.add(mq.id)
+      // Set quarantine records strictly from database movements to prevent ghost records after database wipes
+      this.quarantineRecords = movementQuarantines
+      try {
+        if (typeof window !== "undefined" && window.localStorage) {
+          localStorage.setItem("hkc_quarantine_records", JSON.stringify(this.quarantineRecords))
         }
-      }
+      } catch {}
 
       this._inventoryLoaded = true
       this._loadError = null

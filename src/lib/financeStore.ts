@@ -470,7 +470,7 @@ class FinanceStore {
   private invoices: Invoice[] = []
   private payments: Payment[] = []
   private recurringSchedules: RecurringExpenseSchedule[] = []
-  private expenses: OneOffExpense[] = [...INITIAL_EXPENSES]
+  private expenses: OneOffExpense[] = []
   private vehicles: Vehicle[] = []
   private periods: AccountingPeriod[] = []
   private companySettings: CompanySettings = emptyCompanySettings
@@ -612,19 +612,18 @@ class FinanceStore {
       }))
       this.payments = sortNewestFirst(payments)
       this.recurringSchedules = sortNewestFirst(recurringSchedules)
-      if (!Array.isArray(expenses) || expenses.length === 0) {
-        this.expenses = INITIAL_EXPENSES
-        void persistResources([{ resource: "expenses", items: INITIAL_EXPENSES }])
-      } else {
-        this.expenses = sortNewestFirst(expenses.map((exp: any) => ({
-          ...exp,
-          amount: Number(exp.amount ?? 0),
-          tax_amount: Number(exp.tax_amount ?? 0),
-          wht_amount: Number(exp.wht_amount ?? 0),
-          net_disbursed: Number(exp.net_disbursed ?? exp.amount ?? 0),
-          status: exp.status || "PENDING",
-        })))
-      }
+      this.expenses = Array.isArray(expenses)
+        ? sortNewestFirst(
+            expenses.map((exp: any) => ({
+              ...exp,
+              amount: Number(exp.amount ?? 0),
+              tax_amount: Number(exp.tax_amount ?? 0),
+              wht_amount: Number(exp.wht_amount ?? 0),
+              net_disbursed: Number(exp.net_disbursed ?? exp.amount ?? 0),
+              status: exp.status || "PENDING",
+            }))
+          )
+        : []
       this.vehicles = sortNewestFirst(vehicles)
       const { id: _settingsId, ...companySettings } = companySettingsRows[0] || { id: "default", ...emptyCompanySettings }
       this.companySettings = companySettings as CompanySettings
@@ -984,6 +983,26 @@ class FinanceStore {
           })
 
           // C. Sync Expenses → ONLY for APPROVED expenses!
+          // 1. Purge any orphan expense journal entries where the expense was deleted or wiped
+          const activeApprovedExpenseIds = new Set(
+            this.expenses
+              .filter((ec: any) => ec.status === "APPROVED" && Number(ec.amount || 0) > 0)
+              .map((ec: any, idx: number) => ec.id || `EXP-${idx + 1}`)
+          )
+
+          const orphanExpEntries = this.entries.filter(
+            (e) => (e.id.startsWith("JE-EXP-") || (e.source_type === "Payment Voucher" && e.source_id?.startsWith("EXP-"))) &&
+                   (!e.source_id || !activeApprovedExpenseIds.has(e.source_id))
+          )
+
+          if (orphanExpEntries.length > 0) {
+            const orphanIds = new Set(orphanExpEntries.map((e) => e.id))
+            this.entries = this.entries.filter((e) => !orphanIds.has(e.id))
+            this.lines = this.lines.filter((l) => !orphanIds.has(l.journal_entry_id))
+            hasNewSync = true
+          }
+
+          // 2. Sync approved expenses
           this.expenses.forEach((ec: any, idx: number) => {
             const expId = ec.id || `EXP-${idx + 1}`
             const jeId = `JE-EXP-${expId}`

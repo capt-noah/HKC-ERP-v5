@@ -63,7 +63,7 @@ const roleDescriptions: Record<Role, { title: string; desc: string; color: strin
     ],
   },
   sales_manager: {
-    title: "Sales Manager",
+    title: "Sales",
     desc: "Manages the entire sales pipeline from orders and quotations to warehouse dispatch and client shipments.",
     color: "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
     capabilities: [
@@ -75,7 +75,7 @@ const roleDescriptions: Record<Role, { title: string; desc: string; color: strin
     ],
   },
   inventory_admin: {
-    title: "Inventory Administrator",
+    title: "Inventory",
     desc: "Oversees multi-location stock movements, bin cards, batch tracking, and commodity transfers.",
     color: "bg-teal-50 text-teal-800 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300",
     capabilities: [
@@ -87,7 +87,7 @@ const roleDescriptions: Record<Role, { title: string; desc: string; color: strin
     ],
   },
   finance_manager: {
-    title: "Finance Manager",
+    title: "Finance",
     desc: "Maintains financial compliance, chart of accounts, journal entries, tax filings, and ledger reports.",
     color: "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
     capabilities: [
@@ -99,7 +99,7 @@ const roleDescriptions: Record<Role, { title: string; desc: string; color: strin
     ],
   },
   hr_manager: {
-    title: "HR & Payroll Manager",
+    title: "HR",
     desc: "Administers employee records, monthly payroll calculations, attendance tracking, and leave workflows.",
     color: "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
     capabilities: [
@@ -111,7 +111,7 @@ const roleDescriptions: Record<Role, { title: string; desc: string; color: strin
     ],
   },
   hkc_docs_manager: {
-    title: "HKC Export Docs Manager",
+    title: "HKC Export Docs",
     desc: "Compiles specialized export/import documentation, customs clearances, and regulatory certificates.",
     color: "bg-teal-50 text-teal-800 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300",
     capabilities: [

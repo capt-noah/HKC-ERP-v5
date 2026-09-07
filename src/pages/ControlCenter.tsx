@@ -92,10 +92,11 @@ export interface UserActivityLog {
 
 const roleLabels: Record<string, string> = {
   superadmin: "Super Admin",
-  sales_manager: "Sales Manager",
-  hr_manager: "HR Manager",
-  finance_manager: "Finance Manager",
-  inventory_manager: "Inventory Manager",
+  sales_manager: "Sales",
+  hr_manager: "HR",
+  finance_manager: "Finance",
+  inventory_manager: "Inventory",
+  inventory_admin: "Inventory",
   operator: "Staff Operator",
   auditor: "Auditor",
 }

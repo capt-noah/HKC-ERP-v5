@@ -56,10 +56,10 @@ const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, trans
 
 const roleLabels: Record<string, string> = {
   superadmin: "Super Admin",
-  sales_manager: "Sales Manager",
-  hr_manager: "HR Manager",
-  inventory_admin: "Inventory Admin",
-  finance_manager: "Finance Manager",
+  sales_manager: "Sales",
+  hr_manager: "HR",
+  inventory_admin: "Inventory",
+  finance_manager: "Finance",
   hkc_docs_manager: "HKC Docs Specialist",
 }
 
