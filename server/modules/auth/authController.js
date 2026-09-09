@@ -153,7 +153,7 @@ export async function login(req, res) {
         employee_id: user.employee_id || null,
       },
       JWT_SECRET,
-      { expiresIn: "30d" }
+      { expiresIn: "6h" }
     )
 
     // Log login activity asynchronously
@@ -279,6 +279,85 @@ export async function updateCurrentUserProfile(req, res) {
   } catch (error) {
     console.error("updateCurrentUserProfile error:", error)
     res.status(500).json({ error: "Internal server error", details: error.message })
+  }
+}
+
+export async function changePassword(req, res) {
+  try {
+    const userId = req.user?.id
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" })
+    }
+
+    const { currentPassword, newPassword } = req.body
+
+    if (!newPassword) {
+      return res.status(400).json({ error: "New password is required." })
+    }
+
+    const passCheck = validateStrongPassword(newPassword)
+    if (!passCheck.valid) {
+      return res.status(400).json({ error: passCheck.error })
+    }
+
+    // Retrieve current user from MySQL database
+    const [userRows] = await pool.query(
+      "SELECT id, username, password_hash FROM users WHERE id = ? LIMIT 1",
+      [userId]
+    )
+    const user = Array.isArray(userRows) && userRows.length > 0 ? userRows[0] : null
+    if (!user) {
+      return res.status(404).json({ error: "User record not found." })
+    }
+
+    // If currentPassword was provided, verify it
+    if (currentPassword && user.password_hash) {
+      let isMatch = false
+      try {
+        if (user.password_hash.startsWith("$2a$") || user.password_hash.startsWith("$2b$") || user.password_hash.startsWith("$2y$")) {
+          isMatch = await bcrypt.compare(currentPassword, user.password_hash)
+        } else {
+          isMatch = (currentPassword === user.password_hash)
+        }
+      } catch {
+        isMatch = (currentPassword === user.password_hash)
+      }
+
+      if (!isMatch) {
+        return res.status(400).json({ error: "Current password is incorrect." })
+      }
+    }
+
+    // Hash new password securely
+    const passwordHash = await bcrypt.hash(newPassword, 10)
+
+    // Save directly to the MySQL database
+    await pool.query(
+      "UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?",
+      [passwordHash, userId]
+    )
+
+    // Log the security password change event in audit logs
+    await logActivity({
+      userId: user.id,
+      username: user.username,
+      action: "USER_PASSWORD_CHANGED",
+      module: "auth",
+      entityType: "user",
+      entityId: user.id,
+      details: {
+        note: "User updated account password",
+        ip: (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "127.0.0.1").split(",")[0].trim(),
+      },
+    }).catch(() => {})
+
+    return res.status(200).json({
+      success: true,
+      message: "Password updated successfully in the system database.",
+    })
+  } catch (error) {
+    console.error("changePassword error:", error)
+    return res.status(500).json({ error: "Failed to update password: " + error.message })
   }
 }
 
