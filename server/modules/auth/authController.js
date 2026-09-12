@@ -73,13 +73,13 @@ export async function login(req, res) {
     }
 
     if (!user) {
-      return res.status(401).json({ error: "Invalid credentials (user not found)" })
+      return res.status(401).json({ error: "User does not exist. Please check your username or contact an administrator." })
     }
 
     const passwordHash = user.password_hash || user.passwordHash || user.password
 
     if (!passwordHash) {
-      return res.status(401).json({ error: "Invalid credentials (account has no password set)" })
+      return res.status(401).json({ error: "Account has no password set. Please contact an administrator." })
     }
 
     // Check active status (handles active/inactive, is_active = 1/0)
@@ -91,7 +91,7 @@ export async function login(req, res) {
       user.is_active === false ||
       user.isActive === false
     if (isInactive) {
-      return res.status(403).json({ error: "Your account is deactivated. Please contact the administrator." })
+      return res.status(403).json({ error: "Your account is deactivated. Please contact an administrator." })
     }
 
     // Verify password with bcryptjs OR raw equality (if plain text was in dump)
@@ -107,7 +107,7 @@ export async function login(req, res) {
     }
 
     if (!isMatch) {
-      return res.status(401).json({ error: "Invalid credentials (password incorrect)" })
+      return res.status(401).json({ error: "Incorrect password. Please check your password and try again." })
     }
 
     const fullname =

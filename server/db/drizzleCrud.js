@@ -347,6 +347,23 @@ export async function drizzleDeleteRow({ resource, id }) {
   const tableName = resource.table
   const cleanId = String(id).trim()
   try {
+    if (tableName === "users") {
+      // 1. Decouple/nullify foreign keys in user_activity_logs
+      await pool.query(
+        "UPDATE user_activity_logs SET user_id = NULL WHERE user_id = ? OR LOWER(TRIM(username)) = LOWER(?)",
+        [cleanId, cleanId]
+      ).catch((e) => console.warn("[CLEANUP FK WARNING]:", e.message))
+
+      // 2. Perform direct deletion by ID or username
+      const [delRes] = await pool.query(
+        "DELETE FROM `users` WHERE id = ? OR LOWER(TRIM(username)) = LOWER(?) OR LOWER(TRIM(id)) = LOWER(?)",
+        [cleanId, cleanId, cleanId]
+      )
+
+      console.log(`[USER DELETED FROM DB] User ID/Username: ${cleanId}, affectedRows: ${delRes.affectedRows}`)
+      return { status: 200, body: { ok: true, deletedId: id, affectedRows: delRes.affectedRows } }
+    }
+
     const getRes = await drizzleGetRow({ resource, id: cleanId })
     const targetDbId = getRes.body?.id || cleanId
     await pool.query(`DELETE FROM \`${tableName}\` WHERE id = ?`, [String(targetDbId)])
