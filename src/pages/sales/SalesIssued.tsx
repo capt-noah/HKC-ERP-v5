@@ -10,7 +10,7 @@ import { useResizableTable, ResizableTh, type TableColumn } from "@/components/R
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, getTradeLicenseStatus } from "@/lib/erpStore"
 import { useFinanceStore } from "@/lib/financeStore"
-import { withOperatingWarehouses } from "@/lib/warehouses"
+import { withOperatingWarehouses, isWH1 } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { sortNewestFirst } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -75,12 +75,6 @@ function formatDate(d?: string | Date | null) {
   } catch {
     return String(d)
   }
-}
-
-const isWH1 = (w?: string) => {
-  if (!w) return false
-  const upper = w.toUpperCase()
-  return upper.includes("WH1") || upper.includes("WH-01") || upper.includes("WH 1") || upper.includes("AGRI")
 }
 
 export const COMMODITY_UNITS = ["Quintal", "Ton"]
@@ -944,8 +938,8 @@ export default function SalesIssued() {
     payment_status: 170,
     total_quantity: 90,
     unit_price: 100,
-    total_amount: 110,
-    _actions: 190,
+    total_amount: 120,
+    _actions: 280,
   })
 
   const isPostedEditing = Boolean(editing && (editing.status || "").toLowerCase() === "posted")
@@ -1076,8 +1070,8 @@ export default function SalesIssued() {
                       </td>
                       <td style={{ width: `${salesTable.colWidths.unit_price}px` }} className="px-3 py-3 text-right font-mono text-xs font-bold truncate">{money(row.items?.[0]?.unit_price || 0)}</td>
                       <td style={{ width: `${salesTable.colWidths.total_amount}px` }} className="px-3 py-3 text-right font-mono text-xs font-black truncate">{money(row.total_amount)}</td>
-                      <td style={{ width: `${salesTable.colWidths._actions}px` }} className="py-4 px-4 text-center whitespace-nowrap overflow-hidden">
-                        <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <td style={{ width: `${salesTable.colWidths._actions}px` }} className="py-4 px-2 text-center whitespace-nowrap overflow-hidden">
+                        <div className="flex items-center justify-center gap-1.5 flex-nowrap" onClick={(e) => e.stopPropagation()}>
                           {!isCash && dueAmt > 0 && (
                             <button
                               type="button"
@@ -1623,20 +1617,22 @@ export default function SalesIssued() {
                                   <input
                                     type="file"
                                     className="hidden"
-                                    onChange={(e) => {
+                                    onChange={async (e) => {
                                       const f = e.target.files?.[0]
                                       if (f) {
-                                        const reader = new FileReader()
-                                        reader.onload = () => {
-                                          setStagedPaymentAdviceName(f.name)
-                                          setStagedPaymentAdviceUrl(reader.result as string)
+                                        try {
+                                          const uploadRes = await uploadFile(f, "sales_issued")
+                                          setStagedPaymentAdviceName(uploadRes.originalName || f.name)
+                                          setStagedPaymentAdviceUrl(uploadRes.url)
                                           setIssueFormErrors((prev) => {
                                             const next = { ...prev }
                                             delete next.paymentAdvice
                                             return next
                                           })
+                                        } catch (err) {
+                                          console.warn("Payment advice upload failed:", err)
+                                          showToast("Upload Failed", "warning", "Could not upload payment advice.")
                                         }
-                                        reader.readAsDataURL(f)
                                       }
                                     }}
                                   />

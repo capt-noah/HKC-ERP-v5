@@ -26,7 +26,7 @@
 | **Sales & CRM** | `customers` | JSON Document | `id` (PK), `payload` (JSON with Bank Permits, Trade Licenses, TIN, VAT), timestamps |
 | | `suppliers` | JSON Document | `id` (PK), `payload` (JSON with supplier contact & credit details), timestamps |
 | | `sales_orders` | JSON Document | `id` (PK), `payload` (JSON with line items, WH gating, approval status), timestamps |
-| | `purchase_orders` | JSON Document | `id` (PK), `payload` (JSON with shipment terms, proforma details), timestamps |
+| | `purchase_orders` | Relational | `id` (PK), `po_number`, `voucher_no`, `date`, `paid_to`, `supplier`, `supplier_id`, `reason_for_payment`, `bank_name`, `payment_method`, `cheque_no`, `amount` (decimal 18,2), `amount_paid` (decimal 18,2), `balance_due` (decimal 18,2), `payment_type`, `payment_terms`, `due_date`, `status`, `settlement_status`, `currency`, `amount_in_words`, attachments & installments (JSON), timestamps |
 | | `hkc_doc_records` | JSON Document | `id` (PK), `payload` (JSON with trade attachments & scans), timestamps |
 | | `sales_issues` | Relational | `id` (PK), `sales_order_id`, `issue_number`, `customer_id`, `issue_date`, `status`, `total_amount` (decimal 18,2), `payment_status`, `payment_method`, timestamps |
 | | `sales_issue_items` | Relational | `id` (PK), `sales_issue_id` (FK &rarr; `sales_issues.id`), `product_id`, `quantity` (decimal 18,2), `unit_price`, `total_price`, `batch_number`, timestamps |

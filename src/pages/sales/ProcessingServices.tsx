@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react"
+import React, { useState, useEffect, useRef, useMemo, Fragment } from "react"
 import { Navigate } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import {
@@ -11,6 +11,9 @@ import {
   Upload,
   Check,
   ExternalLink,
+  AlertTriangle,
+  ArrowDownLeft,
+  ArrowUpRight,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -48,6 +51,7 @@ function ProcessingServicesSkeletonRows() {
           <td className="px-3 py-4"><Skeleton className="h-4 w-24 bg-zinc-200/80" /></td>
           <td className="px-3 py-4"><Skeleton className="h-4 w-36 bg-zinc-200/80" /></td>
           <td className="px-3 py-4"><div className="space-y-1.5"><Skeleton className="h-4 w-32 bg-zinc-200/80" /><Skeleton className="h-3 w-20 bg-zinc-200/80" /></div></td>
+          <td className="px-3 py-4 text-right"><Skeleton className="h-4 w-24 ml-auto bg-zinc-200/80" /></td>
           <td className="px-3 py-4"><Skeleton className="h-4 w-24 bg-zinc-200/80" /></td>
           <td className="px-3 py-4"><Skeleton className="h-5 w-24 rounded-full mx-auto bg-zinc-200/80" /></td>
           <td className="px-3 py-4"><Skeleton className="h-4 w-24 ml-auto bg-zinc-200/80" /></td>
@@ -76,6 +80,7 @@ const serviceOrderColumns: TableColumn[] = [
   { key: "reference_number", label: "Ref Number", align: "left" },
   { key: "client_company_name", label: "Client Company", align: "left" },
   { key: "goods_description", label: "Raw Commodity", align: "left" },
+  { key: "quantity", label: "Quantity (Yield)", align: "right" },
   { key: "entry_date", label: "Entry Date", align: "left" },
   { key: "status", label: "Stage Status", align: "center" },
   { key: "agreed_price", label: "Calculated Fee", align: "right" },
@@ -126,6 +131,11 @@ export default function ProcessingServices() {
   const [editingOrder, setEditingOrder] = useState<ProcessingServiceOrder | null>(null)
   const [deletingOrder, setDeletingOrder] = useState<ProcessingServiceOrder | null>(null)
   const [isUploadingContract, setIsUploadingContract] = useState<boolean>(false)
+  const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({})
+
+  const toggleOrderExpand = (orderId: string) => {
+    setExpandedOrders((prev) => ({ ...prev, [orderId]: !prev[orderId] }))
+  }
 
   // Document preview states
   const [previewUrl, setPreviewUrl] = useState("")
@@ -151,6 +161,8 @@ export default function ProcessingServices() {
   const [editEntryDate, setEditEntryDate] = useState("")
   const [editNotes, setEditNotes] = useState("")
   const [editStatus, setEditStatus] = useState<ProcessingServiceStage>("Received")
+  const [editRejectQuantity, setEditRejectQuantity] = useState<string>("")
+  const [editRejectReason, setEditRejectReason] = useState<string>("")
   const [previewCalcDate, setPreviewCalcDate] = useState<string>(new Date().toISOString().split("T")[0])
   const [isSavingEdit, setIsSavingEdit] = useState(false)
 
@@ -204,6 +216,12 @@ export default function ProcessingServices() {
     setPreviewCalcDate(new Date().toISOString().split("T")[0])
     setEditNotes(order.notes || "")
     setEditStatus(order.status || "Received")
+    setEditRejectQuantity(
+      order.reject_quantity !== null && order.reject_quantity !== undefined && Number(order.reject_quantity) > 0
+        ? String(order.reject_quantity)
+        : ""
+    )
+    setEditRejectReason(order.reject_reason || "")
   }
 
   const [createContractFile, setCreateContractFile] = useState<File | null>(null)
@@ -296,10 +314,25 @@ export default function ProcessingServices() {
       const isProcessedChecked = getStageIndex(editStatus) >= 1
       const isDeliveredChecked = getStageIndex(editStatus) >= 2
 
+      const grossQty = Number(editQuantity)
+      const rejectQtyNum = isProcessedChecked ? Math.max(0, Number(editRejectQuantity) || 0) : 0
+
+      if (rejectQtyNum > grossQty) {
+        showToast(
+          "Validation Error",
+          "warning",
+          `Reject quantity (${rejectQtyNum} Qtl) cannot exceed gross quantity (${grossQty} Qtl).`
+        )
+        return
+      }
+
+      const netDeliverableQty = isProcessedChecked ? Math.max(0, grossQty - rejectQtyNum) : grossQty
+
       // Calculate total fee up to previewCalcDate (which is Today when Delivered is selected)
+      // Note: Option A calculates fee based on gross received quantity (grossQty)
       const targetEndDate = isDeliveredChecked ? (previewCalcDate || new Date().toISOString().split("T")[0]) : previewCalcDate
       const feeCalc = calculateProcessingServiceFee(
-        Number(editQuantity),
+        grossQty,
         editEntryDate,
         targetEndDate,
         isProcessedChecked,
@@ -317,11 +350,15 @@ export default function ProcessingServices() {
         client_company_name: targetClient,
         customer_id: editCustomerId || null,
         goods_description: editGoodsDesc,
-        quantity: Number(editQuantity),
+        quantity: grossQty,
         uom: editUom,
         entry_date: editEntryDate,
         agreed_price: isDeliveredChecked ? (editingOrder.locked_total_fee || feeCalc.totalFee) : feeCalc.totalFee,
         notes: editNotes,
+        reject_quantity: isProcessedChecked ? rejectQtyNum : 0,
+        reject_reason: isProcessedChecked ? (editRejectReason.trim() || null) : null,
+        net_deliverable_quantity: netDeliverableQty,
+        reject_recorded_at: isProcessedChecked && rejectQtyNum > 0 ? (editingOrder.reject_recorded_at || new Date().toISOString()) : null,
       })
 
       // If status stage changed, trigger stage transition to recognize revenue / log history
@@ -332,6 +369,10 @@ export default function ProcessingServices() {
           storageFee: feeCalc.storageFee,
           totalFee: feeCalc.totalFee,
           deliveryDate: targetEndDate,
+          reject_quantity: isProcessedChecked ? rejectQtyNum : 0,
+          reject_reason: isProcessedChecked ? (editRejectReason.trim() || null) : null,
+          net_deliverable_quantity: netDeliverableQty,
+          reject_recorded_at: isProcessedChecked && rejectQtyNum > 0 ? (editingOrder.reject_recorded_at || new Date().toISOString()) : null,
         }
         const transitionRes = await transitionProcessingServiceStage(editingOrder.id, editStatus, transitionSnapshot)
         if (transitionRes.ok) {
@@ -393,11 +434,12 @@ export default function ProcessingServices() {
   const ordersTable = useResizableTable<ProcessingServiceOrder>(serviceOrderColumns, filteredServices, {
     reference_number: 140,
     client_company_name: 220,
-    goods_description: 200,
-    entry_date: 120,
-    status: 150,
+    goods_description: 180,
+    quantity: 150,
+    entry_date: 110,
+    status: 140,
     agreed_price: 130,
-    _actions: 120,
+    _actions: 110,
   })
 
   const [page, setPage] = useState(1)
@@ -533,47 +575,257 @@ export default function ProcessingServices() {
                       ? (order.locked_total_fee ?? order.agreed_price ?? feeCalc.totalFee)
                       : feeCalc.totalFee
 
+                    const isExpanded = Boolean(expandedOrders[order.id])
+                    const hasRejects = Number(order.reject_quantity || 0) > 0
+                    const netYield = Number(order.net_deliverable_quantity ?? (Number(order.quantity) - Number(order.reject_quantity || 0)))
+
                     return (
-                      <tr
-                        key={order.id}
-                        className="border-b border-zinc-150/40 hover:bg-zinc-50/60 transition-colors text-xs"
-                      >
-                        <td style={{ width: `${ordersTable.colWidths.reference_number}px` }} className="px-3 py-3 whitespace-nowrap font-mono font-bold text-zinc-900 truncate">
-                          {order.reference_number || order.id}
-                        </td>
-                        <td style={{ width: `${ordersTable.colWidths.client_company_name}px` }} className="px-3 py-3 font-bold text-zinc-900 truncate">
-                          {order.client_company_name}
-                        </td>
-                        <td style={{ width: `${ordersTable.colWidths.goods_description}px` }} className="px-3 py-3 truncate">
-                          <div className="font-bold text-zinc-800">{order.goods_description}</div>
-                          <div className="text-[10px] font-mono text-zinc-500">
-                            {order.quantity} {order.uom}
-                          </div>
-                        </td>
-                        <td style={{ width: `${ordersTable.colWidths.entry_date}px` }} className="px-3 py-3 font-mono font-semibold text-zinc-600 truncate">
-                          {order.entry_date}
-                        </td>
-                        <td style={{ width: `${ordersTable.colWidths.status}px` }} className="px-3 py-3 text-center whitespace-nowrap truncate">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black border ${colors.bg} ${colors.text} ${colors.border}`}>
-                            {order.status}
-                          </span>
-                        </td>
-                        <td style={{ width: `${ordersTable.colWidths.agreed_price}px` }} className="px-3 py-3 text-right font-mono font-black text-zinc-950 truncate">
-                          ETB {displayFee.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                        </td>
-                        <td style={{ width: `${ordersTable.colWidths._actions}px` }} className="px-3 py-3 text-center whitespace-nowrap truncate pr-4">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              openEditModal(order)
-                            }}
-                            className="px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-extrabold text-[11px] transition-all border border-emerald-200/80 active:scale-95 shadow-xs inline-flex items-center gap-1"
-                            title="Edit processing service"
-                          >
-                            <Edit3 className="size-3 text-emerald-600" /> Edit
-                          </button>
-                        </td>
-                      </tr>
+                      <Fragment key={order.id}>
+                        <tr
+                          onClick={() => toggleOrderExpand(order.id)}
+                          className="border-b border-zinc-150/40 hover:bg-zinc-50/70 transition-colors text-xs cursor-pointer font-semibold"
+                        >
+                          {/* Reference Number + Chevron */}
+                          <td style={{ width: `${ordersTable.colWidths.reference_number}px` }} className="px-3 py-3 whitespace-nowrap font-mono font-bold text-zinc-900 truncate">
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  toggleOrderExpand(order.id)
+                                }}
+                                className="p-1 rounded-md hover:bg-zinc-200/80 text-zinc-400 hover:text-zinc-800 transition-colors cursor-pointer"
+                                title="Toggle stock movement details"
+                              >
+                                {isExpanded ? (
+                                  <ChevronUp className="size-3.5 text-zinc-700 stroke-[2.5]" />
+                                ) : (
+                                  <ChevronDown className="size-3.5 stroke-[2.5]" />
+                                )}
+                              </button>
+                              <span className="truncate">{order.reference_number || order.id}</span>
+                            </div>
+                          </td>
+
+                          {/* Client Company */}
+                          <td style={{ width: `${ordersTable.colWidths.client_company_name}px` }} className="px-3 py-3 font-bold text-zinc-900 truncate">
+                            {order.client_company_name}
+                          </td>
+
+                          {/* Raw Commodity Description */}
+                          <td style={{ width: `${ordersTable.colWidths.goods_description}px` }} className="px-3 py-3 truncate">
+                            <div className="font-bold text-zinc-800 truncate">{order.goods_description}</div>
+                          </td>
+
+                          {/* Quantity (Yield) Column */}
+                          <td style={{ width: `${ordersTable.colWidths.quantity}px` }} className="px-3 py-3 text-right font-mono whitespace-nowrap">
+                            {hasRejects ? (
+                              <div>
+                                <span className="font-black text-emerald-800 block">
+                                  {netYield.toLocaleString()} {order.uom}
+                                </span>
+                                <span className="text-[10px] text-zinc-400 font-medium block">
+                                  Gross: {Number(order.quantity).toLocaleString()} {order.uom}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="font-black text-zinc-900">
+                                {Number(order.quantity).toLocaleString()} {order.uom}
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Entry Date */}
+                          <td style={{ width: `${ordersTable.colWidths.entry_date}px` }} className="px-3 py-3 font-mono font-semibold text-zinc-600 truncate">
+                            {order.entry_date}
+                          </td>
+
+                          {/* Status Stage */}
+                          <td style={{ width: `${ordersTable.colWidths.status}px` }} className="px-3 py-3 text-center whitespace-nowrap truncate">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black border ${colors.bg} ${colors.text} ${colors.border}`}>
+                              {order.status}
+                            </span>
+                          </td>
+
+                          {/* Calculated Fee */}
+                          <td style={{ width: `${ordersTable.colWidths.agreed_price}px` }} className="px-3 py-3 text-right font-mono font-black text-zinc-950 truncate">
+                            ETB {displayFee.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                          </td>
+
+                          {/* Actions */}
+                          <td style={{ width: `${ordersTable.colWidths._actions}px` }} className="px-3 py-3 text-center whitespace-nowrap truncate pr-4">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                openEditModal(order)
+                              }}
+                              className="px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-extrabold text-[11px] transition-all border border-emerald-200/80 active:scale-95 shadow-xs inline-flex items-center gap-1 cursor-pointer"
+                              title="Edit processing service"
+                            >
+                              <Edit3 className="size-3 text-emerald-600" /> Edit
+                            </button>
+                          </td>
+                        </tr>
+
+                        {/* Child Sub-Ledger (Like WH1) */}
+                        {isExpanded && (
+                          <tr className="bg-zinc-50/70">
+                            <td colSpan={serviceOrderColumns.length} className="px-6 py-4">
+                              <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden shadow-xs">
+                                <div className="bg-zinc-50 px-4 py-2.5 border-b border-zinc-200 flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-black text-xs text-zinc-900 uppercase tracking-wide">
+                                      Toll Processing Ledger &bull; {order.reference_number || order.id}
+                                    </span>
+                                    <span className="text-[10px] text-zinc-500 font-semibold">
+                                      ({order.goods_description} &bull; {order.client_company_name})
+                                    </span>
+                                  </div>
+                                  <div className="text-xs font-mono font-bold flex items-center gap-3">
+                                    <span>
+                                      Gross Received: <strong className="text-zinc-900">{Number(order.quantity).toLocaleString()} {order.uom}</strong>
+                                    </span>
+                                    <span className="text-zinc-300">|</span>
+                                    <span>
+                                      Deliverable Yield: <strong className="text-emerald-700 font-black">{netYield.toLocaleString()} {order.uom}</strong>
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left border-collapse text-xs font-semibold">
+                                    <thead>
+                                      <tr className="bg-zinc-50/90 border-b border-zinc-200 text-[10px] font-black uppercase text-zinc-500 tracking-wider">
+                                        <th className="py-2.5 px-4">Type</th>
+                                        <th className="py-2.5 px-4">Date</th>
+                                        <th className="py-2.5 px-4">Ref / Ticket</th>
+                                        <th className="py-2.5 px-4">Client / Station</th>
+                                        <th className="py-2.5 px-4">Activity & Reason</th>
+                                        <th className="py-2.5 px-4 text-right text-emerald-700">Qty In (+)</th>
+                                        <th className="py-2.5 px-4 text-right text-rose-700">Qty Out (-)</th>
+                                        <th className="py-2.5 px-4 text-right text-zinc-950 bg-zinc-100/50">Running Deliverable Balance</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-zinc-150">
+                                      {/* 1. Inbound Arrival Row */}
+                                      <tr className="border-l-[3px] border-l-emerald-500 bg-emerald-50/20 hover:bg-emerald-50/40 transition-colors">
+                                        <td className="py-2.5 px-4 whitespace-nowrap">
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200/60 shadow-2xs">
+                                            <ArrowDownLeft className="size-3 text-emerald-600" /> Inbound Entry
+                                          </span>
+                                        </td>
+                                        <td className="py-2.5 px-4 font-mono text-[11px] font-bold text-zinc-800 whitespace-nowrap">
+                                          {order.entry_date}
+                                        </td>
+                                        <td className="py-2.5 px-4 font-mono font-bold text-rose-700 whitespace-nowrap">
+                                          {order.reference_number || order.id}
+                                        </td>
+                                        <td className="py-2.5 px-4 font-bold text-zinc-900 whitespace-nowrap">
+                                          {order.client_company_name}
+                                        </td>
+                                        <td className="py-2.5 px-4 text-zinc-700 font-medium">
+                                          Raw commodity received for toll cleaning & processing
+                                        </td>
+                                        <td className="py-2.5 px-4 text-right font-mono font-black text-emerald-700 whitespace-nowrap">
+                                          +{Number(order.quantity).toLocaleString()} {order.uom}
+                                        </td>
+                                        <td className="py-2.5 px-4 text-right font-mono text-zinc-300 whitespace-nowrap">
+                                          —
+                                        </td>
+                                        <td className="py-2.5 px-4 text-right font-mono font-black text-zinc-950 bg-zinc-50/60 whitespace-nowrap">
+                                          {Number(order.quantity).toLocaleString()} {order.uom}
+                                        </td>
+                                      </tr>
+
+                                      {/* 2. Rejection / Cleaning Loss Row */}
+                                      {hasRejects && (
+                                        <tr className="border-l-[3px] border-l-rose-500 bg-rose-50/20 hover:bg-rose-50/40 transition-colors">
+                                          <td className="py-2.5 px-4 whitespace-nowrap">
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-50 text-rose-800 border border-rose-200/60 shadow-2xs">
+                                              <AlertTriangle className="size-3 text-rose-600" /> Reject Loss
+                                            </span>
+                                          </td>
+                                          <td className="py-2.5 px-4 font-mono text-[11px] font-bold text-zinc-800 whitespace-nowrap">
+                                            {order.reject_recorded_at ? order.reject_recorded_at.split("T")[0] : order.entry_date}
+                                          </td>
+                                          <td className="py-2.5 px-4 font-mono font-bold text-rose-700 whitespace-nowrap">
+                                            QC-REJECT
+                                          </td>
+                                          <td className="py-2.5 px-4 font-bold text-zinc-900 whitespace-nowrap">
+                                            WH1 Cleaning Line
+                                          </td>
+                                          <td className="py-2.5 px-4 text-zinc-700 font-medium">
+                                            <span className="font-bold text-rose-900">Deduction:</span> {order.reject_reason || "Screened impurities, dirt & damaged seeds"}
+                                          </td>
+                                          <td className="py-2.5 px-4 text-right font-mono text-zinc-300 whitespace-nowrap">
+                                            —
+                                          </td>
+                                          <td className="py-2.5 px-4 text-right font-mono font-black text-rose-700 whitespace-nowrap">
+                                            -{Number(order.reject_quantity).toLocaleString()} {order.uom}
+                                          </td>
+                                          <td className="py-2.5 px-4 text-right font-mono font-black text-zinc-950 bg-zinc-50/60 whitespace-nowrap">
+                                            {netYield.toLocaleString()} {order.uom}
+                                          </td>
+                                        </tr>
+                                      )}
+
+                                      {/* 3. Finished Delivery / Dispatch Row */}
+                                      {order.status === "Delivered" && (
+                                        <tr className="border-l-[3px] border-l-purple-500 bg-purple-50/20 hover:bg-purple-50/40 transition-colors">
+                                          <td className="py-2.5 px-4 whitespace-nowrap">
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-purple-50 text-purple-800 border border-purple-200/60 shadow-2xs">
+                                              <ArrowUpRight className="size-3 text-purple-600" /> Dispatched
+                                            </span>
+                                          </td>
+                                          <td className="py-2.5 px-4 font-mono text-[11px] font-bold text-zinc-800 whitespace-nowrap">
+                                            {order.delivered_at ? order.delivered_at.split("T")[0] : (order.updated_at ? order.updated_at.split("T")[0] : order.entry_date)}
+                                          </td>
+                                          <td className="py-2.5 px-4 font-mono font-bold text-purple-900 whitespace-nowrap">
+                                            {order.invoice_id || "DISPATCH-OUT"}
+                                          </td>
+                                          <td className="py-2.5 px-4 font-bold text-zinc-900 whitespace-nowrap">
+                                            {order.client_company_name}
+                                          </td>
+                                          <td className="py-2.5 px-4 text-zinc-700 font-medium">
+                                            Cleaned & processed commodity dispatched to client
+                                          </td>
+                                          <td className="py-2.5 px-4 text-right font-mono text-zinc-300 whitespace-nowrap">
+                                            —
+                                          </td>
+                                          <td className="py-2.5 px-4 text-right font-mono font-black text-purple-700 whitespace-nowrap">
+                                            -{netYield.toLocaleString()} {order.uom}
+                                          </td>
+                                          <td className="py-2.5 px-4 text-right font-mono font-black text-zinc-950 bg-zinc-50/60 whitespace-nowrap">
+                                            0.00 {order.uom} <span className="text-[10px] font-sans text-purple-700 font-semibold">(Settled)</span>
+                                          </td>
+                                        </tr>
+                                      )}
+                                    </tbody>
+                                    <tfoot>
+                                      <tr className="bg-zinc-100 border-t-2 border-zinc-200 text-xs font-mono font-bold text-zinc-950">
+                                        <td colSpan={5} className="py-2.5 px-4 text-right uppercase text-[10px] font-black border-r border-zinc-200">
+                                          Deliverable Yield Summary:
+                                        </td>
+                                        <td className="py-2.5 px-4 text-right text-emerald-800 border-r border-zinc-200">
+                                          +{Number(order.quantity).toLocaleString()}
+                                        </td>
+                                        <td className="py-2.5 px-4 text-right text-rose-800 border-r border-zinc-200">
+                                          -{Number(order.reject_quantity || 0).toLocaleString()}
+                                        </td>
+                                        <td className="py-2.5 px-4 text-right font-black bg-zinc-200">
+                                          {order.status === "Delivered" 
+                                            ? `0.00 ${order.uom} (Dispatched)` 
+                                            : `${netYield.toLocaleString()} ${order.uom} (Available)`}
+                                        </td>
+                                      </tr>
+                                    </tfoot>
+                                  </table>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     )
                   })
                 )}
@@ -860,8 +1112,8 @@ export default function ProcessingServices() {
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[10px] text-stone-500 dark:text-zinc-400">
-                                {activeProcRate} ETB × {qty} Quintals
+                              <span className="text-[10px] text-stone-500 dark:text-zinc-400 block">
+                                {Number(activeProcRate)} ETB × {Number(qty)} Quintals
                               </span>
                             </div>
                             <span className={`font-bold text-right font-mono ${isProcessedChecked ? "text-stone-900 dark:text-zinc-100" : "text-stone-400"}`}>
@@ -888,7 +1140,7 @@ export default function ProcessingServices() {
                             {/* Storage Month-by-Month Rows */}
                             {feeCalc.storageFeeBreakdown.length === 0 ? (
                               <div className="flex items-center justify-between text-[10px] text-stone-500 pl-3">
-                                <span>Day 1–30: FREE (0 ETB × {qty} Q × 0 days)</span>
+                                <span>Day 1–30: FREE (0 ETB × {Number(qty)} Q × 0 days)</span>
                                 <span>ETB 0.00</span>
                               </div>
                             ) : (
@@ -896,7 +1148,7 @@ export default function ProcessingServices() {
                                 {feeCalc.storageFeeBreakdown.map((item, idx) => (
                                   <div key={idx} className="flex items-center justify-between text-[10px]">
                                     <span className="text-stone-600 dark:text-zinc-400">
-                                      {item.monthLabel}: {item.ratePerQuintalDay === 0 ? "0 ETB (FREE)" : `${item.ratePerQuintalDay} ETB`} × {qty} Q × {item.daysInMonth} days
+                                      {item.monthLabel}: {Number(item.ratePerQuintalDay) === 0 ? "0 ETB (FREE)" : `${Number(item.ratePerQuintalDay)} ETB`} × {Number(qty)} Q × {item.daysInMonth} days
                                     </span>
                                     <span className="font-bold text-stone-800 dark:text-zinc-200 font-mono">
                                       ETB {item.monthTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
@@ -980,6 +1232,78 @@ export default function ProcessingServices() {
                       })}
                     </div>
                   </div>
+
+                  {/* 2b. Processing Rejects & Quality Loss Section (Revealed when Processed checkbox is checked) */}
+                  {getStageIndex(editStatus) >= 1 && (
+                    <div className="p-4 bg-amber-50/70 dark:bg-amber-950/20 rounded-2xl border border-amber-200/80 dark:border-amber-800 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                          <span className="text-xs font-black uppercase text-amber-900 dark:text-amber-300 tracking-wider">
+                            Processing Rejects & Quality Loss Deduction
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-bold bg-amber-200/70 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200 px-2.5 py-0.5 rounded-full">
+                          Option A: Gross Fee &bull; Deducted Yield
+                        </span>
+                      </div>
+
+                      <p className="text-[11px] text-amber-900/80 dark:text-amber-300 leading-relaxed">
+                        Specify impurities, husk, stones, and defect seeds screened out during milling and grading. Under <strong>Option A</strong>, the processing service fee is billed on the gross received weight ({editQuantity} {editUom}), while the final deliverable volume to the client is deducted.
+                      </p>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <label className="block text-[10px] font-black uppercase text-zinc-600 dark:text-zinc-400 mb-1">
+                            Reject / Screened Loss Quantity ({editUom})
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="e.g. 5.5"
+                            value={editRejectQuantity}
+                            onChange={(e) => setEditRejectQuantity(e.target.value)}
+                            className="w-full h-9 rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-zinc-900 px-3 text-xs font-mono font-bold text-rose-900 dark:text-rose-300"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-black uppercase text-zinc-600 dark:text-zinc-400 mb-1">
+                            Rejection Reason / Findings
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Foreign matter, broken seeds, dust & stones..."
+                            value={editRejectReason}
+                            onChange={(e) => setEditRejectReason(e.target.value)}
+                            className="w-full h-9 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-3 text-xs font-medium outline-none focus:border-amber-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Yield Calculation Summary Card */}
+                      <div className="mt-2 p-3 bg-white/90 dark:bg-zinc-900/90 rounded-xl border border-amber-200/80 dark:border-amber-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+                        <div>
+                          <span className="text-zinc-500 text-[10px] block">Gross Received Input:</span>
+                          <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">
+                            {Number(editQuantity || 0).toLocaleString()} {editUom}
+                          </span>
+                        </div>
+                        <div className="text-rose-600 dark:text-rose-400">
+                          <span className="text-[10px] block">Deducted Rejects:</span>
+                          <span className="font-mono font-bold">
+                            -{Number(editRejectQuantity || 0).toLocaleString()} {editUom}
+                          </span>
+                        </div>
+                        <div className="text-emerald-700 dark:text-emerald-400 font-bold border-l pl-3 border-zinc-200 dark:border-zinc-800">
+                          <span className="text-[10px] block">Net Deliverable Yield:</span>
+                          <span className="font-mono text-sm font-black">
+                            {Math.max(0, Number(editQuantity || 0) - Number(editRejectQuantity || 0)).toLocaleString()} {editUom}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* 3. Contract Attachment Section */}
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-y-3">

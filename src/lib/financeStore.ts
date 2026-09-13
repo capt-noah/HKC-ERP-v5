@@ -34,6 +34,7 @@ export interface JournalEntry {
   entry_date: string
   description: string
   source_type:
+    | "Beginning Balance"
     | "Sales Invoice"
     | "Purchase Invoice"
     | "Payment Voucher"
@@ -52,6 +53,9 @@ export interface JournalEntry {
   currency: string
   exchange_rate: number
   is_reversal_of: string | null
+  auto_reverse?: boolean
+  reversal_date?: string
+  reversed_by_id?: string | null
 }
 
 export interface JournalEntryLine {
@@ -80,10 +84,15 @@ export interface InvoiceLineItem {
 export interface Invoice {
   id: string
   invoice_number: string
+  invoice_type?: "Sales" | "Purchase"
+  party_type?: "Customer" | "Supplier"
   sales_order_id?: string
   sales_issue_id?: string
+  purchase_order_id?: string
   fs_no?: string
+  voucher_no?: string
   customer_name: string
+  supplier_name?: string
   issue_date: string
   due_date: string
   currency: string
@@ -100,6 +109,44 @@ export interface Invoice {
   balance_due: number
   settlement_status?: "Unpaid" | "Ongoing" | "Fully Settled"
   status: "Draft" | "Sent" | "Paid" | "Partially Paid" | "Overdue" | "Void" | "Cancelled"
+  is_beginning_balance?: boolean
+}
+
+export interface PartnerBeginningBalanceItem {
+  partner_id: string
+  partner_name: string
+  partner_type: "Customer" | "Supplier"
+  invoice_number: string
+  invoice_date: string
+  due_date: string
+  amount: number
+  terms?: string
+  notes?: string
+}
+
+export interface BankReconciliationRecord {
+  id: string
+  account_id: string
+  statement_date: string
+  statement_balance: number
+  gl_balance: number
+  cleared_deposits_count: number
+  cleared_deposits_total: number
+  cleared_checks_count: number
+  cleared_checks_total: number
+  service_charges: number
+  interest_earned: number
+  cleared_balance: number
+  unreconciled_difference: number
+  reconciled_by: string
+  created_at: string
+}
+
+export interface PeriodLockStatus {
+  is_locked: boolean
+  locked_until_date?: string
+  locked_by?: string
+  reason?: string
 }
 
 export interface Payment {
@@ -108,8 +155,11 @@ export interface Payment {
   linked_invoice_id: string | null
   sales_issue_id?: string | null
   sales_order_id?: string | null
+  purchase_order_id?: string | null
   customer_id?: string | null
   customer_name?: string | null
+  supplier_id?: string | null
+  supplier_name?: string | null
   amount: number
   currency: string
   date: string
@@ -215,6 +265,8 @@ export interface CompanySettings {
   pension_employer_rate?: number
   pension_expat_exempt?: boolean
   tax_brackets_config?: { min: number; max: number | null; ratePercent: number; deductible: number }[]
+  fiscal_lock_date?: string
+  fiscal_lock_reason?: string
 }
 
 const emptyCompanySettings: CompanySettings = {
@@ -479,6 +531,7 @@ class FinanceStore {
   private fixedAssets: FixedAsset[] = []
   private taxRules: TaxRule[] = []
   private taxSchedules: TaxSchedule[] = []
+  private bankReconciliations: BankReconciliationRecord[] = []
 
   private listeners = new Set<() => void>()
   private _isLoading = false
@@ -510,6 +563,7 @@ class FinanceStore {
     this.fixedAssets = []
     this.taxRules = []
     this.taxSchedules = []
+    this.bankReconciliations = []
   }
 
   public async loadFromApi(force = false) {
@@ -1503,7 +1557,11 @@ class FinanceStore {
 
   // --- Posting Journal Entry Rules ---
   public postJournalEntry(
-    entryData: Omit<JournalEntry, "id" | "is_reversal_of"> & { is_reversal_of?: string | null },
+    entryData: Omit<JournalEntry, "id" | "is_reversal_of"> & {
+      is_reversal_of?: string | null
+      auto_reverse?: boolean
+      reversal_date?: string
+    },
     rawLines: Array<{
       account_id: string
       debit_amount: number
@@ -1513,7 +1571,7 @@ class FinanceStore {
       party_id?: string | null
       party_name?: string | null
     }>
-  ): { success: boolean; error?: string; entry?: JournalEntry; autoRounded?: boolean; roundOffAmount?: number } {
+  ): { success: boolean; error?: string; entry?: JournalEntry; reversalEntry?: JournalEntry; autoRounded?: boolean; roundOffAmount?: number } {
     // 0. Locked Accounting Period Validation
     const entryDate = entryData.entry_date
     const closedPeriod = this.periods.find(
@@ -1523,6 +1581,13 @@ class FinanceStore {
       return {
         success: false,
         error: `Posting rejected: The transaction date (${entryDate}) falls inside a locked/closed accounting period (${closedPeriod.period_label}).`,
+      }
+    }
+
+    if (this.companySettings.fiscal_lock_date && entryDate <= this.companySettings.fiscal_lock_date) {
+      return {
+        success: false,
+        error: `Posting rejected: The transaction date (${entryDate}) falls inside a locked accounting period (Closed through ${this.companySettings.fiscal_lock_date}).`,
       }
     }
 
@@ -1639,15 +1704,647 @@ class FinanceStore {
       party_name: fl.party_name ?? null,
     }))
 
-    this.entries = [newEntry, ...this.entries]
-    this.lines = [...createdLines, ...this.lines]
+    // Auto-Reversal Generation for Accruals
+    let reversalEntry: JournalEntry | null = null
+    let reversalLines: JournalEntryLine[] = []
+
+    if (entryData.auto_reverse) {
+      let revDate = entryData.reversal_date
+      if (!revDate) {
+        const [yStr, mStr] = entryData.entry_date.split("-")
+        const y = parseInt(yStr, 10)
+        const m = parseInt(mStr, 10)
+        const nextM = m === 12 ? 1 : m + 1
+        const nextY = m === 12 ? y + 1 : y
+        revDate = `${nextY}-${String(nextM).padStart(2, "0")}-01`
+      }
+
+      nextJeNum++
+      let revJeId = `JE-${currentYear}-${String(nextJeNum).padStart(3, "0")}`
+      while (this.entries.some((e) => e.id === revJeId) || revJeId === newEntryId) {
+        nextJeNum++
+        revJeId = `JE-${currentYear}-${String(nextJeNum).padStart(3, "0")}`
+      }
+
+      reversalEntry = {
+        id: revJeId,
+        entry_date: revDate,
+        description: `Auto-Reversal of ${newEntryId}: ${entryData.description}`,
+        source_type: "Reversal",
+        source_id: newEntryId,
+        created_by: entryData.created_by,
+        currency: entryData.currency,
+        exchange_rate: entryData.exchange_rate,
+        is_reversal_of: newEntryId,
+      }
+
+      newEntry.auto_reverse = true
+      newEntry.reversal_date = revDate
+      newEntry.reversed_by_id = revJeId
+
+      reversalLines = finalLines.map((fl, idx) => ({
+        id: `JEL-${Date.now()}-rev-${idx}`,
+        journal_entry_id: revJeId,
+        account_id: fl.account_id,
+        debit_amount: Math.round(fl.credit_amount * 100) / 100,
+        credit_amount: Math.round(fl.debit_amount * 100) / 100,
+        currency: entryData.currency,
+        exchange_rate_at_time: entryData.exchange_rate,
+        warehouse_id: fl.warehouse_id ?? null,
+        party_type: fl.party_type ?? null,
+        party_id: fl.party_id ?? null,
+        party_name: fl.party_name ?? null,
+      }))
+    }
+
+    if (reversalEntry) {
+      this.entries = [newEntry, reversalEntry, ...this.entries]
+      this.lines = [...createdLines, ...reversalLines, ...this.lines]
+    } else {
+      this.entries = [newEntry, ...this.entries]
+      this.lines = [...createdLines, ...this.lines]
+    }
 
     this.notify()
-    return { success: true, entry: newEntry, autoRounded, roundOffAmount }
+    return { success: true, entry: newEntry, reversalEntry: reversalEntry || undefined, autoRounded, roundOffAmount }
   }
 
   public validateVoucher(lines: any[]) {
     return validateJournalVoucher(lines)
+  }
+
+  // --- Peachtree / Beginning Balances Cutover ---
+  public getBeginningBalances(): {
+    entry: JournalEntry | null
+    asOfDate: string
+    balances: Record<string, { debit: number; credit: number }>
+    notes: string
+  } {
+    const openingEntry = this.entries.find(
+      (e) =>
+        e.source_type === "Beginning Balance" ||
+        e.id === "JE-OPENING-BALANCES" ||
+        e.description.toLowerCase().includes("beginning balance") ||
+        e.description.toLowerCase().includes("peachtree cutover")
+    )
+    if (!openingEntry) {
+      return {
+        entry: null,
+        asOfDate: `${new Date().getFullYear()}-01-01`,
+        balances: {},
+        notes: "",
+      }
+    }
+
+    const openingLines = this.lines.filter((l) => l.journal_entry_id === openingEntry.id)
+    const balances: Record<string, { debit: number; credit: number }> = {}
+    for (const l of openingLines) {
+      balances[l.account_id] = {
+        debit: l.debit_amount || 0,
+        credit: l.credit_amount || 0,
+      }
+    }
+
+    return {
+      entry: openingEntry,
+      asOfDate: openingEntry.entry_date,
+      balances,
+      notes: openingEntry.description,
+    }
+  }
+
+  public saveBeginningBalances(params: {
+    asOfDate: string
+    balances: Array<{ account_id: string; debit_amount: number; credit_amount: number }>
+    notes?: string
+    created_by?: string
+  }): { success: boolean; entry?: JournalEntry; error?: string } {
+    const { asOfDate, balances, notes, created_by } = params
+
+    // Filter non-zero lines
+    const activeLines = balances.filter(
+      (b) => (Number(b.debit_amount) > 0 || Number(b.credit_amount) > 0)
+    )
+
+    if (activeLines.length < 2) {
+      return {
+        success: false,
+        error: "At least two non-zero accounts (Debit and Credit) are required to establish beginning balances.",
+      }
+    }
+
+    const totalDebit = activeLines.reduce((sum, l) => sum + (Number(l.debit_amount) || 0), 0)
+    const totalCredit = activeLines.reduce((sum, l) => sum + (Number(l.credit_amount) || 0), 0)
+    const diff = Math.abs(totalDebit - totalCredit)
+
+    if (diff > 0.01) {
+      return {
+        success: false,
+        error: `Trial Balance Out of Balance: Total Debits (ETB ${totalDebit.toLocaleString(undefined, { minimumFractionDigits: 2 })}) does not equal Total Credits (ETB ${totalCredit.toLocaleString(undefined, { minimumFractionDigits: 2 })}). Difference: ETB ${diff.toFixed(2)}.`,
+      }
+    }
+
+    const existingEntry = this.entries.find(
+      (e) =>
+        e.source_type === "Beginning Balance" ||
+        e.id === "JE-OPENING-BALANCES" ||
+        e.description.toLowerCase().includes("beginning balance")
+    )
+
+    const entryId = existingEntry ? existingEntry.id : "JE-OPENING-BALANCES"
+    const entryDescription = notes || "Beginning Balances - Peachtree / Sage 50 Cutover"
+
+    const openingEntry: JournalEntry = {
+      id: entryId,
+      entry_date: asOfDate,
+      description: entryDescription,
+      source_type: "Beginning Balance",
+      source_id: "PEACHTREE-CUTOVER",
+      created_by: created_by || "Finance Admin",
+      currency: "ETB",
+      exchange_rate: 1.0,
+      is_reversal_of: null,
+    }
+
+    const newLines: JournalEntryLine[] = activeLines.map((b, idx) => ({
+      id: `JEL-OPENING-${idx + 1}-${Date.now().toString().slice(-4)}`,
+      journal_entry_id: entryId,
+      account_id: b.account_id,
+      debit_amount: Math.round(Number(b.debit_amount) * 100) / 100,
+      credit_amount: Math.round(Number(b.credit_amount) * 100) / 100,
+      currency: "ETB",
+      exchange_rate_at_time: 1.0,
+      warehouse_id: null,
+      party_type: null,
+      party_id: null,
+      party_name: null,
+    }))
+
+    // Remove old opening entry lines and replace with new lines
+    this.lines = this.lines.filter((l) => l.journal_entry_id !== entryId)
+    this.lines = [...newLines, ...this.lines]
+
+    // Update or insert opening entry
+    if (existingEntry) {
+      this.entries = this.entries.map((e) => (e.id === entryId ? openingEntry : e))
+    } else {
+      this.entries = [openingEntry, ...this.entries]
+    }
+
+    this.notify()
+    return { success: true, entry: openingEntry }
+  }
+
+  // --- Peachtree Partner Beginning Balances (A/R & A/P Sub-Ledger) ---
+  public getPartnerBeginningBalances(type: "Customer" | "Supplier"): PartnerBeginningBalanceItem[] {
+    const openingInvoices = this.invoices.filter(
+      (inv) =>
+        inv.party_type === type &&
+        (inv.is_beginning_balance ||
+          inv.id.startsWith("INV-CUTOVER-") ||
+          inv.id.startsWith("BILL-CUTOVER-") ||
+          inv.notes?.toLowerCase().includes("beginning balance") ||
+          inv.notes?.toLowerCase().includes("peachtree cutover"))
+    )
+
+    return openingInvoices.map((inv) => ({
+      partner_id: (type === "Customer" ? inv.sales_order_id : inv.purchase_order_id) || inv.id,
+      partner_name: (type === "Customer" ? inv.customer_name : inv.supplier_name) || "",
+      partner_type: type,
+      invoice_number: inv.invoice_number,
+      invoice_date: inv.issue_date,
+      due_date: inv.due_date,
+      amount: inv.total,
+      terms: inv.payment_terms || "Net 30 Days",
+      notes: inv.notes || "",
+    }))
+  }
+
+  public savePartnerBeginningBalances(
+    type: "Customer" | "Supplier",
+    items: PartnerBeginningBalanceItem[],
+    cutoverDate: string
+  ): { success: boolean; count: number; error?: string } {
+    // 1. Remove existing opening invoices for this partner type
+    this.invoices = this.invoices.filter(
+      (inv) =>
+        !(
+          inv.party_type === type &&
+          (inv.is_beginning_balance ||
+            inv.id.startsWith("INV-CUTOVER-") ||
+            inv.id.startsWith("BILL-CUTOVER-") ||
+            inv.notes?.toLowerCase().includes("beginning balance") ||
+            inv.notes?.toLowerCase().includes("peachtree cutover"))
+        )
+    )
+
+    // 2. Map items to canonical invoices
+    const newInvoices: Invoice[] = items
+      .filter((it) => it.amount > 0 && it.invoice_number.trim() && it.partner_name.trim())
+      .map((it, idx) => {
+        const prefix = type === "Customer" ? "INV-CUTOVER" : "BILL-CUTOVER"
+        const id = `${prefix}-${Date.now().toString().slice(-4)}-${idx + 1}`
+        return {
+          id,
+          invoice_number: it.invoice_number.trim(),
+          invoice_type: type === "Customer" ? "Sales" : "Purchase",
+          party_type: type,
+          customer_name: type === "Customer" ? it.partner_name.trim() : "",
+          supplier_name: type === "Supplier" ? it.partner_name.trim() : "",
+          issue_date: it.invoice_date || cutoverDate,
+          due_date: it.due_date || it.invoice_date || cutoverDate,
+          currency: "ETB",
+          line_items: [
+            {
+              description: it.notes || `Peachtree Cutover ${type} Opening Balance (${it.invoice_number})`,
+              quantity: 1,
+              unit_price: it.amount,
+              line_total: it.amount,
+            },
+          ],
+          subtotal: it.amount,
+          tax_amount: 0,
+          discount_amount: 0,
+          payment_terms: it.terms || "Net 30 Days",
+          notes: it.notes || `Peachtree / Sage 50 Cutover ${type} Beginning Balance`,
+          total: it.amount,
+          amount_paid: 0,
+          balance_due: it.amount,
+          settlement_status: "Unpaid",
+          status: "Sent",
+          is_beginning_balance: true,
+        }
+      })
+
+    this.invoices = [...newInvoices, ...this.invoices]
+    void persistResources([{ resource: "invoices", items: this.invoices }])
+    this.notify()
+    return { success: true, count: newInvoices.length }
+  }
+
+  // --- A/R and A/P Aging Engines ---
+  public getArAging(asOfDate: string = new Date().toISOString().slice(0, 10)) {
+    const asOfTime = new Date(asOfDate).getTime()
+    const unpaidInvoices = this.invoices.filter(
+      (inv) =>
+        inv.party_type === "Customer" &&
+        inv.status !== "Paid" &&
+        inv.status !== "Void" &&
+        (inv.balance_due || inv.total) > 0
+    )
+
+    let total = 0
+    let current_0_30 = 0
+    let past_31_60 = 0
+    let past_61_90 = 0
+    let past_90_plus = 0
+
+    const customerMap: Record<
+      string,
+      {
+        customer_name: string
+        current_0_30: number
+        past_31_60: number
+        past_61_90: number
+        past_90_plus: number
+        total: number
+      }
+    > = {}
+
+    for (const inv of unpaidInvoices) {
+      const balance = inv.balance_due || inv.total || 0
+      const invDate = inv.issue_date || inv.due_date || asOfDate
+      const invTime = new Date(invDate).getTime()
+      const diffDays = Math.max(0, Math.floor((asOfTime - invTime) / (1000 * 60 * 60 * 24)))
+
+      total += balance
+      const cName = inv.customer_name || "Unknown Customer"
+      if (!customerMap[cName]) {
+        customerMap[cName] = {
+          customer_name: cName,
+          current_0_30: 0,
+          past_31_60: 0,
+          past_61_90: 0,
+          past_90_plus: 0,
+          total: 0,
+        }
+      }
+      customerMap[cName].total += balance
+
+      if (diffDays <= 30) {
+        current_0_30 += balance
+        customerMap[cName].current_0_30 += balance
+      } else if (diffDays <= 60) {
+        past_31_60 += balance
+        customerMap[cName].past_31_60 += balance
+      } else if (diffDays <= 90) {
+        past_61_90 += balance
+        customerMap[cName].past_61_90 += balance
+      } else {
+        past_90_plus += balance
+        customerMap[cName].past_90_plus += balance
+      }
+    }
+
+    return {
+      asOfDate,
+      total: Math.round(total * 100) / 100,
+      current_0_30: Math.round(current_0_30 * 100) / 100,
+      past_31_60: Math.round(past_31_60 * 100) / 100,
+      past_61_90: Math.round(past_61_90 * 100) / 100,
+      past_90_plus: Math.round(past_90_plus * 100) / 100,
+      customers: Object.values(customerMap),
+    }
+  }
+
+  public getApAging(asOfDate: string = new Date().toISOString().slice(0, 10)) {
+    const asOfTime = new Date(asOfDate).getTime()
+    const unpaidBills = this.invoices.filter(
+      (inv) =>
+        inv.party_type === "Supplier" &&
+        inv.status !== "Paid" &&
+        inv.status !== "Void" &&
+        (inv.balance_due || inv.total) > 0
+    )
+
+    let total = 0
+    let current_0_30 = 0
+    let past_31_60 = 0
+    let past_61_90 = 0
+    let past_90_plus = 0
+
+    const supplierMap: Record<
+      string,
+      {
+        supplier_name: string
+        current_0_30: number
+        past_31_60: number
+        past_61_90: number
+        past_90_plus: number
+        total: number
+      }
+    > = {}
+
+    for (const inv of unpaidBills) {
+      const balance = inv.balance_due || inv.total || 0
+      const invDate = inv.issue_date || inv.due_date || asOfDate
+      const invTime = new Date(invDate).getTime()
+      const diffDays = Math.max(0, Math.floor((asOfTime - invTime) / (1000 * 60 * 60 * 24)))
+
+      total += balance
+      const sName = inv.supplier_name || "Unknown Supplier"
+      if (!supplierMap[sName]) {
+        supplierMap[sName] = {
+          supplier_name: sName,
+          current_0_30: 0,
+          past_31_60: 0,
+          past_61_90: 0,
+          past_90_plus: 0,
+          total: 0,
+        }
+      }
+      supplierMap[sName].total += balance
+
+      if (diffDays <= 30) {
+        current_0_30 += balance
+        supplierMap[sName].current_0_30 += balance
+      } else if (diffDays <= 60) {
+        past_31_60 += balance
+        supplierMap[sName].past_31_60 += balance
+      } else if (diffDays <= 90) {
+        past_61_90 += balance
+        supplierMap[sName].past_61_90 += balance
+      } else {
+        past_90_plus += balance
+        supplierMap[sName].past_90_plus += balance
+      }
+    }
+
+    return {
+      asOfDate,
+      total: Math.round(total * 100) / 100,
+      current_0_30: Math.round(current_0_30 * 100) / 100,
+      past_31_60: Math.round(past_31_60 * 100) / 100,
+      past_61_90: Math.round(past_61_90 * 100) / 100,
+      past_90_plus: Math.round(past_90_plus * 100) / 100,
+      suppliers: Object.values(supplierMap),
+    }
+  }
+
+  // --- GL Control Account Balance Helper ---
+  public getControlAccountBalance(accountCodePrefix: "1100" | "2000" | "1200" | string): number {
+    const matchingAccounts = this.accounts.filter(
+      (a) =>
+        a.code === accountCodePrefix ||
+        a.code.startsWith(`${accountCodePrefix}-`) ||
+        a.code.startsWith(accountCodePrefix)
+    )
+    const matchingIds = new Set(
+      matchingAccounts.map((a) => a.id).concat(matchingAccounts.map((a) => a.code))
+    )
+
+    let net = 0
+    for (const line of this.lines) {
+      if (matchingIds.has(line.account_id)) {
+        if (accountCodePrefix === "2000") {
+          // Liabilities (Accounts Payable) are normal Credit balance
+          net += (Number(line.credit_amount) || 0) - (Number(line.debit_amount) || 0)
+        } else {
+          // Assets (AR 1100, Inventory 1200) are normal Debit balance
+          net += (Number(line.debit_amount) || 0) - (Number(line.credit_amount) || 0)
+        }
+      }
+    }
+    return Math.round(net * 100) / 100
+  }
+
+  // --- Bank Account Reconciliation Engine ---
+  public reconcileBankAccount(params: {
+    account_id: string
+    statement_date: string
+    statement_balance: number
+    cleared_line_ids: string[]
+    gl_balance?: number
+    cleared_deposits_count?: number
+    cleared_deposits_total?: number
+    cleared_checks_count?: number
+    cleared_checks_total?: number
+    cleared_balance?: number
+    unreconciled_difference?: number
+    service_charge?: { amount: number; date: string; account_id?: string }
+    interest_income?: { amount: number; date: string; account_id?: string }
+    reconciled_by?: string
+  }): { success: boolean; record?: BankReconciliationRecord; error?: string } {
+    const {
+      account_id,
+      statement_date,
+      statement_balance,
+      cleared_line_ids,
+      gl_balance = 0,
+      cleared_deposits_count = 0,
+      cleared_deposits_total = 0,
+      cleared_checks_count = cleared_line_ids.length,
+      cleared_checks_total = 0,
+      cleared_balance = statement_balance,
+      unreconciled_difference = 0,
+      service_charge,
+      interest_income,
+      reconciled_by = "Finance Admin",
+    } = params
+
+    const bankAcc = this.accounts.find((a) => a.id === account_id || a.code === account_id)
+    if (!bankAcc) {
+      return { success: false, error: "Selected Bank / Cash account does not exist in Chart of Accounts." }
+    }
+
+    // 1. Mark selected lines as cleared
+    const clearedSet = new Set(cleared_line_ids)
+    this.lines = this.lines.map((l) => {
+      if (clearedSet.has(l.id)) {
+        return {
+          ...l,
+          is_cleared: true,
+          cleared_date: statement_date,
+        }
+      }
+      return l
+    })
+
+    // 2. Post Bank Service Charge if specified > 0
+    if (service_charge && service_charge.amount > 0) {
+      const chargeExpAcc =
+        this.accounts.find((a) => a.code === "8000-09" || a.name.toLowerCase().includes("bank charge")) ||
+        this.accounts.find((a) => a.account_type === "Expense") ||
+        this.accounts[0]
+
+      this.postJournalEntry(
+        {
+          entry_date: service_charge.date || statement_date,
+          description: `Bank Service Charge - ${bankAcc.name} (${statement_date})`,
+          source_type: "Manual Adjustment",
+          source_id: `SC-${statement_date.replace(/-/g, "")}`,
+          created_by: reconciled_by,
+          currency: "ETB",
+          exchange_rate: 1.0,
+        },
+        [
+          { account_id: chargeExpAcc.id, debit_amount: service_charge.amount, credit_amount: 0 },
+          { account_id: bankAcc.id, debit_amount: 0, credit_amount: service_charge.amount },
+        ]
+      )
+      const latestJe = this.entries[0]
+      if (latestJe) {
+        this.lines = this.lines.map((l) =>
+          l.journal_entry_id === latestJe.id && l.account_id === bankAcc.id
+            ? { ...l, is_cleared: true, cleared_date: statement_date }
+            : l
+        )
+      }
+    }
+
+    // 3. Post Interest Income if specified > 0
+    if (interest_income && interest_income.amount > 0) {
+      const interestRevAcc =
+        this.accounts.find((a) => a.code === "7000-02" || a.name.toLowerCase().includes("interest income")) ||
+        this.accounts.find((a) => a.account_type === "Revenue") ||
+        this.accounts[0]
+
+      this.postJournalEntry(
+        {
+          entry_date: interest_income.date || statement_date,
+          description: `Interest Income - ${bankAcc.name} (${statement_date})`,
+          source_type: "Manual Adjustment",
+          source_id: `INT-${statement_date.replace(/-/g, "")}`,
+          created_by: reconciled_by,
+          currency: "ETB",
+          exchange_rate: 1.0,
+        },
+        [
+          { account_id: bankAcc.id, debit_amount: interest_income.amount, credit_amount: 0 },
+          { account_id: interestRevAcc.id, debit_amount: 0, credit_amount: interest_income.amount },
+        ]
+      )
+      const latestJe = this.entries[0]
+      if (latestJe) {
+        this.lines = this.lines.map((l) =>
+          l.journal_entry_id === latestJe.id && l.account_id === bankAcc.id
+            ? { ...l, is_cleared: true, cleared_date: statement_date }
+            : l
+        )
+      }
+    }
+
+    // 4. Record Reconciliation History
+    const record: BankReconciliationRecord = {
+      id: `RECON-${bankAcc.code}-${statement_date.replace(/-/g, "")}-${Date.now().toString().slice(-4)}`,
+      account_id: bankAcc.id,
+      statement_date,
+      statement_balance,
+      gl_balance,
+      cleared_deposits_count,
+      cleared_deposits_total,
+      cleared_checks_count,
+      cleared_checks_total,
+      service_charges: service_charge?.amount || 0,
+      interest_earned: interest_income?.amount || 0,
+      cleared_balance,
+      unreconciled_difference,
+      reconciled_by,
+      created_at: new Date().toISOString(),
+    }
+
+    this.bankReconciliations = [record, ...this.bankReconciliations]
+    try {
+      localStorage.setItem("hkc_bank_reconciliations", JSON.stringify(this.bankReconciliations))
+    } catch {}
+
+    void persistResources([{ resource: "journal_entry_lines", items: this.lines }])
+    this.notify()
+    return { success: true, record }
+  }
+
+  public getBankReconciliationHistory(accountId?: string): BankReconciliationRecord[] {
+    if (this.bankReconciliations.length === 0) {
+      try {
+        const saved = localStorage.getItem("hkc_bank_reconciliations")
+        if (saved) {
+          this.bankReconciliations = JSON.parse(saved)
+        }
+      } catch {}
+    }
+    if (!accountId || accountId === "ALL") {
+      return [...this.bankReconciliations]
+    }
+    return this.bankReconciliations.filter((r) => r.account_id === accountId)
+  }
+
+  // --- Accounting Period Lock & Guard Methods ---
+  public lockPeriod(lockedUntilDate: string, reason?: string) {
+    this.companySettings = {
+      ...this.companySettings,
+      fiscal_lock_date: lockedUntilDate,
+      fiscal_lock_reason: reason || `Accounting period locked through ${lockedUntilDate}`,
+    }
+    this.saveToApi()
+    this.notify()
+  }
+
+  public unlockPeriod() {
+    this.companySettings = {
+      ...this.companySettings,
+      fiscal_lock_date: undefined,
+      fiscal_lock_reason: undefined,
+    }
+    this.saveToApi()
+    this.notify()
+  }
+
+  public getPeriodLockStatus(): PeriodLockStatus {
+    return {
+      is_locked: Boolean(this.companySettings.fiscal_lock_date),
+      locked_until_date: this.companySettings.fiscal_lock_date,
+      reason: this.companySettings.fiscal_lock_reason,
+    }
   }
 
   // --- Reversal Action ---
@@ -1925,16 +2622,104 @@ class FinanceStore {
     })
   }
 
+  public getPaymentsForPurchaseOrder(purchaseOrderId: string, voucherNo?: string): Payment[] {
+    if (!purchaseOrderId && !voucherNo) return []
+    const cleanId = (purchaseOrderId || "").trim()
+    const cleanVoucher = (voucherNo || "").trim()
+
+    return this.payments.filter((p) => {
+      if (cleanId && (p.purchase_order_id === cleanId || p.linked_invoice_id === cleanId || p.linked_invoice_id === `INV-PO-${cleanId}` || p.linked_invoice_id === `BILL-${cleanId}` || p.reference?.includes(cleanId))) {
+        return true
+      }
+      if (cleanVoucher && (p.purchase_order_id === cleanVoucher || p.linked_invoice_id?.includes(cleanVoucher) || p.reference?.includes(cleanVoucher))) {
+        return true
+      }
+      return false
+    })
+  }
+
   public getPaymentsForSalesOrder(salesOrderId: string): Payment[] {
     return this.payments.filter((p) => p.sales_order_id === salesOrderId || p.reference.includes(salesOrderId))
+  }
+
+  public syncPurchaseInvoice(po: {
+    id: string
+    poNumber?: string
+    voucherNo?: string
+    supplier?: string
+    paidTo?: string
+    date?: string
+    dueDate?: string
+    amount: number
+    amountPaid?: number
+    balanceDue?: number
+    paymentTerms?: string
+    settlementStatus?: "Unpaid" | "Ongoing" | "Fully Settled"
+    notes?: string
+    attachments?: any[]
+  }): Invoice {
+    const invId = `INV-PO-${po.id}`
+    const invNo = po.voucherNo || po.poNumber || `BILL-${po.id.slice(-6)}`
+    const suppName = po.supplier || po.paidTo || "Supplier"
+    const total = Number(po.amount || 0)
+    const paid = Number(po.amountPaid || 0)
+    const due = typeof po.balanceDue === "number" ? po.balanceDue : Math.max(0, total - paid)
+    const isPaid = due <= 0.01 || po.settlementStatus === "Fully Settled"
+
+    const existingIdx = this.invoices.findIndex((i) => i.id === invId || i.purchase_order_id === po.id || (po.voucherNo && i.voucher_no === po.voucherNo))
+
+    const invObj: Invoice = {
+      id: invId,
+      invoice_number: invNo,
+      invoice_type: "Purchase",
+      party_type: "Supplier",
+      purchase_order_id: po.id,
+      voucher_no: po.voucherNo || po.poNumber,
+      customer_name: suppName,
+      supplier_name: suppName,
+      issue_date: po.date || new Date().toISOString().split("T")[0],
+      due_date: po.dueDate || po.date || new Date().toISOString().split("T")[0],
+      currency: "ETB",
+      line_items: [
+        {
+          description: `Purchase Voucher: ${po.voucherNo || po.poNumber || po.id} - ${po.notes || "Stock & Supplies Purchase"}`,
+          quantity: 1,
+          unit_price: total,
+          line_total: total,
+        },
+      ],
+      subtotal: total,
+      tax_amount: 0,
+      total,
+      amount_paid: paid,
+      balance_due: due,
+      payment_terms: po.paymentTerms || "Credit",
+      settlement_status: isPaid ? "Fully Settled" : paid > 0 ? "Ongoing" : "Unpaid",
+      status: isPaid ? "Paid" : paid > 0 ? "Partially Paid" : "Sent",
+      notes: po.notes || "",
+      attachments: po.attachments || [],
+    }
+
+    if (existingIdx >= 0) {
+      this.invoices[existingIdx] = { ...this.invoices[existingIdx], ...invObj }
+    } else {
+      this.invoices.unshift(invObj)
+    }
+
+    persistResources([{ resource: "invoices", items: this.invoices }])
+    this.notify()
+    return invObj
   }
 
   public recordPayment(paymentData: {
     linked_invoice_id: string | null
     sales_issue_id?: string | null
     sales_order_id?: string | null
+    purchase_order_id?: string | null
     customer_id?: string | null
     customer_name?: string | null
+    supplier_id?: string | null
+    supplier_name?: string | null
     amount: number
     currency?: string
     date: string
@@ -1947,6 +2732,7 @@ class FinanceStore {
     direction?: "Received" | "Made"
   }): { payment: Payment; invoice?: Invoice } {
     const payId = `PAY-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const isAP = paymentData.direction === "Made" || Boolean(paymentData.purchase_order_id) || Boolean(paymentData.supplier_name)
     const existingForInvoice = paymentData.linked_invoice_id
       ? this.payments.filter((p) => p.linked_invoice_id === paymentData.linked_invoice_id)
       : []
@@ -1954,16 +2740,19 @@ class FinanceStore {
 
     const newPayment: Payment = {
       id: payId,
-      direction: paymentData.direction || "Received",
+      direction: isAP ? "Made" : (paymentData.direction || "Received"),
       linked_invoice_id: paymentData.linked_invoice_id,
       sales_issue_id: paymentData.sales_issue_id || null,
       sales_order_id: paymentData.sales_order_id || null,
+      purchase_order_id: paymentData.purchase_order_id || null,
       customer_id: paymentData.customer_id || null,
       customer_name: paymentData.customer_name || null,
+      supplier_id: paymentData.supplier_id || null,
+      supplier_name: paymentData.supplier_name || null,
       amount: paymentData.amount,
       currency: paymentData.currency || "ETB",
       date: paymentData.date,
-      method: paymentData.method || "Bank Transfer",
+      method: paymentData.method || (isAP ? "Cheque" : "Bank Transfer"),
       bank_account_code: paymentData.bank_account_code || "1000-02-26",
       reference: paymentData.reference,
       payment_advice_url: paymentData.payment_advice_url,
@@ -1976,15 +2765,16 @@ class FinanceStore {
 
     let updatedInv: Invoice | undefined
 
-    if (paymentData.linked_invoice_id || paymentData.sales_issue_id || paymentData.sales_order_id) {
-      let custName = paymentData.customer_name || "Customer"
+    if (paymentData.linked_invoice_id || paymentData.sales_issue_id || paymentData.sales_order_id || paymentData.purchase_order_id) {
+      let partyName = isAP ? (paymentData.supplier_name || "Supplier") : (paymentData.customer_name || "Customer")
       this.invoices = this.invoices.map((inv) => {
         const matchesLinkedId = paymentData.linked_invoice_id && (inv.id === paymentData.linked_invoice_id || inv.invoice_number === paymentData.linked_invoice_id)
         const matchesSalesIssue = paymentData.sales_issue_id && (inv.sales_issue_id === paymentData.sales_issue_id || inv.id === `INV-SI-${paymentData.sales_issue_id}` || (inv.fs_no && paymentData.sales_issue_id.includes(inv.fs_no)))
         const matchesSalesOrder = paymentData.sales_order_id && (inv.sales_order_id === paymentData.sales_order_id || inv.invoice_number?.includes(paymentData.sales_order_id))
+        const matchesPurchaseOrder = paymentData.purchase_order_id && (inv.purchase_order_id === paymentData.purchase_order_id || inv.id === `INV-PO-${paymentData.purchase_order_id}` || inv.voucher_no === paymentData.purchase_order_id)
 
-        if (matchesLinkedId || matchesSalesIssue || matchesSalesOrder) {
-          custName = inv.customer_name
+        if (matchesLinkedId || matchesSalesIssue || matchesSalesOrder || matchesPurchaseOrder) {
+          partyName = inv.supplier_name || inv.customer_name || partyName
           const newPaid = Number((inv.amount_paid + paymentData.amount).toFixed(2))
           const newBal = Number(Math.max(0, inv.total - newPaid).toFixed(2))
           let newStatus: Invoice["status"] = inv.status
@@ -2012,7 +2802,7 @@ class FinanceStore {
         return inv
       })
 
-      // Post corresponding Journal Entry with accurate Bank and Accounts Receivable accounts
+      // Post corresponding Journal Entry with accurate Bank and AR/AP accounts
       const bankCode = paymentData.bank_account_code || "1000-02-26"
       const bankAcc =
         this.accounts.find((a) => a.code === bankCode || a.id === bankCode) ||
@@ -2020,37 +2810,70 @@ class FinanceStore {
         this.accounts.find((a) => a.code === "1000") ||
         this.accounts[0]
 
-      const arAcc =
-        this.accounts.find((a) => a.code === "1300-03") ||
-        this.accounts.find((a) => a.code === "1300") ||
-        this.accounts.find((a) => a.code === "1200") ||
-        this.accounts[0]
-
       const bankAccId = bankAcc?.id || "acc-1000"
-      const arAccId = arAcc?.id || "acc-1300-03"
 
-      this.postJournalEntry(
-        {
-          entry_date: paymentData.date,
-          description: `Credit payment installment #${installmentNo} (${paymentData.reference}) for Invoice ${paymentData.linked_invoice_id} [Bank: ${bankAcc?.name || bankCode}]`,
-          source_type: "Payment",
-          source_id: payId,
-          created_by: "Cashier",
-          currency: paymentData.currency || "ETB",
-          exchange_rate: 1.0,
-        },
-        [
-          { account_id: bankAccId, debit_amount: paymentData.amount, credit_amount: 0 },
+      if (isAP) {
+        // Accounts Payable disbursement: Debit AP (2000), Credit Bank (1000)
+        const apAcc =
+          this.accounts.find((a) => a.code === "2000" || a.code === "2100" || a.name.toLowerCase().includes("payable")) ||
+          this.accounts.find((a) => a.code === "2000") ||
+          this.accounts[0]
+        const apAccId = apAcc?.id || "acc-2000"
+
+        this.postJournalEntry(
           {
-            account_id: arAccId,
-            debit_amount: 0,
-            credit_amount: paymentData.amount,
-            party_type: "Customer",
-            party_id: `CUST-${custName.replace(/\s+/g, "").toUpperCase()}`,
-            party_name: custName,
+            entry_date: paymentData.date,
+            description: `Purchase credit payment installment #${installmentNo} (${paymentData.reference}) to ${partyName} [Bank: ${bankAcc?.name || bankCode}]`,
+            source_type: "Payment Voucher",
+            source_id: payId,
+            created_by: "Cashier",
+            currency: paymentData.currency || "ETB",
+            exchange_rate: 1.0,
           },
-        ]
-      )
+          [
+            {
+              account_id: apAccId,
+              debit_amount: paymentData.amount,
+              credit_amount: 0,
+              party_type: "Supplier",
+              party_id: paymentData.supplier_id || `SUP-${partyName.replace(/\s+/g, "").toUpperCase()}`,
+              party_name: partyName,
+            },
+            { account_id: bankAccId, debit_amount: 0, credit_amount: paymentData.amount },
+          ]
+        )
+      } else {
+        // Accounts Receivable collection: Debit Bank (1000), Credit AR (1300/1200)
+        const arAcc =
+          this.accounts.find((a) => a.code === "1300-03") ||
+          this.accounts.find((a) => a.code === "1300") ||
+          this.accounts.find((a) => a.code === "1200") ||
+          this.accounts[0]
+        const arAccId = arAcc?.id || "acc-1300-03"
+
+        this.postJournalEntry(
+          {
+            entry_date: paymentData.date,
+            description: `Credit payment installment #${installmentNo} (${paymentData.reference}) for Invoice ${paymentData.linked_invoice_id} [Bank: ${bankAcc?.name || bankCode}]`,
+            source_type: "Payment",
+            source_id: payId,
+            created_by: "Cashier",
+            currency: paymentData.currency || "ETB",
+            exchange_rate: 1.0,
+          },
+          [
+            { account_id: bankAccId, debit_amount: paymentData.amount, credit_amount: 0 },
+            {
+              account_id: arAccId,
+              debit_amount: 0,
+              credit_amount: paymentData.amount,
+              party_type: "Customer",
+              party_id: `CUST-${partyName.replace(/\s+/g, "").toUpperCase()}`,
+              party_name: partyName,
+            },
+          ]
+        )
+      }
     }
 
     persistResources([

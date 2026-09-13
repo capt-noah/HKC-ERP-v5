@@ -12,6 +12,7 @@ import { LoadingDots } from "@/components/ui/LoadingDots"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, WAREHOUSE_OPTIONS, employeeDuplicateKey, emptyEmployee, hrApi, initials, loadHRData, makeId, money, type AttendanceRecord, type Employee, type LeaveRequest, type PayrollRecord } from "@/lib/hrApi"
+import { uploadFile, resolveFileUrl } from "@/lib/fileUpload"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -366,34 +367,19 @@ function StatusPill({ status }: { status: string }) {
 
 function EmployeeForm({ form, setForm, title, saving, onClose, onSubmit }: { form: FormState; setForm: (form: FormState) => void; title: string; saving: boolean; onClose: () => void; onSubmit: (event: React.FormEvent) => void }) {
   const field = (key: keyof FormState, value: string | number) => setForm({ ...form, [key]: value })
-  const handleNationalIdImage = (file: File | undefined) => {
+  const handleNationalIdImage = async (file: File | undefined) => {
     if (!file) return
-    if (file.size > 5_000_000) {
-      window.alert("National ID image must be 5 MB or smaller.")
+    if (file.size > 10_000_000) {
+      window.alert("National ID image must be 10 MB or smaller.")
       return
     }
-    const reader = new FileReader()
-    reader.onload = () => {
-      const image = new Image()
-      image.onload = () => {
-        const maxWidth = 640
-        const scale = Math.min(1, maxWidth / image.width)
-        const canvas = document.createElement("canvas")
-        canvas.width = Math.max(1, Math.round(image.width * scale))
-        canvas.height = Math.max(1, Math.round(image.height * scale))
-        const ctx = canvas.getContext("2d")
-        if (!ctx) return
-        ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.72)
-        if (dataUrl.length > 250_000) {
-          window.alert("National ID image is still too large after compression. Please upload a smaller image.")
-          return
-        }
-        field("national_id_image", dataUrl)
-      }
-      image.src = String(reader.result || "")
+    try {
+      const res = await uploadFile(file, "employees")
+      field("national_id_image", res.url)
+    } catch (err) {
+      console.warn("National ID image upload failed:", err)
+      window.alert("Failed to upload National ID image.")
     }
-    reader.readAsDataURL(file)
   }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
@@ -421,7 +407,7 @@ function EmployeeForm({ form, setForm, title, saving, onClose, onSubmit }: { for
             <div className="mt-1 flex min-h-24 items-center gap-3 rounded-xl border border-dashed border-black/15 bg-black/[0.02] p-3">
               <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-white border border-black/10 flex items-center justify-center">
                 {form.national_id_image ? (
-                  <img src={form.national_id_image} alt="National ID preview" className="h-full w-full object-cover" />
+                  <img src={resolveFileUrl(form.national_id_image)} alt="National ID preview" className="h-full w-full object-cover" />
                 ) : (
                   <ImagePlus className="size-6 text-zinc-400" />
                 )}
@@ -490,7 +476,7 @@ function EmployeeDetails({ employee, attendance, leaves, payroll, onClose }: { e
               <button onClick={() => setShowNationalId(false)} className="shrink-0 rounded-lg p-1.5 hover:bg-black/5" aria-label="Close National ID preview"><X className="size-5" /></button>
             </div>
             <div className="max-h-[72vh] overflow-auto bg-zinc-100 p-4">
-              <img src={employee.national_id_image} alt={`${employee.full_name} National ID document`} className="mx-auto max-h-[68vh] w-auto max-w-full rounded-xl bg-white object-contain shadow-sm" />
+              <img src={resolveFileUrl(employee.national_id_image)} alt={`${employee.full_name} National ID document`} className="mx-auto max-h-[68vh] w-auto max-w-full rounded-xl bg-white object-contain shadow-sm" />
             </div>
           </motion.div>
         </div>

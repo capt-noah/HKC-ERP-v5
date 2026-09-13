@@ -209,9 +209,9 @@ export default function Profile() {
   // Filter the operational warehouses specifically relevant for this user
   const userAssignedWarehouses = useMemo(() => {
     const fallbackWarehouses: WarehouseType[] = [
-      { id: "WH1", code: "WH1-AGRI-EXP", name: "WH1 - Ethiopia Agricultural Export Hub", type: "Export Hub", status: "Active", manager: "Abebe Kasahun", location: "Modjo Export Terminal, Ethiopia", targetMarkets: "Europe, Asia, USA", specialization: "Agricultural Commodities" },
-      { id: "WH2", code: "WH2-VET-IND", name: "WH2 - Veterinary Import Hub (India)", type: "Import & Distribution Hub", status: "Active", manager: "Sintayehu Kebede", location: "Kaliti Industrial Zone, Addis Ababa, Ethiopia", targetMarkets: "Ethiopian Dairy Farms, Pastoralist Cooperatives", specialization: "Veterinary Pharmaceuticals & Livestock Injectables" },
-      { id: "WH3", code: "WH3-VET-CHN", name: "WH3 - Veterinary Import Hub (China)", type: "Import & Distribution Hub", status: "Active", manager: "Tigist Haile", location: "Bishoftu Vet Park, Oromia, Ethiopia", targetMarkets: "Poultry Farms, Veterinary Clinics", specialization: "Veterinary Soluble Powders & Vaccines" }
+      { id: "WH1", code: "WH1-AGRI-EXP", name: "WH1 - Ethiopia Agricultural Export Hub", warehouse_type: "EXPORT_WH", type: "Export Hub", location: "Modjo Export Terminal, Ethiopia" },
+      { id: "WH2", code: "WH2-VET-IND", name: "WH2 - Veterinary Import Hub (India)", warehouse_type: "PHARMA_WH", type: "Pharmaceutical Warehouse", location: "Kaliti Industrial Zone, Addis Ababa, Ethiopia" },
+      { id: "WH3", code: "WH3-VET-CHN", name: "WH3 - Veterinary Import Hub (China)", warehouse_type: "PHARMA_WH", type: "Pharmaceutical Warehouse", location: "Bishoftu Vet Park, Oromia, Ethiopia" }
     ]
 
     const sourceWarehouses = warehouses && warehouses.length > 0 ? warehouses : fallbackWarehouses
@@ -638,14 +638,14 @@ export default function Profile() {
                                 </div>
                               </div>
                               <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0">
-                                {wh.status || "Active"}
+                                {wh.warehouse_type === "EXPORT_WH" ? "Export WH" : "Pharma WH"}
                               </span>
                             </div>
 
-                            {(wh.location || wh.specialization || wh.type) && (
+                            {(wh.location || wh.type) && (
                               <div className="pt-2 border-t border-zinc-100 text-[11px] text-zinc-500 space-y-0.5">
                                 {wh.location && <p className="truncate font-medium">📍 {wh.location}</p>}
-                                {wh.specialization && <p className="truncate text-zinc-400">🏷️ {wh.specialization}</p>}
+                                {wh.type && <p className="truncate text-zinc-400">🏷️ {wh.type}</p>}
                               </div>
                             )}
                           </div>

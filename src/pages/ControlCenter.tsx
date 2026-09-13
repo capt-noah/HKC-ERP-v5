@@ -21,6 +21,9 @@ import {
   Check,
   ShoppingCart,
   AlertCircle,
+  AlertTriangle,
+  AlertOctagon,
+  ShieldAlert,
   Eye,
   Phone,
   Building2,
@@ -35,6 +38,7 @@ import {
   Area,
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   Tooltip,
@@ -57,7 +61,9 @@ import { fetchAllShipmentDocs, type ShipmentDocAttachment } from "@/lib/tradeDoc
 import { type HRData, loadHRData, money } from "@/lib/hrApi"
 import { loadResource } from "@/lib/apiPersistence"
 import { listSalesIssues, type SalesIssue } from "@/lib/salesIssuesApi"
-import { isWH1 } from "@/lib/warehouses"
+import { isExportWarehouse, isPharmaWarehouse } from "@/lib/warehouses"
+import { computeWH1SupplierQuality } from "@/lib/wh1QualityAnalytics"
+import { getExpiringItemsSummary } from "@/lib/expiryUtils"
 import { cn } from "@/lib/utils"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
@@ -92,11 +98,10 @@ export interface UserActivityLog {
 
 const roleLabels: Record<string, string> = {
   superadmin: "Super Admin",
-  sales_manager: "Sales",
-  hr_manager: "HR",
-  finance_manager: "Finance",
-  inventory_manager: "Inventory",
-  inventory_admin: "Inventory",
+  sales_manager: "Sales Manager",
+  hr_manager: "HR Manager",
+  finance_manager: "Finance Manager",
+  inventory_manager: "Inventory Manager",
   operator: "Staff Operator",
   auditor: "Auditor",
 }
@@ -297,8 +302,14 @@ export default function ControlCenter() {
 
   const tabParam = searchParams.get("tab")
   const initialTab = tabParam === "approvals" || tabParam === "logs" || tabParam === "overview" ? tabParam : "overview"
+  const chartParam = searchParams.get("chart")
+  const initialChart = chartParam === "quality" || chartParam === "inventory" || chartParam === "revenue" ? chartParam : "revenue"
   const [activeTab, setActiveTab] = useState<"overview" | "logs" | "approvals">(initialTab)
-  const [chartMode, setChartMode] = useState<"revenue" | "inventory">("revenue")
+  const [chartMode, setChartMode] = useState<"revenue" | "inventory" | "quality">(initialChart)
+  const [qualityWarehouseFilter, setQualityWarehouseFilter] = useState<string>("all")
+  const [qualityProductFilter, setQualityProductFilter] = useState<string>("all")
+  const [adminExpiryTier, setAdminExpiryTier] = useState<"ALL" | "CRITICAL" | "WARNING" | "EXPIRED">("ALL")
+  const [adminExpiryWarehouse, setAdminExpiryWarehouse] = useState<string>("ALL")
 
   useEffect(() => {
     if (tabParam === "approvals" || tabParam === "logs" || tabParam === "overview") {
@@ -306,9 +317,25 @@ export default function ControlCenter() {
     }
   }, [tabParam])
 
+  useEffect(() => {
+    if (chartParam === "quality" || chartParam === "inventory" || chartParam === "revenue") {
+      setChartMode(chartParam)
+    }
+  }, [chartParam])
+
   const handleTabChange = (newTab: "overview" | "logs" | "approvals") => {
     setActiveTab(newTab)
-    setSearchParams({ tab: newTab })
+    const nextParams: Record<string, string> = { tab: newTab }
+    if (chartMode !== "revenue") nextParams.chart = chartMode
+    setSearchParams(nextParams)
+  }
+
+  const handleChartModeChange = (mode: "revenue" | "inventory" | "quality") => {
+    setChartMode(mode)
+    const nextParams: Record<string, string> = {}
+    if (activeTab !== "overview") nextParams.tab = activeTab
+    if (mode !== "revenue") nextParams.chart = mode
+    setSearchParams(nextParams)
   }
 
   // Data states
@@ -330,6 +357,7 @@ export default function ControlCenter() {
   const [auditPageSize, setAuditPageSize] = useState(10)
 
   // Sales Order Approvals State
+  const warehouses = erp.getWarehouses()
   const salesOrders = erp.getSalesOrders()
   const pendingOrders = useMemo(() => salesOrders.filter((so) => (so.approvalStatus || "Pending") === "Pending"), [salesOrders])
   const approvedOrders = useMemo(() => salesOrders.filter((so) => so.approvalStatus === "Approved"), [salesOrders])
@@ -364,8 +392,11 @@ export default function ControlCenter() {
   // Outstanding Customer Receivables & Unsettled Sales Issues State
   const [salesIssues, setSalesIssues] = useState<SalesIssue[]>([])
   const [salesIssuesLoading, setSalesIssuesLoading] = useState<boolean>(true)
+  const [creditSectionTab, setCreditSectionTab] = useState<"receivables" | "payables">("receivables")
   const [receivableFilter, setReceivableFilter] = useState<"all" | "unpaid" | "ongoing">("all")
   const [receivableSearch, setReceivableSearch] = useState<string>("")
+  const [payableFilter, setPayableFilter] = useState<"all" | "unpaid" | "ongoing">("all")
+  const [payableSearch, setPayableSearch] = useState<string>("")
 
   const fetchSalesIssuesData = async () => {
     setSalesIssuesLoading(true)
@@ -415,7 +446,7 @@ export default function ControlCenter() {
     let list: ReceivableItem[] = []
     if (invoices.length > 0) {
       list = invoices
-        .filter((inv) => inv.status !== "Cancelled" && inv.status !== "Draft")
+        .filter((inv) => inv.status !== "Cancelled" && inv.status !== "Draft" && (inv.invoice_type || (inv.purchase_order_id ? "Purchase" : "Sales")) !== "Purchase")
         .map((inv) => {
           const total = Number(inv.total || 0)
           const paid = Number(inv.amount_paid || 0)
@@ -498,6 +529,121 @@ export default function ControlCenter() {
       ongoingCount: ongoing,
     }
   }, [invoices, salesIssues, receivableFilter, receivableSearch])
+
+  // Unsettled Purchase Orders & Outstanding Supplier Payables Computation (AP)
+  interface PayableItem {
+    id: string
+    voucher_no: string
+    po_number: string
+    date: string
+    supplier_name: string
+    payment_terms: string
+    due_date?: string
+    calculatedTotal: number
+    calculatedPaid: number
+    calculatedDue: number
+    percentPaid: number
+    effectiveSettlement: string
+    purchase_order_id?: string
+  }
+
+  const {
+    unsettledPayables,
+    filteredPayables,
+    totalOutstandingPayables,
+    unpaidPayableCount,
+    ongoingPayableCount,
+  } = useMemo(() => {
+    const poList = erp.getPurchaseOrders()
+    const apInvoices = invoices.filter((inv) => (inv.invoice_type === "Purchase" || Boolean(inv.purchase_order_id)) && inv.status !== "Cancelled")
+
+    let list: PayableItem[] = []
+
+    if (poList.length > 0) {
+      list = poList
+        .filter((po) => po.status !== "CANCELLED")
+        .map((po) => {
+          const isCredit = po.paymentType === "Credit"
+          const total = Number(po.amount || 0)
+          const paid = isCredit ? Number(po.amountPaid || 0) : total
+          const due = isCredit ? (typeof po.balanceDue === "number" ? Math.max(0, po.balanceDue) : Math.max(0, total - paid)) : 0
+          const percentPaid = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : (isCredit ? 0 : 100)
+          const isPaid = !isCredit || (total > 0 && paid >= total) || due <= 0.01 || po.settlementStatus === "Fully Settled"
+
+          return {
+            id: po.id,
+            voucher_no: po.voucherNo || po.poNumber || po.id,
+            po_number: po.poNumber || po.id,
+            date: po.date || "",
+            supplier_name: po.supplier || po.paidTo || "Supplier",
+            payment_terms: po.paymentTerms || (isCredit ? "Credit" : "Cash"),
+            due_date: po.dueDate,
+            calculatedTotal: total,
+            calculatedPaid: paid,
+            calculatedDue: due,
+            percentPaid,
+            effectiveSettlement: isPaid ? "Paid" : paid > 0 ? "Ongoing" : "Unpaid",
+            purchase_order_id: po.id,
+          }
+        })
+        .filter((item) => item.calculatedDue > 0.01 && item.effectiveSettlement !== "Paid")
+    } else if (apInvoices.length > 0) {
+      list = apInvoices
+        .map((inv) => {
+          const total = Number(inv.total || 0)
+          const paid = Number(inv.amount_paid || 0)
+          const due = typeof inv.balance_due === "number" ? Math.max(0, inv.balance_due) : Math.max(0, total - paid)
+          const percentPaid = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0
+          const isPaid = (inv.status || "").toLowerCase() === "paid" || due <= 0.01
+
+          return {
+            id: inv.id,
+            voucher_no: inv.voucher_no || inv.invoice_number || inv.id,
+            po_number: inv.purchase_order_id || inv.invoice_number || inv.id,
+            date: inv.issue_date || "",
+            supplier_name: inv.supplier_name || inv.customer_name || "Supplier",
+            payment_terms: inv.payment_terms || "Credit",
+            due_date: inv.due_date,
+            calculatedTotal: total,
+            calculatedPaid: paid,
+            calculatedDue: due,
+            percentPaid,
+            effectiveSettlement: isPaid ? "Paid" : paid > 0 ? "Ongoing" : "Unpaid",
+            purchase_order_id: inv.purchase_order_id,
+          }
+        })
+        .filter((item) => item.calculatedDue > 0.01 && item.effectiveSettlement !== "Paid")
+    }
+
+    list.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
+
+    const totalOutstanding = list.reduce((sum, item) => sum + item.calculatedDue, 0)
+    const unpaid = list.filter((item) => item.calculatedPaid === 0 || item.effectiveSettlement === "Unpaid").length
+    const ongoing = list.filter((item) => item.calculatedPaid > 0 && item.calculatedDue > 0).length
+
+    const filtered = list.filter((item) => {
+      if (payableFilter === "unpaid" && (item.calculatedPaid > 0 || item.effectiveSettlement !== "Unpaid")) return false
+      if (payableFilter === "ongoing" && (item.calculatedPaid <= 0 || item.effectiveSettlement !== "Ongoing")) return false
+
+      if (payableSearch.trim()) {
+        const q = payableSearch.toLowerCase()
+        const matchSupplier = item.supplier_name?.toLowerCase().includes(q)
+        const matchVoucher = item.voucher_no?.toLowerCase().includes(q)
+        const matchPo = item.po_number?.toLowerCase().includes(q)
+        if (!matchSupplier && !matchVoucher && !matchPo) return false
+      }
+
+      return true
+    })
+
+    return {
+      unsettledPayables: list,
+      filteredPayables: filtered,
+      totalOutstandingPayables: totalOutstanding,
+      unpaidPayableCount: unpaid,
+      ongoingPayableCount: ongoing,
+    }
+  }, [erp, invoices, payableFilter, payableSearch])
 
   const filteredApprovals = useMemo(() => {
     return salesOrders.filter((so) => {
@@ -702,6 +848,20 @@ export default function ControlCenter() {
       .sort((a, b) => b.value - a.value)
       .slice(0, 8)
   }, [erp, erp.getProducts()])
+
+  // Raw Stock Supplier Quality Benchmark (Strictly export warehouse raw arrivals & cleaning rejects)
+  const wh1QualitySummary = useMemo(() => {
+    return computeWH1SupplierQuality(erp.getProducts(), qualityProductFilter, qualityWarehouseFilter)
+  }, [erp, erp.getProducts(), qualityProductFilter, qualityWarehouseFilter])
+
+  // WH2 & WH3 Stock Expiration Summary (9-Month Watch & 6-Month Critical)
+  const adminExpirySummary = useMemo(() => {
+    return getExpiringItemsSummary(erp.getProducts(), {
+      thresholdDays: 270,
+      warehouseId: adminExpiryWarehouse,
+      tierFilter: adminExpiryTier,
+    })
+  }, [erp, erp.getProducts(), adminExpiryWarehouse, adminExpiryTier])
 
   // Resolve user identity against employees and user profiles
   const logsWithUserInfo = useMemo(() => {
@@ -1097,7 +1257,8 @@ export default function ControlCenter() {
             {dataLoading ? (
               <SystemOverviewGridSkeleton />
             ) : (
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <>
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 {/* Left (2/3): Enterprise Performance Analytics */}
                 <GlassCard className="p-6 xl:col-span-2 flex flex-col justify-between">
                   <div>
@@ -1110,13 +1271,15 @@ export default function ControlCenter() {
                         <p className="text-xs text-gray-500 mt-0.5">
                           {chartMode === "revenue"
                             ? "Revenue performance & sales orders pipeline across the active fiscal year."
-                            : "Inventory valuation and stock distribution breakdown by product category."}
+                            : chartMode === "inventory"
+                            ? "Inventory valuation and stock distribution breakdown by product category."
+                            : "Raw commodity cleaning reject rates & net yield comparison across WH1 suppliers."}
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-1.5 p-1 bg-black/5 rounded-2xl shrink-0 self-start sm:self-auto">
+                      <div className="flex items-center gap-1.5 p-1 bg-black/5 rounded-2xl shrink-0 self-start sm:self-auto flex-wrap">
                         <button
-                          onClick={() => setChartMode("revenue")}
+                          onClick={() => handleChartModeChange("revenue")}
                           className={cn(
                             "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5",
                             chartMode === "revenue"
@@ -1128,7 +1291,7 @@ export default function ControlCenter() {
                           Revenue Trend
                         </button>
                         <button
-                          onClick={() => setChartMode("inventory")}
+                          onClick={() => handleChartModeChange("inventory")}
                           className={cn(
                             "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5",
                             chartMode === "inventory"
@@ -1138,6 +1301,18 @@ export default function ControlCenter() {
                         >
                           <PieChartIcon className="size-3.5 text-indigo-600" />
                           Stock Valuation
+                        </button>
+                        <button
+                          onClick={() => handleChartModeChange("quality")}
+                          className={cn(
+                            "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5",
+                            chartMode === "quality"
+                              ? "bg-white text-black shadow-sm"
+                              : "text-gray-500 hover:text-black"
+                          )}
+                        >
+                          <ShieldCheck className="size-3.5 text-amber-600" />
+                          Supplier Quality
                         </button>
                       </div>
                     </div>
@@ -1197,7 +1372,7 @@ export default function ControlCenter() {
                           </AreaChart>
                         </ResponsiveContainer>
                       </div>
-                    ) : (
+                    ) : chartMode === "inventory" ? (
                       <div className="h-[320px] w-full pt-4">
                         {inventoryCategoryData.length === 0 ? (
                           <div className="h-full flex items-center justify-center text-xs font-semibold text-gray-400">
@@ -1233,213 +1408,764 @@ export default function ControlCenter() {
                           </ResponsiveContainer>
                         )}
                       </div>
+                    ) : (
+                      <div className="space-y-3 pt-2">
+                        {/* Warehouse & Commodity Filters and Mini KPIs */}
+                        <div className="flex flex-wrap items-center justify-between gap-2.5 p-2.5 rounded-2xl bg-black/[0.02] border border-black/5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Warehouse:</span>
+                              <select
+                                value={qualityWarehouseFilter}
+                                onChange={(e) => {
+                                  setQualityWarehouseFilter(e.target.value)
+                                  setQualityProductFilter("all")
+                                }}
+                                className="px-2.5 py-1 text-xs font-bold rounded-xl border border-black/10 bg-white text-black outline-none shadow-2xs cursor-pointer hover:border-black/20 transition-all"
+                              >
+                                <option value="all">All Export Warehouses</option>
+                                {warehouses
+                                  .filter((w) => isExportWarehouse(w, warehouses))
+                                  .map((w) => (
+                                    <option key={w.id} value={w.id}>
+                                      {w.name} ({w.code || w.id})
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Commodity:</span>
+                              <select
+                                value={qualityProductFilter}
+                                onChange={(e) => setQualityProductFilter(e.target.value)}
+                                className="px-2.5 py-1 text-xs font-bold rounded-xl border border-black/10 bg-white text-black outline-none shadow-2xs cursor-pointer hover:border-black/20 transition-all"
+                              >
+                                <option value="all">All Commodities ({wh1QualitySummary.availableProducts.length})</option>
+                                {wh1QualitySummary.availableProducts.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3 text-xs font-bold flex-wrap">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-gray-400 text-[11px]">Inbound:</span>
+                              <span className="text-black font-mono">{wh1QualitySummary.overallTotalReceived.toLocaleString()} Qtl</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-gray-400 text-[11px]">Rejects:</span>
+                              <span className="text-rose-600 font-mono">{wh1QualitySummary.overallTotalRejected.toLocaleString()} Qtl</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-700 border border-amber-500/20">
+                              <span className="text-[10px] uppercase tracking-wider font-extrabold">Avg Reject:</span>
+                              <span className="font-mono font-black">{wh1QualitySummary.overallRejectRate}%</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Recharts Bar Graph for Supplier Reject Rates */}
+                        <div className="h-[235px] w-full pt-1">
+                          {wh1QualitySummary.supplierMetrics.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-xs font-semibold text-gray-400 gap-1.5">
+                              <Package className="size-6 text-gray-300" />
+                              <span>No WH1 supplier arrival or rejection records found.</span>
+                            </div>
+                          ) : (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart
+                                data={wh1QualitySummary.supplierMetrics}
+                                margin={{ top: 10, right: 10, left: -15, bottom: 20 }}
+                              >
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                                <XAxis
+                                  dataKey="supplierName"
+                                  tickLine={false}
+                                  axisLine={false}
+                                  tick={{ fontSize: 10, fill: "#666", fontWeight: 700 }}
+                                  interval={0}
+                                  angle={-10}
+                                  textAnchor="end"
+                                />
+                                <YAxis
+                                  tickLine={false}
+                                  axisLine={false}
+                                  tick={{ fontSize: 10, fill: "#888", fontWeight: 600 }}
+                                  domain={[0, (dataMax: number) => Math.max(12, Math.ceil(dataMax * 1.25))]}
+                                  tickFormatter={(val) => `${val}%`}
+                                />
+                                <Tooltip
+                                  contentStyle={{
+                                    backgroundColor: "rgba(255, 255, 255, 0.98)",
+                                    borderRadius: "16px",
+                                    border: "1px solid rgba(0,0,0,0.08)",
+                                    boxShadow: "0 10px 25px -5px rgba(0,0,0,0.12)",
+                                    padding: "10px 14px",
+                                  }}
+                                  content={({ active, payload }) => {
+                                    if (!active || !payload || !payload.length) return null
+                                    const data = payload[0].payload
+                                    return (
+                                      <div className="space-y-1.5 text-left text-xs font-semibold min-w-[200px]">
+                                        <div className="font-extrabold text-black text-sm pb-1 border-b border-black/5">
+                                          {data.supplierName}
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4">
+                                          <span className="text-gray-500">Reject Rate:</span>
+                                          <span className="font-mono text-rose-600 font-extrabold">{data.rejectRate}%</span>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4">
+                                          <span className="text-gray-500">Clean Yield:</span>
+                                          <span className="font-mono text-emerald-600 font-extrabold">{data.cleanYieldRate}%</span>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4 text-[11px] pt-1 border-t border-black/5">
+                                          <span className="text-gray-400">Total Received:</span>
+                                          <span className="font-mono text-black">{data.totalReceived} Qtl</span>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4 text-[11px]">
+                                          <span className="text-gray-400">Total Rejections:</span>
+                                          <span className="font-mono text-rose-600">{data.totalRejected} Qtl</span>
+                                        </div>
+                                        <div className="text-[10px] text-gray-500 font-bold mt-1 bg-black/[0.03] px-2 py-0.5 rounded-md">
+                                          Rating: {data.gradeLabel}
+                                        </div>
+                                      </div>
+                                    )
+                                  }}
+                                />
+                                <Bar dataKey="rejectRate" name="Reject Rate (%)" radius={[6, 6, 0, 0]} maxBarSize={45}>
+                                  {wh1QualitySummary.supplierMetrics.map((entry, index) => (
+                                    <Cell
+                                      key={`cell-${index}`}
+                                      fill={
+                                        entry.rejectRate <= 5
+                                          ? "#10b981" // Emerald
+                                          : entry.rejectRate <= 10
+                                          ? "#f59e0b" // Amber
+                                          : "#f43f5e" // Rose
+                                      }
+                                    />
+                                  ))}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          )}
+                        </div>
+
+                        {/* Benchmark Legend & Rating Explanations */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-black/5 text-[11px] font-semibold text-gray-500">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="inline-flex items-center gap-1">
+                              <span className="size-2.5 rounded-full bg-emerald-500 inline-block" />
+                              <span className="text-black font-bold">Grade A</span> (&le;5% Loss)
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <span className="size-2.5 rounded-full bg-amber-500 inline-block" />
+                              <span className="text-black font-bold">Grade B</span> (5%–10% Loss)
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <span className="size-2.5 rounded-full bg-rose-500 inline-block" />
+                              <span className="text-black font-bold">Grade C</span> (&gt;10% Loss)
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-gray-400 font-medium">
+                            WH1 raw commodity arrivals & cleaning rejects only
+                          </span>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </GlassCard>
 
-                {/* Right (1/3): Outstanding Customer Receivables & Unsettled Sales Issues Panel */}
+                {/* Right (1/3): Outstanding Receivables (AR) & Supplier Payables (AP) Panel */}
                 <GlassCard className="p-6 xl:col-span-1 flex flex-col justify-between">
                   <div>
-                    {/* Header */}
+                    {/* Header with AR / AP Toggle */}
                     <div className="flex items-start justify-between gap-3 mb-4">
                       <div>
                         <div className="flex items-center gap-2">
-                          <div className="size-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600">
+                          <div className={`size-8 rounded-xl border flex items-center justify-center ${
+                            creditSectionTab === "receivables"
+                              ? "bg-amber-500/10 border-amber-500/20 text-amber-600"
+                              : "bg-indigo-500/10 border-indigo-500/20 text-indigo-600"
+                          }`}>
                             <Receipt className="size-4" />
                           </div>
                           <div>
                             <h3 className="text-base font-black text-black tracking-tight flex items-center gap-1.5">
-                              Customer Receivables
-                              {unsettledIssues.length > 0 && (
+                              {creditSectionTab === "receivables" ? "Customer Receivables" : "Supplier Payables"}
+                              {(creditSectionTab === "receivables" ? unsettledIssues.length : unsettledPayables.length) > 0 && (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500/10 text-rose-600 border border-rose-500/20">
-                                  {unsettledIssues.length} Unsettled
+                                  {creditSectionTab === "receivables" ? unsettledIssues.length : unsettledPayables.length} Unsettled
                                 </span>
                               )}
                             </h3>
-                            <p className="text-[11px] text-gray-500">Unpaid & partial customer sales</p>
+                            <p className="text-[11px] text-gray-500">
+                              {creditSectionTab === "receivables" ? "Unpaid & partial customer sales (AR)" : "Unpaid & ongoing supplier credit (AP)"}
+                            </p>
                           </div>
                         </div>
                       </div>
 
                       <button
-                        onClick={() => navigate("/sales/sales-issued")}
+                        onClick={() => navigate(creditSectionTab === "receivables" ? "/sales/sales-issued" : "/purchase-orders")}
                         className="p-1.5 rounded-lg text-gray-400 hover:text-black hover:bg-black/5 transition-all text-xs font-bold flex items-center gap-1"
-                        title="Open in Sales Issued"
+                        title={creditSectionTab === "receivables" ? "Open in Sales Issued" : "Open in Purchase Orders"}
                       >
                         <ArrowRight className="size-4" />
                       </button>
                     </div>
 
-                    {/* Total Outstanding Metric Banner */}
-                    <div className="p-3.5 rounded-2xl bg-gradient-to-br from-amber-50/80 to-rose-50/80 border border-amber-200/50 mb-3.5 flex items-center justify-between">
-                      <div>
-                        <p className="text-[10px] font-bold text-amber-900/70 uppercase tracking-wider">Total Uncollected</p>
-                        <p className="text-base sm:text-lg font-black text-amber-950 tracking-tight">
-                          ETB {totalOutstandingReceivables.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[10px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-md">
-                          {unpaidCount} Unpaid
-                        </span>
-                        {ongoingCount > 0 && (
-                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-md ml-1">
-                            {ongoingCount} Ongoing
-                          </span>
+                    {/* Dual Section Switcher Tabs */}
+                    <div className="flex items-center gap-1 p-1 bg-zinc-100 rounded-xl text-[11px] font-bold mb-3">
+                      <button
+                        type="button"
+                        onClick={() => setCreditSectionTab("receivables")}
+                        className={cn(
+                          "flex-1 py-1 rounded-lg transition-all text-center cursor-pointer",
+                          creditSectionTab === "receivables"
+                            ? "bg-white text-zinc-950 shadow-xs font-black"
+                            : "text-zinc-500 hover:text-zinc-950"
                         )}
-                      </div>
+                      >
+                        Receivables (AR) {unsettledIssues.length > 0 && `(${unsettledIssues.length})`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCreditSectionTab("payables")}
+                        className={cn(
+                          "flex-1 py-1 rounded-lg transition-all text-center cursor-pointer",
+                          creditSectionTab === "payables"
+                            ? "bg-white text-zinc-950 shadow-xs font-black"
+                            : "text-zinc-500 hover:text-zinc-950"
+                        )}
+                      >
+                        Payables (AP) {unsettledPayables.length > 0 && `(${unsettledPayables.length})`}
+                      </button>
                     </div>
 
-                    {/* Filter Tabs & Mini Search */}
-                    <div className="space-y-2 mb-3">
-                      <div className="flex items-center gap-1 p-1 bg-black/5 rounded-xl text-[11px] font-bold">
-                        <button
-                          onClick={() => setReceivableFilter("all")}
-                          className={cn(
-                            "flex-1 py-1 rounded-lg transition-all text-center",
-                            receivableFilter === "all" ? "bg-white text-black shadow-xs font-black" : "text-gray-500 hover:text-black"
-                          )}
-                        >
-                          All ({unsettledIssues.length})
-                        </button>
-                        <button
-                          onClick={() => setReceivableFilter("unpaid")}
-                          className={cn(
-                            "flex-1 py-1 rounded-lg transition-all text-center",
-                            receivableFilter === "unpaid" ? "bg-white text-rose-600 shadow-xs font-black" : "text-gray-500 hover:text-black"
-                          )}
-                        >
-                          Unpaid ({unpaidCount})
-                        </button>
-                        <button
-                          onClick={() => setReceivableFilter("ongoing")}
-                          className={cn(
-                            "flex-1 py-1 rounded-lg transition-all text-center",
-                            receivableFilter === "ongoing" ? "bg-white text-amber-600 shadow-xs font-black" : "text-gray-500 hover:text-black"
-                          )}
-                        >
-                          Ongoing ({ongoingCount})
-                        </button>
-                      </div>
+                    {creditSectionTab === "receivables" ? (
+                      <>
+                        {/* Receivables Total Metric Banner */}
+                        <div className="p-3.5 rounded-2xl bg-gradient-to-br from-amber-50/80 to-rose-50/80 border border-amber-200/50 mb-3.5 flex items-center justify-between">
+                          <div>
+                            <p className="text-[10px] font-bold text-amber-900/70 uppercase tracking-wider">Total Uncollected</p>
+                            <p className="text-base sm:text-lg font-black text-amber-950 tracking-tight">
+                              ETB {totalOutstandingReceivables.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-[10px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-md">
+                              {unpaidCount} Unpaid
+                            </span>
+                            {ongoingCount > 0 && (
+                              <span className="text-[10px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-md ml-1">
+                                {ongoingCount} Ongoing
+                              </span>
+                            )}
+                          </div>
+                        </div>
 
-                      {unsettledIssues.length > 2 && (
-                        <div className="relative flex items-center h-8 px-2.5 rounded-xl border border-black/5 bg-black/[0.02]">
-                          <Search className="size-3.5 text-gray-400 mr-1.5 shrink-0" />
-                          <input
-                            type="text"
-                            value={receivableSearch}
-                            onChange={(e) => setReceivableSearch(e.target.value)}
-                            placeholder="Filter customer, FS no..."
-                            className="bg-transparent border-none text-[11px] font-medium text-black outline-none w-full placeholder:text-gray-400"
-                          />
-                          {receivableSearch && (
-                            <button onClick={() => setReceivableSearch("")} className="text-gray-400 hover:text-black">
-                              <X className="size-3" />
+                        {/* Receivables Filter Tabs & Search */}
+                        <div className="space-y-2 mb-3">
+                          <div className="flex items-center gap-1 p-1 bg-black/5 rounded-xl text-[11px] font-bold">
+                            <button
+                              onClick={() => setReceivableFilter("all")}
+                              className={cn(
+                                "flex-1 py-1 rounded-lg transition-all text-center cursor-pointer",
+                                receivableFilter === "all" ? "bg-white text-black shadow-xs font-black" : "text-gray-500 hover:text-black"
+                              )}
+                            >
+                              All ({unsettledIssues.length})
                             </button>
+                            <button
+                              onClick={() => setReceivableFilter("unpaid")}
+                              className={cn(
+                                "flex-1 py-1 rounded-lg transition-all text-center cursor-pointer",
+                                receivableFilter === "unpaid" ? "bg-white text-rose-600 shadow-xs font-black" : "text-gray-500 hover:text-black"
+                              )}
+                            >
+                              Unpaid ({unpaidCount})
+                            </button>
+                            <button
+                              onClick={() => setReceivableFilter("ongoing")}
+                              className={cn(
+                                "flex-1 py-1 rounded-lg transition-all text-center cursor-pointer",
+                                receivableFilter === "ongoing" ? "bg-white text-amber-600 shadow-xs font-black" : "text-gray-500 hover:text-black"
+                              )}
+                            >
+                              Ongoing ({ongoingCount})
+                            </button>
+                          </div>
+
+                          {unsettledIssues.length > 2 && (
+                            <div className="relative flex items-center h-8 px-2.5 rounded-xl border border-black/5 bg-black/[0.02]">
+                              <Search className="size-3.5 text-gray-400 mr-1.5 shrink-0" />
+                              <input
+                                type="text"
+                                value={receivableSearch}
+                                onChange={(e) => setReceivableSearch(e.target.value)}
+                                placeholder="Filter customer, FS no..."
+                                className="bg-transparent border-none text-[11px] font-medium text-black outline-none w-full placeholder:text-gray-400"
+                              />
+                              {receivableSearch && (
+                                <button onClick={() => setReceivableSearch("")} className="text-gray-400 hover:text-black cursor-pointer">
+                                  <X className="size-3" />
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
-                      )}
-                    </div>
 
-                    {/* Scrollable Issue Cards */}
-                    <div className="max-h-[220px] overflow-y-auto pr-1 space-y-2 divide-y divide-black/5">
-                      {salesIssuesLoading ? (
-                        <div className="py-8 flex flex-col items-center justify-center gap-2 text-xs text-gray-400">
-                          <RefreshCw className="size-4 animate-spin text-gray-400" />
-                          Loading receivables...
-                        </div>
-                      ) : filteredReceivables.length === 0 ? (
-                        <div className="py-8 text-center px-4">
-                          {unsettledIssues.length === 0 ? (
-                            <div className="flex flex-col items-center">
-                              <div className="size-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-1.5">
-                                <CheckCircle2 className="size-5" />
-                              </div>
-                              <p className="text-xs font-bold text-black">All Accounts Settled</p>
-                              <p className="text-[11px] text-gray-400 mt-0.5">No outstanding or partial customer balances.</p>
+                        {/* Scrollable Receivables Cards */}
+                        <div className="max-h-[220px] overflow-y-auto pr-1 space-y-2 divide-y divide-black/5">
+                          {salesIssuesLoading ? (
+                            <div className="py-8 flex flex-col items-center justify-center gap-2 text-xs text-gray-400">
+                              <RefreshCw className="size-4 animate-spin text-gray-400" />
+                              Loading receivables...
+                            </div>
+                          ) : filteredReceivables.length === 0 ? (
+                            <div className="py-8 text-center px-4">
+                              {unsettledIssues.length === 0 ? (
+                                <div className="flex flex-col items-center">
+                                  <div className="size-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-1.5">
+                                    <CheckCircle2 className="size-5" />
+                                  </div>
+                                  <p className="text-xs font-bold text-black">All Customer Accounts Settled</p>
+                                  <p className="text-[11px] text-gray-400 mt-0.5">No outstanding or partial customer balances.</p>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-gray-400">No sales issues match your filter.</p>
+                              )}
                             </div>
                           ) : (
-                            <p className="text-xs text-gray-400">No sales issues match your filter.</p>
+                            filteredReceivables.map((si) => (
+                              <div
+                                key={si.id}
+                                onClick={() => {
+                                  const editTarget = si.sales_issue_id || si.id || si.fs_no || ""
+                                  const searchTarget = si.fs_no || si.customer_name || ""
+                                  navigate(`/sales/sales-issued?search=${encodeURIComponent(searchTarget)}&editId=${encodeURIComponent(editTarget)}`)
+                                }}
+                                className="pt-2 first:pt-0 group cursor-pointer hover:bg-black/[0.02] p-2 rounded-xl transition-all"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <p className="text-xs font-bold text-black truncate group-hover:text-indigo-600 transition-colors">
+                                        {si.customer_name || "Unknown Customer"}
+                                      </p>
+                                      <span
+                                        className={cn(
+                                          "px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0",
+                                          si.effectiveSettlement === "Unpaid"
+                                            ? "bg-rose-100 text-rose-700"
+                                            : "bg-amber-100 text-amber-700"
+                                        )}
+                                      >
+                                        {si.effectiveSettlement === "Ongoing" ? `${si.percentPaid}% paid` : "Unpaid"}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 text-[10px] text-gray-400 font-medium mt-0.5">
+                                      <span>{si.fs_no || si.id}</span>
+                                      {si.sale_date && <span>• {si.sale_date}</span>}
+                                      <span>• {si.payment_type || "Credit"}</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="text-right shrink-0">
+                                    <p className="text-xs font-black text-rose-600">
+                                      ETB {si.calculatedDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                    <p className="text-[10px] text-gray-400 font-semibold">
+                                      of {si.calculatedTotal.toLocaleString()}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {/* Progress bar */}
+                                <div className="w-full bg-black/5 rounded-full h-1.5 mt-2 overflow-hidden">
+                                  <div
+                                    className={cn(
+                                      "h-full rounded-full transition-all",
+                                      si.effectiveSettlement === "Unpaid"
+                                        ? "bg-rose-500 w-1"
+                                        : "bg-amber-500"
+                                    )}
+                                    style={{ width: `${Math.max(4, si.percentPaid)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ))
                           )}
                         </div>
-                      ) : (
-                        filteredReceivables.map((si) => (
-                          <div
-                            key={si.id}
-                            onClick={() => {
-                              const editTarget = si.sales_issue_id || si.id || si.fs_no || ""
-                              const searchTarget = si.fs_no || si.customer_name || ""
-                              navigate(`/sales/sales-issued?search=${encodeURIComponent(searchTarget)}&editId=${encodeURIComponent(editTarget)}`)
-                            }}
-                            className="pt-2 first:pt-0 group cursor-pointer hover:bg-black/[0.02] p-2 rounded-xl transition-all"
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5">
-                                  <p className="text-xs font-bold text-black truncate group-hover:text-indigo-600 transition-colors">
-                                    {si.customer_name || "Unknown Customer"}
-                                  </p>
-                                  <span
-                                    className={cn(
-                                      "px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0",
-                                      si.effectiveSettlement === "Unpaid"
-                                        ? "bg-rose-100 text-rose-700"
-                                        : "bg-amber-100 text-amber-700"
-                                    )}
-                                  >
-                                    {si.effectiveSettlement === "Ongoing" ? `${si.percentPaid}% paid` : "Unpaid"}
-                                  </span>
-                                </div>
-
-                                <div className="flex items-center gap-2 text-[10px] text-gray-400 font-medium mt-0.5">
-                                  <span>{si.fs_no || si.id}</span>
-                                  {si.sale_date && <span>• {si.sale_date}</span>}
-                                  <span>• {si.payment_type || "Credit"}</span>
-                                </div>
-                              </div>
-
-                              <div className="text-right shrink-0">
-                                <p className="text-xs font-black text-rose-600">
-                                  ETB {si.calculatedDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </p>
-                                <p className="text-[10px] text-gray-400 font-semibold">
-                                  of {si.calculatedTotal.toLocaleString()}
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Progress bar */}
-                            <div className="w-full bg-black/5 rounded-full h-1.5 mt-2 overflow-hidden">
-                              <div
-                                className={cn(
-                                  "h-full rounded-full transition-all",
-                                  si.effectiveSettlement === "Unpaid"
-                                    ? "bg-rose-500 w-1"
-                                    : "bg-amber-500"
-                                )}
-                                style={{ width: `${Math.max(4, si.percentPaid)}%` }}
-                              />
-                            </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* Payables Total Metric Banner */}
+                        <div className="p-3.5 rounded-2xl bg-gradient-to-br from-indigo-50/80 to-purple-50/80 border border-indigo-200/50 mb-3.5 flex items-center justify-between">
+                          <div>
+                            <p className="text-[10px] font-bold text-indigo-900/70 uppercase tracking-wider">Total Supplier Debt (AP)</p>
+                            <p className="text-base sm:text-lg font-black text-indigo-950 tracking-tight">
+                              ETB {totalOutstandingPayables.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
                           </div>
-                        ))
-                      )}
-                    </div>
+                          <div className="text-right">
+                            <span className="text-[10px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-md">
+                              {unpaidPayableCount} Unpaid
+                            </span>
+                            {ongoingPayableCount > 0 && (
+                              <span className="text-[10px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-md ml-1">
+                                {ongoingPayableCount} Ongoing
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Payables Filter Tabs & Search */}
+                        <div className="space-y-2 mb-3">
+                          <div className="flex items-center gap-1 p-1 bg-black/5 rounded-xl text-[11px] font-bold">
+                            <button
+                              onClick={() => setPayableFilter("all")}
+                              className={cn(
+                                "flex-1 py-1 rounded-lg transition-all text-center cursor-pointer",
+                                payableFilter === "all" ? "bg-white text-black shadow-xs font-black" : "text-gray-500 hover:text-black"
+                              )}
+                            >
+                              All ({unsettledPayables.length})
+                            </button>
+                            <button
+                              onClick={() => setPayableFilter("unpaid")}
+                              className={cn(
+                                "flex-1 py-1 rounded-lg transition-all text-center cursor-pointer",
+                                payableFilter === "unpaid" ? "bg-white text-rose-600 shadow-xs font-black" : "text-gray-500 hover:text-black"
+                              )}
+                            >
+                              Unpaid ({unpaidPayableCount})
+                            </button>
+                            <button
+                              onClick={() => setPayableFilter("ongoing")}
+                              className={cn(
+                                "flex-1 py-1 rounded-lg transition-all text-center cursor-pointer",
+                                payableFilter === "ongoing" ? "bg-white text-amber-600 shadow-xs font-black" : "text-gray-500 hover:text-black"
+                              )}
+                            >
+                              Ongoing ({ongoingPayableCount})
+                            </button>
+                          </div>
+
+                          {unsettledPayables.length > 2 && (
+                            <div className="relative flex items-center h-8 px-2.5 rounded-xl border border-black/5 bg-black/[0.02]">
+                              <Search className="size-3.5 text-gray-400 mr-1.5 shrink-0" />
+                              <input
+                                type="text"
+                                value={payableSearch}
+                                onChange={(e) => setPayableSearch(e.target.value)}
+                                placeholder="Filter supplier, voucher no..."
+                                className="bg-transparent border-none text-[11px] font-medium text-black outline-none w-full placeholder:text-gray-400"
+                              />
+                              {payableSearch && (
+                                <button onClick={() => setPayableSearch("")} className="text-gray-400 hover:text-black cursor-pointer">
+                                  <X className="size-3" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Scrollable Payables Cards */}
+                        <div className="max-h-[220px] overflow-y-auto pr-1 space-y-2 divide-y divide-black/5">
+                          {filteredPayables.length === 0 ? (
+                            <div className="py-8 text-center px-4">
+                              {unsettledPayables.length === 0 ? (
+                                <div className="flex flex-col items-center">
+                                  <div className="size-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-1.5">
+                                    <CheckCircle2 className="size-5" />
+                                  </div>
+                                  <p className="text-xs font-bold text-black">All Supplier Bills Settled</p>
+                                  <p className="text-[11px] text-gray-400 mt-0.5">No outstanding or ongoing supplier payables.</p>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-gray-400">No purchase payables match your filter.</p>
+                              )}
+                            </div>
+                          ) : (
+                            filteredPayables.map((po) => (
+                              <div
+                                key={po.id}
+                                onClick={() => {
+                                  navigate(`/purchase-orders?search=${encodeURIComponent(po.voucher_no || po.supplier_name || "")}&payId=${encodeURIComponent(po.purchase_order_id || po.id)}`)
+                                }}
+                                className="pt-2 first:pt-0 group cursor-pointer hover:bg-black/[0.02] p-2 rounded-xl transition-all"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <p className="text-xs font-bold text-black truncate group-hover:text-indigo-600 transition-colors">
+                                        {po.supplier_name || "Unknown Supplier"}
+                                      </p>
+                                      <span
+                                        className={cn(
+                                          "px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0",
+                                          po.effectiveSettlement === "Unpaid"
+                                            ? "bg-rose-100 text-rose-700"
+                                            : "bg-amber-100 text-amber-700"
+                                        )}
+                                      >
+                                        {po.effectiveSettlement === "Ongoing" ? `${po.percentPaid}% paid` : "Unpaid"}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 text-[10px] text-gray-400 font-medium mt-0.5">
+                                      <span>{po.voucher_no || po.po_number}</span>
+                                      {po.date && <span>• {po.date}</span>}
+                                      <span>• {po.payment_terms || "Credit"}</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="text-right shrink-0">
+                                    <p className="text-xs font-black text-rose-600">
+                                      ETB {po.calculatedDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                    <p className="text-[10px] text-gray-400 font-semibold">
+                                      of {po.calculatedTotal.toLocaleString()}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {/* Progress bar */}
+                                <div className="w-full bg-black/5 rounded-full h-1.5 mt-2 overflow-hidden">
+                                  <div
+                                    className={cn(
+                                      "h-full rounded-full transition-all",
+                                      po.effectiveSettlement === "Unpaid"
+                                        ? "bg-rose-500 w-1"
+                                        : "bg-indigo-500"
+                                    )}
+                                    style={{ width: `${Math.max(4, po.percentPaid)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {/* Footer CTA */}
                   <div className="pt-3 border-t border-black/5 mt-3">
                     <button
-                      onClick={() => navigate("/sales/sales-issued")}
-                      className="w-full py-2 px-3 rounded-xl bg-black text-white hover:bg-zinc-800 transition-all text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm"
+                      onClick={() => navigate(creditSectionTab === "receivables" ? "/sales/sales-issued" : "/purchase-orders")}
+                      className="w-full py-2 px-3 rounded-xl bg-black text-white hover:bg-zinc-800 transition-all text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                     >
-                      <span>Manage All Sales Issues</span>
+                      <span>{creditSectionTab === "receivables" ? "Manage All Sales Issues" : "Manage Purchase Orders"}</span>
                       <ArrowRight className="size-3.5" />
                     </button>
                   </div>
                 </GlassCard>
               </div>
-            )}
-          </motion.div>
+
+              {/* Section 3: WH2 & WH3 Stock Expiration Notifications (9-Month Watch & 6-Month Critical) */}
+              <GlassCard className="p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 pb-4 border-b border-black/5">
+                  <div className="flex items-start gap-3">
+                    <div className="size-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 shrink-0 mt-0.5">
+                      <ShieldAlert className="size-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-base font-black text-black tracking-tight">
+                          WH2 & WH3 Stock Expiration Monitoring
+                        </h3>
+                        {(adminExpirySummary.totalCriticalCount > 0 || adminExpirySummary.totalExpiredCount > 0) && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500/10 text-rose-600 border border-rose-500/20">
+                            {adminExpirySummary.totalCriticalCount + adminExpirySummary.totalExpiredCount} Action Required
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Automated dual-tier shelf life notifications: <strong className="text-amber-700 font-bold">Watch (≤ 9 months)</strong> and <strong className="text-rose-700 font-bold">Critical (≤ 6 months)</strong> for pharmaceutical and consumer goods.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {adminExpirySummary.totalAtRiskValue > 0 && (
+                      <div className="px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-200/80 text-rose-800 text-xs font-black font-mono">
+                        ETB {adminExpirySummary.totalAtRiskValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} At Risk
+                      </div>
+                    )}
+                    <button
+                      onClick={() => navigate("/inventory/dashboard")}
+                      className="px-3 py-1.5 rounded-xl bg-black/5 hover:bg-black/10 text-black text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>Inventory Dashboard</span>
+                      <ArrowRight className="size-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter Tabs & Warehouse Scope */}
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <div className="flex items-center gap-1.5 p-1 bg-black/5 rounded-xl text-xs font-bold flex-wrap">
+                    <button
+                      onClick={() => setAdminExpiryTier("ALL")}
+                      className={cn(
+                        "px-3 py-1 rounded-lg transition-all text-center",
+                        adminExpiryTier === "ALL" ? "bg-white text-black shadow-xs font-black" : "text-gray-500 hover:text-black"
+                      )}
+                    >
+                      All Alerts ({adminExpirySummary.items.length})
+                    </button>
+                    <button
+                      onClick={() => setAdminExpiryTier("CRITICAL")}
+                      className={cn(
+                        "px-3 py-1 rounded-lg transition-all text-center flex items-center gap-1",
+                        adminExpiryTier === "CRITICAL" ? "bg-white text-rose-600 shadow-xs font-black" : "text-gray-500 hover:text-black"
+                      )}
+                    >
+                      <span className="size-2 rounded-full bg-rose-500 inline-block" />
+                      Critical ≤6 mo ({adminExpirySummary.totalCriticalCount})
+                    </button>
+                    <button
+                      onClick={() => setAdminExpiryTier("WARNING")}
+                      className={cn(
+                        "px-3 py-1 rounded-lg transition-all text-center flex items-center gap-1",
+                        adminExpiryTier === "WARNING" ? "bg-white text-amber-600 shadow-xs font-black" : "text-gray-500 hover:text-black"
+                      )}
+                    >
+                      <span className="size-2 rounded-full bg-amber-500 inline-block" />
+                      Watch ≤9 mo ({adminExpirySummary.totalWarningCount})
+                    </button>
+                    <button
+                      onClick={() => setAdminExpiryTier("EXPIRED")}
+                      className={cn(
+                        "px-3 py-1 rounded-lg transition-all text-center flex items-center gap-1",
+                        adminExpiryTier === "EXPIRED" ? "bg-white text-rose-900 shadow-xs font-black" : "text-gray-500 hover:text-black"
+                      )}
+                    >
+                      <span className="size-2 rounded-full bg-rose-900 inline-block" />
+                      Expired ({adminExpirySummary.totalExpiredCount})
+                    </button>
+                  </div>
+
+                    <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-extrabold text-gray-400 uppercase tracking-wider">Warehouse:</span>
+                    <select
+                      value={adminExpiryWarehouse}
+                      onChange={(e) => setAdminExpiryWarehouse(e.target.value)}
+                      className="px-2.5 py-1 text-xs font-bold rounded-xl border border-black/10 bg-white text-black outline-none shadow-2xs cursor-pointer"
+                    >
+                      <option value="ALL">All Monitored Pharma Facilities</option>
+                      {warehouses
+                        .filter((w) => isPharmaWarehouse(w, warehouses))
+                        .map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.name} ({w.code || w.id})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Expiring Items Cards / Grid */}
+                {adminExpirySummary.items.length === 0 ? (
+                  <div className="py-10 text-center flex flex-col items-center justify-center gap-2 bg-black/[0.01] rounded-2xl border border-dashed border-black/10">
+                    <div className="size-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <CheckCircle2 className="size-6" />
+                    </div>
+                    <p className="text-xs font-black text-black">Healthy Stock Shelf Life</p>
+                    <p className="text-[11px] text-gray-400 max-w-md">
+                      No batches in WH2 & WH3 meet the {adminExpiryTier !== "ALL" ? adminExpiryTier.toLowerCase() : "near-expiry"} alert criteria. All active inventory has &gt; 9 months remaining.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {adminExpirySummary.items.slice(0, 9).map((item) => (
+                      <div
+                        key={item.id}
+                        onClick={() => navigate(`/inventory/stock?search=${encodeURIComponent(item.sku || item.productName)}`)}
+                        className="p-3 rounded-2xl bg-black/[0.02] hover:bg-black/[0.04] border border-black/5 transition-all cursor-pointer group flex flex-col justify-between"
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-2 mb-1.5">
+                            <span
+                              className={cn(
+                                "px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider inline-flex items-center gap-1",
+                                item.tier === "EXPIRED"
+                                  ? "bg-rose-100 text-rose-800 border border-rose-300"
+                                  : item.tier === "CRITICAL"
+                                  ? "bg-rose-50 text-rose-700 border border-rose-200"
+                                  : "bg-amber-50 text-amber-800 border border-amber-200"
+                              )}
+                            >
+                              {item.tier === "EXPIRED" ? (
+                                <>
+                                  <AlertOctagon className="size-3" />
+                                  Expired
+                                </>
+                              ) : item.tier === "CRITICAL" ? (
+                                <>
+                                  <AlertTriangle className="size-3" />
+                                  Critical ({item.monthsRemaining} mo)
+                                </>
+                              ) : (
+                                <>
+                                  <Clock className="size-3" />
+                                  Watch ({item.monthsRemaining} mo)
+                                </>
+                              )}
+                            </span>
+
+                            <span className="px-1.5 py-0.5 rounded bg-black/5 font-mono text-[9px] font-bold text-gray-600 uppercase">
+                              {item.warehouseName || item.warehouseId}
+                            </span>
+                          </div>
+
+                          <p className="text-xs font-black text-black group-hover:text-indigo-600 transition-colors line-clamp-1">
+                            {item.productName}
+                          </p>
+                          <p className="text-[10px] text-gray-400 font-mono mt-0.5">
+                            Batch: <strong className="text-gray-700">{item.batchNo}</strong> &bull; EXP: <strong className="text-gray-700">{item.expiryDate}</strong>
+                          </p>
+                        </div>
+
+                        <div className="mt-3 pt-2 border-t border-black/5 flex items-center justify-between text-xs font-mono">
+                          <span className="text-black font-extrabold">
+                            {item.quantity.toLocaleString()} {item.unit}
+                          </span>
+                          <span className="text-rose-600 font-black">
+                            ETB {item.totalAtRiskValue.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {adminExpirySummary.items.length > 9 && (
+                  <div className="pt-3 border-t border-black/5 mt-3 flex items-center justify-between text-xs">
+                    <span className="text-gray-400 text-[11px] font-medium">
+                      Showing 9 of {adminExpirySummary.items.length} expiring stock batches
+                    </span>
+                    <button
+                      onClick={() => navigate("/inventory/dashboard")}
+                      className="text-indigo-600 hover:text-indigo-700 font-bold inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>View all in Inventory Dashboard</span>
+                      <ArrowRight className="size-3.5" />
+                    </button>
+                  </div>
+                )}
+              </GlassCard>
+            </>
+          )}
+        </motion.div>
         )}
 
         {/* Tab Content 2: Activity Logs */}
@@ -1824,7 +2550,7 @@ export default function ControlCenter() {
                           filteredApprovals.map((so) => {
                             const status = so.approvalStatus || "Pending"
                             const docs = soDocsMap[so.id] || []
-                            const isWh1Order = isWH1(so.warehouse)
+                            const isWh1Order = isExportWarehouse(so.warehouse, warehouses)
                             const tradeDoc = docs.find((d) => 
                               isWh1Order 
                                 ? (d.document_type === "Bank Permit" || d.document_type === "Trade Paper" || d.document_type === "Trade License") 

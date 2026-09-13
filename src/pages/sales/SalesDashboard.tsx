@@ -70,6 +70,13 @@ export default function SalesDashboard() {
   const safeIssues = Array.isArray(salesIssues) ? salesIssues : []
   const postedIssues = safeIssues.filter((issue) => issue?.status === "Posted")
   const draftIssues = safeIssues.filter((issue) => issue?.status === "Draft")
+  const creditIssues = safeIssues.filter((issue) => (issue?.payment_type || "Cash").toLowerCase() === "credit")
+  const totalCustomerCreditDue = creditIssues.reduce((sum, issue) => {
+    const total = Number(issue?.total_amount || 0)
+    const paid = Number(issue?.amount_paid || 0)
+    const due = typeof issue?.balance_due === "number" ? Math.max(0, issue.balance_due) : Math.max(0, total - paid)
+    return sum + due
+  }, 0)
   const issuedAmount = postedIssues.reduce((sum, issue) => sum + Number(issue?.total_amount || 0), 0)
   const postedIssueCount = postedIssues.length
   const orderAmount = salesOrders.reduce((sum, order) => sum + Number(order?.amount || 0), 0)
@@ -167,13 +174,15 @@ export default function SalesDashboard() {
                   </div>
                 ))
               ) : [
-                { label: "Draft Sales Issues", value: draftIssues.length },
-                { label: "Sales Orders", value: salesOrders.length },
-                { label: "Quotations", value: quotations.length },
+                { label: "Draft Sales Issues", value: draftIssues.length.toLocaleString() },
+                { label: "Credit Sales Issues", value: creditIssues.length.toLocaleString() },
+                { label: "Active Receivables Due", value: `ETB ${money(totalCustomerCreditDue)}` },
+                { label: "Sales Orders", value: salesOrders.length.toLocaleString() },
+                { label: "Quotations", value: quotations.length.toLocaleString() },
               ].map((row) => (
                 <div key={row.label} className="flex items-center justify-between rounded-xl bg-zinc-50 px-3 py-2.5">
                   <span className="text-xs font-bold text-zinc-600">{row.label}</span>
-                  <span className="font-mono text-sm font-black text-zinc-950">{row.value.toLocaleString()}</span>
+                  <span className="font-mono text-sm font-black text-zinc-950">{row.value}</span>
                 </div>
               ))}
             </div>

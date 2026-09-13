@@ -143,9 +143,15 @@ export default function PurchaseOrderPrintModal({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-zinc-500">Payment Method:</span>
+              <span className="font-bold text-zinc-500">Payment Terms:</span>
               <span className="font-semibold text-zinc-950 border-b border-zinc-300 pb-0.5 flex-1">
-                {po.paymentMethod || "Cheque"}
+                {po.paymentTerms || (po.paymentType === "Credit" ? "Credit" : "Cash")}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-zinc-500">Due Date:</span>
+              <span className="font-mono font-semibold text-zinc-950 border-b border-zinc-300 pb-0.5 flex-1">
+                {po.dueDate || "—"}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -155,11 +161,27 @@ export default function PurchaseOrderPrintModal({
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="font-bold text-zinc-500">Amount in Figure:</span>
+              <span className="font-bold text-zinc-500">Total Amount:</span>
               <span className="font-mono font-black text-zinc-950 border-b border-zinc-300 pb-0.5 flex-1">
                 ETB {Number(po.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
+            {po.paymentType === "Credit" && (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-emerald-700">Amount Paid:</span>
+                  <span className="font-mono font-bold text-emerald-700 border-b border-zinc-300 pb-0.5 flex-1">
+                    ETB {Number(po.amountPaid || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-rose-700">Balance Due:</span>
+                  <span className="font-mono font-black text-rose-700 border-b border-zinc-300 pb-0.5 flex-1">
+                    ETB {Number(po.balanceDue ?? Math.max(0, Number(po.amount || 0) - Number(po.amountPaid || 0))).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Amount in words */}
@@ -210,6 +232,39 @@ export default function PurchaseOrderPrintModal({
               </tfoot>
             </table>
           </div>
+
+          {/* Installment History Table if Credit */}
+          {Array.isArray(po.installmentPayments) && po.installmentPayments.length > 0 && (
+            <div className="overflow-x-auto rounded-xl border border-zinc-300">
+              <div className="bg-zinc-100 px-3 py-2 border-b border-zinc-300 text-xs font-black uppercase text-zinc-700">
+                Supplier Installment Payment Record ({po.installmentPayments.length})
+              </div>
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-zinc-50 border-b border-zinc-200 text-zinc-600 font-bold">
+                    <th className="py-1.5 px-3 text-left">#</th>
+                    <th className="py-1.5 px-3 text-left">Date</th>
+                    <th className="py-1.5 px-3 text-left">Bank / Account</th>
+                    <th className="py-1.5 px-3 text-left">Reference / Cheque</th>
+                    <th className="py-1.5 px-3 text-right">Amount Paid</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-200">
+                  {po.installmentPayments.map((inst, idx) => (
+                    <tr key={inst.id || idx}>
+                      <td className="py-1.5 px-3 font-mono font-bold">#{idx + 1}</td>
+                      <td className="py-1.5 px-3">{inst.date}</td>
+                      <td className="py-1.5 px-3 font-mono">{inst.bankAccountCode || "Bank"}</td>
+                      <td className="py-1.5 px-3 font-mono">{inst.reference || "—"}</td>
+                      <td className="py-1.5 px-3 text-right font-mono font-bold text-emerald-700">
+                        ETB {Number(inst.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Attached Files List */}
           {Array.isArray(po.attachments) && po.attachments.length > 0 && (

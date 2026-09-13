@@ -22,9 +22,10 @@ function assert(condition, message) {
   }
 }
 
-// 1. Verify all 31 tables are defined in tableMap
+// 1. Verify all 35 tables are defined in tableMap
 const expectedTables = [
-  "warehouses", "inventory_products", "stock_movements", "store_transfers",
+  "warehouses", "export_products", "pharma_products", "pharma_product_batches",
+  "stock_movements", "store_transfers", "store_transfer_items", "export_warehouse_movements",
   "customers", "suppliers", "sales_orders", "purchase_orders", "sales_issues",
   "sales_issue_items", "processing_services", "shipment_documents", "hkc_doc_records",
   "company_settings", "chart_of_accounts", "journal_entries", "journal_entry_lines",
@@ -34,7 +35,7 @@ const expectedTables = [
 ]
 
 console.log("--- TEST 1: Table Registration & Schema Mapping ---")
-assert(Object.keys(tableMap).length === 31, `Exactly 31 tables in tableMap (Found: ${Object.keys(tableMap).length})`)
+assert(Object.keys(tableMap).length === 35, `Exactly 35 tables in tableMap (Found: ${Object.keys(tableMap).length})`)
 
 for (const tbl of expectedTables) {
   const tableObj = getDrizzleTable(tbl)
@@ -45,7 +46,8 @@ console.log("\n--- TEST 2: MySQL Specific Column Types & Indexes ---")
 assert(schema.users.id.dataType === "string", "users.id is varchar string for MySQL index compatibility")
 assert(schema.users.username.dataType === "string", "users.username is varchar string")
 assert(schema.salesIssues.totalAmount.dataType === "string" || schema.salesIssues.totalAmount.columnType === "MySqlDecimal", "salesIssues.totalAmount uses MySQL Decimal")
-assert(schema.inventoryProducts.payload.columnType === "MySqlJson" || schema.inventoryProducts.payload.dataType === "json", "inventoryProducts.payload uses MySQL native JSON")
+assert(schema.purchaseOrders.amount.dataType === "string" || schema.purchaseOrders.amount.columnType === "MySqlDecimal", "purchaseOrders.amount uses MySQL Decimal")
+assert(schema.purchaseOrders.poNumber.dataType === "string", "purchaseOrders.poNumber uses MySQL Varchar")
 assert(schema.customers.payload.columnType === "MySqlJson" || schema.customers.payload.dataType === "json", "customers.payload uses MySQL native JSON")
 
 console.log("\n--- TEST 3: Drizzle Relations Verification ---")

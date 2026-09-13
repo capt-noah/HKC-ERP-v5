@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowUpRight, Edit3 } from "lucide-react"
+import { ArrowDownLeft, ArrowUpRight, MinusCircle, Edit3 } from "lucide-react"
 import type { Product, WH1Entry, BinCardMovementEntry } from "@/lib/erpStore"
 
 interface WH1ChildMovementLedgerProps {
@@ -8,7 +8,7 @@ interface WH1ChildMovementLedgerProps {
 
 interface UnifiedWH1Row {
   id: string
-  type: "entry" | "leave"
+  type: "entry" | "leave" | "reject"
   date: string
   voucherNo: string
   party: string
@@ -26,7 +26,7 @@ export default function WH1ChildMovementLedger({
   product,
   onEditEntry,
 }: WH1ChildMovementLedgerProps) {
-  // Build unified transaction list by combining BOTH inbound arrival entries and outbound leave records
+  // Build unified transaction list by combining BOTH inbound arrival entries, outbound leaves, and reject losses
   const rows: UnifiedWH1Row[] = (() => {
     const wh1Entries = product.wh1Entries || []
     const binEntries = product.binCardEntries || []
@@ -34,15 +34,16 @@ export default function WH1ChildMovementLedger({
     // 1. Inbound truckload entries from wh1Entries
     const inboundRows: UnifiedWH1Row[] = wh1Entries.map((e, idx) => {
       const eAny = e as any
+      const isReject = eAny.type === "reject" || Boolean(eAny.isReject)
       const isLeave = eAny.type === "leave" || (Number(eAny.quantityIssued || 0) > 0 && Number(e.quantityReceived || 0) === 0)
-      const qtyIn = isLeave ? 0 : Number(e.quantityReceived || 0)
-      const qtyOut = isLeave ? Number(eAny.quantityIssued || 0) : 0
+      const qtyIn = isReject || isLeave ? 0 : Number(e.quantityReceived || 0)
+      const qtyOut = isReject ? Number(eAny.rejectQuantity || eAny.quantityIssued || e.quantityReceived || 0) : isLeave ? Number(eAny.quantityIssued || 0) : 0
       return {
         id: e.entryId || `wh1e-${idx}`,
-        type: isLeave ? ("leave" as const) : ("entry" as const),
+        type: isReject ? ("reject" as const) : isLeave ? ("leave" as const) : ("entry" as const),
         date: e.entryDate || eAny.date || product.entryDate || "—",
         voucherNo: e.voucherNo ? (e.voucherNo.startsWith("No.") ? e.voucherNo : `No. ${e.voucherNo}`) : "—",
-        party: e.customer || eAny.supplier || eAny.party || (isLeave ? "Customer Dispatch" : "Supplier Arrival"),
+        party: e.customer || eAny.supplier || eAny.party || (isReject ? "Cleaning Rejection" : isLeave ? "Customer Dispatch" : "Supplier Arrival"),
         plateNumber: e.plateNumber || product.plateNumber || "—",
         qtyIn,
         qtyOut,
@@ -53,11 +54,12 @@ export default function WH1ChildMovementLedger({
       }
     })
 
-    // 2. Outbound leave entries (and non-duplicated movements) from binCardEntries
+    // 2. Outbound leave entries and reject losses from binCardEntries
     const binRows: UnifiedWH1Row[] = []
     binEntries.forEach((rec, idx) => {
-      const isEntry = Number(rec.qtyReceived || 0) > 0 || rec.type === "entry"
-      const qtyIn = Number(rec.qtyReceived || 0)
+      const isReject = (rec.type as string) === "reject" || (rec.remark && /reject|loss|cleaning/i.test(rec.remark))
+      const isEntry = !isReject && (Number(rec.qtyReceived || 0) > 0 || rec.type === "entry")
+      const qtyIn = isReject ? 0 : Number(rec.qtyReceived || 0)
       const qtyOut = Number(rec.qtyIssued || 0)
 
       // Avoid duplicating an inbound arrival if already in inboundRows
@@ -78,10 +80,10 @@ export default function WH1ChildMovementLedger({
 
       binRows.push({
         id: rec.id || `bin-${idx}`,
-        type: isEntry ? ("entry" as const) : ("leave" as const),
+        type: isReject ? ("reject" as const) : isEntry ? ("entry" as const) : ("leave" as const),
         date: rec.date || "—",
         voucherNo: rec.voucherNo || (rec.batchNo?.startsWith("GRV-") ? rec.batchNo.slice(4) : rec.batchNo || "—"),
-        party: rec.party || (isEntry ? "Supplier Arrival" : "Customer Dispatch"),
+        party: rec.party || (isReject ? "Cleaning Loss Deduction" : isEntry ? "Supplier Arrival" : "Customer Dispatch"),
         plateNumber: rec.plateNumber || (matchingWH1?.plateNumber || "—"),
         qtyIn,
         qtyOut,
@@ -100,8 +102,8 @@ export default function WH1ChildMovementLedger({
       const timeA = new Date(a.date && a.date !== "—" ? a.date : 0).getTime()
       const timeB = new Date(b.date && b.date !== "—" ? b.date : 0).getTime()
       if (timeA !== timeB) return timeA - timeB
-      if (a.type === "entry" && b.type === "leave") return -1
-      if (a.type === "leave" && b.type === "entry") return 1
+      if (a.type === "entry" && b.type !== "entry") return -1
+      if (a.type !== "entry" && b.type === "entry") return 1
       return 0
     })
 
@@ -137,7 +139,7 @@ export default function WH1ChildMovementLedger({
                 <th className="py-3 px-4">Customer / Supplier</th>
                 <th className="py-3 px-4">Truck Plate</th>
                 <th className="py-3 px-4 text-right text-emerald-700">Qty In (+)</th>
-                <th className="py-3 px-4 text-right text-amber-800">Qty Out (-)</th>
+                <th className="py-3 px-4 text-right text-rose-700">Qty Out / Loss (-)</th>
                 <th className="py-3 px-4 text-right text-zinc-950 bg-zinc-100/50">Running Balance</th>
                 <th className="py-3 px-4 text-right">Unit Price</th>
                 <th className="py-3 px-4 text-center">Actions</th>
@@ -146,6 +148,7 @@ export default function WH1ChildMovementLedger({
             <tbody className="divide-y divide-zinc-150">
               {rows.map((row) => {
                 const isEntry = row.type === "entry"
+                const isReject = row.type === "reject"
 
                 return (
                   <tr
@@ -153,7 +156,9 @@ export default function WH1ChildMovementLedger({
                     className={`transition-colors border-b border-zinc-100/80 ${
                       isEntry
                         ? "border-l-[3px] border-l-emerald-500 bg-emerald-50/20 hover:bg-emerald-50/40"
-                        : "border-l-[3px] border-l-rose-500 bg-rose-50/20 hover:bg-rose-50/40"
+                        : isReject
+                        ? "border-l-[3px] border-l-rose-600 bg-rose-50/30 hover:bg-rose-50/50"
+                        : "border-l-[3px] border-l-amber-500 bg-amber-50/20 hover:bg-amber-50/40"
                     }`}
                   >
                     {/* Directional Visual Micro-Pill */}
@@ -162,9 +167,13 @@ export default function WH1ChildMovementLedger({
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-50 text-emerald-800 border border-emerald-200/60 shadow-2xs">
                           <ArrowDownLeft className="size-3 text-emerald-600" /> Entry
                         </span>
+                      ) : isReject ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs">
+                          <MinusCircle className="size-3 text-rose-600" /> Reject Loss
+                        </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-50 text-rose-800 border border-rose-200/60 shadow-2xs">
-                          <ArrowUpRight className="size-3 text-rose-600" /> Leave
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200/60 shadow-2xs">
+                          <ArrowUpRight className="size-3 text-amber-600" /> Leave
                         </span>
                       )}
                     </td>

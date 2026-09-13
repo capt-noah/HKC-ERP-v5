@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { motion } from "framer-motion"
 import { Camera, X, RotateCcw, Check, SwitchCamera, AlertCircle, Upload } from "lucide-react"
+import { uploadFile } from "@/lib/fileUpload"
 
 interface CameraCaptureModalProps {
   isOpen: boolean
@@ -21,6 +22,7 @@ export default function CameraCaptureModal({
   const [capturedImage, setCapturedImage] = useState<string | null>(null)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [isLoadingCamera, setIsLoadingCamera] = useState(true)
+  const [isUploading, setIsUploading] = useState(false)
 
   // Start camera stream
   const startCamera = useCallback(async (mode: "environment" | "user") => {
@@ -136,17 +138,35 @@ export default function CameraCaptureModal({
     }
   }
 
-  const handleUsePhoto = () => {
-    if (!capturedImage) return
+  const handleUsePhoto = async () => {
+    if (!capturedImage || isUploading) return
     const now = new Date()
     const timeTag = `${now.getHours()}${now.getMinutes()}${now.getSeconds()}`
     const fileName = `Doc_Photo_${now.toISOString().slice(0, 10)}_${timeTag}.jpg`
 
-    onCapture({
-      fileName,
-      fileUrl: capturedImage,
-    })
-    onClose()
+    setIsUploading(true)
+    try {
+      // Convert data URL to File
+      const res = await fetch(capturedImage)
+      const blob = await res.blob()
+      const file = new File([blob], fileName, { type: "image/jpeg" })
+      const upRes = await uploadFile(file, "hkc_docs")
+
+      onCapture({
+        fileName: upRes.originalName || fileName,
+        fileUrl: upRes.url,
+      })
+      onClose()
+    } catch (err) {
+      console.warn("Camera photo upload failed, using fallback:", err)
+      onCapture({
+        fileName,
+        fileUrl: capturedImage,
+      })
+      onClose()
+    } finally {
+      setIsUploading(false)
+    }
   }
 
   if (!isOpen) return null
@@ -263,9 +283,10 @@ export default function CameraCaptureModal({
               <button
                 type="button"
                 onClick={handleUsePhoto}
-                className="px-6 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs inline-flex items-center gap-2 shadow-lg shadow-emerald-900/30 transition-all active:scale-95 cursor-pointer"
+                disabled={isUploading}
+                className="px-6 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs inline-flex items-center gap-2 shadow-lg shadow-emerald-900/30 transition-all active:scale-95 cursor-pointer"
               >
-                <Check className="size-4" /> Use Photo
+                <Check className="size-4" /> {isUploading ? "Saving..." : "Use Photo"}
               </button>
             </>
           ) : !cameraError ? (

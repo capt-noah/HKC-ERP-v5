@@ -1,10 +1,15 @@
+import { isExportWarehouse } from "./warehouses"
 import type { Product } from "./erpStore"
 
 export type ExpiryTier = "EXPIRED" | "CRITICAL" | "WARNING" | "GOOD" | "UNKNOWN"
 
+export const WATCH_THRESHOLD_DAYS = 270 // 9 Months
+export const CRITICAL_THRESHOLD_DAYS = 180 // 6 Months
+
 export interface ExpiryStatusResult {
   tier: ExpiryTier
   days: number | null
+  months: number | null
   label: string
   sublabel: string
   badgeClass: string
@@ -13,13 +18,21 @@ export interface ExpiryStatusResult {
 }
 
 /**
- * Calculates real-time expiry tier, days remaining, and visual styling for a given date.
+ * Calculates real-time expiry tier, days/months remaining, and visual styling.
+ * Rule for WH2 & WH3:
+ * - 9 Months left (<= 270 days) = Watch (Warning)
+ * - 6 Months left (<= 180 days) = Critical
+ * - Expired (< 0 days) = Expired
  */
-export function getExpiryStatus(expiryDateStr?: string | null, alertThresholdDays = 90): ExpiryStatusResult {
+export function getExpiryStatus(
+  expiryDateStr?: string | null,
+  alertThresholdDays = WATCH_THRESHOLD_DAYS
+): ExpiryStatusResult {
   if (!expiryDateStr || expiryDateStr.trim() === "" || expiryDateStr === "—") {
     return {
       tier: "UNKNOWN",
       days: null,
+      months: null,
       label: "No Expiry Date",
       sublabel: "Non-perishable",
       badgeClass: "bg-zinc-100 text-zinc-600 border-zinc-200",
@@ -33,6 +46,7 @@ export function getExpiryStatus(expiryDateStr?: string | null, alertThresholdDay
     return {
       tier: "UNKNOWN",
       days: null,
+      months: null,
       label: "Invalid Date",
       sublabel: expiryDateStr,
       badgeClass: "bg-zinc-100 text-zinc-600 border-zinc-200",
@@ -44,19 +58,21 @@ export function getExpiryStatus(expiryDateStr?: string | null, alertThresholdDay
   const now = new Date()
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const target = new Date(expDate.getFullYear(), expDate.getMonth(), expDate.getDate())
-  
+
   const diffTime = target.getTime() - today.getTime()
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  const approxMonths = Number((diffDays / 30).toFixed(1))
 
   if (diffDays < 0) {
     const daysAgo = Math.abs(diffDays)
     return {
       tier: "EXPIRED",
       days: diffDays,
+      months: approxMonths,
       label: "Expired",
       sublabel: `${daysAgo} day${daysAgo === 1 ? "" : "s"} ago`,
-      badgeClass: "bg-rose-50 text-rose-700 border-rose-200/80 font-black",
-      dotClass: "bg-rose-500",
+      badgeClass: "bg-rose-100 text-rose-800 border-rose-300 font-black",
+      dotClass: "bg-rose-600",
       isAlert: true,
     }
   }
@@ -65,6 +81,7 @@ export function getExpiryStatus(expiryDateStr?: string | null, alertThresholdDay
     return {
       tier: "CRITICAL",
       days: 0,
+      months: 0,
       label: "Expires Today",
       sublabel: "Immediate action required",
       badgeClass: "bg-rose-100 text-rose-900 border-rose-300 font-black animate-pulse",
@@ -73,26 +90,30 @@ export function getExpiryStatus(expiryDateStr?: string | null, alertThresholdDay
     }
   }
 
-  if (diffDays <= 30) {
+  // Critical: 6 Months (<= 180 days)
+  if (diffDays <= CRITICAL_THRESHOLD_DAYS) {
     return {
       tier: "CRITICAL",
       days: diffDays,
-      label: `Expires in ${diffDays}d`,
-      sublabel: "Critical (<= 30 days)",
-      badgeClass: "bg-amber-100 text-amber-900 border-amber-300 font-black",
-      dotClass: "bg-amber-500",
+      months: approxMonths,
+      label: diffDays <= 30 ? `${diffDays}d (Critical)` : `${approxMonths} mo (Critical)`,
+      sublabel: `Critical (≤ 6 months left)`,
+      badgeClass: "bg-rose-50 text-rose-700 border-rose-200/80 font-black",
+      dotClass: "bg-rose-500",
       isAlert: true,
     }
   }
 
+  // Watch: 9 Months (<= 270 days)
   if (diffDays <= alertThresholdDays) {
     return {
       tier: "WARNING",
       days: diffDays,
-      label: `Expires in ${diffDays}d`,
-      sublabel: `Warning (<= ${alertThresholdDays} days)`,
-      badgeClass: "bg-yellow-50 text-yellow-800 border-yellow-200 font-bold",
-      dotClass: "bg-yellow-500",
+      months: approxMonths,
+      label: `${approxMonths} mo (Watch)`,
+      sublabel: `Watch (≤ 9 months left)`,
+      badgeClass: "bg-amber-50 text-amber-800 border-amber-200/80 font-bold",
+      dotClass: "bg-amber-500",
       isAlert: true,
     }
   }
@@ -100,8 +121,9 @@ export function getExpiryStatus(expiryDateStr?: string | null, alertThresholdDay
   return {
     tier: "GOOD",
     days: diffDays,
-    label: `${diffDays} days left`,
-    sublabel: "Good condition",
+    months: approxMonths,
+    label: `${approxMonths} mo left`,
+    sublabel: "Healthy shelf life (> 9 months)",
     badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200/60 font-semibold",
     dotClass: "bg-emerald-500",
     isAlert: false,
@@ -118,6 +140,7 @@ export interface ExpiringItem {
   warehouseName: string
   expiryDate: string
   daysRemaining: number
+  monthsRemaining: number
   tier: ExpiryTier
   quantity: number
   unit: string
@@ -126,7 +149,8 @@ export interface ExpiringItem {
 }
 
 /**
- * Aggregates all expiring batches and products, computing at-risk quantities and financial value.
+ * Aggregates all expiring batches and products for WH2 & WH3.
+ * WH1 raw commodities are excluded from expiration monitoring.
  */
 export function getExpiringItemsSummary(
   products: Product[],
@@ -142,7 +166,7 @@ export function getExpiringItemsSummary(
   totalWarningCount: number
   totalAtRiskValue: number
 } {
-  const threshold = options?.thresholdDays ?? 90
+  const threshold = options?.thresholdDays ?? WATCH_THRESHOLD_DAYS
   const warehouseFilter = options?.warehouseId && options.warehouseId !== "ALL" ? options.warehouseId : null
   const tierFilter = options?.tierFilter && options.tierFilter !== "ALL" ? options.tierFilter : null
 
@@ -153,7 +177,14 @@ export function getExpiringItemsSummary(
   let totalAtRiskValue = 0
 
   for (const product of products) {
-    if (warehouseFilter && product.warehouse !== warehouseFilter && !product.stockBreakdown?.some(sb => sb.warehouse === warehouseFilter)) {
+    // Exclude export warehouse products (raw commodity grain/coffee warehouses)
+    if (isExportWarehouse(product.warehouse)) continue
+
+    if (
+      warehouseFilter &&
+      product.warehouse !== warehouseFilter &&
+      !product.stockBreakdown?.some((sb) => sb.warehouse === warehouseFilter)
+    ) {
       continue
     }
 
@@ -201,6 +232,7 @@ export function getExpiringItemsSummary(
             warehouseName: product.warehouseName || product.warehouse,
             expiryDate: b.expiry,
             daysRemaining: status.days ?? 0,
+            monthsRemaining: status.months ?? 0,
             tier: status.tier,
             quantity: b.qty,
             unit: product.unit || "Unit",

@@ -11,11 +11,15 @@ import {
   AlertTriangle, 
   Download, 
   Clock, 
-  Edit3
+  Edit3,
+  Eye,
+  Printer
 } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useErpStore, type Transfer, type TransferLineItem, type TransferStatus, type Product } from "@/lib/erpStore"
-import { withOperatingWarehouses, isWH1, resolveWarehouseScope } from "@/lib/warehouses"
+import { withOperatingWarehouses, isPharmaWarehouse, resolveWarehouseScope } from "@/lib/warehouses"
+import { printStoreTransferDocument, exportStoreTransferExcel } from "@/lib/exportUtils"
+import StoreTransferPrintModal from "@/components/stock/StoreTransferPrintModal"
 import { type TableColumn } from "@/components/ResizableTable"
 import { DataTable } from "@/components/DataTable"
 import { useAuthStore } from "@/lib/authStore"
@@ -112,22 +116,10 @@ export default function StoreTransfersTab() {
   const transfers = erp.getTransfers()
   const products = erp.getProducts()
   
-  // Store-to-store transfers exist strictly between WH2 and WH3 since they share commercial products
+  // Store-to-store transfers exist between all pharmaceutical depots
   const transferWarehouses = useMemo(() => {
     const rawWhs = withOperatingWarehouses(erp.getWarehouses())
-    return rawWhs.filter((w) => {
-      const code = (w.code || w.id || w.name || "").toUpperCase()
-      if (isWH1(code)) return false
-      return (
-        code.includes("WH2") ||
-        code.includes("WH3") ||
-        code.includes("WH-02") ||
-        code.includes("WH-03") ||
-        code.includes("WAREHOUSE 2") ||
-        code.includes("WAREHOUSE 3") ||
-        code.includes("VET")
-      )
-    })
+    return rawWhs.filter((w) => isPharmaWarehouse(w, rawWhs))
   }, [erp])
 
   const warehouseOptions = useMemo(
@@ -191,12 +183,12 @@ export default function StoreTransfersTab() {
   const [discrepancyText, setDiscrepancyText] = useState("")
   const [isProcessingReceipt, setIsProcessingReceipt] = useState(false)
 
-  // --- PDF EXPORT STATE ---
-  const [isExporting, setIsExporting] = useState(false)
+  // --- PRINT & EXPORT MODAL STATE ---
+  const [printTransfer, setPrintTransfer] = useState<Transfer | null>(null)
 
   // Lock body scroll when modal is open
   useEffect(() => {
-    if (isFormOpen || selectedTransfer !== null || isReceiptOpen || receivingTransfer !== null) {
+    if (isFormOpen || selectedTransfer !== null || isReceiptOpen || receivingTransfer !== null || printTransfer !== null) {
       document.body.style.overflow = "hidden"
     } else {
       document.body.style.overflow = ""
@@ -204,7 +196,44 @@ export default function StoreTransfersTab() {
     return () => {
       document.body.style.overflow = ""
     }
-  }, [isFormOpen, selectedTransfer, isReceiptOpen, receivingTransfer])
+  }, [isFormOpen, selectedTransfer, isReceiptOpen, receivingTransfer, printTransfer])
+
+  const getTransferPrintOptions = (t: Transfer) => {
+    const lineItems = Array.isArray(t.line_items)
+      ? t.line_items
+      : Array.isArray((t as any).items)
+      ? (t as any).items
+      : []
+
+    const totalQty = t.total_quantity || lineItems.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0), 0)
+
+    return {
+      referenceNumber: t.reference_number,
+      date: t.date,
+      fromWarehouse: t.from_warehouse,
+      toWarehouse: t.to_warehouse,
+      status: t.status,
+      issuedBy: t.issued_by,
+      issuedAt: t.issued_at,
+      issuedSignature: t.issued_signature,
+      receivedBy: t.received_by,
+      receivedAt: t.received_at,
+      receivedSignature: t.received_signature,
+      discrepancyRemark: t.discrepancy_remark,
+      lineItems: lineItems.map((line: any, idx: number) => ({
+        line_no: line.line_no || idx + 1,
+        productId: line.productId,
+        item: line.item || (line as any).productName || (line as any).product_name || "Medicine",
+        UOM: line.UOM || (line as any).uom || "Pieces",
+        batch_no: line.batch_no || (line as any).batchNo || "Standard Lot",
+        expiry: line.expiry || (line as any).expiryDate || "",
+        quantity: Number(line.quantity || 0),
+        unit_price: Number(line.unit_price || (line as any).unitCost || 0),
+        remark: line.remark || (line as any).notes || "",
+      })),
+      totalQuantity: totalQty,
+    }
+  }
 
   // Live auto-calculated total quantity in form
   const formTotalQuantity = useMemo(() => {
@@ -532,15 +561,6 @@ export default function StoreTransfersTab() {
     )
   }
 
-  // --- PDF DOWNLOAD ---
-  const handleDownloadPDF = (refNum: string) => {
-    setIsExporting(true)
-    setTimeout(() => {
-      setIsExporting(false)
-      showToast("Document Ready", "success", `Downloaded Material Transfer Note ${refNum}.pdf`)
-    }, 1200)
-  }
-
   // --- DUAL-PARTY FILTERED TRANSFERS ---
   const filteredTransfers = useMemo(() => {
     return transfers.filter(t => {
@@ -554,16 +574,24 @@ export default function StoreTransfersTab() {
 
       // 2. Status filter
       const matchesStatus = statusFilter === "ALL" || t.status === statusFilter
-      
-      // 3. Search query
-      const lowerQuery = searchQuery.toLowerCase()
-      const matchesSearch = 
-        t.reference_number.toLowerCase().includes(lowerQuery) ||
-        t.from_warehouse.toLowerCase().includes(lowerQuery) ||
-        t.to_warehouse.toLowerCase().includes(lowerQuery) ||
-        t.line_items.some(item => item.item.toLowerCase().includes(lowerQuery))
+      if (!matchesStatus) return false
 
-      return matchesStatus && matchesSearch
+      // 3. Search query
+      const lowerQuery = searchQuery.toLowerCase().trim()
+      if (!lowerQuery) return true
+
+      const refNo = String(t.reference_number || (t as any).transfer_no || (t as any).transferNo || (t as any).id || "").toLowerCase()
+      const fromW = String(t.from_warehouse || (t as any).fromWarehouse || "").toLowerCase()
+      const toW = String(t.to_warehouse || (t as any).toWarehouse || "").toLowerCase()
+      const lineItems = Array.isArray(t.line_items) ? t.line_items : Array.isArray((t as any).items) ? (t as any).items : []
+
+      const matchesSearch =
+        refNo.includes(lowerQuery) ||
+        fromW.includes(lowerQuery) ||
+        toW.includes(lowerQuery) ||
+        lineItems.some((item: any) => String(item.item || item.product_name || item.productName || item.notes || "").toLowerCase().includes(lowerQuery))
+
+      return matchesSearch
     })
   }, [transfers, searchQuery, statusFilter, isSuperAdmin, userWarehouseIds])
 
@@ -603,13 +631,13 @@ export default function StoreTransfersTab() {
           },
         ]}
         defaultWidths={{
-          reference_number: 160,
-          from_warehouse: 180,
-          to_warehouse: 180,
-          total_quantity: 140,
-          date: 130,
-          status: 140,
-          _actions: 140,
+          reference_number: 150,
+          from_warehouse: 170,
+          to_warehouse: 170,
+          total_quantity: 130,
+          date: 120,
+          status: 130,
+          _actions: 210,
         }}
         renderRow={(transfer, colWidths) => {
           const isIssued = transfer.status === "Issued"
@@ -673,7 +701,31 @@ export default function StoreTransfersTab() {
 
               {/* Actions */}
               <td style={{ width: `${colWidths._actions}px` }} className="py-4 px-4 text-center overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-center gap-1.5">
+                <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSelectedTransfer(transfer)
+                    }}
+                    className="px-2.5 py-1.5 rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-800 font-extrabold text-[10px] inline-flex items-center gap-1 transition-all active:scale-95 shadow-xs cursor-pointer"
+                    title="View Transfer Details"
+                  >
+                    <Eye className="size-3 text-zinc-500" /> View
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setPrintTransfer(transfer)
+                    }}
+                    className="px-2.5 py-1.5 rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-800 font-extrabold text-[10px] inline-flex items-center gap-1 transition-all active:scale-95 shadow-xs cursor-pointer"
+                    title="Print / Export Material Transfer Note"
+                  >
+                    <Download className="size-3 text-zinc-500" /> Export
+                  </button>
+
                   {canProcessReceipt && (
                     <button
                       type="button"
@@ -1194,12 +1246,25 @@ export default function StoreTransfersTab() {
               <div className="pt-4 border-t border-zinc-200 shrink-0 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
-                  onClick={() => handleDownloadPDF(selectedTransfer.reference_number)}
-                  disabled={isExporting}
-                  className="h-11 px-5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-xs font-bold text-zinc-700 cursor-pointer inline-flex items-center gap-1.5 transition-colors"
+                  onClick={() => {
+                    exportStoreTransferExcel(getTransferPrintOptions(selectedTransfer))
+                    showToast("Excel Exported", "success", `Exported Material Transfer Note ${selectedTransfer.reference_number}.xls`)
+                  }}
+                  className="h-11 px-4 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-xs font-extrabold cursor-pointer inline-flex items-center gap-1.5 transition-colors shadow-xs"
                 >
-                  <Download className={`size-4 ${isExporting ? "animate-spin" : ""}`} />
-                  {isExporting ? "Exporting..." : "Download Note PDF"}
+                  <Download className="size-4 text-emerald-700" />
+                  Export Excel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    printStoreTransferDocument(getTransferPrintOptions(selectedTransfer))
+                  }}
+                  className="h-11 px-5 rounded-xl bg-zinc-950 hover:bg-black text-white text-xs font-bold cursor-pointer inline-flex items-center gap-1.5 transition-colors shadow-md"
+                >
+                  <Printer className="size-4 text-white" />
+                  Print / Save PDF
                 </button>
 
                 {/* Receiver Process Receipt Action */}
@@ -1364,6 +1429,15 @@ export default function StoreTransfersTab() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* =========================================================================
+          PRINT & EXPORT MODAL (MATERIAL TRANSFER NOTE)
+          ========================================================================= */}
+      <StoreTransferPrintModal
+        isOpen={!!printTransfer}
+        transfer={printTransfer}
+        onClose={() => setPrintTransfer(null)}
+      />
     </div>
   )
 }

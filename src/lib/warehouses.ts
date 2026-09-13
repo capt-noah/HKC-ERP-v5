@@ -1,38 +1,31 @@
-import type { Warehouse, Product } from "./erpStore"
+import type { Warehouse, Product, WarehouseType } from "./erpStore"
+
+export type { WarehouseType }
 
 export const OPERATING_WAREHOUSES: Warehouse[] = [
   {
     id: "WH1",
     code: "WH1-AGRI-EXP",
     name: "WH1 - Ethiopia Agricultural Export Hub",
+    warehouse_type: "EXPORT_WH",
     type: "Export Hub",
-    status: "Active",
-    manager: "Abebe Kasahun",
     location: "Modjo Export Terminal, Ethiopia",
-    targetMarkets: "Europe, Asia, USA",
-    specialization: "Agricultural Commodities",
   },
   {
     id: "WH2",
     code: "WH2-VET-CENTRAL",
     name: "WH2 - Central Veterinary Hub",
+    warehouse_type: "PHARMA_WH",
     type: "Central Warehouse",
-    status: "Active",
-    manager: "Dr. Alemayehu Worku",
     location: "Addis Ababa Central, Ethiopia",
-    targetMarkets: "Domestic & Regional Dist.",
-    specialization: "Veterinary Drugs & Biologicals",
   },
   {
     id: "WH3",
     code: "WH3-VET-REGIONAL",
     name: "WH3 - Regional Veterinary Depot",
+    warehouse_type: "PHARMA_WH",
     type: "Regional Depot",
-    status: "Active",
-    manager: "Tigist Haile",
     location: "Bishoftu Regional Hub, Ethiopia",
-    targetMarkets: "Oromia & Southern Regions",
-    specialization: "Veterinary Supplies & Consumables",
   },
 ]
 
@@ -50,17 +43,94 @@ export function withOperatingWarehouses(warehouses: Warehouse[] = []): Warehouse
     const key = warehouse.id || warehouse.code
     if (key) {
       const existing = byKey.get(key) || byKey.get(warehouse.id) || byKey.get(warehouse.code)
-      byKey.set(warehouse.id || key, { ...existing, ...warehouse })
+      const mergedWh: Warehouse = {
+        ...existing,
+        ...warehouse,
+        warehouse_type:
+          warehouse.warehouse_type ||
+          existing?.warehouse_type ||
+          (warehouse.type?.toUpperCase().includes("EXPORT") ? "EXPORT_WH" : "PHARMA_WH"),
+      }
+      byKey.set(warehouse.id || key, mergedWh)
     }
   }
 
   return Array.from(byKey.values())
 }
 
-export const isWH1 = (w?: string): boolean => {
-  if (!w) return false
-  const upper = String(w).toUpperCase()
-  return upper.includes("WH1") || upper.includes("WH-01") || upper.includes("WH 1") || upper.includes("AGRI")
+/**
+ * Resolves the operational type of a warehouse ('EXPORT_WH' or 'PHARMA_WH').
+ * Works with Warehouse objects, warehouse IDs, warehouse codes, or names.
+ */
+export function getWarehouseType(
+  warehouseOrId?: Warehouse | string | null,
+  allWarehouses: Warehouse[] = []
+): WarehouseType {
+  if (!warehouseOrId) return "PHARMA_WH"
+
+  // 1. If it's a Warehouse object with explicit warehouse_type
+  if (typeof warehouseOrId === "object") {
+    if (warehouseOrId.warehouse_type === "EXPORT_WH" || warehouseOrId.warehouse_type === "PHARMA_WH") {
+      return warehouseOrId.warehouse_type
+    }
+    const rawType = (warehouseOrId.type || "").toUpperCase()
+    if (rawType.includes("EXPORT") || rawType.includes("AGRI") || rawType.includes("COMMODITY")) {
+      return "EXPORT_WH"
+    }
+    const candidateId = warehouseOrId.id || warehouseOrId.code
+    return getWarehouseType(candidateId, allWarehouses)
+  }
+
+  const str = String(warehouseOrId).trim()
+  const upper = str.toUpperCase()
+
+  // 2. Direct exact matches
+  if (upper === "EXPORT_WH") return "EXPORT_WH"
+  if (upper === "PHARMA_WH") return "PHARMA_WH"
+
+  // 3. Search in allWarehouses list (including user-created custom warehouses)
+  const pool = withOperatingWarehouses(allWarehouses)
+  const matched = pool.find(
+    (w) =>
+      w.id?.toLowerCase() === str.toLowerCase() ||
+      w.code?.toLowerCase() === str.toLowerCase() ||
+      w.name?.toLowerCase() === str.toLowerCase()
+  )
+  if (matched?.warehouse_type) {
+    return matched.warehouse_type
+  }
+
+  // 4. Heuristic / Fallback matching for legacy strings
+  if (
+    upper.includes("EXPORT") ||
+    upper.includes("AGRI") ||
+    upper.includes("WH1") ||
+    upper.includes("WH-01") ||
+    upper.includes("WH 1")
+  ) {
+    return "EXPORT_WH"
+  }
+
+  return "PHARMA_WH"
+}
+
+export function isExportWarehouse(
+  warehouseOrId?: Warehouse | string | null,
+  allWarehouses: Warehouse[] = []
+): boolean {
+  return getWarehouseType(warehouseOrId, allWarehouses) === "EXPORT_WH"
+}
+
+export function isPharmaWarehouse(
+  warehouseOrId?: Warehouse | string | null,
+  allWarehouses: Warehouse[] = []
+): boolean {
+  return getWarehouseType(warehouseOrId, allWarehouses) === "PHARMA_WH"
+}
+
+// Backward compatibility alias:
+export const isWH1 = (w?: string | Warehouse, allWarehouses: Warehouse[] = []): boolean => {
+  return isExportWarehouse(w, allWarehouses)
 }
 
 const KNOWN_MAP: Record<string, string[]> = {

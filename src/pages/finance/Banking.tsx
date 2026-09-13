@@ -13,6 +13,7 @@ import {
   X,
   ArrowDownLeft,
   ArrowUpRight,
+  FileSpreadsheet,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -28,6 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { fetchTradeAndAdviceDocs, type ShipmentDocAttachment } from "@/lib/tradeDocumentService"
+import { PeachtreeBankReconciliationModal } from "@/components/finance/PeachtreeBankReconciliationModal"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -68,6 +70,7 @@ export default function Banking() {
   const [isLoadingDocs, setIsLoadingDocs] = useState(false)
   const [previewDocUrl, setPreviewDocUrl] = useState("")
   const [previewDocName, setPreviewDocName] = useState("")
+  const [showReconModal, setShowReconModal] = useState(false)
 
   const [bankSearch, setBankSearch] = useState("")
   const [bankDateFilter, setBankDateFilter] = useState("ALL")
@@ -357,6 +360,14 @@ export default function Banking() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowReconModal(true)}
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-2 shadow-sm active:scale-95 transition-all cursor-pointer"
+              title="Peachtree / Sage 50 Account Reconciliation Worksheet"
+            >
+              <FileSpreadsheet className="size-4" /> Account Reconciliation
+            </button>
             <SubPageNav items={getSectionChildren("/finance")} />
           </div>
         </motion.div>
@@ -431,6 +442,12 @@ export default function Banking() {
                     },
                   ]}
                   actions={[
+                    {
+                      label: "Account Reconciliation",
+                      onClick: () => setShowReconModal(true),
+                      icon: <FileSpreadsheet className="size-3.5" />,
+                      variant: "emerald",
+                    },
                     {
                       label: `Export (${filteredBankLines.length})`,
                       onClick: () => {
@@ -1032,6 +1049,12 @@ export default function Banking() {
           setPreviewDocUrl("")
           setPreviewDocName("")
         }}
+      />
+
+      {/* Peachtree / Sage 50 Account Reconciliation Worksheet Modal */}
+      <PeachtreeBankReconciliationModal
+        isOpen={showReconModal}
+        onClose={() => setShowReconModal(false)}
       />
     </div>
   )

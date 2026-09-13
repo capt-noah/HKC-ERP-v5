@@ -19,6 +19,7 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useFinanceStore, calculateMultiTax, type Invoice, type InvoiceLineItem } from "@/lib/financeStore"
+import { erpStore } from "@/lib/erpStore"
 import { isDateInPreset } from "@/lib/peachtreeExportUtils"
 import { FinanceDateFilter } from "@/components/FinanceTableToolbar"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -52,6 +53,7 @@ export default function Invoices() {
 
   // Top Level Search and Filters
   const [searchQuery, setSearchQuery] = useState("")
+  const [filterType, setFilterType] = useState<"ALL" | "Sales" | "Purchase">("ALL")
   const [filterStatus, setFilterStatus] = useState<string>("ALL")
   const [filterDateRange, setFilterDateRange] = useState<string>("ALL")
   const [invCustomStart, setInvCustomStart] = useState<string>("")
@@ -104,8 +106,18 @@ export default function Invoices() {
   const [discountVal, setDiscountVal] = useState("0")
 
   // Filter helper
-  const getFilteredInvoices = (status: string, search: string, datePreset: string, customStart?: string, customEnd?: string) => {
+  const getFilteredInvoices = (
+    typeFilter: "ALL" | "Sales" | "Purchase",
+    status: string,
+    search: string,
+    datePreset: string,
+    customStart?: string,
+    customEnd?: string
+  ) => {
     return invoices.filter((inv) => {
+      const invType = inv.invoice_type || (inv.purchase_order_id ? "Purchase" : "Sales")
+      const matchType = typeFilter === "ALL" || invType === typeFilter
+
       const isPaid = inv.status === "Paid" || Number(inv.balance_due ?? 0) <= 0
       const isPartiallyPaid = !isPaid && Number(inv.amount_paid || 0) > 0
       const matchStatus =
@@ -115,47 +127,56 @@ export default function Invoices() {
         (status === "PARTIAL" && isPartiallyPaid)
 
       const q = search.toLowerCase().trim()
+      const party = (inv.customer_name || inv.supplier_name || "").toLowerCase()
       const matchSearch =
         !q ||
         inv.invoice_number.toLowerCase().includes(q) ||
-        inv.customer_name.toLowerCase().includes(q)
+        party.includes(q) ||
+        (inv.voucher_no && inv.voucher_no.toLowerCase().includes(q)) ||
+        (inv.purchase_order_id && inv.purchase_order_id.toLowerCase().includes(q))
 
       const matchDate = isDateInPreset(inv.issue_date, datePreset, customStart, customEnd)
-      return matchStatus && matchSearch && matchDate
+      return matchType && matchStatus && matchSearch && matchDate
     })
   }
 
   const filteredInvoices = useMemo(() => {
-    return getFilteredInvoices(filterStatus, searchQuery, filterDateRange, invCustomStart, invCustomEnd)
-  }, [invoices, filterStatus, searchQuery, filterDateRange, invCustomStart, invCustomEnd])
+    return getFilteredInvoices(filterType, filterStatus, searchQuery, filterDateRange, invCustomStart, invCustomEnd)
+  }, [invoices, filterType, filterStatus, searchQuery, filterDateRange, invCustomStart, invCustomEnd])
+
+  const handleFilterTypeChange = (newType: "ALL" | "Sales" | "Purchase") => {
+    setFilterType(newType)
+    const matches = getFilteredInvoices(newType, filterStatus, searchQuery, filterDateRange, invCustomStart, invCustomEnd)
+    setSelectedInvoice(matches[0] || null)
+  }
 
   const handleFilterStatusChange = (newStatus: string) => {
     setFilterStatus(newStatus)
-    const matches = getFilteredInvoices(newStatus, searchQuery, filterDateRange, invCustomStart, invCustomEnd)
+    const matches = getFilteredInvoices(filterType, newStatus, searchQuery, filterDateRange, invCustomStart, invCustomEnd)
     setSelectedInvoice(matches[0] || null)
   }
 
   const handleSearchChange = (newSearch: string) => {
     setSearchQuery(newSearch)
-    const matches = getFilteredInvoices(filterStatus, newSearch, filterDateRange, invCustomStart, invCustomEnd)
+    const matches = getFilteredInvoices(filterType, filterStatus, newSearch, filterDateRange, invCustomStart, invCustomEnd)
     setSelectedInvoice(matches[0] || null)
   }
 
   const handleDateFilterChange = (newDateFilter: string) => {
     setFilterDateRange(newDateFilter)
-    const matches = getFilteredInvoices(filterStatus, searchQuery, newDateFilter, invCustomStart, invCustomEnd)
+    const matches = getFilteredInvoices(filterType, filterStatus, searchQuery, newDateFilter, invCustomStart, invCustomEnd)
     setSelectedInvoice(matches[0] || null)
   }
 
   const handleCustomStartChange = (start: string) => {
     setInvCustomStart(start)
-    const matches = getFilteredInvoices(filterStatus, searchQuery, filterDateRange, start, invCustomEnd)
+    const matches = getFilteredInvoices(filterType, filterStatus, searchQuery, filterDateRange, start, invCustomEnd)
     setSelectedInvoice(matches[0] || null)
   }
 
   const handleCustomEndChange = (end: string) => {
     setInvCustomEnd(end)
-    const matches = getFilteredInvoices(filterStatus, searchQuery, filterDateRange, invCustomStart, end)
+    const matches = getFilteredInvoices(filterType, filterStatus, searchQuery, filterDateRange, invCustomStart, end)
     setSelectedInvoice(matches[0] || null)
   }
 
@@ -296,7 +317,7 @@ export default function Invoices() {
   // Open Edit / Record Payment Modal
   const handleOpenEditModal = (inv: Invoice) => {
     setEditingInvoice(inv)
-    setEditCustName(inv.customer_name)
+    setEditCustName(inv.customer_name || inv.supplier_name || "")
     const paid = Number(inv.amount_paid || 0)
     const total = Number(inv.total || 0)
     const due = Number(Math.max(0, total - paid).toFixed(2))
@@ -315,6 +336,7 @@ export default function Invoices() {
     e.preventDefault()
     if (!editingInvoice) return
 
+    const isPurchase = editingInvoice.invoice_type === "Purchase" || editingInvoice.party_type === "Supplier" || Boolean(editingInvoice.purchase_order_id)
     const numPay = parseFloat(editPayAmount)
     const hasPayment = !isNaN(numPay) && numPay > 0
     const totalVal = Number(editingInvoice.total || 0)
@@ -361,22 +383,42 @@ export default function Invoices() {
       }
 
       if (hasPayment) {
+        const paymentRef = editPayRef || `PAY-${Date.now().toString().slice(-4)}`
         store.recordPayment({
           linked_invoice_id: editingInvoice.id,
           sales_issue_id: editingInvoice.sales_issue_id,
           sales_order_id: editingInvoice.sales_order_id,
-          customer_name: editCustName || editingInvoice.customer_name,
+          purchase_order_id: editingInvoice.purchase_order_id,
+          customer_name: isPurchase ? undefined : (editCustName || editingInvoice.customer_name),
+          supplier_name: isPurchase ? (editCustName || editingInvoice.supplier_name || editingInvoice.customer_name) : undefined,
           amount: numPay,
           currency: editingInvoice.currency,
           date: editPayDate,
           method: "Bank Deposit",
           bank_account_code: editPayBank,
-          reference: editPayRef || `PAY-${Date.now().toString().slice(-4)}`,
+          reference: paymentRef,
           payment_advice_url: stagedSlipUrl || undefined,
           payment_advice_filename: stagedSlipName || undefined,
           notes: editNotes,
-          direction: "Received",
+          direction: isPurchase ? "Made" : "Received",
         })
+
+        // Cross-sync with ERP Store Purchase Order if linked
+        if (editingInvoice.purchase_order_id) {
+          try {
+            erpStore.recordPurchaseOrderInstallment(editingInvoice.purchase_order_id, {
+              amount: numPay,
+              date: editPayDate,
+              bankAccountCode: editPayBank,
+              reference: paymentRef,
+              notes: editNotes,
+              paymentAdviceUrl: stagedSlipUrl || undefined,
+              paymentAdviceFilename: stagedSlipName || undefined,
+            })
+          } catch (poErr) {
+            console.warn("Cross-syncing PO installment notice:", poErr)
+          }
+        }
 
         const newPaid = Number((alreadyPaid + numPay).toFixed(2))
         const newDue = Number(Math.max(0, totalVal - newPaid).toFixed(2))
@@ -387,7 +429,8 @@ export default function Invoices() {
         )
       } else {
         store.updateInvoice(editingInvoice.id, {
-          customer_name: editCustName,
+          customer_name: isPurchase ? editingInvoice.customer_name : editCustName,
+          supplier_name: isPurchase ? editCustName : editingInvoice.supplier_name,
           notes: editNotes,
         })
         showToast("Invoice Updated", "success", `Invoice ${editingInvoice.invoice_number} details updated.`)
@@ -419,8 +462,8 @@ export default function Invoices() {
       <main className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         <motion.div initial="hidden" animate="visible" variants={fade} className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
-            <h1 className="text-3xl font-black text-black tracking-tight">Sales Invoices</h1>
-            <p className="text-xs font-semibold text-zinc-500 mt-1">Multi-tax accounting, partial credit installments, and real-time settlement.</p>
+            <h1 className="text-3xl font-black text-black tracking-tight">Invoices & Bills</h1>
+            <p className="text-xs font-semibold text-zinc-500 mt-1">Multi-tax accounting, customer receivables (AR), supplier payables (AP), partial credit installments, and real-time settlement.</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <SubPageNav items={getSectionChildren("Finance")} />
@@ -430,23 +473,23 @@ export default function Invoices() {
         {/* Top KPI Cards */}
         <motion.div initial="hidden" animate="visible" variants={stagger} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-black">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Total Billed</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Total Invoiced</span>
             {isLoading ? (
               <Skeleton className="h-7 w-28 bg-zinc-200/80 my-1" />
             ) : (
               <p className="text-xl font-black text-black font-mono mt-1">ETB {totalReceivables.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
             )}
-            <span className="text-[10px] text-gray-400 mt-0.5">Cumulative sales invoice totals</span>
+            <span className="text-[10px] text-gray-400 mt-0.5">Cumulative sales & purchase invoices</span>
           </GlassCard>
 
           <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-emerald-600">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Total Collected</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Total Settled</span>
             {isLoading ? (
               <Skeleton className="h-7 w-28 bg-zinc-200/80 my-1" />
             ) : (
               <p className="text-xl font-black text-emerald-700 font-mono mt-1">ETB {totalCollected.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
             )}
-            <span className="text-[10px] text-emerald-600 mt-0.5 font-bold">Payments deposited to banks</span>
+            <span className="text-[10px] text-emerald-600 mt-0.5 font-bold">Payments processed through banks</span>
           </GlassCard>
 
           <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-rose-500">
@@ -456,7 +499,7 @@ export default function Invoices() {
             ) : (
               <p className="text-xl font-black text-rose-700 font-mono mt-1">ETB {totalOutstandingDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
             )}
-            <span className="text-[10px] text-rose-600 mt-0.5 font-bold">Active credit receivables</span>
+            <span className="text-[10px] text-rose-600 mt-0.5 font-bold">Active credit receivables & payables</span>
           </GlassCard>
 
           <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-zinc-900">
@@ -481,7 +524,7 @@ export default function Invoices() {
                 <div className="flex flex-wrap items-center justify-between gap-4 border-b border-black/5 pb-4">
                   <div>
                     <span className="text-[10px] font-mono font-bold text-gray-400 uppercase tracking-wider block">
-                      Sales Invoice Details • Terms: {activeInvoice.payment_terms || "Credit"}
+                      {activeInvoice.invoice_type === "Purchase" || activeInvoice.purchase_order_id ? "Purchase Bill (AP)" : "Sales Invoice (AR)"} • Terms: {activeInvoice.payment_terms || "Credit"}
                     </span>
                     <h2 className="text-xl font-black text-black mt-0.5">
                       #{activeInvoice.invoice_number}
@@ -522,8 +565,12 @@ export default function Invoices() {
                 {/* Billed To & Issue Date Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-2xl bg-zinc-50 border border-zinc-200/60 text-xs">
                   <div>
-                    <span className="text-[10px] font-extrabold text-zinc-500 uppercase tracking-wider block">Billed To</span>
-                    <span className="font-bold text-zinc-950 mt-1 block">{activeInvoice.customer_name}</span>
+                    <span className="text-[10px] font-extrabold text-zinc-500 uppercase tracking-wider block">
+                      {activeInvoice.invoice_type === "Purchase" || activeInvoice.purchase_order_id ? "Vendor / Supplier" : "Billed To"}
+                    </span>
+                    <span className="font-bold text-zinc-950 mt-1 block">
+                      {activeInvoice.supplier_name || activeInvoice.customer_name || "—"}
+                    </span>
                   </div>
                   <div>
                     <span className="text-[10px] font-extrabold text-zinc-500 uppercase tracking-wider block">Issue Date</span>
@@ -723,7 +770,7 @@ export default function Invoices() {
           {/* RIGHT COLUMN: Master Invoices List (4 cols / 33%) */}
           <GlassCard className="lg:col-span-4 p-5 border border-black/5 shadow-sm flex flex-col space-y-3 sticky top-24 max-h-[calc(100vh-120px)]">
             <div className="flex items-center justify-between flex-wrap gap-2 flex-shrink-0">
-              <h3 className="font-bold text-base text-black">Invoices List</h3>
+              <h3 className="font-bold text-base text-black">Invoices & Bills</h3>
               <button
                 type="button"
                 onClick={() => setShowCreateDrawer(true)}
@@ -732,13 +779,44 @@ export default function Invoices() {
                 <Plus className="size-3.5" /> Create Invoice
               </button>
             </div>
+
+            {/* Type Filter Tabs */}
+            <div className="flex items-center gap-1 p-1 bg-zinc-100 rounded-xl text-[11px] font-bold flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => handleFilterTypeChange("ALL")}
+                className={`flex-1 py-1 rounded-lg transition-all text-center cursor-pointer ${
+                  filterType === "ALL" ? "bg-white text-zinc-950 shadow-xs font-black" : "text-zinc-500 hover:text-zinc-950"
+                }`}
+              >
+                All ({invoices.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFilterTypeChange("Sales")}
+                className={`flex-1 py-1 rounded-lg transition-all text-center cursor-pointer ${
+                  filterType === "Sales" ? "bg-white text-indigo-700 shadow-xs font-black" : "text-zinc-500 hover:text-zinc-950"
+                }`}
+              >
+                Sales AR ({invoices.filter((i) => (i.invoice_type || (i.purchase_order_id ? "Purchase" : "Sales")) !== "Purchase").length})
+              </button>
+              <button
+                type="button"
+                onClick={() => handleFilterTypeChange("Purchase")}
+                className={`flex-1 py-1 rounded-lg transition-all text-center cursor-pointer ${
+                  filterType === "Purchase" ? "bg-white text-amber-700 shadow-xs font-black" : "text-zinc-500 hover:text-zinc-950"
+                }`}
+              >
+                Purchase AP ({invoices.filter((i) => (i.invoice_type || (i.purchase_order_id ? "Purchase" : "Sales")) === "Purchase").length})
+              </button>
+            </div>
             
             <div className="flex items-center gap-1.5 flex-shrink-0">
               <div className="relative flex-1 min-w-0">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search invoice or customer..."
+                  placeholder="Search invoice or partner..."
                   value={searchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
                   className="w-full bg-white/90 border border-black/5 rounded-xl pl-8 pr-3 py-1.5 text-xs font-bold text-black focus:outline-none h-[34px] shadow-2xs"
@@ -769,7 +847,7 @@ export default function Invoices() {
             </div>
 
             {/* Scrollable Invoices Cards Stack */}
-            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 scrollbar-thin max-h-[calc(100vh-230px)] min-h-[480px]">
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 scrollbar-thin max-h-[calc(100vh-270px)] min-h-[460px]">
               {isLoading ? (
                 Array.from({ length: 4 }).map((_, index) => (
                   <div key={index} className="p-3.5 rounded-2xl bg-white/60 border border-black/5 space-y-2">
@@ -790,6 +868,8 @@ export default function Invoices() {
               ) : (
                 filteredInvoices.map((inv) => {
                   const isSelected = activeInvoice?.id === inv.id
+                  const isPurchase = (inv.invoice_type || (inv.purchase_order_id ? "Purchase" : "Sales")) === "Purchase"
+                  const partyName = inv.supplier_name || inv.customer_name || "Partner"
                   const totalAmt = Number(inv.total || 0)
                   const paidAmt = Number(inv.amount_paid || 0)
                   const dueAmt = Number(inv.balance_due ?? Math.max(0, totalAmt - paidAmt))
@@ -808,9 +888,18 @@ export default function Invoices() {
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-mono font-bold text-gray-400">
-                          #{inv.invoice_number}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
+                            isPurchase
+                              ? isSelected ? "bg-amber-900/60 text-amber-300 border border-amber-500/30" : "bg-amber-100 text-amber-800"
+                              : isSelected ? "bg-indigo-900/60 text-indigo-300 border border-indigo-500/30" : "bg-indigo-50 text-indigo-700"
+                          }`}>
+                            {isPurchase ? "AP" : "AR"}
+                          </span>
+                          <span className="text-[11px] font-mono font-bold text-gray-400">
+                            #{inv.invoice_number}
+                          </span>
+                        </div>
                         <span
                           className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full ${
                             isSelected
@@ -827,7 +916,7 @@ export default function Invoices() {
                       </div>
 
                       <h4 className={`text-sm font-black mt-1.5 tracking-tight truncate ${isSelected ? "text-white" : "text-black"}`}>
-                        {inv.customer_name}
+                        {partyName}
                       </h4>
 
                       <div className="flex items-center justify-between mt-2 text-xs">

@@ -21,7 +21,7 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, getTradeLicenseStatus, type SalesOrder, type Quotation, type SalesOrderItem, type Product } from "@/lib/erpStore"
 import { useFinanceStore, calculateMultiTax, resolveAutoTaxScheduleId } from "@/lib/financeStore"
-import { withOperatingWarehouses } from "@/lib/warehouses"
+import { withOperatingWarehouses, isWH1 } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { type TableColumn } from "@/components/ResizableTable"
 import { EditModalHeader } from "@/components/EditModalHeader"
@@ -38,12 +38,6 @@ import {
   fetchAllShipmentDocs,
 } from "@/lib/tradeDocumentService"
 import { uploadFile } from "@/lib/fileUpload"
-
-const isWH1 = (w?: string) => {
-  if (!w) return false
-  const upper = w.toUpperCase()
-  return upper.includes("WH1") || upper.includes("WH-01") || upper.includes("WH 1") || upper.includes("AGRI")
-}
 
 const COMMODITY_UNITS = ["Quintal", "Ton"]
 const CONTAINER_UNITS = ["Box", "Bottle", "Vial", "Sachet", "Pack", "Carton"]

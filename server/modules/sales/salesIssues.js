@@ -47,6 +47,16 @@ function matchPaymentsForIssue(allPayments, issueId, fsNo, refNo) {
   })
 }
 
+async function getAllProductsForSales() {
+  const [expRes, pharmaRes] = await Promise.all([
+    drizzleListRows({ resource: getResource("export_products") }).catch(() => ({ body: [] })),
+    drizzleListRows({ resource: getResource("pharma_products") }).catch(() => ({ body: [] })),
+  ])
+  const exp = Array.isArray(expRes?.body) ? expRes.body : []
+  const pharma = Array.isArray(pharmaRes?.body) ? pharmaRes.body : []
+  return [...exp, ...pharma]
+}
+
 export async function listSalesIssues(query = {}) {
   try {
     const sanitizedQuery = {}
@@ -59,11 +69,11 @@ export async function listSalesIssues(query = {}) {
     })
 
     const issues = Array.isArray(issuesRes.body) ? issuesRes.body : []
-    const [itemsRes, customersRes, ordersRes, productsRes, paymentsRes] = await Promise.all([
+    const [itemsRes, customersRes, ordersRes, allProducts, paymentsRes] = await Promise.all([
       drizzleListRows({ resource: getResource("sales_issue_items") }),
       drizzleListRows({ resource: getResource("customers") }).catch(() => ({ body: [] })),
       drizzleListRows({ resource: getResource("sales_orders") }).catch(() => ({ body: [] })),
-      drizzleListRows({ resource: getResource("inventory_products") }).catch(() => ({ body: [] })),
+      getAllProductsForSales(),
       drizzleListRows({ resource: getResource("payments") }).catch(() => ({ body: [] })),
     ])
 
@@ -73,7 +83,6 @@ export async function listSalesIssues(query = {}) {
     const allOrders = Array.isArray(ordersRes.body) ? ordersRes.body : []
     const orderMap = new Map(allOrders.map((o) => [o.id, o.payload ? { ...o.payload, ...o } : o]))
 
-    const allProducts = Array.isArray(productsRes.body) ? productsRes.body : []
     const productMap = new Map(allProducts.map((p) => [p.id, p.payload ? { ...p.payload, ...p } : p]))
 
     const allPayments = Array.isArray(paymentsRes.body) ? paymentsRes.body : []
@@ -277,11 +286,11 @@ export async function getSalesIssue(id) {
     }
 
     const rawIssue = issueRes.body
-    const [itemsRes, customersRes, ordersRes, productsRes, paymentsRes] = await Promise.all([
+    const [itemsRes, customersRes, ordersRes, allProducts, paymentsRes] = await Promise.all([
       drizzleListRows({ resource: getResource("sales_issue_items") }),
       drizzleListRows({ resource: getResource("customers") }).catch(() => ({ body: [] })),
       drizzleListRows({ resource: getResource("sales_orders") }).catch(() => ({ body: [] })),
-      drizzleListRows({ resource: getResource("inventory_products") }).catch(() => ({ body: [] })),
+      getAllProductsForSales(),
       drizzleListRows({ resource: getResource("payments") }).catch(() => ({ body: [] })),
     ])
 
@@ -291,7 +300,6 @@ export async function getSalesIssue(id) {
     const allOrders = Array.isArray(ordersRes.body) ? ordersRes.body : []
     const orderMap = new Map(allOrders.map((o) => [o.id, o.payload ? { ...o.payload, ...o } : o]))
 
-    const allProducts = Array.isArray(productsRes.body) ? productsRes.body : []
     const productMap = new Map(allProducts.map((p) => [p.id, p.payload ? { ...p.payload, ...p } : p]))
 
     const allPayments = Array.isArray(paymentsRes.body) ? paymentsRes.body : []
@@ -764,10 +772,10 @@ export async function postSalesIssue(arg1, arg2) {
   let totalAmount = 0
   let totalQty = 0
 
-  // 1. Deduct Stock from inventory_products
+  // 1. Deduct Stock from dedicated export_products / pharma_products
   try {
-    const allProdRes = await drizzleListRows({ resource: getResource("inventory_products") }).catch(() => ({ body: [] }))
-    const allProducts = Array.isArray(allProdRes.body) ? allProdRes.body.map(p => p?.payload ? { ...p.payload, ...p } : p) : []
+    const rawAllProducts = await getAllProductsForSales()
+    const allProducts = Array.isArray(rawAllProducts) ? rawAllProducts.map(p => p?.payload ? { ...p.payload, ...p } : p) : []
 
     for (const item of (existing.items || [])) {
       const prodId = item.item_id || item.productId || item.product_id
@@ -882,11 +890,15 @@ export async function postSalesIssue(arg1, arg2) {
           updatedAt: new Date().toISOString(),
         }
 
-        await drizzleUpdateRow({
-          resource: getResource("inventory_products"),
-          id: realProdId,
-          body: updatedProd,
-        })
+        const isExportWh = String(prod.warehouse_id || prod.warehouse || existing.warehouse_id || "").toUpperCase().includes("WH1") || String(prod.warehouse_id || prod.warehouse || "").toUpperCase().includes("EXPORT")
+        const targetRes = isExportWh ? getResource("export_products") : getResource("pharma_products")
+        if (targetRes) {
+          await drizzleUpdateRow({
+            resource: targetRes,
+            id: realProdId,
+            body: updatedProd,
+          }).catch(() => {})
+        }
       }
     }
   } catch (err) {

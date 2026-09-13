@@ -1,15 +1,19 @@
 const jsonb = { storage: "jsonb_document" }
 
 export const resources = {
-  // Inventory (4)
-  warehouses: { table: "warehouses", module: "inventory", ...jsonb },
-  inventory_products: { table: "inventory_products", module: "inventory", ...jsonb },
-  stock_movements: { table: "stock_movements", module: "inventory", ...jsonb },
-  store_transfers: { table: "store_transfers", module: "inventory", ...jsonb },
+  // Inventory (8 Dedicated Relational Tables)
+  warehouses: { table: "warehouses", module: "inventory", storage: "relational" },
+  export_products: { table: "export_products", module: "inventory", storage: "relational" },
+  pharma_products: { table: "pharma_products", module: "inventory", storage: "relational" },
+  pharma_product_batches: { table: "pharma_product_batches", module: "inventory", storage: "relational" },
+  stock_movements: { table: "stock_movements", module: "inventory", storage: "relational" },
+  store_transfers: { table: "store_transfers", module: "inventory", storage: "relational" },
+  store_transfer_items: { table: "store_transfer_items", module: "inventory", storage: "relational" },
+  export_warehouse_movements: { table: "export_warehouse_movements", module: "inventory", storage: "relational" },
 
   // Sales & Purchasing (7)
   sales_orders: { table: "sales_orders", module: "sales", ...jsonb },
-  purchase_orders: { table: "purchase_orders", module: "sales", ...jsonb },
+  purchase_orders: { table: "purchase_orders", module: "sales", storage: "relational" },
   sales_issues: { table: "sales_issues", module: "sales", storage: "relational" },
   sales_issue_items: { table: "sales_issue_items", module: "sales", storage: "relational" },
   customers: { table: "customers", module: "sales", ...jsonb },
