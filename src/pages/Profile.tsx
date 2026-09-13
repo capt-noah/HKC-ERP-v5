@@ -14,6 +14,10 @@ import {
   BadgeCheck,
   Sparkles,
   Warehouse,
+  Eye,
+  EyeOff,
+  KeyRound,
+  X,
 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { GlassCard } from "@/components/GlassCard"
@@ -22,6 +26,38 @@ import { useErpStore, type Warehouse as WarehouseType } from "@/lib/erpStore"
 import { useFeedback } from "@/context/FeedbackContext"
 import { loadResource, API_BASE } from "@/lib/apiPersistence"
 import { cn } from "@/lib/utils"
+
+interface PasswordStrength {
+  score: number
+  label: "Weak" | "Medium" | "Strong"
+  color: string
+  width: string
+}
+
+function getPasswordStrength(password: string): PasswordStrength {
+  if (!password) {
+    return { score: 0, label: "Weak", color: "bg-red-500", width: "0%" }
+  }
+
+  const hasLength = password.length >= 10
+  const hasLower = /[a-z]/.test(password)
+  const hasUpper = /[A-Z]/.test(password)
+  const hasNumber = /[0-9]/.test(password)
+  const hasSpecial = /[^a-zA-Z0-9]/.test(password)
+
+  const passedCriteria = [hasLength, hasLower, hasUpper, hasNumber, hasSpecial].filter(Boolean).length
+
+  // All 5 criteria (length >= 10, lower, upper, number, special symbol) MUST be met for Strong / Green
+  if (hasLength && hasLower && hasUpper && hasNumber && hasSpecial) {
+    return { score: 5, label: "Strong", color: "bg-green-600", width: "100%" }
+  }
+
+  if (passedCriteria >= 3) {
+    return { score: passedCriteria, label: "Medium", color: "bg-yellow-500", width: `${passedCriteria * 20}%` }
+  }
+
+  return { score: passedCriteria, label: "Weak", color: "bg-red-500", width: `${Math.max(passedCriteria * 20, 20)}%` }
+}
 
 interface UserAccount {
   id: string
@@ -138,6 +174,15 @@ export default function Profile() {
   const [isEditingName, setIsEditingName] = useState(false)
   const [newName, setNewName] = useState("")
   const [savingName, setSavingName] = useState(false)
+
+  // Change Password Modal State
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [savingPassword, setSavingPassword] = useState(false)
 
   useEffect(() => {
     async function loadProfile() {
@@ -270,6 +315,59 @@ export default function Profile() {
       showToast(err?.message || "Failed to update name.", "warning")
     } finally {
       setSavingName(false)
+    }
+  }
+
+  const handleChangePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!currentPassword.trim()) {
+      showToast("Current Password Required", "warning", "Please enter your current account password.")
+      return
+    }
+    if (newPassword.length < 10) {
+      showToast("Password Too Short", "warning", "New password must be at least 10 characters long.")
+      return
+    }
+    const strength = getPasswordStrength(newPassword)
+    if (strength.label !== "Strong") {
+      showToast("Weak Password", "warning", "Password must be strong. Add uppercase, lowercase, numbers, and special symbols (min 10 chars).")
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      showToast("Passwords Mismatch", "warning", "New password and confirm password do not match.")
+      return
+    }
+
+    setSavingPassword(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/change-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token || useAuthStore.getState().token}`,
+        },
+        body: JSON.stringify({
+          currentPassword: currentPassword.trim(),
+          newPassword: newPassword,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to update password.")
+      }
+
+      showToast("Password Updated Successfully", "success", "Your new password has been securely saved to the database.")
+      setShowPasswordModal(false)
+      setCurrentPassword("")
+      setNewPassword("")
+      setConfirmPassword("")
+      setShowCurrentPassword(false)
+      setShowNewPassword(false)
+    } catch (err: any) {
+      showToast("Password Update Failed", "warning", err.message || "Could not change password.")
+    } finally {
+      setSavingPassword(false)
     }
   }
 
@@ -435,6 +533,13 @@ export default function Profile() {
                 {/* Top Action Buttons */}
                 <div className="flex flex-row sm:flex-col gap-2 shrink-0 w-full sm:w-auto">
                   <button
+                    onClick={() => setShowPasswordModal(true)}
+                    className="flex-1 sm:flex-initial h-10 px-4 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white border border-emerald-600 text-xs font-bold shadow-xs flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
+                  >
+                    <Lock className="size-4" />
+                    <span>Change Password</span>
+                  </button>
+                  <button
                     onClick={handleLogoutConfirm}
                     className="flex-1 sm:flex-initial h-10 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs font-bold text-rose-700 shadow-xs flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
                   >
@@ -451,10 +556,19 @@ export default function Profile() {
               <div className="space-y-6 lg:col-span-1">
                 {/* Account Details Card */}
                 <GlassCard className="p-6 rounded-3xl border border-white/80 shadow-md bg-white/75">
-                  <h3 className="text-sm font-black text-zinc-950 uppercase tracking-wider mb-4 flex items-center gap-2">
-                    <User className="size-4 text-emerald-700" />
-                    <span>Account Profile</span>
-                  </h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-black text-zinc-950 uppercase tracking-wider flex items-center gap-2">
+                      <User className="size-4 text-emerald-700" />
+                      <span>Account Profile</span>
+                    </h3>
+                    <button
+                      onClick={() => setShowPasswordModal(true)}
+                      className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200/70 hover:bg-emerald-100 transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Lock className="size-3" />
+                      <span>Change Password</span>
+                    </button>
+                  </div>
 
                   <div className="space-y-3 text-xs">
                     <div>
@@ -684,6 +798,157 @@ export default function Profile() {
         )}
       </main>
 
+      {/* ========================================================================= */}
+      {/* CHANGE PASSWORD MODAL                                                     */}
+      {/* ========================================================================= */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            className="w-full max-w-md p-6 sm:p-8 rounded-3xl bg-white/95 dark:bg-zinc-900/95 border border-white/80 shadow-2xl backdrop-blur-xl relative overflow-hidden"
+          >
+            <div className="flex items-center justify-between pb-4 border-b border-black/5">
+              <div className="flex items-center gap-2.5">
+                <div className="size-9 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200/70 shadow-2xs">
+                  <KeyRound className="size-4.5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-zinc-950 dark:text-white">Change Password</h3>
+                  <p className="text-[11px] font-bold text-zinc-500">Update your account login credentials</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPasswordModal(false)
+                  setCurrentPassword("")
+                  setNewPassword("")
+                  setConfirmPassword("")
+                }}
+                className="p-1.5 rounded-full hover:bg-black/5 text-zinc-400 hover:text-zinc-700 transition-colors cursor-pointer"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleChangePasswordSubmit} className="space-y-4 pt-4">
+              {/* Current Password */}
+              <div>
+                <label className="block text-[11px] font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-1.5">
+                  Current Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showCurrentPassword ? "text" : "password"}
+                    required
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
+                    className="w-full bg-black/[0.02] border border-black/10 rounded-2xl pl-4 pr-11 py-3 text-xs font-semibold text-black dark:text-white outline-none focus:border-emerald-600 focus:bg-white transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-zinc-400 hover:text-zinc-700 cursor-pointer"
+                  >
+                    {showCurrentPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* New Password */}
+              <div>
+                <label className="block text-[11px] font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-1.5">
+                  New Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Min 10 characters"
+                    className="w-full bg-black/[0.02] border border-black/10 rounded-2xl pl-4 pr-11 py-3 text-xs font-semibold text-black dark:text-white outline-none focus:border-emerald-600 focus:bg-white transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-zinc-400 hover:text-zinc-700 cursor-pointer"
+                  >
+                    {showNewPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm Password */}
+              <div>
+                <label className="block text-[11px] font-bold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider mb-1.5">
+                  Confirm New Password
+                </label>
+                <input
+                  type={showNewPassword ? "text" : "password"}
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repeat new password"
+                  className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-3 text-xs font-semibold text-black dark:text-white outline-none focus:border-emerald-600 focus:bg-white transition-colors"
+                />
+              </div>
+
+              {/* Password Strength Progress Bar */}
+              {newPassword && (
+                <div className="space-y-1.5 px-0.5 pt-1">
+                  <div className="flex justify-between items-center text-[10px] font-bold tracking-wider uppercase">
+                    <span className="text-zinc-500">Password Strength</span>
+                    <span className={
+                      getPasswordStrength(newPassword).label === "Weak" ? "text-red-500" :
+                      getPasswordStrength(newPassword).label === "Medium" ? "text-yellow-600" : "text-emerald-700"
+                    }>
+                      {getPasswordStrength(newPassword).label}
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full bg-black/[0.05] rounded-full overflow-hidden">
+                    <div
+                      className={cn("h-full transition-all duration-300", getPasswordStrength(newPassword).color)}
+                      style={{ width: getPasswordStrength(newPassword).width }}
+                    />
+                  </div>
+                  {getPasswordStrength(newPassword).label !== "Strong" && (
+                    <p className="text-[10px] font-semibold text-red-500 leading-normal">
+                      Password must be strong. Add uppercase, lowercase, numbers, and special symbols (min 10 chars).
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Modal Buttons */}
+              <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-black/5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordModal(false)
+                    setCurrentPassword("")
+                    setNewPassword("")
+                    setConfirmPassword("")
+                  }}
+                  className="px-4 py-2.5 rounded-2xl border border-black/10 text-xs font-bold text-zinc-700 hover:bg-black/5 transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingPassword || (newPassword !== "" && getPasswordStrength(newPassword).label !== "Strong")}
+                  className="px-6 py-2.5 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-md shadow-emerald-950/10 transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer flex items-center gap-2"
+                >
+                  {savingPassword ? <Loader2 className="size-4 animate-spin" /> : "Update Password"}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
     </div>
   )
 }

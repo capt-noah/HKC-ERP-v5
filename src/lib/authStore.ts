@@ -182,3 +182,27 @@ export const useAuthStore = create<AuthState>()(
   )
 )
 
+// Active Heartbeat: verify user still exists in database on window focus & every 30 seconds
+if (typeof window !== "undefined") {
+  const verifyActiveSession = async () => {
+    const token = useAuthStore.getState().token
+    if (!token || isTokenExpired(token)) return
+    try {
+      const res = await fetch("/api/auth/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.status === 401 || res.status === 403) {
+        handleAuthExpiry()
+      }
+    } catch {}
+  }
+
+  window.addEventListener("focus", () => {
+    verifyActiveSession()
+  })
+
+  setInterval(() => {
+    verifyActiveSession()
+  }, 30000)
+}
+

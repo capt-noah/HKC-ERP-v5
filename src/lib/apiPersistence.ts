@@ -50,6 +50,14 @@ export function getAuthHeaders(): Record<string, string> {
   return headers
 }
 
+function checkAuthResponse(response: Response, body: any): boolean {
+  if (response.status === 401 || (response.status === 403 && typeof body === "object" && body && "error" in body && /token|expired|deleted|suspended|deactivated/i.test(String(body.error)))) {
+    handleAuthExpiry()
+    return true
+  }
+  return false
+}
+
 export async function loadResource<T>(resource: string): Promise<T[]> {
   const authHeaders = getAuthHeaders()
   if (!authHeaders["Authorization"]) {
@@ -64,8 +72,7 @@ export async function loadResource<T>(resource: string): Promise<T[]> {
   const body = await parseResponse(response)
 
   if (!response.ok) {
-    if (response.status === 401 || (response.status === 403 && typeof body === "object" && body && "error" in body && /token|expired/i.test(String(body.error)))) {
-      handleAuthExpiry()
+    if (checkAuthResponse(response, body)) {
       return []
     }
     throw new Error(errorMessage(body, `Failed to load ${resource}.`))
@@ -93,6 +100,7 @@ export async function replaceResource<T extends Identified>(resource: string, it
   const body = await parseResponse(response)
 
   if (!response.ok) {
+    if (checkAuthResponse(response, body)) return
     throw new Error(errorMessage(body, `Failed to save ${resource}.`))
   }
 }
@@ -110,6 +118,7 @@ export async function createResource<T extends Identified>(resource: string, ite
   const body = await parseResponse(response)
 
   if (!response.ok) {
+    if (checkAuthResponse(response, body)) throw new Error("Session expired.")
     throw new Error(errorMessage(body, `Failed to create ${resource}.`))
   }
 
@@ -129,6 +138,7 @@ export async function updateResource<T extends Identified>(resource: string, id:
   const body = await parseResponse(response)
 
   if (!response.ok) {
+    if (checkAuthResponse(response, body)) throw new Error("Session expired.")
     throw new Error(errorMessage(body, `Failed to update ${resource}.`))
   }
 
@@ -146,6 +156,7 @@ export async function deleteResource(resource: string, id: string) {
   const body = await parseResponse(response)
 
   if (!response.ok) {
+    if (checkAuthResponse(response, body)) throw new Error("Session expired.")
     throw new Error(errorMessage(body, `Failed to delete ${resource}.`))
   }
 }

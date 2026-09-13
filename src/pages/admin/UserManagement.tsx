@@ -403,13 +403,17 @@ export default function UserManagement() {
       isDestructive: true,
       onConfirm: async () => {
         try {
-          await deleteResource("users", id)
-          showToast("User Deleted Successfully", "warning", `${username} has been removed.`)
+          // Optimistically update UI
+          setUsers((prev) => prev.filter((u) => u.id !== id && u.username !== username))
           setShowEditModal(false)
           setEditingUser(null)
+          
+          await deleteResource("users", id)
+          showToast("User Deleted Successfully", "warning", `${username} has been removed from the system.`)
           fetchAllData()
         } catch (err: any) {
           showToast(err.message, "warning")
+          fetchAllData()
         }
       }
     })
