@@ -6,6 +6,14 @@ import { getResource } from "../../db/resourceRegistry.js"
 import { logActivity } from "../common/activityLogger.js"
 import { config } from "../../config.js"
 import { validateStrongPassword } from "./authUtils.js"
+import {
+  createSession,
+  refreshSession as refreshSessionService,
+  getUserActiveSessions,
+  revokeSession as revokeSessionService,
+  revokeAllOtherSessions,
+  validateSession as validateSessionService,
+} from "./sessionService.js"
 
 const JWT_SECRET = config.jwtSecret
 
@@ -140,7 +148,15 @@ export async function login(req, res) {
       warehouseIds = user.warehouse_id ? [user.warehouse_id] : []
     }
 
-    // Generate JWT (30 days expiration)
+    // Create database-backed session (6 hours expiration per security mandate)
+    let session = null
+    try {
+      session = await createSession({ userId: user.id, req, durationHours: 6 })
+    } catch (sessErr) {
+      console.warn("[AUTH LOGIN SESSION CREATION WARNING]:", sessErr.message)
+    }
+
+    // Generate JWT (6 hours expiration matching session window)
     const token = jwt.sign(
       {
         id: user.id,
@@ -151,6 +167,7 @@ export async function login(req, res) {
         warehouse_ids: warehouseIds,
         warehouse_id: warehouseIds[0] || user.warehouse_id || null,
         employee_id: user.employee_id || null,
+        sessionId: session?.id || null,
       },
       JWT_SECRET,
       { expiresIn: "6h" }
@@ -176,6 +193,8 @@ export async function login(req, res) {
 
     res.status(200).json({
       token,
+      sessionId: session?.id || null,
+      session,
       user: {
         id: user.id,
         username: user.username,
@@ -510,4 +529,192 @@ export async function recoverSuperadminPassword(req, res) {
     return res.status(500).json({ error: "Failed to reset password: " + err.message })
   }
 }
+
+/**
+ * Extends the active session for another 6-hour window and issues a fresh JWT.
+ */
+export async function refreshUserSession(req, res) {
+  try {
+    const userId = req.user?.id
+    const sessionId = req.user?.sessionId
+
+    if (!userId || !sessionId) {
+      return res.status(400).json({ error: "No active database session found to refresh." })
+    }
+
+    const refreshed = await refreshSessionService(sessionId, userId, 6)
+
+    // Issue refreshed 6-hour JWT
+    const token = jwt.sign(
+      {
+        id: req.user.id,
+        username: req.user.username,
+        roles: req.user.roles,
+        fullname: req.user.fullname,
+        role: req.user.role,
+        warehouse_ids: req.user.warehouse_ids,
+        warehouse_id: req.user.warehouse_id,
+        employee_id: req.user.employee_id,
+        sessionId: req.user.sessionId,
+      },
+      JWT_SECRET,
+      { expiresIn: "6h" }
+    )
+
+    return res.status(200).json({
+      message: "Session extended successfully.",
+      token,
+      expiresAt: refreshed.expiresAt,
+    })
+  } catch (err) {
+    console.error("[REFRESH SESSION ERROR]:", err)
+    return res.status(500).json({ error: "Failed to refresh session: " + err.message })
+  }
+}
+
+/**
+ * Returns all active, unrevoked sessions for the authenticated user.
+ */
+export async function listUserSessions(req, res) {
+  try {
+    const userId = req.user?.id
+    const sessionId = req.user?.sessionId || null
+
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" })
+    }
+
+    const sessions = await getUserActiveSessions(userId, sessionId)
+    return res.status(200).json({ sessions })
+  } catch (err) {
+    console.error("[LIST SESSIONS ERROR]:", err)
+    return res.status(500).json({ error: "Failed to list sessions: " + err.message })
+  }
+}
+
+/**
+ * Revokes a specific session belonging to the user.
+ */
+export async function revokeUserSession(req, res) {
+  try {
+    const userId = req.user?.id
+    const targetSessionId = req.params.id
+
+    if (!userId || !targetSessionId) {
+      return res.status(400).json({ error: "Invalid session request" })
+    }
+
+    const success = await revokeSessionService(targetSessionId, userId)
+    return res.status(200).json({ success, message: "Session signed out successfully." })
+  } catch (err) {
+    console.error("[REVOKE SESSION ERROR]:", err)
+    return res.status(500).json({ error: "Failed to revoke session: " + err.message })
+  }
+}
+
+/**
+ * Revokes all sessions belonging to the user EXCEPT the current session.
+ */
+export async function revokeOtherUserSessions(req, res) {
+  try {
+    const userId = req.user?.id
+    const currentSessionId = req.user?.sessionId || null
+
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" })
+    }
+
+    const count = await revokeAllOtherSessions(userId, currentSessionId)
+    return res.status(200).json({ success: true, count, message: `Signed out of ${count} other device(s).` })
+  } catch (err) {
+    console.error("[REVOKE OTHERS ERROR]:", err)
+    return res.status(500).json({ error: "Failed to revoke other sessions: " + err.message })
+  }
+}
+
+/**
+ * Returns current session status with verified database expiration.
+ */
+export async function checkSessionStatus(req, res) {
+  try {
+    const sessionId = req.user?.sessionId
+    if (!sessionId) {
+      return res.status(401).json({ error: "Session missing", code: "SESSION_EXPIRED" })
+    }
+
+    const sessionCheck = await validateSessionService(sessionId)
+    if (!sessionCheck.valid) {
+      return res.status(401).json({ error: sessionCheck.error, code: sessionCheck.code })
+    }
+
+    const expiresAt = new Date(sessionCheck.user.expires_at)
+    const remainingSeconds = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000))
+
+    res.setHeader("X-Session-Expires-At", expiresAt.toISOString())
+    return res.status(200).json({
+      valid: true,
+      sessionId,
+      expiresAt: expiresAt.toISOString(),
+      remainingSeconds,
+    })
+  } catch (err) {
+    console.error("[CHECK SESSION STATUS ERROR]:", err)
+    return res.status(500).json({ error: "Failed to check session status: " + err.message })
+  }
+}
+
+/**
+ * Testing endpoint: sets the database session expiry to N minutes from now,
+ * and issues a synchronized JWT so developer testing of the pre-expiry modal is instantaneous.
+ */
+export async function setTestSessionExpiry(req, res) {
+  try {
+    const sessionId = req.user?.sessionId
+    const userId = req.user?.id
+    const minutes = Math.max(0.1, Number(req.body.minutes) || 4)
+
+    if (!sessionId || !userId) {
+      return res.status(400).json({ error: "No active database session found." })
+    }
+
+    const newExpiry = new Date(Date.now() + minutes * 60 * 1000)
+
+    await pool.query(
+      "UPDATE user_sessions SET expires_at = ?, updated_at = NOW() WHERE id = ? AND user_id = ?",
+      [newExpiry, sessionId, userId]
+    )
+
+    // Issue a matching JWT token so both client token and DB session are synced to the test duration
+    const secondsForJwt = Math.max(5, Math.round(minutes * 60))
+    const token = jwt.sign(
+      {
+        id: req.user.id,
+        username: req.user.username,
+        roles: req.user.roles,
+        fullname: req.user.fullname,
+        role: req.user.role,
+        warehouse_ids: req.user.warehouse_ids,
+        warehouse_id: req.user.warehouse_id,
+        employee_id: req.user.employee_id,
+        sessionId: req.user.sessionId,
+      },
+      JWT_SECRET,
+      { expiresIn: `${secondsForJwt}s` }
+    )
+
+    res.setHeader("X-Session-Expires-At", newExpiry.toISOString())
+
+    return res.status(200).json({
+      message: `Session expiry updated to ${minutes} minutes from now.`,
+      expiresAt: newExpiry.toISOString(),
+      minutesRemaining: minutes,
+      secondsRemaining: secondsForJwt,
+      token,
+    })
+  } catch (err) {
+    console.error("[SET TEST EXPIRY ERROR]:", err)
+    return res.status(500).json({ error: "Failed to set test expiry: " + err.message })
+  }
+}
+
 

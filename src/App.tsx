@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from "react-router-dom"
 import { ProtectedRoute } from "@/components/ProtectedRoute"
 import { Toaster } from "sonner"
 import { useAuthStore } from "@/lib/authStore"
+import { SessionExpiryWarningModal } from "@/components/auth/SessionExpiryWarningModal"
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -75,6 +76,7 @@ export function App() {
     <>
       <ScrollToTop />
       <Toaster position="top-right" richColors />
+      <SessionExpiryWarningModal />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route

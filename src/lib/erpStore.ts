@@ -1494,7 +1494,7 @@ class ErpStore {
       }
 
       // Post Double-Entry Journal Voucher in Finance Store for inter-warehouse inventory asset transfer
-      const stockAcc = financeStore.getAccounts().find((a) => a.code === "1410-01" || a.code === "1410-03" || a.code === "1410" || a.account_type === "Asset") || financeStore.getAccounts()[0]
+      const stockAcc = financeStore.getMappedAccount("inventory_stock_in_hand", "1410-01")
 
       if (stockAcc && transferVal > 0) {
         const postRes = financeStore.postJournalEntry(
@@ -1832,13 +1832,14 @@ class ErpStore {
     })
 
     // Post GL Journal Entry for Stock Gain/Loss
-    // Accounts: 1410-01 Stock In Hand, 6000 / 6000-22 Cost of Sales / Inventory Adjustment
-    const stockAcc = financeStore.getAccounts().find((a) => a.code === "1410-01" || a.code === "1410-03" || a.code === "1410" || a.account_type === "Asset") || financeStore.getAccounts()[0]
-    const adjAcc = financeStore.getAccounts().find((a) => a.code === "6000-22" || a.code === "6000" || a.code === "8000-30" || a.account_type === "Expense") || financeStore.getAccounts()[1]
+    const isGain = delta > 0
+    const stockAcc = financeStore.getMappedAccount("inventory_stock_in_hand", "1410-01")
+    const adjAcc = isGain
+      ? financeStore.getMappedAccount("stock_adjustment_gain", "4200")
+      : financeStore.getMappedAccount("stock_shrinkage_loss", "6000-22")
 
     let jeId: string | undefined = undefined
     if (stockAcc && adjAcc && adjustmentVal > 0) {
-      const isGain = delta > 0
       const postRes = financeStore.postJournalEntry(
         {
           entry_date: new Date().toISOString().split("T")[0],
@@ -2803,9 +2804,9 @@ class ErpStore {
     // Post Double-Entry Journal Entry in Finance (Debit COGS ACC-5000, Credit Stock ACC-1010)
     let jeId: string | undefined = undefined
     try {
-      // Resolve accounts by code — fall back gracefully if not in COA yet
-      const cogsAcc = financeStore.getAccounts().find((a) => a.code === "6000-04" || a.code === "6000" || a.code === "5001" || a.account_type === "Expense")
-      const stockAcc = financeStore.getAccounts().find((a) => a.code === "1410-01" || a.code === "1410-03" || a.code === "1410" || a.account_type === "Asset")
+      // Resolve accounts dynamically from GL mappings
+      const cogsAcc = financeStore.getMappedAccount("cogs_stock_fulfillment", "6000-04")
+      const stockAcc = financeStore.getMappedAccount("inventory_stock_in_hand", "1410-01")
 
       if (cogsAcc && stockAcc && totalCogs > 0) {
         const postRes = financeStore.postJournalEntry(
@@ -3323,14 +3324,10 @@ class ErpStore {
     })
 
     // 2. Post Goods Received Double-Entry Journal Entry in Finance Store
-    // Debit 1410-01 Inventory / Stock In Hand
-    // Credit 2100-06 Other Accruals / AP
-    const invAcc =
-      financeStore.getAccounts().find((a) => a.code === "1410-01" || a.code === "1410-03" || a.code === "1410" || a.name?.toLowerCase().includes("inventory") || a.name?.toLowerCase().includes("stock")) ||
-      financeStore.getAccounts().find((a) => a.account_type === "Asset")
-    const clearingAcc =
-      financeStore.getAccounts().find((a) => a.code === "2100-06" || a.code === "2100" || a.name?.toLowerCase().includes("accrual") || a.name?.toLowerCase().includes("payable")) ||
-      financeStore.getAccounts().find((a) => a.account_type === "Liability")
+    // Debit Inventory / Stock In Hand
+    // Credit Other Accruals / GRNI Clearing
+    const invAcc = financeStore.getMappedAccount("po_grni_inventory", "1410-01")
+    const clearingAcc = financeStore.getMappedAccount("po_grni_clearing", "2100-06")
 
     let jeId: string | undefined
     if (invAcc && clearingAcc) {
@@ -3394,14 +3391,10 @@ class ErpStore {
     const totalAmount = po.amount + taxAmount
 
     // Post AP Journal Entry:
-    // Debit 2100-06 / 1410-01 Stock
-    // Credit 2100-06 Other Accruals / 1000-02-26 Bank
-    const clearingAcc =
-      financeStore.getAccounts().find((a) => a.code === "1410-01" || a.code === "1410-03" || a.code === "1410") ||
-      financeStore.getAccounts().find((a) => a.account_type === "Asset")
-    const apAcc =
-      financeStore.getAccounts().find((a) => a.code === "2100-06" || a.code === "2100" || a.code === "1000-02-26") ||
-      financeStore.getAccounts().find((a) => a.account_type === "Liability")
+    // Debit GRNI Accruals Clearing (2100-06)
+    // Credit Accounts Payable (2100-06)
+    const clearingAcc = financeStore.getMappedAccount("po_grni_clearing", "2100-06")
+    const apAcc = financeStore.getMappedAccount("ap_trade_payable", "2100-06")
 
     let jeId: string | undefined
     if (clearingAcc && apAcc) {

@@ -45,9 +45,10 @@ export const tableMap = {
   leave_types: schema.leaveTypes,
   leave_requests: schema.leaveRequests,
 
-  // Admin (2)
+  // Admin (3)
   users: schema.users,
   user_activity_logs: schema.userActivityLogs,
+  user_sessions: schema.userSessions,
 }
 
 export function getDrizzleTable(tableName) {
@@ -249,6 +250,38 @@ export function unwrapRow(row, storage) {
   if (out.prepared_by !== undefined && out.preparedBy === undefined) out.preparedBy = out.prepared_by
   if (out.approved_by !== undefined && out.approvedBy === undefined) out.approvedBy = out.approved_by
   if (out.paid_by !== undefined && out.paidBy === undefined) out.paidBy = out.paid_by
+
+  // Normalization for chart_of_accounts
+  if (out.account_type !== undefined && out.accountType === undefined) out.accountType = out.account_type
+  if (out.accountType !== undefined && out.account_type === undefined) out.account_type = out.accountType
+  if (out.peachtree_type !== undefined && out.peachtreeType === undefined) out.peachtreeType = out.peachtree_type
+  if (out.peachtreeType !== undefined && out.peachtree_type === undefined) out.peachtree_type = out.peachtreeType
+  if (out.parent_account_id !== undefined && out.parentAccountId === undefined) out.parentAccountId = out.parent_account_id
+  if (out.parentAccountId !== undefined && out.parent_account_id === undefined) out.parent_account_id = out.parentAccountId
+  if (out.is_group !== undefined) {
+    out.is_group = Boolean(out.is_group)
+    out.isGroup = Boolean(out.is_group)
+  }
+  if (out.is_active !== undefined) {
+    out.is_active = Boolean(out.is_active)
+    out.isActive = Boolean(out.is_active)
+  }
+
+  // Normalization for gl_account_mappings
+  if (out.account_id !== undefined && out.accountId === undefined) out.accountId = out.account_id
+  if (out.accountId !== undefined && out.account_id === undefined) out.account_id = out.accountId
+  if (out.account_code !== undefined && out.accountCode === undefined) out.accountCode = out.account_code
+  if (out.accountCode !== undefined && out.account_code === undefined) out.account_code = out.accountCode
+  if (out.account_name !== undefined && out.accountName === undefined) out.accountName = out.account_name
+  if (out.accountName !== undefined && out.account_name === undefined) out.account_name = out.accountName
+  if (out.normal_posting !== undefined && out.normalPosting === undefined) out.normalPosting = out.normal_posting
+  if (out.normalPosting !== undefined && out.normal_posting === undefined) out.normal_posting = out.normalPosting
+  if (out.is_system_default !== undefined) {
+    out.is_system_default = Boolean(out.is_system_default)
+    out.isSystemDefault = Boolean(out.is_system_default)
+  }
+  if (out.updated_by !== undefined && out.updatedBy === undefined) out.updatedBy = out.updated_by
+  if (out.updatedBy !== undefined && out.updated_by === undefined) out.updated_by = out.updatedBy
 
   return out
 }

@@ -33,7 +33,7 @@ app.use(
       "Pragma",
       "If-None-Match",
     ],
-    exposedHeaders: ["Content-Length", "Content-Range", "Content-Type", "Authorization"],
+    exposedHeaders: ["Content-Length", "Content-Range", "Content-Type", "Authorization", "X-Session-Expires-At"],
     credentials: true,
     maxAge: 86400, // Cache preflight for 24 hours
     optionsSuccessStatus: 204,
@@ -49,7 +49,7 @@ app.use(express.json({ limit: "10mb" }))
 import { pool } from "./db/client.js"
 import { ensureSuperAdmin } from "./modules/auth/authController.js"
 
-// Auto-bootstrap superadmin account in background on startup
+// Auto-bootstrap superadmin account in background if missing
 void ensureSuperAdmin()
 
 // 4. API Diagnostics & Health Endpoints (Matching Plesk architecture)

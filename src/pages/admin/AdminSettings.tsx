@@ -13,7 +13,6 @@ import {
   Check,
   Receipt,
   Warehouse as WarehouseIcon,
-  Sparkles,
   Plus,
   Pencil,
   Trash2,
@@ -563,11 +562,6 @@ export default function AdminSettings() {
         {/* Header */}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 sm:mb-8">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-zinc-900 text-white flex items-center gap-1">
-                <Sparkles className="size-3 text-emerald-400" /> Operational Configurations
-              </span>
-            </div>
             <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight">System Settings</h1>
             <p className="text-xs sm:text-sm text-gray-500 mt-1">Configure company profile, tax rules, warehouse locations, fee schedules, and statutory rates.</p>
           </div>

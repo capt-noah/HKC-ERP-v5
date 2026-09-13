@@ -3,7 +3,7 @@ import { deleteResource, loadResource, persistResources } from "./apiPersistence
 import { useAuthStore } from "./authStore"
 import { validateJournalVoucher } from "../core/finance/ledgerEngine"
 import { sortNewestFirst } from "./utils"
-import { COMPANY_CHART_OF_ACCOUNTS, DEFAULT_COMPANY_SETTINGS_COA } from "./companyCOA"
+import { COMPANY_CHART_OF_ACCOUNTS, DEFAULT_COMPANY_SETTINGS_COA, type GlAccountMapping, DEFAULT_GL_ACCOUNT_MAPPINGS } from "./companyCOA"
 import {
   type TaxRule,
   type TaxSchedule,
@@ -15,8 +15,8 @@ import {
   resolveAutoTaxScheduleId,
 } from "./taxEngine"
 
-export type { TaxRule, TaxSchedule, TaxLineDetail, TaxCalculationResult }
-export { calculateMultiTax, resolveAutoTaxScheduleId }
+export type { TaxRule, TaxSchedule, TaxLineDetail, TaxCalculationResult, GlAccountMapping }
+export { calculateMultiTax, resolveAutoTaxScheduleId, DEFAULT_GL_ACCOUNT_MAPPINGS }
 
 export interface AccountItem {
   id: string
@@ -532,6 +532,7 @@ class FinanceStore {
   private taxRules: TaxRule[] = []
   private taxSchedules: TaxSchedule[] = []
   private bankReconciliations: BankReconciliationRecord[] = []
+  private glMappings: GlAccountMapping[] = [...DEFAULT_GL_ACCOUNT_MAPPINGS]
 
   private listeners = new Set<() => void>()
   private _isLoading = false
@@ -597,6 +598,7 @@ class FinanceStore {
         vehicles,
         companySettingsRows,
         taxRules,
+        mappingsRows,
       ] = await Promise.all([
         loadResource<AccountItem>("chart_of_accounts").catch(() => []),
         isFullFinance ? loadResource<JournalEntry>("journal_entries").catch(() => []) : Promise.resolve([]),
@@ -608,6 +610,7 @@ class FinanceStore {
         isFullFinance ? loadResource<Vehicle>("vehicles").catch(() => []) : Promise.resolve([]),
         loadResource<CompanySettings & { id?: string }>("company_settings").catch(() => []),
         loadResource<TaxRule>("tax_rules").catch(() => []),
+        loadResource<GlAccountMapping>("gl_account_mappings").catch(() => []),
       ])
 
       if (!Array.isArray(accounts) || accounts.length === 0 || accounts.some((a) => a.id?.startsWith("ACC-1000") || a.code === "1010")) {
@@ -702,6 +705,26 @@ class FinanceStore {
 
       this.taxSchedules = INITIAL_TAX_SCHEDULES
 
+      if (Array.isArray(mappingsRows) && mappingsRows.length > 0) {
+        this.glMappings = mappingsRows.map((m: any) => ({
+          id: m.id,
+          label: m.label || m.id,
+          category: m.category || "General",
+          account_id: m.account_id || m.accountId || "",
+          account_code: m.account_code || m.accountCode || "",
+          account_name: m.account_name || m.accountName || "",
+          normal_posting: (m.normal_posting || m.normalPosting || "Debit") as "Debit" | "Credit",
+          is_system_default: Boolean(m.is_system_default ?? m.isSystemDefault),
+          description: m.description || "",
+          updated_by: m.updated_by || m.updatedBy || "System Initializer",
+          created_at: m.created_at || m.createdAt,
+          updated_at: m.updated_at || m.updatedAt,
+        }))
+      } else {
+        this.glMappings = [...DEFAULT_GL_ACCOUNT_MAPPINGS]
+        void persistResources([{ resource: "gl_account_mappings", items: DEFAULT_GL_ACCOUNT_MAPPINGS }])
+      }
+
       // Trigger cross-module live finance sync
       await this.syncCrossModule()
 
@@ -745,9 +768,6 @@ class FinanceStore {
       const soMap = new Map((fetchedSO || []).map((so: any) => [so.id, so.payload ? { ...so.payload, ...so } : so]))
 
       let hasNewSync = false
-
-      // Helper: look up a specific account by code. Returns null if not found.
-      const acc = (code: string) => this.accounts.find((a) => a.code === code) ?? null
 
           // A. Sync Sales Issues → Sales Revenue & COGS GL Entries and Invoices
           salesIssues.forEach((si: any) => {
@@ -794,13 +814,12 @@ class FinanceStore {
               if (!hasSaleEntry || !hasSaleLines) {
                 this.entries = this.entries.filter((e) => e.id !== saleJeId)
                 this.lines = this.lines.filter((l) => l.journal_entry_id !== saleJeId)
-
                 const debitAcc = isCredit
-                  ? (acc("1300-03") || acc("1200-03") || acc("1100-03") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group))
-                  : (acc("1000-02-26") || acc("1000-01-01") || acc("1000") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group))
-                const revenueAcc = acc("4000-01-01") || acc("4000-03-02") || acc("4000") || this.accounts.find((a) => a.account_type === "Revenue" && !a.is_group)
-                const vatAcc = acc("2000-05") || this.accounts.find((a) => a.account_type === "Liability" && !a.is_group)
-                const whtAssetAcc = acc("1320-06-01") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group)
+                  ? this.getMappedAccount("sales_credit_ar", "1300-03")
+                  : this.getMappedAccount("sales_cash_clearing", "1000-02-26")
+                const revenueAcc = this.getMappedAccount("sales_revenue_domestic", "4000-01-01")
+                const vatAcc = this.getMappedAccount("sales_vat_output", "2000-05")
+                const whtAssetAcc = this.getMappedAccount("sales_wht_withheld", "1320-06-01")
 
                 if (debitAcc && revenueAcc) {
                   this.entries.push({
@@ -896,8 +915,8 @@ class FinanceStore {
                 this.entries = this.entries.filter((e) => e.id !== cogsJeId)
                 this.lines = this.lines.filter((l) => l.journal_entry_id !== cogsJeId)
 
-                const debitAcc = acc("6000-04") || acc("6000") || this.accounts.find((a) => a.account_type === "Expense" && !a.is_group)  // Cost of Sales
-                const creditAcc = acc("1410-01") || acc("1410-03") || acc("1410") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group) // Inventory Asset
+                const debitAcc = this.getMappedAccount("cogs_stock_fulfillment", "6000-04")
+                const creditAcc = this.getMappedAccount("inventory_stock_in_hand", "1410-01")
                 const estimatedCost = Math.round(subtotal * 0.7)
 
                 if (debitAcc && creditAcc) {
@@ -1010,8 +1029,8 @@ class FinanceStore {
               this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== po.id)
               this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
 
-              const stockAcc = acc("1410-01") || acc("1410-03") || acc("1100-03") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group) // Inventory Asset / Advance
-              const apAcc = acc("2100-06") || acc("1000-02-26") || this.accounts.find((a) => a.account_type === "Liability" && !a.is_group) // Other Accruals / AP
+              const stockAcc = this.getMappedAccount("po_grni_inventory", "1410-01")
+              const apAcc = this.getMappedAccount("po_grni_clearing", "2100-06")
 
               if (!stockAcc || !apAcc) {
                 console.warn(`[FinanceSync] Missing accounts for PO ${po.id} — skipping.`)
@@ -1194,8 +1213,8 @@ class FinanceStore {
               this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== pr.id)
               this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
 
-              const salaryAcc = acc("8000-01") || acc("6000-01") || this.accounts.find((a) => a.account_type === "Expense" && !a.is_group) // Salary & Wage
-              const cashAcc = acc("1000-02-26") || acc("1000-01-01") || acc("1000") || this.accounts.find((a) => a.account_type === "Asset" && !a.is_group)   // Bank/Cash
+              const salaryAcc = this.getMappedAccount("payroll_gross_salary_expense", "8000-01")
+              const cashAcc = this.getMappedAccount("supplier_payment_bank", "1000-02-26")
 
               if (!salaryAcc || !cashAcc) {
                 console.warn(`[FinanceSync] Missing accounts for Payroll Record ${pr.id} — skipping.`)
@@ -1292,6 +1311,7 @@ class FinanceStore {
   private saveToApi() {
     return persistResources([
       { resource: "chart_of_accounts", items: this.accounts },
+      { resource: "gl_account_mappings", items: this.glMappings },
       { resource: "journal_entries", items: this.entries },
       { resource: "journal_entry_lines", items: this.lines },
       { resource: "invoices", items: this.invoices },
@@ -1334,6 +1354,221 @@ class FinanceStore {
   // --- Getters ---
   public getAccounts(): AccountItem[] {
     return [...this.accounts]
+  }
+
+  // --- GL Transaction Mapping Engine ---
+  public getGlMappings(): GlAccountMapping[] {
+    return [...this.glMappings]
+  }
+
+  public getMappedAccount(ruleKey: string, fallbackCode?: string): AccountItem {
+    // 1. Check if an active rule mapping exists in this.glMappings
+    const mapping = this.glMappings.find((m) => m.id === ruleKey)
+    if (mapping) {
+      const acc = this.accounts.find(
+        (a) => (a.id === mapping.account_id || a.code === mapping.account_code || a.id === mapping.account_code) && a.is_active
+      )
+      if (acc) return acc
+    }
+
+    // 2. Check fallbackCode if provided
+    if (fallbackCode) {
+      const fallbackAcc = this.accounts.find(
+        (a) => (a.code === fallbackCode || a.id === fallbackCode) && a.is_active
+      )
+      if (fallbackAcc) return fallbackAcc
+    }
+
+    // 3. Check DEFAULT_GL_ACCOUNT_MAPPINGS for built-in rule default
+    const defaultRule = DEFAULT_GL_ACCOUNT_MAPPINGS.find((r) => r.id === ruleKey)
+    if (defaultRule) {
+      const defaultAcc = this.accounts.find(
+        (a) => (a.code === defaultRule.account_code || a.id === defaultRule.account_id) && a.is_active
+      )
+      if (defaultAcc) return defaultAcc
+    }
+
+    // 4. Ultimate graceful type-based fallback (active, non-group)
+    const normalSide = mapping?.normal_posting || defaultRule?.normal_posting || "Debit"
+    const cat = mapping?.category || defaultRule?.category || ""
+
+    let preferredType: AccountItem["account_type"] = "Asset"
+    if (cat.includes("Revenue") || (normalSide === "Credit" && cat.includes("Sales"))) {
+      preferredType = "Revenue"
+    } else if (cat.includes("AP") || cat.includes("Tax") || cat.includes("Payable")) {
+      preferredType = "Liability"
+    } else if (cat.includes("COGS") || cat.includes("Expense")) {
+      preferredType = "Expense"
+    }
+
+    const typeMatch = this.accounts.find((a) => a.account_type === preferredType && !a.is_group && a.is_active)
+    if (typeMatch) return typeMatch
+
+    // 5. Final fallback to first active non-group account or first account
+    return (
+      this.accounts.find((a) => !a.is_group && a.is_active) ||
+      this.accounts[0] || {
+        id: "1000",
+        code: "1000",
+        name: "General Operating Account",
+        account_type: "Asset",
+        parent_account_id: null,
+        is_active: true,
+        is_group: false,
+      }
+    )
+  }
+
+  public async updateGlMapping(
+    ruleId: string,
+    accountId: string,
+    optionsOrUpdatedBy: string | { label?: string; description?: string; updatedBy?: string } = "Finance Officer"
+  ): Promise<boolean> {
+    const acc = this.accounts.find((a) => a.id === accountId || a.code === accountId)
+    if (!acc) return false
+
+    const updatedBy = typeof optionsOrUpdatedBy === "string" ? optionsOrUpdatedBy : optionsOrUpdatedBy?.updatedBy || "Finance Officer"
+    const label = typeof optionsOrUpdatedBy === "object" ? optionsOrUpdatedBy.label : undefined
+    const description = typeof optionsOrUpdatedBy === "object" ? optionsOrUpdatedBy.description : undefined
+
+    const existingIdx = this.glMappings.findIndex((m) => m.id === ruleId)
+    if (existingIdx >= 0) {
+      const current = this.glMappings[existingIdx]
+      const updated: GlAccountMapping = {
+        ...current,
+        label: label !== undefined ? label : current.label,
+        description: description !== undefined ? description : current.description,
+        account_id: acc.id,
+        account_code: acc.code,
+        account_name: acc.name,
+        updated_by: updatedBy,
+        updated_at: new Date().toISOString(),
+      }
+      this.glMappings[existingIdx] = updated
+    } else {
+      const defaultRule = DEFAULT_GL_ACCOUNT_MAPPINGS.find((r) => r.id === ruleId)
+      const newMapping: GlAccountMapping = {
+        id: ruleId,
+        label: label !== undefined ? label : (defaultRule?.label || ruleId),
+        category: defaultRule?.category || "Custom",
+        account_id: acc.id,
+        account_code: acc.code,
+        account_name: acc.name,
+        normal_posting: defaultRule?.normal_posting || "Debit",
+        is_system_default: Boolean(defaultRule?.is_system_default),
+        description: description !== undefined ? description : (defaultRule?.description || ""),
+        updated_by: updatedBy,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      this.glMappings.push(newMapping)
+    }
+
+    this.notify()
+    void persistResources([{ resource: "gl_account_mappings", items: this.glMappings }]).catch((err) =>
+      console.error("[FinanceStore] Failed to persist GL mappings:", err)
+    )
+    return true
+  }
+
+  public async addGlMapping(
+    ruleData: {
+      id?: string
+      label: string
+      category: string
+      account_id: string
+      normal_posting?: "Debit" | "Credit"
+      description?: string
+    },
+    createdBy = "Finance Officer"
+  ): Promise<GlAccountMapping | null> {
+    const acc = this.accounts.find((a) => a.id === ruleData.account_id || a.code === ruleData.account_id)
+    if (!acc) return null
+
+    const ruleId = (
+      ruleData.id || `custom_${ruleData.label.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_${Date.now().toString().slice(-4)}`
+    ).trim()
+
+    const newRule: GlAccountMapping = {
+      id: ruleId,
+      label: ruleData.label.trim(),
+      category: ruleData.category || "Custom",
+      account_id: acc.id,
+      account_code: acc.code,
+      account_name: acc.name,
+      normal_posting:
+        ruleData.normal_posting || (acc.account_type === "Revenue" || acc.account_type === "Liability" ? "Credit" : "Debit"),
+      is_system_default: false,
+      description: ruleData.description?.trim() || "",
+      updated_by: createdBy,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+
+    this.glMappings = this.glMappings.filter((m) => m.id !== ruleId)
+    this.glMappings.push(newRule)
+
+    this.notify()
+    void persistResources([{ resource: "gl_account_mappings", items: this.glMappings }]).catch((err) =>
+      console.error("[FinanceStore] Failed to persist new GL mapping:", err)
+    )
+    return newRule
+  }
+
+  public async deleteGlMapping(ruleId: string): Promise<boolean> {
+    const target = this.glMappings.find((m) => m.id === ruleId)
+    if (!target) return false
+    if (target.is_system_default) {
+      console.warn(`[FinanceStore] Cannot delete core system default mapping rule "${ruleId}". Reset to default instead.`)
+      return false
+    }
+
+    this.glMappings = this.glMappings.filter((m) => m.id !== ruleId)
+    this.notify()
+    void deleteResource("gl_account_mappings", ruleId).catch((err) =>
+      console.error("[FinanceStore] Failed to delete GL mapping:", err)
+    )
+    return true
+  }
+
+  public async resetGlMappings(ruleKey?: string): Promise<void> {
+    if (ruleKey) {
+      const defaultRule = DEFAULT_GL_ACCOUNT_MAPPINGS.find((r) => r.id === ruleKey)
+      if (defaultRule) {
+        const acc = this.accounts.find((a) => a.code === defaultRule.account_code || a.id === defaultRule.account_id) || this.accounts[0]
+        const idx = this.glMappings.findIndex((m) => m.id === ruleKey)
+        const restored: GlAccountMapping = {
+          ...defaultRule,
+          account_id: acc.id,
+          account_code: acc.code,
+          account_name: acc.name,
+          updated_by: "Reset to Default",
+          updated_at: new Date().toISOString(),
+        }
+        if (idx >= 0) {
+          this.glMappings[idx] = restored
+        } else {
+          this.glMappings.push(restored)
+        }
+      }
+    } else {
+      this.glMappings = DEFAULT_GL_ACCOUNT_MAPPINGS.map((defaultRule) => {
+        const acc = this.accounts.find((a) => a.code === defaultRule.account_code || a.id === defaultRule.account_id) || this.accounts[0]
+        return {
+          ...defaultRule,
+          account_id: acc.id,
+          account_code: acc.code,
+          account_name: acc.name,
+          updated_by: "Reset to Default",
+          updated_at: new Date().toISOString(),
+        }
+      })
+    }
+
+    this.notify()
+    void persistResources([{ resource: "gl_account_mappings", items: this.glMappings }]).catch((err) =>
+      console.error("[FinanceStore] Failed to persist reset GL mappings:", err)
+    )
   }
 
   public getJournalEntries(): JournalEntry[] {
@@ -2212,10 +2447,7 @@ class FinanceStore {
 
     // 2. Post Bank Service Charge if specified > 0
     if (service_charge && service_charge.amount > 0) {
-      const chargeExpAcc =
-        this.accounts.find((a) => a.code === "8000-09" || a.name.toLowerCase().includes("bank charge")) ||
-        this.accounts.find((a) => a.account_type === "Expense") ||
-        this.accounts[0]
+      const chargeExpAcc = this.getMappedAccount("bank_service_charge_expense", "8000-25")
 
       this.postJournalEntry(
         {
@@ -2244,10 +2476,7 @@ class FinanceStore {
 
     // 3. Post Interest Income if specified > 0
     if (interest_income && interest_income.amount > 0) {
-      const interestRevAcc =
-        this.accounts.find((a) => a.code === "7000-02" || a.name.toLowerCase().includes("interest income")) ||
-        this.accounts.find((a) => a.account_type === "Revenue") ||
-        this.accounts[0]
+      const interestRevAcc = this.getMappedAccount("bank_interest_income", "4200")
 
       this.postJournalEntry(
         {
@@ -2455,13 +2684,13 @@ class FinanceStore {
 
     // Post corresponding journal entry if not Draft
     if (newInv.status !== "Draft") {
-      const arAcc = this.accounts.find((a) => a.code === "1200") || this.accounts[0]
-      const salesAcc = this.accounts.find((a) => a.code === "4000") || this.accounts[0]
-      const taxAcc = this.accounts.find((a) => a.code === "2210") || this.accounts[0]
+      const arAcc = this.getMappedAccount("sales_credit_ar", "1300-03")
+      const salesAcc = this.getMappedAccount("sales_revenue_domestic", "4000-01-01")
+      const taxAcc = this.getMappedAccount("sales_vat_output", "2000-05")
 
-      const arAccId = arAcc?.id || "acc-1200"
-      const salesAccId = salesAcc?.id || "acc-4000"
-      const taxAccId = taxAcc?.id || salesAccId
+      const arAccId = arAcc.id
+      const salesAccId = salesAcc.id
+      const taxAccId = taxAcc.id
 
       const rawLines: Array<{ account_id: string; debit_amount: number; credit_amount: number; party_type?: any; party_id?: string; party_name?: string }> = [
         {
@@ -2803,22 +3032,17 @@ class FinanceStore {
       })
 
       // Post corresponding Journal Entry with accurate Bank and AR/AP accounts
-      const bankCode = paymentData.bank_account_code || "1000-02-26"
+      const defaultBankAcc = this.getMappedAccount(isAP ? "supplier_payment_bank" : "customer_receipt_bank", "1000-02-26")
+      const bankCode = paymentData.bank_account_code || defaultBankAcc.code
       const bankAcc =
-        this.accounts.find((a) => a.code === bankCode || a.id === bankCode) ||
-        this.accounts.find((a) => a.code === "1000-02-26") ||
-        this.accounts.find((a) => a.code === "1000") ||
-        this.accounts[0]
+        this.accounts.find((a) => a.code === bankCode || a.id === bankCode) || defaultBankAcc
 
-      const bankAccId = bankAcc?.id || "acc-1000"
+      const bankAccId = bankAcc.id
 
       if (isAP) {
-        // Accounts Payable disbursement: Debit AP (2000), Credit Bank (1000)
-        const apAcc =
-          this.accounts.find((a) => a.code === "2000" || a.code === "2100" || a.name.toLowerCase().includes("payable")) ||
-          this.accounts.find((a) => a.code === "2000") ||
-          this.accounts[0]
-        const apAccId = apAcc?.id || "acc-2000"
+        // Accounts Payable disbursement: Debit AP (2100-06), Credit Bank (1000)
+        const apAcc = this.getMappedAccount("supplier_payment_ap", "2100-06")
+        const apAccId = apAcc.id
 
         this.postJournalEntry(
           {
@@ -2843,13 +3067,9 @@ class FinanceStore {
           ]
         )
       } else {
-        // Accounts Receivable collection: Debit Bank (1000), Credit AR (1300/1200)
-        const arAcc =
-          this.accounts.find((a) => a.code === "1300-03") ||
-          this.accounts.find((a) => a.code === "1300") ||
-          this.accounts.find((a) => a.code === "1200") ||
-          this.accounts[0]
-        const arAccId = arAcc?.id || "acc-1300-03"
+        // Accounts Receivable collection: Debit Bank (1000), Credit AR (1300-03)
+        const arAcc = this.getMappedAccount("sales_credit_ar", "1300-03")
+        const arAccId = arAcc.id
 
         this.postJournalEntry(
           {
@@ -2924,30 +3144,20 @@ class FinanceStore {
         // 1. Resolve Expense GL Account (Debit)
         let targetAcc = e.gl_account_id ? this.accounts.find(a => a.id === e.gl_account_id || a.code === e.gl_account_id) : null
         if (!targetAcc) {
-          targetAcc = this.accounts.find((a) => a.code === "8000-30") ||
-            this.accounts.find((a) => a.code === "8000-08") ||
-            this.accounts.find((a) => a.account_type === "Expense" && !a.is_group) ||
-            this.accounts[0]
+          targetAcc = this.getMappedAccount("expense_default_debit", "8000-30")
         }
 
         // 2. Resolve Cash/Bank Account (Credit)
         let cashAcc = e.payment_account_id ? this.accounts.find(a => a.id === e.payment_account_id || a.code === e.payment_account_id) : null
         if (!cashAcc) {
-          cashAcc = this.accounts.find((a) => a.code === "1000-01-01") ||
-            this.accounts.find((a) => a.code === "1000-02-26") ||
-            this.accounts.find((a) => a.account_type === "Asset" && (a.peachtree_type === "Cash" || a.code.startsWith("1000")) && !a.is_group) ||
-            this.accounts[0]
+          cashAcc = this.getMappedAccount("expense_default_payment", "1000-01-01")
         }
 
         // 3. Resolve VAT Receivable Account (Debit)
-        const vatAcc = this.accounts.find((a) => a.code === "1320-06-02") ||
-          this.accounts.find((a) => a.name.toLowerCase().includes("vat rec")) ||
-          this.accounts[0]
+        const vatAcc = this.getMappedAccount("expense_vat_input", "1320-06-02")
 
         // 4. Resolve WHT Payable Account (Credit)
-        const whtAcc = this.accounts.find((a) => a.code === "2000-04") ||
-          this.accounts.find((a) => a.name.toLowerCase().includes("wht pay")) ||
-          this.accounts[0]
+        const whtAcc = this.getMappedAccount("expense_wht_payable", "2000-04")
 
         const rawLines: Array<{ account_id: string; debit_amount: number; credit_amount: number; party_type?: any; party_id?: string; party_name?: string }> = [
           { account_id: targetAcc.id, debit_amount: baseAmt, credit_amount: 0 },
@@ -3045,19 +3255,9 @@ class FinanceStore {
     if (!run) return { success: false, error: "Payroll run not found." }
     if (run.status !== "Draft") return { success: false, error: `Payroll run is already ${run.status}.` }
 
-    const expenseAcc =
-      this.accounts.find((a) => a.id === this.companySettings.payroll_expense_account_id || a.code === "5010") ||
-      this.accounts.find((a) => a.code === "5000") ||
-      this.accounts[0]
-
-    const taxAcc =
-      this.accounts.find((a) => a.id === this.companySettings.tax_payable_account_id || a.code === "2210") ||
-      this.accounts.find((a) => a.code === "2200") ||
-      this.accounts[0]
-
-    const payableAcc =
-      this.accounts.find((a) => a.id === this.companySettings.payroll_payable_account_id || a.code === "2100") ||
-      this.accounts[0]
+    const expenseAcc = this.getMappedAccount("payroll_gross_salary_expense", "8000-01")
+    const taxAcc = this.getMappedAccount("payroll_income_tax_payable", "2000-02")
+    const payableAcc = this.getMappedAccount("payroll_accrued_clearing", "2100-06")
 
     // Construct raw lines
     // 1. Debit Salaries & Wages Expense for total gross
@@ -3137,11 +3337,8 @@ class FinanceStore {
     if (!run) return { success: false, error: "Payroll run not found." }
     if (run.status !== "Accrued") return { success: false, error: "Payroll run must be in 'Accrued' status before payment disbursement." }
 
-    const payableAcc =
-      this.accounts.find((a) => a.id === this.companySettings.payroll_payable_account_id || a.code === "2100") ||
-      this.accounts[0]
-
-    const cashAcc = this.accounts.find((a) => a.code === "1000") || this.accounts[0]
+    const payableAcc = this.getMappedAccount("payroll_accrued_clearing", "2100-06")
+    const cashAcc = this.getMappedAccount("supplier_payment_bank", "1000-02-26")
 
     // Construct raw lines:
     // Debit lines per employee against Accrued Payroll (2100)

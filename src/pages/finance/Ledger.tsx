@@ -22,6 +22,7 @@ import {
   Scale,
   Lock,
   Unlock,
+  ArrowLeftRight,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -40,6 +41,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import PeachtreeBeginningBalancesModal from "@/components/finance/PeachtreeBeginningBalancesModal"
 import { PeachtreePeriodClosingModal } from "@/components/finance/PeachtreePeriodClosingModal"
+import TransactionMappingMatrix from "@/components/finance/TransactionMappingMatrix"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -49,7 +51,7 @@ export default function Ledger() {
   const store = useFinanceStore()
   const isLoading = store.isLoading()
 
-  const [activeTab, setActiveTab] = useState<"Entries" | "Chart">("Entries")
+  const [activeTab, setActiveTab] = useState<"Entries" | "Chart" | "Mappings">("Entries")
 
   // Store data
   const entries = store.getJournalEntries()
@@ -774,6 +776,7 @@ export default function Ledger() {
             {[
               { id: "Entries", label: "Journal Entries", icon: FileText },
               { id: "Chart", label: "Chart of Accounts", icon: FolderTree },
+              { id: "Mappings", label: "Account Mappings", icon: ArrowLeftRight },
             ].map((tab) => {
               const isActive = activeTab === tab.id
               const Icon = tab.icon
@@ -1366,7 +1369,18 @@ export default function Ledger() {
             </motion.div>
           )}
 
-
+          {/* TAB 3: Transaction Mappings Matrix */}
+          {activeTab === "Mappings" && (
+            <motion.div
+              key="mappings-tab"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <TransactionMappingMatrix />
+            </motion.div>
+          )}
 
         </AnimatePresence>
 

@@ -1,8 +1,9 @@
 const jsonb = { storage: "jsonb_document" }
 
 export const resources = {
-  // Inventory (8 Dedicated Relational Tables)
+  // Inventory (Dedicated Relational Tables + Master Inventory Products)
   warehouses: { table: "warehouses", module: "inventory", storage: "relational" },
+  inventory_products: { table: "inventory_products", module: "inventory", ...jsonb },
   export_products: { table: "export_products", module: "inventory", storage: "relational" },
   pharma_products: { table: "pharma_products", module: "inventory", storage: "relational" },
   pharma_product_batches: { table: "pharma_product_batches", module: "inventory", storage: "relational" },
@@ -22,8 +23,9 @@ export const resources = {
   shipment_documents: { table: "shipment_documents", module: "sales", storage: "relational" },
   hkc_doc_records: { table: "hkc_doc_records", module: "sales", ...jsonb },
 
-  // Finance & GL (10)
-  chart_of_accounts: { table: "chart_of_accounts", module: "finance", ...jsonb },
+  // Finance & GL (11)
+  chart_of_accounts: { table: "chart_of_accounts", module: "finance", storage: "relational" },
+  gl_account_mappings: { table: "gl_account_mappings", module: "finance", storage: "relational" },
   journal_entries: { table: "journal_entries", module: "finance", ...jsonb },
   journal_entry_lines: { table: "journal_entry_lines", module: "finance", ...jsonb },
   invoices: { table: "invoices", module: "finance", ...jsonb },
@@ -42,9 +44,10 @@ export const resources = {
   leave_types: { table: "leave_types", module: "hr", ...jsonb },
   leave_requests: { table: "leave_requests", module: "hr", ...jsonb },
 
-  // Admin & Security (2)
+  // Admin & Security (3)
   users: { table: "users", module: "admin", storage: "relational" },
   user_activity_logs: { table: "user_activity_logs", module: "admin", storage: "relational" },
+  user_sessions: { table: "user_sessions", module: "admin", storage: "relational" },
 }
 
 export function getResource(name) {

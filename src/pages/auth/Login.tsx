@@ -82,7 +82,7 @@ export default function Login() {
         throw new Error(data.error || "Invalid username or password")
       }
 
-      login(data.user, data.token)
+      login(data.user, data.token, data.session?.expiresAt || data.expiresAt)
       showToast("Login Successful", "success", `Welcome back, ${data.user.name || data.user.username}!`)
       
       const userRoles = data.user.roles || (data.user.role ? [data.user.role] : [])

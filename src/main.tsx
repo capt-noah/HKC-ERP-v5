@@ -66,6 +66,14 @@ window.fetch = async (input, init) => {
   const response = await originalFetch(input, init)
   const durationMs = performance.now() - startTime
 
+  // Extract server-side session expiry header if present to keep client in sync with DB
+  if (isApiRequest) {
+    const serverSessionExpiry = response.headers.get("x-session-expires-at")
+    if (serverSessionExpiry) {
+      useAuthStore.getState().setSessionExpiresAt(serverSessionExpiry)
+    }
+  }
+
   // Record telemetry for all API calls
   if (isApiRequest) {
     const user = useAuthStore.getState().user
@@ -85,14 +93,18 @@ window.fetch = async (input, init) => {
     })
   }
 
-  // React to 401 Unauthorized or Token Expiry responses by verifying token status before logging out
+  // React to 401 Unauthorized or Session Revocation / Expiry responses by triggering immediate logout
   if (isApiRequest && !isAuthLogin && (response.status === 401 || response.status === 403)) {
     try {
       const cloned = response.clone()
       const body = await cloned.json()
       const isTokenIssue =
         body?.code === "TOKEN_EXPIRED" ||
-        (body?.error && /token|expired|invalid.*token|token missing/i.test(String(body.error)))
+        body?.code === "SESSION_REVOKED" ||
+        body?.code === "SESSION_EXPIRED" ||
+        body?.code === "ACCOUNT_SUSPENDED" ||
+        body?.code === "ACCOUNT_DELETED" ||
+        (body?.error && /token|session|revoked|expired|invalid.*token|token missing|deactivated/i.test(String(body.error)))
 
       if (isTokenIssue) {
         handleAuthExpiry()
