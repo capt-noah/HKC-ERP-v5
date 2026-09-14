@@ -22,7 +22,19 @@ crudRouter.use("/:resource", (req, res, next) => {
     return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" })
   }
 
-  const userRoles = user.roles || (user.role ? [user.role] : [])
+  let userRoles = user.roles || (user.role ? [user.role] : [])
+  if (typeof userRoles === "string") {
+    try {
+      userRoles = JSON.parse(userRoles)
+    } catch {
+      userRoles = [userRoles]
+    }
+  }
+  if (!Array.isArray(userRoles)) {
+    userRoles = [String(userRoles)]
+  }
+  userRoles = userRoles.map((r) => String(r).toLowerCase().trim())
+
   if (userRoles.includes("superadmin")) {
     return next()
   }
@@ -64,7 +76,7 @@ crudRouter.use("/:resource", (req, res, next) => {
     }
 
     // Warehouses, inventory products, and stock movements readable by sales, finance, and inventory admins
-    if (["warehouses", "inventory_products", "export_products", "pharma_products", "pharma_product_batches", "stock_movements", "export_warehouse_movements", "store_transfers", "store_transfer_items"].includes(resName)) {
+    if (["warehouses", "inventory_products", "export_products", "pharma_products", "pharma_product_batches", "stock_movements", "export_warehouse_movements", "store_transfers", "store_transfer_items", "quarantine_records"].includes(resName)) {
       if (userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager", "inventory_admin"].includes(r))) {
         isAllowed = true
       }
@@ -192,6 +204,20 @@ crudRouter.patch("/:resource/:id", async (req, res, next) => {
 
     let body = req.body
     if (req.params.resource === "users") {
+      const callerRoles = req.user?.roles || (req.user?.role ? [req.user.role] : [])
+      const isCallerSuper = callerRoles.includes("superadmin")
+
+      // Strict Anti-Privilege Escalation Gate:
+      // Non-superadmins cannot modify roles, role, status, is_active, or warehouse scoping
+      if (!isCallerSuper) {
+        delete body.roles
+        delete body.role
+        delete body.status
+        delete body.is_active
+        delete body.warehouse_ids
+        delete body.warehouse_id
+      }
+
       if (body && body.password) {
         const passCheck = validateStrongPassword(body.password)
         if (!passCheck.valid) {

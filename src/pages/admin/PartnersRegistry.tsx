@@ -43,6 +43,7 @@ export default function PartnersRegistry() {
 
   const customers = erp.getCustomers()
   const suppliers = erp.getSuppliers()
+  const warehouses = erp.getWarehouses()
 
   const [activeTab, setActiveTab] = useState<"customers" | "suppliers">("customers")
   const [search, setSearch] = useState("")
@@ -68,7 +69,7 @@ export default function PartnersRegistry() {
   const [custEmail, setCustEmail] = useState("")
   const [custAddress, setCustAddress] = useState("")
   const [custCategory, setCustCategory] = useState("Commercial Union")
-  const [custWarehouseTarget, setCustWarehouseTarget] = useState("WH1")
+  const [custWarehouseTarget, setCustWarehouseTarget] = useState(warehouses[0]?.id || "WH1")
   const [custTradePaperName, setCustTradePaperName] = useState("")
   const [custTradePaperUrl, setCustTradePaperUrl] = useState("")
   const [isNewlyUploadedCustLicense, setIsNewlyUploadedCustLicense] = useState(false)
@@ -95,7 +96,7 @@ export default function PartnersRegistry() {
     setCustEmail("")
     setCustAddress("")
     setCustCategory("Commercial Union")
-    setCustWarehouseTarget("WH1")
+    setCustWarehouseTarget(warehouses[0]?.id || "WH1")
     setCustTradePaperName("")
     setCustTradePaperUrl("")
     setIsNewlyUploadedCustLicense(false)
@@ -823,9 +824,11 @@ export default function PartnersRegistry() {
                       onChange={(e) => setCustWarehouseTarget(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
                     >
-                      <option value="WH1">WH1 - Ethiopia Agricultural Export Hub</option>
-                      <option value="WH2">WH2 - Central Veterinary Hub</option>
-                      <option value="WH3">WH3 - Regional Veterinary Depot</option>
+                      {warehouses.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name || w.code || w.id}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>

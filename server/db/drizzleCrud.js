@@ -1,6 +1,23 @@
 import { pool, db } from "./client.js"
 import * as schema from "./schema/index.js"
 import crypto from "node:crypto"
+import {
+  unwrapRow,
+  getTableColumns,
+  sanitizeSqlValue,
+  normalizeBodyToDbColumns,
+  parseJsonField,
+} from "./dbUtils.js"
+import { inventoryService } from "../modules/inventory/inventoryService.js"
+import { getDefaultWarehouseForType } from "../utils/warehouseUtils.js"
+
+export {
+  unwrapRow,
+  getTableColumns,
+  sanitizeSqlValue,
+  normalizeBodyToDbColumns,
+  parseJsonField,
+}
 
 // Master mapping from resource table name to Drizzle schema table object (for type-safe schema checks/migrations)
 export const tableMap = {
@@ -56,321 +73,6 @@ export function getDrizzleTable(tableName) {
   return tableMap[tableName] || null
 }
 
-function parseJsonField(val) {
-  if (typeof val === "string") {
-    try {
-      return JSON.parse(val)
-    } catch {
-      return val
-    }
-  }
-  return val
-}
-
-export function unwrapRow(row, storage) {
-  if (!row) return null
-  const isDoc = storage === "jsonb_document" || storage === "json_document"
-  if (isDoc) {
-    let payload = row.payload
-    if (typeof payload === "string") {
-      try {
-        payload = JSON.parse(payload)
-      } catch {
-        payload = {}
-      }
-    }
-    // Safeguard against nested payload wrapper
-    while (payload && typeof payload === "object" && payload.payload && typeof payload.payload === "object" && !Array.isArray(payload.payload)) {
-      payload = { ...payload, ...payload.payload }
-      delete payload.payload
-    }
-    const merged = { ...(payload || {}), id: row.id || payload?.id }
-    if (row.created_at && !merged.created_at) merged.created_at = row.created_at
-    if (row.updated_at && !merged.updated_at) merged.updated_at = row.updated_at
-    return merged
-  }
-
-  // Relational Row Unwrapping & Bidirectional CamelCase Normalization
-  const out = { ...row }
-
-  // Auto-parse any JSON fields
-  for (const k of [
-    "batches",
-    "wh1_entries",
-    "bin_card_entries",
-    "items",
-    "payload",
-    "lines",
-    "attachments",
-    "payment_advice_attachment",
-    "installment_payments",
-    "account_entries"
-  ]) {
-    if (out[k] !== undefined) {
-      out[k] = parseJsonField(out[k])
-    }
-  }
-
-  // Normalization for inventory_products and warehouses
-  if (out.warehouse_type !== undefined && out.warehouseType === undefined) out.warehouseType = out.warehouse_type
-  if (out.warehouseType !== undefined && out.warehouse_type === undefined) out.warehouse_type = out.warehouseType
-  if (out.warehouse_id !== undefined && out.warehouse === undefined) out.warehouse = out.warehouse_id
-  if (out.warehouse !== undefined && out.warehouse_id === undefined) out.warehouse_id = out.warehouse
-  if (out.shelf_number !== undefined && out.shelfNo === undefined) out.shelfNo = out.shelf_number
-  if (out.shelf_number !== undefined && out.shelf_no === undefined) out.shelf_no = out.shelf_number
-  if (out.strength !== undefined && out.dosage === undefined) out.dosage = out.strength
-  if (out.dosage_form !== undefined && out.dosageForm === undefined) out.dosageForm = out.dosage_form
-  if (out.quantity_per_pack !== undefined && out.quantityPerPack === undefined) out.quantityPerPack = Number(out.quantity_per_pack)
-  if (out.number_of_cartons !== undefined && out.numberOfCartons === undefined) out.numberOfCartons = Number(out.number_of_cartons)
-  if (out.unit_cost !== undefined) {
-    out.unitCost = Number(out.unit_cost)
-    out.unit_cost = Number(out.unit_cost)
-  }
-  if (out.selling_price !== undefined) {
-    out.sellingPrice = Number(out.selling_price)
-    out.selling_price = Number(out.selling_price)
-  }
-  if (out.quantity !== undefined) out.quantity = Number(out.quantity)
-  if (out.quantity_sold !== undefined) {
-    out.quantitySold = Number(out.quantity_sold)
-    out.quantity_sold = Number(out.quantity_sold)
-  }
-  if (out.total_quantity !== undefined) {
-    out.totalQuantity = Number(out.total_quantity)
-    out.total_quantity = Number(out.total_quantity)
-  }
-  if (out.total_stock_value !== undefined) {
-    out.totalStockValue = Number(out.total_stock_value)
-    out.total_stock_value = Number(out.total_stock_value)
-  }
-  if (out.reorder_level !== undefined) {
-    out.reorderLevel = Number(out.reorder_level)
-    out.reorder_level = Number(out.reorder_level)
-  }
-  if (out.min_stock_level !== undefined) {
-    out.minStockLevel = Number(out.min_stock_level)
-    out.min_stock_level = Number(out.min_stock_level)
-  }
-  if (out.sub_category !== undefined && out.subCategory === undefined) out.subCategory = out.sub_category
-  if (out.storage_condition !== undefined && out.storageCondition === undefined) out.storageCondition = out.storage_condition
-  if (out.supplier_id !== undefined && out.supplier === undefined) out.supplier = out.supplier_id
-  if (out.supplier_name !== undefined && out.supplierName === undefined) out.supplierName = out.supplier_name
-  if (out.wh1_entries !== undefined && out.wh1Entries === undefined) out.wh1Entries = out.wh1_entries
-  if (out.bin_card_entries !== undefined && out.binCardEntries === undefined) out.binCardEntries = out.bin_card_entries
-
-  // Normalization for pharma_product_batches
-  if ((out.product_id || out.productId) && (out.batch_no || out.batchNo)) {
-    if (!out.warehouse_id && !out.warehouseId) {
-      out.warehouse_id = "WH2"
-      out.warehouseId = "WH2"
-    }
-  }
-
-  // Normalization for stock_movements
-  if (out.product_id !== undefined && out.productId === undefined) out.productId = out.product_id
-  if (out.movement_type !== undefined && out.type === undefined) out.type = out.movement_type
-  if (out.movement_date !== undefined && out.date === undefined) out.date = out.movement_date
-  if (out.warehouse_id !== undefined) {
-    if (out.warehouseId === undefined) out.warehouseId = out.warehouse_id
-    if (out.fromWarehouse === undefined) out.fromWarehouse = out.warehouse_id
-    if (out.warehouse === undefined) out.warehouse = out.warehouse_id
-  }
-  if (out.batch_no !== undefined && out.batchNo === undefined) out.batchNo = out.batch_no
-  if (out.expiry_date !== undefined && out.expiryDate === undefined) out.expiryDate = out.expiry_date
-  if (out.quantity !== undefined) {
-    out.quantity = Number(out.quantity)
-    if (out.qty === undefined) out.qty = Number(out.quantity)
-  }
-  if (out.unit_price !== undefined) {
-    out.unit_price = Number(out.unit_price)
-    if (out.unitPrice === undefined) out.unitPrice = Number(out.unit_price)
-  }
-  if (out.unitPrice !== undefined && out.unit_price === undefined) {
-    out.unitPrice = Number(out.unitPrice)
-    out.unit_price = Number(out.unitPrice)
-  }
-  if (out.unit_cost !== undefined) {
-    out.unit_cost = Number(out.unit_cost)
-    if (out.unitCost === undefined) out.unitCost = Number(out.unit_cost)
-    if (out.unitPrice === undefined && out.unit_price === undefined) out.unitPrice = Number(out.unit_cost)
-  }
-  if (out.notes !== undefined) {
-    if (out.remarks === undefined) out.remarks = out.notes
-    if (out.reason === undefined) out.reason = out.notes
-  }
-  if (out.balance_after !== undefined) {
-    out.balanceAfter = Number(out.balance_after)
-    out.balance_after = Number(out.balance_after)
-  }
-  if (out.performed_by !== undefined) {
-    if (out.performedBy === undefined) out.performedBy = out.performed_by
-    if (out.nameEntered === undefined) out.nameEntered = out.performed_by
-  }
-  if (out.reference_type !== undefined && out.referenceType === undefined) out.referenceType = out.reference_type
-  if (out.reference_id !== undefined && out.reference === undefined) out.reference = out.reference_id
-
-  // Normalization for store_transfers
-  if (out.transfer_no !== undefined && out.transferNo === undefined) out.transferNo = out.transfer_no
-  if (out.from_warehouse_id !== undefined) {
-    if (out.fromWarehouse === undefined) out.fromWarehouse = out.from_warehouse_id
-    if (out.from_warehouse === undefined) out.from_warehouse = out.from_warehouse_id
-  }
-  if (out.to_warehouse_id !== undefined) {
-    if (out.toWarehouse === undefined) out.toWarehouse = out.to_warehouse_id
-    if (out.to_warehouse === undefined) out.to_warehouse = out.to_warehouse_id
-  }
-  if (out.request_date !== undefined) {
-    if (out.requestDate === undefined) out.requestDate = out.request_date
-    if (out.date === undefined) out.date = out.request_date
-  }
-  if (out.requested_by !== undefined && out.requestedBy === undefined) out.requestedBy = out.requested_by
-  if (out.approved_by !== undefined && out.approvedBy === undefined) out.approvedBy = out.approved_by
-  if (out.completed_date !== undefined && out.completedDate === undefined) out.completedDate = out.completed_date
-
-  // Normalization for purchase_orders
-  if (out.po_number !== undefined && out.poNumber === undefined) out.poNumber = out.po_number
-  if (out.poNumber !== undefined && out.po_number === undefined) out.po_number = out.poNumber
-  if (out.voucher_no !== undefined && out.voucherNo === undefined) out.voucherNo = out.voucher_no
-  if (out.voucherNo !== undefined && out.voucher_no === undefined) out.voucher_no = out.voucherNo
-  if (out.paid_to !== undefined && out.paidTo === undefined) out.paidTo = out.paid_to
-  if (out.paidTo !== undefined && out.paid_to === undefined) out.paid_to = out.paidTo
-  if (out.supplier_id !== undefined && out.supplierId === undefined) out.supplierId = out.supplier_id
-  if (out.supplierId !== undefined && out.supplier_id === undefined) out.supplier_id = out.supplierId
-  if (out.reason_for_payment !== undefined && out.reasonForPayment === undefined) out.reasonForPayment = out.reason_for_payment
-  if (out.reasonForPayment !== undefined && out.reason_for_payment === undefined) out.reason_for_payment = out.reasonForPayment
-  if (out.bank_name !== undefined && out.bankName === undefined) out.bankName = out.bank_name
-  if (out.bankName !== undefined && out.bank_name === undefined) out.bank_name = out.bankName
-  if (out.payment_method !== undefined && out.paymentMethod === undefined) out.paymentMethod = out.payment_method
-  if (out.paymentMethod !== undefined && out.payment_method === undefined) out.payment_method = out.paymentMethod
-  if (out.cheque_no !== undefined && out.chequeNo === undefined) out.chequeNo = out.cheque_no
-  if (out.chequeNo !== undefined && out.cheque_no === undefined) out.cheque_no = out.chequeNo
-  if (out.amount !== undefined) out.amount = Number(out.amount)
-  if (out.amount_paid !== undefined) {
-    out.amountPaid = Number(out.amount_paid)
-    out.amount_paid = Number(out.amount_paid)
-  }
-  if (out.amountPaid !== undefined && out.amount_paid === undefined) out.amount_paid = Number(out.amountPaid)
-  if (out.balance_due !== undefined) {
-    out.balanceDue = Number(out.balance_due)
-    out.balance_due = Number(out.balance_due)
-  }
-  if (out.balanceDue !== undefined && out.balance_due === undefined) out.balance_due = Number(out.balanceDue)
-  if (out.payment_type !== undefined && out.paymentType === undefined) out.paymentType = out.payment_type
-  if (out.paymentType !== undefined && out.payment_type === undefined) out.payment_type = out.paymentType
-  if (out.payment_terms !== undefined && out.paymentTerms === undefined) out.paymentTerms = out.payment_terms
-  if (out.paymentTerms !== undefined && out.payment_terms === undefined) out.payment_terms = out.paymentTerms
-  if (out.due_date !== undefined && out.dueDate === undefined) out.dueDate = out.due_date
-  if (out.dueDate !== undefined && out.due_date === undefined) out.due_date = out.dueDate
-  if (out.settlement_status !== undefined && out.settlementStatus === undefined) out.settlementStatus = out.settlement_status
-  if (out.settlementStatus !== undefined && out.settlement_status === undefined) out.settlement_status = out.settlementStatus
-  if (out.amount_in_words !== undefined && out.amountInWords === undefined) out.amountInWords = out.amount_in_words
-  if (out.amountInWords !== undefined && out.amount_in_words === undefined) out.amount_in_words = out.amountInWords
-  if (out.payment_advice_attachment !== undefined && out.paymentAdviceAttachment === undefined) out.paymentAdviceAttachment = out.payment_advice_attachment
-  if (out.paymentAdviceAttachment !== undefined && out.payment_advice_attachment === undefined) out.payment_advice_attachment = out.paymentAdviceAttachment
-  if (out.installment_payments !== undefined && out.installmentPayments === undefined) out.installmentPayments = out.installment_payments
-  if (out.installmentPayments !== undefined && out.installment_payments === undefined) out.installment_payments = out.installmentPayments
-  if (out.account_entries !== undefined && out.accountEntries === undefined) out.accountEntries = out.account_entries
-  if (out.accountEntries !== undefined && out.account_entries === undefined) out.account_entries = out.accountEntries
-  if (out.prepared_by !== undefined && out.preparedBy === undefined) out.preparedBy = out.prepared_by
-  if (out.approved_by !== undefined && out.approvedBy === undefined) out.approvedBy = out.approved_by
-  if (out.paid_by !== undefined && out.paidBy === undefined) out.paidBy = out.paid_by
-
-  // Normalization for sales_issues and invoices
-  if (out.subtotal_amount !== undefined) {
-    out.subtotal_amount = Number(out.subtotal_amount)
-    if (out.subtotalAmount === undefined) out.subtotalAmount = out.subtotal_amount
-    if (out.subtotal === undefined) out.subtotal = out.subtotal_amount
-  }
-  if (out.subtotal !== undefined && out.subtotal_amount === undefined) {
-    out.subtotal = Number(out.subtotal)
-    out.subtotal_amount = out.subtotal
-    out.subtotalAmount = out.subtotal
-  }
-  if (out.tax_amount !== undefined) {
-    out.tax_amount = Number(out.tax_amount)
-    if (out.taxAmount === undefined) out.taxAmount = out.tax_amount
-    if (out.vat_amount === undefined) out.vat_amount = out.tax_amount
-    if (out.vatAmount === undefined) out.vatAmount = out.tax_amount
-  }
-  if (out.vat_amount !== undefined && out.tax_amount === undefined) {
-    out.vat_amount = Number(out.vat_amount)
-    out.tax_amount = out.vat_amount
-    out.taxAmount = out.vat_amount
-    out.vatAmount = out.vat_amount
-  }
-  if (out.vat_rate !== undefined) {
-    out.vat_rate = Number(out.vat_rate)
-    if (out.vatRate === undefined) out.vatRate = out.vat_rate
-  }
-  if (out.vatRate !== undefined && out.vat_rate === undefined) {
-    out.vatRate = Number(out.vatRate)
-    out.vat_rate = out.vatRate
-  }
-  if (out.total_amount !== undefined) {
-    out.total_amount = Number(out.total_amount)
-    if (out.totalAmount === undefined) out.totalAmount = out.total_amount
-  }
-  if (out.totalAmount !== undefined && out.total_amount === undefined) {
-    out.totalAmount = Number(out.totalAmount)
-    out.total_amount = out.totalAmount
-  }
-  if (out.fs_no !== undefined) {
-    if (out.fsNo === undefined) out.fsNo = out.fs_no
-    if (out.issue_number === undefined) out.issue_number = out.fs_no
-    if (out.issueNumber === undefined) out.issueNumber = out.fs_no
-  }
-  if (out.reference_no !== undefined) {
-    if (out.referenceNo === undefined) out.referenceNo = out.reference_no
-    if (out.sales_order_id === undefined) out.sales_order_id = out.reference_no
-    if (out.salesOrderId === undefined) out.salesOrderId = out.reference_no
-  }
-  if (out.sale_date !== undefined) {
-    if (out.saleDate === undefined) out.saleDate = out.sale_date
-    if (out.issue_date === undefined) out.issue_date = out.sale_date
-    if (out.issueDate === undefined) out.issueDate = out.sale_date
-  }
-  if (out.customer_name !== undefined) {
-    if (out.customerName === undefined) out.customerName = out.customer_name
-    if (out.customer === undefined) out.customer = out.customer_name
-  }
-  if (out.customer_id !== undefined && out.customerId === undefined) {
-    out.customerId = out.customer_id
-  }
-
-  // Normalization for chart_of_accounts
-  if (out.account_type !== undefined && out.accountType === undefined) out.accountType = out.account_type
-  if (out.accountType !== undefined && out.account_type === undefined) out.account_type = out.accountType
-  if (out.peachtree_type !== undefined && out.peachtreeType === undefined) out.peachtreeType = out.peachtree_type
-  if (out.peachtreeType !== undefined && out.peachtree_type === undefined) out.peachtree_type = out.peachtreeType
-  if (out.parent_account_id !== undefined && out.parentAccountId === undefined) out.parentAccountId = out.parent_account_id
-  if (out.parentAccountId !== undefined && out.parent_account_id === undefined) out.parent_account_id = out.parentAccountId
-  if (out.is_group !== undefined) {
-    out.is_group = Boolean(out.is_group)
-    out.isGroup = Boolean(out.is_group)
-  }
-  if (out.is_active !== undefined) {
-    out.is_active = Boolean(out.is_active)
-    out.isActive = Boolean(out.is_active)
-  }
-
-  // Normalization for gl_account_mappings
-  if (out.account_id !== undefined && out.accountId === undefined) out.accountId = out.account_id
-  if (out.accountId !== undefined && out.account_id === undefined) out.account_id = out.accountId
-  if (out.account_code !== undefined && out.accountCode === undefined) out.accountCode = out.account_code
-  if (out.accountCode !== undefined && out.account_code === undefined) out.account_code = out.accountCode
-  if (out.account_name !== undefined && out.accountName === undefined) out.accountName = out.account_name
-  if (out.accountName !== undefined && out.account_name === undefined) out.account_name = out.accountName
-  if (out.normal_posting !== undefined && out.normalPosting === undefined) out.normalPosting = out.normal_posting
-  if (out.normalPosting !== undefined && out.normal_posting === undefined) out.normal_posting = out.normalPosting
-  if (out.is_system_default !== undefined) {
-    out.is_system_default = Boolean(out.is_system_default)
-    out.isSystemDefault = Boolean(out.is_system_default)
-  }
-  if (out.updated_by !== undefined && out.updatedBy === undefined) out.updatedBy = out.updated_by
-  if (out.updatedBy !== undefined && out.updated_by === undefined) out.updated_by = out.updatedBy
-
-  return out
-}
 
 // ── Native Resilient MySQL CRUD Methods (Direct Pool Connection for Maximum Compatibility) ──
 
@@ -385,21 +87,34 @@ export async function drizzleListRows({ resource, query = {} }) {
   try {
     const conditions = []
     const params = []
+    const validCols = await getTableColumns(tableName)
 
     for (const [key, rawVal] of Object.entries(query)) {
       if (
         key === "limit" ||
         key === "offset" ||
         key === "order" ||
+        key === "sort" ||
+        key === "direction" ||
         key === "select" ||
+        key === "fields" ||
         key === "page" ||
         key === "pageSize" ||
+        key === "per_page" ||
         key === "search" ||
         key === "batch" ||
         key === "q" ||
-        key === "apikey"
-      )
+        key === "query" ||
+        key === "apikey" ||
+        key === "_t" ||
+        key === "_" ||
+        key === "t" ||
+        key === "timestamp" ||
+        key === "cacheBust" ||
+        key.startsWith("_")
+      ) {
         continue
+      }
       if (rawVal === undefined || rawVal === null || rawVal === "") continue
 
       const cleanVal = typeof rawVal === "string" && rawVal.startsWith("eq.") ? rawVal.slice(3) : rawVal
@@ -408,10 +123,36 @@ export async function drizzleListRows({ resource, query = {} }) {
         conditions.push(`id = ?`)
         params.push(cleanVal)
       } else if (isDoc) {
-        conditions.push(`JSON_UNQUOTE(JSON_EXTRACT(payload, '$.${key}')) = ?`)
-        params.push(String(cleanVal))
+        if (validCols && validCols.has(key)) {
+          conditions.push(`\`${key}\` = ?`)
+          params.push(cleanVal)
+        } else {
+          conditions.push(`JSON_UNQUOTE(JSON_EXTRACT(payload, '$.${key}')) = ?`)
+          params.push(String(cleanVal))
+        }
       } else {
-        conditions.push(`\`${key}\` = ?`)
+        let dbCol = key
+        if (validCols && !validCols.has(dbCol)) {
+          const aliases = {
+            warehouse: "warehouse_id",
+            warehouseId: "warehouse_id",
+            productId: "product_id",
+            customerId: "customer_id",
+            supplierId: "supplier_id",
+            orderId: "order_id",
+            salesOrderId: "sales_order_id",
+            salesIssueId: "sales_issue_id",
+            batchNo: "batch_no",
+            batchNumber: "batch_no",
+          }
+          if (aliases[key] && validCols.has(aliases[key])) {
+            dbCol = aliases[key]
+          } else {
+            // Unknown column on this table: ignore to prevent ER_BAD_FIELD_ERROR
+            continue
+          }
+        }
+        conditions.push(`\`${dbCol}\` = ?`)
         params.push(cleanVal)
       }
     }
@@ -525,229 +266,6 @@ export async function drizzleGetRow({ resource, id }) {
   }
 }
 
-const tableColumnsCache = new Map()
-
-async function getTableColumns(tableName) {
-  if (tableColumnsCache.has(tableName)) {
-    return tableColumnsCache.get(tableName)
-  }
-  try {
-    const [cols] = await pool.query(`SHOW COLUMNS FROM \`${tableName}\``)
-    const colNames = new Set(cols.map((c) => c.Field))
-    tableColumnsCache.set(tableName, colNames)
-    return colNames
-  } catch (err) {
-    console.warn(`[TABLE COLUMNS CHECK WARNING] \`${tableName}\`:`, err.message)
-    return null
-  }
-}
-
-function sanitizeSqlValue(val) {
-  if (val === undefined) return null
-  if (val instanceof Date) return val
-  if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) {
-    const d = new Date(val)
-    if (!isNaN(d.getTime())) return d
-  }
-  if (typeof val === "object" && val !== null) {
-    return JSON.stringify(val)
-  }
-  return val
-}
-
-function normalizeBodyToDbColumns(body, validCols) {
-  if (!body || typeof body !== "object") return body
-  const normalized = {}
-
-  const aliases = {
-    warehouse: "warehouse_id",
-    warehouseId: "warehouse_id",
-    unitCost: "unit_cost",
-    sellingPrice: "selling_price",
-    quantitySold: "quantity_sold",
-    totalQuantity: "total_quantity",
-    totalStockValue: "total_stock_value",
-    reorderLevel: "reorder_level",
-    minStockLevel: "min_stock_level",
-    subCategory: "sub_category",
-    productType: "product_type",
-    storageCondition: "storage_condition",
-    supplier: "supplier_id",
-    supplierId: "supplier_id",
-    supplierName: "supplier_name",
-    wh1Entries: "wh1_entries",
-    binCardEntries: "bin_card_entries",
-    productId: "product_id",
-    productName: "product_name",
-    movementType: "movement_type",
-    balanceAfter: "balance_after",
-    batchNo: "batch_no",
-    batch_no: "batch_no",
-    qty: "quantity",
-    quantity: "quantity",
-    remarks: "notes",
-    reason: "notes",
-    expiryDate: "expiry_date",
-    referenceType: "reference_type",
-    referenceId: "reference_id",
-    reference: "reference_id",
-    performedBy: "performed_by",
-    nameEntered: "performed_by",
-    movementDate: "movement_date",
-    transferNo: "transfer_no",
-    fromWarehouse: "from_warehouse_id",
-    fromWarehouseId: "from_warehouse_id",
-    from_warehouse: "from_warehouse_id",
-    toWarehouse: "to_warehouse_id",
-    toWarehouseId: "to_warehouse_id",
-    to_warehouse: "to_warehouse_id",
-    requestDate: "request_date",
-    completedDate: "completed_date",
-    requestedBy: "requested_by",
-    approvedBy: "approved_by",
-    voucherNo: "voucher_no",
-    plateNumber: "plate_number",
-    grossQuantity: "gross_quantity",
-    rejectQuantity: "reject_quantity",
-    netQuantity: "net_quantity",
-    unitPrice: "unit_price",
-    createdBy: "created_by",
-    issuedBy: "requested_by",
-    receivedBy: "approved_by",
-    commodityType: "commodity_type",
-    cropYear: "crop_year",
-    cleanYieldPct: "clean_yield_pct",
-    moistureContent: "moisture_content",
-    driverName: "driver_name",
-    genericName: "generic_name",
-    dosageForm: "dosage_form",
-    dosage: "strength",
-    strength: "strength",
-    shelfNo: "shelf_number",
-    shelf_no: "shelf_number",
-    shelfNumber: "shelf_number",
-    warehouse: "warehouse_id",
-    warehouseId: "warehouse_id",
-    warehouseType: "warehouse_type",
-    warehouse_type: "warehouse_type",
-    quantityPerPack: "quantity_per_pack",
-    numberOfCartons: "number_of_cartons",
-    shelfLifeMonths: "shelf_life_months",
-    mfgDate: "mfg_date",
-    qaStatus: "qa_status",
-    paymentType: "payment_type",
-    payment_type: "payment_type",
-    paymentTerms: "payment_terms",
-    payment_terms: "payment_terms",
-    amountPaid: "amount_paid",
-    amount_paid: "amount_paid",
-    balanceDue: "balance_due",
-    balance_due: "balance_due",
-    settlementStatus: "settlement_status",
-    settlement_status: "settlement_status",
-    dueDate: "due_date",
-    due_date: "due_date",
-    invoiceType: "invoice_type",
-    invoice_type: "invoice_type",
-    partyType: "party_type",
-    party_type: "party_type",
-    purchaseOrderId: "purchase_order_id",
-    purchase_order_id: "purchase_order_id",
-    poNumber: "po_number",
-    po_number: "po_number",
-    paidTo: "paid_to",
-    paid_to: "paid_to",
-    reasonForPayment: "reason_for_payment",
-    reason_for_payment: "reason_for_payment",
-    bankName: "bank_name",
-    bank_name: "bank_name",
-    paymentMethod: "payment_method",
-    payment_method: "payment_method",
-    chequeNo: "cheque_no",
-    cheque_no: "cheque_no",
-    amountInWords: "amount_in_words",
-    amount_in_words: "amount_in_words",
-    paymentAdviceAttachment: "payment_advice_attachment",
-    payment_advice_attachment: "payment_advice_attachment",
-    installmentPayments: "installment_payments",
-    installment_payments: "installment_payments",
-    accountEntries: "account_entries",
-    account_entries: "account_entries",
-    preparedBy: "prepared_by",
-    prepared_by: "prepared_by",
-    approvedBy: "approved_by",
-    approved_by: "approved_by",
-    paidBy: "paid_by",
-    paid_by: "paid_by",
-    subtotal: "subtotal_amount",
-    subtotalAmount: "subtotal_amount",
-    subtotal_amount: "subtotal_amount",
-    vatAmount: "tax_amount",
-    vat_amount: "tax_amount",
-    taxAmount: "tax_amount",
-    tax_amount: "tax_amount",
-    vatRate: "vat_rate",
-    vat_rate: "vat_rate",
-    totalAmount: "total_amount",
-    total_amount: "total_amount",
-    totalQuantity: "total_quantity",
-    total_quantity: "total_quantity",
-    fsNo: "fs_no",
-    fs_no: "fs_no",
-    issueNumber: "issue_number",
-    issue_number: "issue_number",
-    referenceNo: "reference_no",
-    reference_no: "reference_no",
-    salesOrderId: "sales_order_id",
-    sales_order_id: "sales_order_id",
-    saleDate: "sale_date",
-    sale_date: "sale_date",
-    issueDate: "sale_date",
-    issue_date: "sale_date",
-    customerName: "customer_name",
-    customer_name: "customer_name",
-    customerId: "customer_id",
-    customer_id: "customer_id",
-  }
-
-  // 1. Process aliases and camelCase first as fallbacks
-  for (const [key, val] of Object.entries(body)) {
-    if (aliases[key] && (!validCols || validCols.has(aliases[key]))) {
-      const targetCol = aliases[key]
-      if (normalized[targetCol] === undefined) {
-        normalized[targetCol] = val
-      }
-    } else {
-      const snake = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
-      if (validCols && validCols.has(snake)) {
-        if (normalized[snake] === undefined) {
-          normalized[snake] = val
-        }
-      }
-    }
-  }
-
-  // 2. Exact match database columns ALWAYS take absolute precedence
-  for (const [key, val] of Object.entries(body)) {
-    if (validCols && validCols.has(key)) {
-      normalized[key] = val
-    }
-  }
-
-  if (validCols && validCols.has("warehouse_id") && normalized.warehouse_id === undefined) {
-    if (body.warehouse_id || body.warehouse || body.warehouseId) {
-      normalized.warehouse_id = body.warehouse_id || body.warehouse || body.warehouseId
-    } else {
-      normalized.warehouse_id = "WH2"
-    }
-  }
-
-  if (body.id && !normalized.id) {
-    normalized.id = body.id
-  }
-
-  return normalized
-}
 
 export async function drizzleCreateRow({ resource, body }) {
   if (!resource || !resource.table) {
@@ -755,6 +273,22 @@ export async function drizzleCreateRow({ resource, body }) {
   }
 
   const tableName = resource.table
+  if (tableName === "pharma_products" || tableName === "export_products") {
+    return await inventoryService.createProduct({
+      ...body,
+      warehouse_id: body.warehouse_id || body.warehouse || (await getDefaultWarehouseForType(tableName === "export_products" ? "EXPORT_WH" : "PHARMA_WH")),
+    })
+  }
+  if (tableName === "pharma_product_batches") {
+    return await inventoryService.createBatch(body)
+  }
+  if (tableName === "stock_movements" || tableName === "export_warehouse_movements") {
+    return await inventoryService.recordMovement(body, tableName)
+  }
+  if (tableName === "store_transfers") {
+    return await inventoryService.createTransfer(body)
+  }
+
   const isDoc = resource.storage === "jsonb_document" || resource.storage === "json_document"
   const id = body?.id ? String(body.id) : crypto.randomUUID()
 
@@ -830,8 +364,22 @@ export async function drizzleUpdateRow({ resource, id, body }) {
   }
 
   const tableName = resource.table
-  const isDoc = resource.storage === "jsonb_document" || resource.storage === "json_document"
   const cleanId = String(id).trim()
+
+  if (tableName === "pharma_products" || tableName === "export_products") {
+    return await inventoryService.updateProduct(cleanId, body)
+  }
+  if (tableName === "pharma_product_batches") {
+    return await inventoryService.updateBatch(cleanId, body)
+  }
+  if (tableName === "stock_movements" || tableName === "export_warehouse_movements") {
+    return await inventoryService.updateMovement(cleanId, body, tableName)
+  }
+  if (tableName === "store_transfers") {
+    return await inventoryService.updateTransfer(cleanId, body)
+  }
+
+  const isDoc = resource.storage === "jsonb_document" || resource.storage === "json_document"
 
   try {
     if (isDoc) {
@@ -886,6 +434,20 @@ export async function drizzleDeleteRow({ resource, id }) {
 
   const tableName = resource.table
   const cleanId = String(id).trim()
+
+  if (tableName === "pharma_products" || tableName === "export_products") {
+    return await inventoryService.deleteProduct(cleanId)
+  }
+  if (tableName === "pharma_product_batches") {
+    return await inventoryService.deleteBatch(cleanId)
+  }
+  if (tableName === "stock_movements" || tableName === "export_warehouse_movements") {
+    return await inventoryService.deleteMovement(cleanId, tableName)
+  }
+  if (tableName === "store_transfers") {
+    return await inventoryService.deleteTransfer(cleanId)
+  }
+
   try {
     if (tableName === "users") {
       // 1. Decouple/nullify foreign keys in user_activity_logs

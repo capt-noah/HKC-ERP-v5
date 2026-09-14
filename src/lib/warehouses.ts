@@ -29,6 +29,18 @@ export const OPERATING_WAREHOUSES: Warehouse[] = [
   },
 ]
 
+let registeredDynamicWarehouses: Warehouse[] = []
+
+export function registerDynamicWarehouses(warehouses: Warehouse[] = []) {
+  if (Array.isArray(warehouses) && warehouses.length > 0) {
+    registeredDynamicWarehouses = warehouses
+  }
+}
+
+export function getRegisteredWarehouses(): Warehouse[] {
+  return registeredDynamicWarehouses
+}
+
 export function withOperatingWarehouses(warehouses: Warehouse[] = []): Warehouse[] {
   const byKey = new Map<string, Warehouse>()
 
@@ -37,8 +49,10 @@ export function withOperatingWarehouses(warehouses: Warehouse[] = []): Warehouse
     byKey.set(defaultWh.id, defaultWh)
   }
 
-  // Merge any dynamic or custom warehouses from server/store
-  for (const warehouse of warehouses || []) {
+  // Merge any dynamically registered warehouses from erpStore/server
+  const combined = [...registeredDynamicWarehouses, ...(warehouses || [])]
+
+  for (const warehouse of combined) {
     if (!warehouse) continue
     const key = warehouse.id || warehouse.code
     if (key) {

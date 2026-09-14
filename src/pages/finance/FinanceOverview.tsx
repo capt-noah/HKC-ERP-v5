@@ -1,5 +1,5 @@
 import { motion } from "framer-motion"
-import { Wallet, Calendar, ArrowUpRight } from "lucide-react"
+import { Wallet, Calendar, ArrowUpRight, DollarSign, TrendingUp, TrendingDown, BarChart3 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -23,6 +23,38 @@ export default function FinanceOverview() {
   const accountById = new Map(accounts.map((account) => [account.id, account]))
   const entryById = new Map(journalEntries.map((entry) => [entry.id, entry]))
 
+  const isCogsAccount = (account?: { code?: string | null; name?: string | null; peachtree_type?: string | null }) => {
+    if (!account) return false
+    if (account.peachtree_type === "Cost of Sales") return true
+    if (account.code === "5001" || account.code?.startsWith("6")) return true
+    if (/cogs|cost of (goods|sales)/i.test(account.name || "")) return true
+    return false
+  }
+
+  // Profitability calculations across GL lines
+  let totalRevenue = 0
+  let totalCogs = 0
+  let totalExpenses = 0
+
+  for (const line of journalLines) {
+    const account = accountById.get(line.account_id)
+    if (!account) continue
+    if (account.account_type === "Revenue") {
+      totalRevenue += line.credit_amount - line.debit_amount
+    } else if (account.account_type === "Expense") {
+      const amt = line.debit_amount - line.credit_amount
+      totalExpenses += amt
+      if (isCogsAccount(account)) {
+        totalCogs += amt
+      }
+    }
+  }
+
+  const grossProfit = totalRevenue - totalCogs
+  const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0
+  const netProfit = totalRevenue - totalExpenses
+  const netMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0
+
   const cashLines = journalLines.filter((line) => {
     const account = accountById.get(line.account_id)
     return account?.account_type === "Asset" && /cash|bank/i.test(account.name)
@@ -31,15 +63,16 @@ export default function FinanceOverview() {
   const cashCredits = cashLines.reduce((s, l) => s + l.credit_amount, 0)
   const cashPosition = cashDebits - cashCredits
 
-  const cashFlowByMonth = new Map<string, { name: string; Revenue: number; Expenses: number }>()
+  const cashFlowByMonth = new Map<string, { name: string; Revenue: number; Expenses: number; NetProfit: number }>()
   for (const line of journalLines) {
     const entry = entryById.get(line.journal_entry_id)
     const account = accountById.get(line.account_id)
     if (!entry || !account) continue
     const month = entry.entry_date.slice(0, 7)
-    const row = cashFlowByMonth.get(month) || { name: month, Revenue: 0, Expenses: 0 }
+    const row = cashFlowByMonth.get(month) || { name: month, Revenue: 0, Expenses: 0, NetProfit: 0 }
     if (account.account_type === "Revenue") row.Revenue += line.credit_amount - line.debit_amount
     if (account.account_type === "Expense") row.Expenses += line.debit_amount - line.credit_amount
+    row.NetProfit = row.Revenue - row.Expenses
     cashFlowByMonth.set(month, row)
   }
   const cashFlowData = [...cashFlowByMonth.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => value)
@@ -70,29 +103,123 @@ export default function FinanceOverview() {
         <motion.div variants={fade} className="flex items-start justify-between mb-8">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight">Finance Dashboard</h1>
-            <p className="text-sm text-gray-400 mt-1">Real-time treasury status and cash flow insights.</p>
+            <p className="text-sm text-gray-400 mt-1">Real-time treasury status, profitability and cash flow insights.</p>
           </div>
           <div className="flex items-center gap-3">
             <SubPageNav items={getSectionChildren("/finance")} />
           </div>
         </motion.div>
 
-        <div className="grid grid-cols-1 gap-4 mb-6">
-          <GlassCard transition={{ delay: 0.15, duration: 0.4, ease: "easeOut" }}>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Cash Position</span>
-              <div className="size-8 rounded-xl bg-emerald-100/80 text-emerald-700 flex items-center justify-center">
-                <Wallet className="size-4" />
+        {/* Executive Profitability & Treasury Strip */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+          {/* Card 1: Operating Revenue */}
+          <GlassCard transition={{ delay: 0.1, duration: 0.4, ease: "easeOut" }} className="p-4 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Operating Revenue</span>
+                <div className="size-7 rounded-lg bg-emerald-100/80 text-emerald-700 flex items-center justify-center">
+                  <DollarSign className="size-4" />
+                </div>
               </div>
+              {isLoading ? (
+                <Skeleton className="h-7 w-32 bg-zinc-200/80 my-1" />
+              ) : (
+                <p className="text-xl font-black font-mono text-emerald-700 mt-1">
+                  ETB {totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              )}
             </div>
-            {isLoading ? (
-              <Skeleton className="h-8 w-48 bg-zinc-200/80 my-1" />
-            ) : (
-              <p className="text-3xl font-black font-mono text-emerald-700 mt-1">
-                ETB {cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-            )}
-            <p className="text-xs text-gray-400 mt-1 font-medium">Liquid cash & bank equivalents</p>
+            <p className="text-[11px] text-gray-400 mt-2 font-medium">Posted sales & revenue</p>
+          </GlassCard>
+
+          {/* Card 2: Cost of Goods Sold */}
+          <GlassCard transition={{ delay: 0.15, duration: 0.4, ease: "easeOut" }} className="p-4 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Cost of Goods Sold</span>
+                <div className="size-7 rounded-lg bg-rose-100/80 text-rose-700 flex items-center justify-center">
+                  <TrendingDown className="size-4" />
+                </div>
+              </div>
+              {isLoading ? (
+                <Skeleton className="h-7 w-32 bg-zinc-200/80 my-1" />
+              ) : (
+                <p className="text-xl font-black font-mono text-rose-600 mt-1">
+                  ETB ({totalCogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                </p>
+              )}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-2 font-medium">Direct inventory cost (COGS)</p>
+          </GlassCard>
+
+          {/* Card 3: Gross Profit & Margin */}
+          <GlassCard transition={{ delay: 0.2, duration: 0.4, ease: "easeOut" }} className="p-4 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Gross Profit</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono">
+                    {grossMargin.toFixed(1)}%
+                  </span>
+                  <div className="size-7 rounded-lg bg-teal-100/80 text-teal-700 flex items-center justify-center">
+                    <TrendingUp className="size-4" />
+                  </div>
+                </div>
+              </div>
+              {isLoading ? (
+                <Skeleton className="h-7 w-32 bg-zinc-200/80 my-1" />
+              ) : (
+                <p className="text-xl font-black font-mono text-zinc-900 mt-1">
+                  ETB {grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              )}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-2 font-medium">Gross surplus (Revenue - COGS)</p>
+          </GlassCard>
+
+          {/* Card 4: Net Operating Income (EBIT) */}
+          <GlassCard transition={{ delay: 0.25, duration: 0.4, ease: "easeOut" }} className="p-4 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Net Operating Income</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-mono">
+                    {netMargin.toFixed(1)}%
+                  </span>
+                  <div className="size-7 rounded-lg bg-blue-100/80 text-blue-700 flex items-center justify-center">
+                    <BarChart3 className="size-4" />
+                  </div>
+                </div>
+              </div>
+              {isLoading ? (
+                <Skeleton className="h-7 w-32 bg-zinc-200/80 my-1" />
+              ) : (
+                <p className="text-xl font-black font-mono text-emerald-800 mt-1">
+                  ETB {netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              )}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-2 font-medium">Bottom line profit (EBIT)</p>
+          </GlassCard>
+
+          {/* Card 5: Liquid Cash Position */}
+          <GlassCard transition={{ delay: 0.3, duration: 0.4, ease: "easeOut" }} className="p-4 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Cash Position</span>
+                <div className="size-7 rounded-lg bg-emerald-100/80 text-emerald-700 flex items-center justify-center">
+                  <Wallet className="size-4" />
+                </div>
+              </div>
+              {isLoading ? (
+                <Skeleton className="h-7 w-32 bg-zinc-200/80 my-1" />
+              ) : (
+                <p className="text-xl font-black font-mono text-emerald-700 mt-1">
+                  ETB {cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              )}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-2 font-medium">Liquid cash & bank reserves</p>
           </GlassCard>
         </div>
 
@@ -159,16 +286,17 @@ export default function FinanceOverview() {
 
         {/* Mid grid: Cash Flow Chart + Unpaid Invoices List */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-4 mb-6">
-          {/* Revenue vs Expenses Chart */}
+          {/* Revenue vs Expenses vs Net Profit Chart */}
           <GlassCard transition={{ delay: 0.25, duration: 0.4, ease: "easeOut" }}>
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h3 className="font-semibold text-base text-black">Cash Flow Trends</h3>
-                <p className="text-xs text-gray-400">Comparison of incoming revenue against outgoing operational costs</p>
+                <h3 className="font-semibold text-base text-black">Cash Flow & Profit Trends</h3>
+                <p className="text-xs text-gray-400">Comparison of incoming revenue against outgoing costs and bottom line profit</p>
               </div>
               <div className="flex items-center gap-4 text-xs font-semibold">
                 <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#242427]" /> Revenue</div>
-                <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-emerald-600" /> Expenses</div>
+                <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-rose-500" /> Expenses</div>
+                <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-emerald-600" /> Net Profit</div>
               </div>
             </div>
             <div className="h-[300px]">
@@ -180,7 +308,11 @@ export default function FinanceOverview() {
                       <stop offset="95%" stopColor="#242427" stopOpacity={0}/>
                     </linearGradient>
                     <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#059669" stopOpacity={0.15}/>
+                      <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.15}/>
+                      <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#059669" stopOpacity={0.25}/>
                       <stop offset="95%" stopColor="#059669" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
@@ -189,7 +321,8 @@ export default function FinanceOverview() {
                   <YAxis stroke="#888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(val) => `ETB ${val/1000}k`} />
                   <Tooltip formatter={(value) => [`ETB ${(value as number).toLocaleString()}`, ""]} labelStyle={{ fontWeight: "bold" }} />
                   <Area type="monotone" dataKey="Revenue" stroke="#242427" strokeWidth={2} fillOpacity={1} fill="url(#colorRev)" />
-                  <Area type="monotone" dataKey="Expenses" stroke="#059669" strokeWidth={2} fillOpacity={1} fill="url(#colorExp)" />
+                  <Area type="monotone" dataKey="Expenses" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#colorExp)" />
+                  <Area type="monotone" dataKey="NetProfit" name="Net Profit" stroke="#059669" strokeWidth={2} fillOpacity={1} fill="url(#colorProfit)" />
                 </AreaChart>
               </ResponsiveContainer>}
             </div>

@@ -89,7 +89,8 @@ export function evaluateShipmentDocs({ record, items = [], attachments = [], rul
   const originCountry = record?.origin_country || record?.originCountry || record?.supplierCountry || record?.origin || null
   const destinationRegion = record?.destination_region || record?.destinationRegion || record?.destination || null
   const rawWarehouse = String(record?.warehouse || record?.warehouse_id || record?.warehouseName || "").toUpperCase()
-  const isWH1Record = rawWarehouse.includes("WH1") || rawWarehouse.includes("WH-01") || rawWarehouse.includes("WH 1") || rawWarehouse.includes("AGRI")
+  const whType = String(record?.warehouse_type || record?.warehouseType || "").toUpperCase()
+  const isExportRecord = whType === "EXPORT_WH" || whType.includes("EXPORT") || rawWarehouse.includes("EXPORT") || rawWarehouse.includes("AGRI") || rawWarehouse.includes("COMMODITY") || rawWarehouse.includes("WH1") || rawWarehouse.includes("WH-01") || rawWarehouse.includes("WH 1")
   const isCreditOrder = String(record?.payment_type || record?.paymentType || "").toLowerCase() === "credit"
 
   const categories = new Set(
@@ -131,7 +132,7 @@ export function evaluateShipmentDocs({ record, items = [], attachments = [], rul
   applicableRules.forEach((rule) => {
     let docType = rule.document_type
     let desc = rule.description || `Required for ${appliesTo.replace("_", " ")}`
-    if (isWH1Record && docType === "Trade License") {
+    if (isExportRecord && docType === "Trade License") {
       docType = "Bank Permit"
       desc = "Mandatory banking permit for export commodities"
     }
@@ -153,8 +154,8 @@ export function evaluateShipmentDocs({ record, items = [], attachments = [], rul
 
   for (const [docType, reason] of requiredDocTypesMap.entries()) {
     let matchedFile = attachedTypesMap.get(docType.toLowerCase().trim())
-    // For WH1 Bank Permit, also accept Trade License if present
-    if (!matchedFile && isWH1Record && docType === "Bank Permit") {
+    // For Export Bank Permit, also accept Trade License if present
+    if (!matchedFile && isExportRecord && docType === "Bank Permit") {
       matchedFile = attachedTypesMap.get("trade license") || attachedTypesMap.get("trade paper")
     }
     // For Trade License, also accept Bank Permit

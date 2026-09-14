@@ -10,6 +10,7 @@ export const resources = {
   store_transfers: { table: "store_transfers", module: "inventory", storage: "relational" },
   store_transfer_items: { table: "store_transfer_items", module: "inventory", storage: "relational" },
   export_warehouse_movements: { table: "export_warehouse_movements", module: "inventory", storage: "relational" },
+  quarantine_records: { table: "quarantine_records", module: "inventory", storage: "relational" },
 
   // Sales & Purchasing (7)
   sales_orders: { table: "sales_orders", module: "sales", ...jsonb },

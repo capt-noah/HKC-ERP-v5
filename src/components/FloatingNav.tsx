@@ -22,6 +22,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { useAuthStore } from "@/lib/authStore"
 import { useErpStore } from "@/lib/erpStore"
+import { isExportWarehouse } from "@/lib/warehouses"
 import type { Role } from "@/lib/authStore"
 
 const sectionRoleMapping: Record<string, Role[]> = {
@@ -108,8 +109,8 @@ export function FloatingNav({
       }))
   }, [isSuperAdmin, salesOrders, dismissedNotificationIds, readNotificationIds])
 
-  // WH1 access: true if superadmin, or if no specific warehouse restriction is set, or if WH1 is in assigned warehouses
-  const hasWH1Access = isSuperAdmin || userWarehouseIds.length === 0 || userWarehouseIds.some(id => id.includes("WH1") || id.includes("WH-01") || id.includes("WH 1") || id.includes("WAREHOUSE 1"))
+  // Export hub access: true if superadmin, or if no specific warehouse restriction is set, or if any assigned warehouse is an export warehouse
+  const hasWH1Access = isSuperAdmin || userWarehouseIds.length === 0 || userWarehouseIds.some(id => isExportWarehouse(id))
 
   const visibleSections = sections.filter((s) => {
     if (isSuperAdmin) return true

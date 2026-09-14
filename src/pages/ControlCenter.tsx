@@ -10,6 +10,7 @@ import {
   MapPin,
   RefreshCw,
   TrendingUp,
+  Coins,
   PieChart as PieChartIcon,
   BarChart3,
   Layers,
@@ -303,9 +304,9 @@ export default function ControlCenter() {
   const tabParam = searchParams.get("tab")
   const initialTab = tabParam === "approvals" || tabParam === "logs" || tabParam === "overview" ? tabParam : "overview"
   const chartParam = searchParams.get("chart")
-  const initialChart = chartParam === "quality" || chartParam === "inventory" || chartParam === "revenue" ? chartParam : "revenue"
+  const initialChart = chartParam === "profit" || chartParam === "quality" || chartParam === "inventory" || chartParam === "revenue" ? chartParam : "revenue"
   const [activeTab, setActiveTab] = useState<"overview" | "logs" | "approvals">(initialTab)
-  const [chartMode, setChartMode] = useState<"revenue" | "inventory" | "quality">(initialChart)
+  const [chartMode, setChartMode] = useState<"revenue" | "profit" | "inventory" | "quality">(initialChart)
   const [qualityWarehouseFilter, setQualityWarehouseFilter] = useState<string>("all")
   const [qualityProductFilter, setQualityProductFilter] = useState<string>("all")
   const [adminExpiryTier, setAdminExpiryTier] = useState<"ALL" | "CRITICAL" | "WARNING" | "EXPIRED">("ALL")
@@ -318,7 +319,7 @@ export default function ControlCenter() {
   }, [tabParam])
 
   useEffect(() => {
-    if (chartParam === "quality" || chartParam === "inventory" || chartParam === "revenue") {
+    if (chartParam === "profit" || chartParam === "quality" || chartParam === "inventory" || chartParam === "revenue") {
       setChartMode(chartParam)
     }
   }, [chartParam])
@@ -330,7 +331,7 @@ export default function ControlCenter() {
     setSearchParams(nextParams)
   }
 
-  const handleChartModeChange = (mode: "revenue" | "inventory" | "quality") => {
+  const handleChartModeChange = (mode: "revenue" | "profit" | "inventory" | "quality") => {
     setChartMode(mode)
     const nextParams: Record<string, string> = {}
     if (activeTab !== "overview") nextParams.tab = activeTab
@@ -755,21 +756,67 @@ export default function ControlCenter() {
       0
     )
 
-  const postedRevenue = useMemo(() => {
+  const isCogsAccount = (account?: { code?: string | null; name?: string | null; peachtree_type?: string | null }) => {
+    if (!account) return false
+    if (account.peachtree_type === "Cost of Sales") return true
+    if (account.code === "5001" || account.code?.startsWith("6")) return true
+    if (/cogs|cost of (goods|sales)/i.test(account.name || "")) return true
+    return false
+  }
+
+  const { postedRevenue, totalCogs, grossProfit, grossMargin, netProfit, netMargin } = useMemo(() => {
     // 1. Calculate from active Sales Issues (primary source of fulfilled enterprise sales)
-    const salesIssueRev = salesIssues
-      .filter((si) => si.status !== "Cancelled")
-      .reduce((sum, si) => sum + Number(si.total_amount || 0), 0)
+    const activeIssues = salesIssues.filter((si) => si.status !== "Cancelled")
+    const salesIssueRev = activeIssues.reduce((sum, si) => sum + Number(si.total_amount || 0), 0)
+    let salesIssueCogs = 0
+    activeIssues.forEach((si) => {
+      if (Array.isArray(si.items)) {
+        si.items.forEach((item) => {
+          const qty = Number(item.quantity || 0)
+          const cost = Number((item as any).unit_cost || (item as any).cost_price || 0)
+          salesIssueCogs += qty * cost
+        })
+      }
+    })
 
     // 2. Or from Journal Entry Lines if available
-    const glRev = finance.getJournalEntryLines().reduce((sum, line) => {
-      const account = finance.getAccounts().find((item) => item.id === line.account_id)
-      return account?.account_type === "Revenue"
-        ? sum + Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
-        : sum
-    }, 0)
+    const accounts = finance.getAccounts()
+    const lines = finance.getJournalEntryLines()
+    let glRev = 0
+    let glCogs = 0
+    let glExp = 0
 
-    return Math.max(salesIssueRev, glRev)
+    lines.forEach((line) => {
+      const account = accounts.find((item) => item.id === line.account_id)
+      if (!account) return
+      if (account.account_type === "Revenue") {
+        glRev += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
+      } else if (account.account_type === "Expense") {
+        const amt = Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
+        glExp += amt
+        if (isCogsAccount(account)) {
+          glCogs += amt
+        }
+      }
+    })
+
+    const rev = Math.max(salesIssueRev, glRev)
+    const cogs = glCogs > 0 ? glCogs : salesIssueCogs
+    const gp = Math.max(0, rev - cogs)
+    const gm = rev > 0 ? (gp / rev) * 100 : 0
+    const exp = Math.max(glExp, cogs)
+    const np = rev - exp
+    const nm = rev > 0 ? (np / rev) * 100 : 0
+
+    return {
+      postedRevenue: rev,
+      totalCogs: cogs,
+      grossProfit: gp,
+      grossMargin: gm,
+      totalExpenses: exp,
+      netProfit: np,
+      netMargin: nm,
+    }
   }, [salesIssues, finance])
 
   // Chart Data Preparation (Revenue & Sales Pipeline)
@@ -825,6 +872,80 @@ export default function ControlCenter() {
       orders: Math.max(0, monthlyMap[month].orders),
     }))
   }, [salesIssues, erp, finance])
+
+  // Chart Data Preparation (Profit Analytics: Revenue, COGS, Gross Profit & Net Profit)
+  const profitChartData = useMemo(() => {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    const monthlyMap: Record<string, { revenue: number; cogs: number; expenses: number }> = {}
+    months.forEach((m) => {
+      monthlyMap[m] = { revenue: 0, cogs: 0, expenses: 0 }
+    })
+
+    const accounts = finance.getAccounts()
+    const entries = finance.getJournalEntries()
+    const lines = finance.getJournalEntryLines()
+    const entryMap = new Map(entries.map((e) => [e.id, e]))
+
+    lines.forEach((line) => {
+      const entry = entryMap.get(line.journal_entry_id)
+      const dateStr = entry?.entry_date || (line as any).created_at
+      const d = dateStr ? new Date(dateStr) : null
+      if (d && !isNaN(d.getTime())) {
+        const monthLabel = months[d.getMonth()]
+        const acc = accounts.find((a) => a.id === line.account_id)
+        if (acc) {
+          if (acc.account_type === "Revenue") {
+            monthlyMap[monthLabel].revenue += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
+          } else if (acc.account_type === "Expense") {
+            const amt = Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
+            monthlyMap[monthLabel].expenses += amt
+            if (isCogsAccount(acc)) {
+              monthlyMap[monthLabel].cogs += amt
+            }
+          }
+        }
+      }
+    })
+
+    // Fallback to Sales Issues if GL lines are empty
+    const hasGlData = Object.values(monthlyMap).some((m) => m.revenue > 0 || m.cogs > 0)
+    if (!hasGlData && salesIssues.length > 0) {
+      salesIssues.forEach((si) => {
+        if (si.status === "Cancelled") return
+        const dateStr = si.sale_date || (si as any).created_at
+        const d = dateStr ? new Date(dateStr) : null
+        if (d && !isNaN(d.getTime())) {
+          const monthLabel = months[d.getMonth()]
+          monthlyMap[monthLabel].revenue += Number(si.total_amount || 0)
+          if (Array.isArray(si.items)) {
+            si.items.forEach((item) => {
+              const qty = Number(item.quantity || 0)
+              const cost = Number((item as any).unit_cost || (item as any).cost_price || 0)
+              monthlyMap[monthLabel].cogs += qty * cost
+            })
+          }
+        }
+      })
+    }
+
+    return months.map((month) => {
+      const rev = Math.max(0, monthlyMap[month].revenue)
+      const cogs = Math.max(0, monthlyMap[month].cogs)
+      const exp = Math.max(cogs, monthlyMap[month].expenses)
+      const grossProfit = Math.max(0, rev - cogs)
+      const netProfit = rev - exp
+      const margin = rev > 0 ? Math.round(((grossProfit / rev) * 100) * 10) / 10 : 0
+      return {
+        name: month,
+        revenue: rev,
+        cogs,
+        grossProfit,
+        expenses: exp,
+        netProfit,
+        margin,
+      }
+    })
+  }, [salesIssues, finance])
 
   // Stock Valuation Breakdown by Commodity / Category
   const inventoryCategoryData = useMemo(() => {
@@ -1183,10 +1304,12 @@ export default function ControlCenter() {
         {/* Tab Content 1: Overview */}
         {activeTab === "overview" && (
           <motion.div key="overview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
-            {/* Colored Metric Cards (Posted Revenue & Inventory Value) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Colored Metric Cards (Posted Revenue, Gross Profit, EBIT & Inventory Value) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
               {dataLoading ? (
                 <>
+                  <StatCardSkeleton />
+                  <StatCardSkeleton />
                   <StatCardSkeleton />
                   <StatCardSkeleton />
                 </>
@@ -1196,57 +1319,133 @@ export default function ControlCenter() {
                   <motion.div
                     whileHover={{ scale: 1.01 }}
                     transition={{ duration: 0.2 }}
-                    className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-emerald-500/15 via-emerald-600/5 to-white/70 border border-emerald-500/30 backdrop-blur-xl shadow-lg shadow-emerald-950/[0.04]"
+                    className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-emerald-500/15 via-emerald-600/5 to-white/70 border border-emerald-500/30 backdrop-blur-xl shadow-lg shadow-emerald-950/[0.04] flex flex-col justify-between"
                   >
                     <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-400/20 rounded-full blur-3xl pointer-events-none -mr-12 -mt-12" />
-                    <div className="flex items-start justify-between relative z-10">
-                      <div>
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white shadow-sm">
-                          Financial Balance
-                        </span>
-                        <p className="text-xs text-emerald-900 font-extrabold uppercase tracking-wider mt-2.5">Posted Revenue</p>
+                    <div>
+                      <div className="flex items-start justify-between relative z-10">
+                        <div>
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white shadow-sm">
+                            Financial Balance
+                          </span>
+                          <p className="text-xs text-emerald-900 font-extrabold uppercase tracking-wider mt-2.5">Posted Revenue</p>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-800 border border-emerald-500/30 shadow-inner">
+                          <DollarSign className="size-6 text-emerald-700" />
+                        </div>
                       </div>
-                      <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-800 border border-emerald-500/30 shadow-inner">
-                        <DollarSign className="size-6 text-emerald-700" />
+                      <div className="mt-4 relative z-10">
+                        <p className="text-2xl sm:text-3xl font-black text-black tracking-tight font-mono">
+                          ETB {money(postedRevenue)}
+                        </p>
                       </div>
                     </div>
-                    <div className="mt-4 relative z-10">
-                      <p className="text-3xl sm:text-4xl font-black text-black tracking-tight font-mono">
-                        ETB {money(postedRevenue)}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-2 text-xs font-bold text-emerald-800">
-                        <TrendingUp className="size-4" />
-                        <span>Calculated from posted general ledger revenue transactions</span>
-                      </div>
+                    <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-emerald-800 relative z-10">
+                      <TrendingUp className="size-4 shrink-0" />
+                      <span className="truncate">Posted GL revenue transactions</span>
                     </div>
                   </motion.div>
 
-                  {/* Card 2: Inventory Value (Indigo/Violet Gradient) */}
+                  {/* Card 2: Gross Profit & Margin (Teal/Emerald Gradient) */}
                   <motion.div
                     whileHover={{ scale: 1.01 }}
                     transition={{ duration: 0.2 }}
-                    className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-indigo-500/15 via-violet-600/5 to-white/70 border border-indigo-500/30 backdrop-blur-xl shadow-lg shadow-indigo-950/[0.04]"
+                    className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-teal-500/15 via-emerald-600/5 to-white/70 border border-teal-500/30 backdrop-blur-xl shadow-lg shadow-teal-950/[0.04] flex flex-col justify-between"
                   >
-                    <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-400/20 rounded-full blur-3xl pointer-events-none -mr-12 -mt-12" />
-                    <div className="flex items-start justify-between relative z-10">
-                      <div>
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-sm">
-                          Asset Valuation
-                        </span>
-                        <p className="text-xs text-indigo-900 font-extrabold uppercase tracking-wider mt-2.5">Total Inventory Value</p>
+                    <div className="absolute top-0 right-0 w-48 h-48 bg-teal-400/20 rounded-full blur-3xl pointer-events-none -mr-12 -mt-12" />
+                    <div>
+                      <div className="flex items-start justify-between relative z-10">
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-teal-700 text-white shadow-sm">
+                              Gross Margin
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-teal-100 text-teal-800 border border-teal-300 font-mono">
+                              {grossMargin.toFixed(1)}%
+                            </span>
+                          </div>
+                          <p className="text-xs text-teal-900 font-extrabold uppercase tracking-wider mt-2.5">Gross Profit</p>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-teal-500/20 text-teal-800 border border-teal-500/30 shadow-inner">
+                          <TrendingUp className="size-6 text-teal-700" />
+                        </div>
                       </div>
-                      <div className="p-3 rounded-2xl bg-indigo-500/20 text-indigo-800 border border-indigo-500/30 shadow-inner">
-                        <Package className="size-6 text-indigo-700" />
+                      <div className="mt-4 relative z-10">
+                        <p className="text-2xl sm:text-3xl font-black text-black tracking-tight font-mono">
+                          ETB {money(grossProfit)}
+                        </p>
                       </div>
                     </div>
-                    <div className="mt-4 relative z-10">
-                      <p className="text-3xl sm:text-4xl font-black text-black tracking-tight font-mono">
-                        ETB {money(inventoryValue)}
-                      </p>
-                      <div className="flex items-center gap-1.5 mt-2 text-xs font-bold text-indigo-800">
-                        <Layers className="size-4" />
-                        <span>Valued across all active warehouse stock batches</span>
+                    <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-teal-800 relative z-10">
+                      <Coins className="size-4 shrink-0" />
+                      <span className="truncate">COGS: ETB {money(totalCogs)}</span>
+                    </div>
+                  </motion.div>
+
+                  {/* Card 3: Net Operating Income (Blue/Indigo Gradient) */}
+                  <motion.div
+                    whileHover={{ scale: 1.01 }}
+                    transition={{ duration: 0.2 }}
+                    className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-blue-500/15 via-indigo-600/5 to-white/70 border border-blue-500/30 backdrop-blur-xl shadow-lg shadow-blue-950/[0.04] flex flex-col justify-between"
+                  >
+                    <div className="absolute top-0 right-0 w-48 h-48 bg-blue-400/20 rounded-full blur-3xl pointer-events-none -mr-12 -mt-12" />
+                    <div>
+                      <div className="flex items-start justify-between relative z-10">
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-700 text-white shadow-sm">
+                              EBIT
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-300 font-mono">
+                              {netMargin.toFixed(1)}%
+                            </span>
+                          </div>
+                          <p className="text-xs text-blue-900 font-extrabold uppercase tracking-wider mt-2.5">Net Operating Income</p>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-blue-500/20 text-blue-800 border border-blue-500/30 shadow-inner">
+                          <BarChart3 className="size-6 text-blue-700" />
+                        </div>
                       </div>
+                      <div className="mt-4 relative z-10">
+                        <p className="text-2xl sm:text-3xl font-black text-black tracking-tight font-mono">
+                          ETB {money(netProfit)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-blue-800 relative z-10">
+                      <CheckCircle2 className="size-4 shrink-0" />
+                      <span className="truncate">Bottom-line operating income</span>
+                    </div>
+                  </motion.div>
+
+                  {/* Card 4: Inventory Value (Indigo/Violet Gradient) */}
+                  <motion.div
+                    whileHover={{ scale: 1.01 }}
+                    transition={{ duration: 0.2 }}
+                    className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-indigo-500/15 via-violet-600/5 to-white/70 border border-indigo-500/30 backdrop-blur-xl shadow-lg shadow-indigo-950/[0.04] flex flex-col justify-between"
+                  >
+                    <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-400/20 rounded-full blur-3xl pointer-events-none -mr-12 -mt-12" />
+                    <div>
+                      <div className="flex items-start justify-between relative z-10">
+                        <div>
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-600 text-white shadow-sm">
+                            Asset Valuation
+                          </span>
+                          <p className="text-xs text-indigo-900 font-extrabold uppercase tracking-wider mt-2.5">Total Inventory Value</p>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-indigo-500/20 text-indigo-800 border border-indigo-500/30 shadow-inner">
+                          <Package className="size-6 text-indigo-700" />
+                        </div>
+                      </div>
+                      <div className="mt-4 relative z-10">
+                        <p className="text-2xl sm:text-3xl font-black text-black tracking-tight font-mono">
+                          ETB {money(inventoryValue)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-indigo-800 relative z-10">
+                      <Layers className="size-4 shrink-0" />
+                      <span className="truncate">Valued across active stock batches</span>
                     </div>
                   </motion.div>
                 </>
@@ -1271,6 +1470,8 @@ export default function ControlCenter() {
                         <p className="text-xs text-gray-500 mt-0.5">
                           {chartMode === "revenue"
                             ? "Revenue performance & sales orders pipeline across the active fiscal year."
+                            : chartMode === "profit"
+                            ? "Gross profit margin, Cost of Goods Sold (COGS), and net operating profit breakdown."
                             : chartMode === "inventory"
                             ? "Inventory valuation and stock distribution breakdown by product category."
                             : "Raw commodity cleaning reject rates & net yield comparison across WH1 suppliers."}
@@ -1289,6 +1490,18 @@ export default function ControlCenter() {
                         >
                           <TrendingUp className="size-3.5 text-emerald-600" />
                           Revenue Trend
+                        </button>
+                        <button
+                          onClick={() => handleChartModeChange("profit")}
+                          className={cn(
+                            "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5",
+                            chartMode === "profit"
+                              ? "bg-white text-black shadow-sm"
+                              : "text-gray-500 hover:text-black"
+                          )}
+                        >
+                          <Coins className="size-3.5 text-teal-600" />
+                          Profit Analytics
                         </button>
                         <button
                           onClick={() => handleChartModeChange("inventory")}
@@ -1371,6 +1584,102 @@ export default function ControlCenter() {
                             />
                           </AreaChart>
                         </ResponsiveContainer>
+                      </div>
+                    ) : chartMode === "profit" ? (
+                      <div className="space-y-4 pt-2">
+                        {/* Executive Profit Summary Strip */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                          <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
+                            <span className="text-[10px] font-black text-emerald-800 uppercase block tracking-wider">Posted Revenue</span>
+                            <span className="text-base font-black font-mono text-emerald-950 mt-0.5 block">ETB {money(postedRevenue)}</span>
+                          </div>
+                          <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20">
+                            <span className="text-[10px] font-black text-rose-800 uppercase block tracking-wider">Total COGS</span>
+                            <span className="text-base font-black font-mono text-rose-950 mt-0.5 block">ETB {money(totalCogs)}</span>
+                          </div>
+                          <div className="p-3 rounded-2xl bg-teal-500/10 border border-teal-500/20">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black text-teal-800 uppercase block tracking-wider">Gross Margin</span>
+                              <span className="text-[10px] font-black text-teal-700 bg-teal-100 px-1.5 py-0.2 rounded font-mono">{grossMargin.toFixed(1)}%</span>
+                            </div>
+                            <span className="text-base font-black font-mono text-teal-950 mt-0.5 block">ETB {money(grossProfit)}</span>
+                          </div>
+                          <div className="p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black text-blue-800 uppercase block tracking-wider">Net Profit</span>
+                              <span className="text-[10px] font-black text-blue-700 bg-blue-100 px-1.5 py-0.2 rounded font-mono">{netMargin.toFixed(1)}%</span>
+                            </div>
+                            <span className="text-base font-black font-mono text-blue-950 mt-0.5 block">ETB {money(netProfit)}</span>
+                          </div>
+                        </div>
+
+                        <div className="h-[250px] w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={profitChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                              <defs>
+                                <linearGradient id="profitColorRev" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
+                                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
+                                </linearGradient>
+                                <linearGradient id="profitColorCogs" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.25} />
+                                  <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.0} />
+                                </linearGradient>
+                                <linearGradient id="profitColorGp" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#0d9488" stopOpacity={0.35} />
+                                  <stop offset="95%" stopColor="#0d9488" stopOpacity={0.0} />
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                              <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "#888", fontWeight: 600 }} />
+                              <YAxis
+                                tickLine={false}
+                                axisLine={false}
+                                tick={{ fontSize: 11, fill: "#888", fontWeight: 600 }}
+                                tickFormatter={(val) => (Math.abs(val) >= 1000 ? `${(val / 1000).toFixed(0)}k` : `${val}`)}
+                              />
+                              <Tooltip
+                                contentStyle={{
+                                  backgroundColor: "rgba(255, 255, 255, 0.95)",
+                                  borderRadius: "16px",
+                                  border: "1px solid rgba(0,0,0,0.08)",
+                                  boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1)",
+                                  fontSize: "12px",
+                                  fontWeight: "bold",
+                                }}
+                                formatter={(val: any, name: any) => [`ETB ${Number(val).toLocaleString()}`, name]}
+                              />
+                              <Area
+                                type="monotone"
+                                dataKey="revenue"
+                                name="Revenue"
+                                stroke="#059669"
+                                strokeWidth={2.5}
+                                fillOpacity={1}
+                                fill="url(#profitColorRev)"
+                              />
+                              <Area
+                                type="monotone"
+                                dataKey="cogs"
+                                name="COGS"
+                                stroke="#f43f5e"
+                                strokeWidth={2}
+                                strokeDasharray="3 3"
+                                fillOpacity={1}
+                                fill="url(#profitColorCogs)"
+                              />
+                              <Area
+                                type="monotone"
+                                dataKey="grossProfit"
+                                name="Gross Profit"
+                                stroke="#0d9488"
+                                strokeWidth={2.5}
+                                fillOpacity={1}
+                                fill="url(#profitColorGp)"
+                              />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
                     ) : chartMode === "inventory" ? (
                       <div className="h-[320px] w-full pt-4">
@@ -1611,7 +1920,7 @@ export default function ControlCenter() {
                       </div>
 
                       <button
-                        onClick={() => navigate(creditSectionTab === "receivables" ? "/sales/sales-issued" : "/purchase-orders")}
+                        onClick={() => navigate(creditSectionTab === "receivables" ? "/sales/sales-issued" : "/sales/purchase-orders")}
                         className="p-1.5 rounded-lg text-gray-400 hover:text-black hover:bg-black/5 transition-all text-xs font-bold flex items-center gap-1"
                         title={creditSectionTab === "receivables" ? "Open in Sales Issued" : "Open in Purchase Orders"}
                       >
@@ -1960,7 +2269,7 @@ export default function ControlCenter() {
                   {/* Footer CTA */}
                   <div className="pt-3 border-t border-black/5 mt-3">
                     <button
-                      onClick={() => navigate(creditSectionTab === "receivables" ? "/sales/sales-issued" : "/purchase-orders")}
+                      onClick={() => navigate(creditSectionTab === "receivables" ? "/sales/sales-issued" : "/sales/purchase-orders")}
                       className="w-full py-2 px-3 rounded-xl bg-black text-white hover:bg-zinc-800 transition-all text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                     >
                       <span>{creditSectionTab === "receivables" ? "Manage All Sales Issues" : "Manage Purchase Orders"}</span>
@@ -2001,7 +2310,7 @@ export default function ControlCenter() {
                       </div>
                     )}
                     <button
-                      onClick={() => navigate("/inventory/dashboard")}
+                      onClick={() => navigate("/inventory")}
                       className="px-3 py-1.5 rounded-xl bg-black/5 hover:bg-black/10 text-black text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
                     >
                       <span>Inventory Dashboard</span>
@@ -2154,7 +2463,7 @@ export default function ControlCenter() {
                       Showing 9 of {adminExpirySummary.items.length} expiring stock batches
                     </span>
                     <button
-                      onClick={() => navigate("/inventory/dashboard")}
+                      onClick={() => navigate("/inventory")}
                       className="text-indigo-600 hover:text-indigo-700 font-bold inline-flex items-center gap-1 cursor-pointer"
                     >
                       <span>View all in Inventory Dashboard</span>

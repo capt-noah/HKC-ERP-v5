@@ -58,16 +58,25 @@ function checkAuthResponse(response: Response, body: any): boolean {
   return false
 }
 
+function bustUrl(url: string): string {
+  const sep = url.includes("?") ? "&" : "?"
+  return `${url}${sep}_t=${Date.now()}`
+}
+
 export async function loadResource<T>(resource: string): Promise<T[]> {
   const authHeaders = getAuthHeaders()
   if (!authHeaders["Authorization"]) {
     return []
   }
 
-  const response = await fetch(`${API_BASE}/api/${resource}`, {
+  const url = bustUrl(`${API_BASE}/api/${resource}`)
+  const response = await fetch(url, {
     headers: {
       ...authHeaders,
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
     },
+    cache: "no-store",
   })
   const body = await parseResponse(response)
 

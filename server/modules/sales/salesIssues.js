@@ -10,6 +10,8 @@ import {
 } from "../../db/drizzleCrud.js"
 import { pool } from "../../db/client.js"
 import crypto from "node:crypto"
+import { getLocalDateString } from "../../utils/dateUtils.js"
+import { getDefaultWarehouseForType } from "../../utils/warehouseUtils.js"
 
 // ── Service Logic ─────────────────────────────────────────────────────────────
 
@@ -154,7 +156,7 @@ export async function listSalesIssues(query = {}) {
       let rawDate = issue.sale_date || issue.issueDate || issue.issue_date || issue.created_at || new Date()
       let sale_date = typeof rawDate === "string" 
         ? (rawDate.includes("T") ? rawDate.split("T")[0] : rawDate)
-        : (rawDate instanceof Date ? rawDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
+        : getLocalDateString(rawDate)
 
       const matchedCust = customerMap.get(issue.customer_id)
       const matchedOrder = orderMap.get(issue.sales_order_id) || orderMap.get(reference_no)
@@ -163,7 +165,8 @@ export async function listSalesIssues(query = {}) {
 
       const customer_name = issue.customer_name || matchedCust?.name || matchedOrder?.customer || issue.customer || issue.customerName || issue.customer_id || "Customer"
       const customer_id = issue.customer_id || matchedCust?.id || matchedOrder?.customerId || customer_name
-      const warehouse_id = issue.warehouse_id || matchedOrder?.warehouse || matchedProd?.warehouse || issue.warehouseId || issue.warehouse || "WH1"
+      const defaultExpWh = allWarehouses.find(w => isExportWarehouseType(w, allWarehouses))?.id || allWarehouses[0]?.id || "WH1"
+      const warehouse_id = issue.warehouse_id || matchedOrder?.warehouse || matchedProd?.warehouse || issue.warehouseId || issue.warehouse || defaultExpWh
       const isExport = isExportWarehouseType(warehouse_id, allWarehouses)
 
       const payment_type = issue.payment_type || issue.paymentType || issue.payment_method || issue.paymentMethod || "Cash"
@@ -401,14 +404,15 @@ export async function getSalesIssue(id) {
     let rawDate = issue.sale_date || issue.issueDate || issue.issue_date || issue.created_at || new Date()
     let sale_date = typeof rawDate === "string" 
       ? (rawDate.includes("T") ? rawDate.split("T")[0] : rawDate)
-      : (rawDate instanceof Date ? rawDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
+      : getLocalDateString(rawDate)
 
     const firstItem = items[0]
     const matchedProd = firstItem ? (productMap.get(firstItem.product_id) || productMap.get(firstItem.item_id)) : null
 
     const customer_name = issue.customer_name || matchedCust?.name || matchedOrder?.customer || issue.customer || issue.customerName || issue.customer_id || "Customer"
     const customer_id = issue.customer_id || matchedCust?.id || matchedOrder?.customerId || customer_name
-    const warehouse_id = issue.warehouse_id || matchedOrder?.warehouse || matchedProd?.warehouse || issue.warehouseId || issue.warehouse || "WH1"
+    const defaultExpWh = allWarehouses.find(w => isExportWarehouseType(w, allWarehouses))?.id || allWarehouses[0]?.id || "WH1"
+    const warehouse_id = issue.warehouse_id || matchedOrder?.warehouse || matchedProd?.warehouse || issue.warehouseId || issue.warehouse || defaultExpWh
     const isExport = isExportWarehouseType(warehouse_id, allWarehouses)
 
     const payment_type = issue.payment_type || issue.paymentType || issue.payment_method || issue.paymentMethod || "Cash"
@@ -505,16 +509,16 @@ export async function createSalesIssue(input, existingId = null) {
   const fs_no = input?.fs_no || input?.fsNo || input?.issue_number || input?.issueNumber || `FS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
   const id = existingId || input?.id || fs_no
   const reference_no = input?.reference_no || input?.referenceNo || `REF-${fs_no}`
-  const sale_date = input?.sale_date || input?.issueDate || new Date().toISOString().split("T")[0]
+  const sale_date = input?.sale_date || input?.issueDate || getLocalDateString()
   const customer_name = input?.customer_name || input?.customer || input?.customer_id || "Walk-in Customer"
   const customer_id = input?.customer_id || input?.customerId || customer_name
-  const warehouse_id = input?.warehouse_id || input?.warehouse || "WH-MAIN"
+  const warehouse_id = input?.warehouse_id || input?.warehouse || allWarehouses[0]?.id || "WH-MAIN"
   const payment_type = input?.payment_type || input?.paymentType || "Cash"
   const isExport = isExportWarehouseType(warehouse_id, allWarehouses)
   const rawItems = Array.isArray(input?.items) ? input.items : []
   const items = rawItems.map((it) => {
     if (!it.batch_id && !it.batch_no) {
-      const fallbackBatch = isExport ? "COMMODITY-WH1" : "BATCH-MAIN"
+      const fallbackBatch = isExport ? "COMMODITY-MAIN" : "BATCH-MAIN"
       return { ...it, batch_id: fallbackBatch, batch_no: fallbackBatch }
     }
     return it
@@ -559,6 +563,28 @@ export async function createSalesIssue(input, existingId = null) {
   const errors = validateSalesIssueDraft(doc, items)
   if (errors.length > 0) {
     return { status: 400, body: { error: "Validation failed", details: errors } }
+  }
+
+  // Enforce business rule: Referenced Sales Order must be Approved by Superadmin before issuing stock
+  const linkedSoId = String(input?.sales_order_id || input?.salesOrderId || input?.reference_no || input?.referenceNo || input?.order_id || "").trim()
+  if (linkedSoId && !linkedSoId.startsWith("REF-FS-") && linkedSoId !== "Walk-in") {
+    try {
+      const soRes = await drizzleGetRow({ resource: getResource("sales_orders"), id: linkedSoId }).catch(() => null)
+      const soData = soRes?.body?.payload ? { ...soRes.body.payload, ...soRes.body } : soRes?.body
+      if (soData && soData.id) {
+        const approval = String(soData.approvalStatus || soData.approval_status || "Pending")
+        if (approval !== "Approved") {
+          return {
+            status: 400,
+            body: {
+              error: `Sales Order '${linkedSoId}' has approval status '${approval}'. It must be approved by a Superadmin before a Sales Issue can be created.`
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Could not check sales order approval status:", e)
+    }
   }
 
   // 1. Save Header
@@ -701,9 +727,9 @@ export async function updateSalesIssue(input, id) {
     warehouse_id: warehouse_id || null,
     warehouseId: warehouse_id || null,
     warehouse: warehouse_id || null,
-    sale_date: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
-    issue_date: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
-    issueDate: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
+    sale_date: input?.sale_date || existing.sale_date || getLocalDateString(),
+    issue_date: input?.sale_date || existing.sale_date || getLocalDateString(),
+    issueDate: input?.sale_date || existing.sale_date || getLocalDateString(),
     status: input?.status || existing.status || "Draft",
     total_quantity: total_quantity,
     totalQuantity: total_quantity,
@@ -998,27 +1024,26 @@ export async function postSalesIssue(arg1, arg2) {
               ewmVal -= q * p
             }
           }
-          ewmVal -= issueQty * thisDispatchPrice
-
-          if (allEwMovements.length > 0) {
-            finalStockValue = newQty <= 0 ? 0 : Math.max(0, Math.round(ewmVal * 100) / 100)
+          if (parcels.length > 0) {
+            finalStockValue = newQty <= 0 ? 0 : Math.max(0, Math.round(parcels.reduce((sum, p) => sum + (Math.max(0, p.quantityRemaining) * p.unitPrice), 0) * 100) / 100)
           } else {
             const initialVal = Number(prod.total_stock_value || (Number(prod.quantity || 0) * unitCost))
-            finalStockValue = newQty <= 0 ? 0 : Math.max(0, Math.round((initialVal - (issueQty * thisDispatchPrice)) * 100) / 100)
+            finalStockValue = newQty <= 0 ? 0 : Math.max(0, Math.round((initialVal - itemActualCost) * 100) / 100)
           }
           finalUnitCost = newQty > 0 ? Math.round((finalStockValue / newQty) * 100) / 100 : unitCost
 
           // Export warehouse movement row
+          const defaultExpWh = targetWh || (await getDefaultWarehouseForType("EXPORT_WH"))
           const ewmId = `EWM-ISS-${id}-${Math.random().toString(36).slice(2, 7)}`
           await drizzleCreateRow({
             resource: getResource("export_warehouse_movements"),
             body: {
               id: ewmId,
-              warehouse_id: targetWh || "WH1",
+              warehouse_id: defaultExpWh,
               product_id: realProdId,
               movement_type: "OUTBOUND_DISPATCH",
               voucher_no: existing.fs_no || id,
-              batch_no: childBatchNo || "COMMODITY-WH1",
+              batch_no: childBatchNo || `COMMODITY-${defaultExpWh}`,
               party_name: existing.customer_name || existing.customer || "Customer Dispatch",
               plate_number: existing.plate_number || existing.plateNumber || item.plate_number || "—",
               gross_quantity: issueQty,
@@ -1026,7 +1051,7 @@ export async function postSalesIssue(arg1, arg2) {
               net_quantity: -issueQty,
               uom: prod.unit || "Quintal",
               unit_price: unitPrice > 0 ? unitPrice : effectiveOutboundCostRate,
-              movement_date: existing.sale_date || new Date().toISOString().split("T")[0],
+              movement_date: existing.sale_date || getLocalDateString(),
               reason: `Sales Issue Dispatch (${existing.fs_no || id})`,
               created_by: existing.created_by || "Sales Officer",
             },
@@ -1137,24 +1162,23 @@ export async function postSalesIssue(arg1, arg2) {
               smVal -= q * p
             }
           }
-          smVal -= issueQty * thisIssuePrice
-
-          if (existingSmRows && existingSmRows.length > 0) {
-            finalStockValue = newQty <= 0 ? 0 : Math.max(0, Math.round(smVal * 100) / 100)
+          if (activeBatches.length > 0) {
+            finalStockValue = newQty <= 0 ? 0 : Math.max(0, Math.round(activeBatches.reduce((sum, b) => sum + (Math.max(0, Number(b.quantity || 0)) * Number(b.unit_cost || 0)), 0) * 100) / 100)
           } else {
             const initialVal = Number(prod.total_stock_value || (Number(prod.quantity || 0) * unitCost))
-            finalStockValue = newQty <= 0 ? 0 : Math.max(0, Math.round((initialVal - (issueQty * thisIssuePrice)) * 100) / 100)
+            finalStockValue = newQty <= 0 ? 0 : Math.max(0, Math.round((initialVal - itemActualCost) * 100) / 100)
           }
           finalUnitCost = newQty > 0 ? Math.round((finalStockValue / newQty) * 100) / 100 : unitCost
 
           // Write stock movement
+          const defaultPharmaWh = targetWh || (await getDefaultWarehouseForType("PHARMA_WH"))
           const smId = `SM-ISS-${id}-${Math.random().toString(36).slice(2, 7)}`
           await drizzleCreateRow({
             resource: getResource("stock_movements"),
             body: {
               id: smId,
               product_id: realProdId,
-              warehouse_id: targetWh || "WH2",
+              warehouse_id: defaultPharmaWh,
               movement_type: "ISSUE",
               quantity: issueQty,
               unit_cost: itemActualCost > 0 && issueQty > 0 ? Math.round((itemActualCost / issueQty) * 100) / 100 : unitCost,
@@ -1166,7 +1190,7 @@ export async function postSalesIssue(arg1, arg2) {
               reference_id: id,
               notes: `Sales Issue ${existing.fs_no || id} - Customer: ${existing.customer_name || existing.customer || "Customer Dispatch"}`,
               performed_by: existing.created_by || "Sales Officer",
-              movement_date: existing.sale_date || new Date().toISOString().split("T")[0],
+              movement_date: existing.sale_date || getLocalDateString(),
             },
           }).catch((smErr) => console.warn("Stock movement creation error:", smErr.message))
 
@@ -1283,7 +1307,7 @@ export async function postSalesIssue(arg1, arg2) {
       resource: getResource("journal_entries"),
       body: {
         id: saleJeId,
-        entry_date: new Date().toISOString().split("T")[0],
+        entry_date: existing.sale_date || getLocalDateString(),
         description: `Sales issue ${existing.fs_no || id}`,
         source_type: "Sales Issue",
         source_id: id,
@@ -1357,7 +1381,7 @@ export async function postSalesIssue(arg1, arg2) {
         resource: getResource("journal_entries"),
         body: {
           id: cogsJeId,
-          entry_date: new Date().toISOString().split("T")[0],
+          entry_date: existing.sale_date || getLocalDateString(),
           description: `Inventory cost for sales issue ${existing.fs_no || id}`,
           source_type: "Sales Issue",
           source_id: id,
@@ -1444,6 +1468,7 @@ export async function cancelSalesIssue(id) {
 export async function getAvailableBatches(query = {}) {
   const itemId = query.item_id || query.itemId || query.productId || null
   const warehouseId = query.warehouse_id || query.warehouseId || query.warehouse || null
+  const defaultPharmaWh = await getDefaultWarehouseForType("PHARMA_WH")
 
   try {
     const [batchesRes, pharmaRes] = await Promise.all([
@@ -1463,7 +1488,7 @@ export async function getAvailableBatches(query = {}) {
         batch_no: batchNo,
         item_id: b.product_id || b.productId || itemId,
         item_name: parentProd?.name || "Product",
-        warehouse_id: b.warehouse_id || b.warehouseId || warehouseId || parentProd?.warehouse_id || "WH2",
+        warehouse_id: b.warehouse_id || b.warehouseId || warehouseId || parentProd?.warehouse_id || defaultPharmaWh,
         available_quantity: Number(b.quantity || b.qty || 0),
         manufacturing_date: b.mfg_date || b.mfgDate || "",
         expiry: b.expiry_date || b.expiryDate || "",
@@ -1487,7 +1512,7 @@ export async function getAvailableBatches(query = {}) {
       batch_no: "BATCH-MAIN",
       item_id: itemId || "ITEM-1",
       item_name: "Product",
-      warehouse_id: warehouseId || "WH1",
+      warehouse_id: warehouseId || defaultPharmaWh,
       available_quantity: 1000,
       packaging_unit: "Box",
       unit_price: 1000,

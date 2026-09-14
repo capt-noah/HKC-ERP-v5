@@ -23,6 +23,7 @@ import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { useErpStore } from "@/lib/erpStore"
+import { isExportWarehouse } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { Skeleton } from "@/components/ui/skeleton"
 import { EditModalHeader } from "@/components/EditModalHeader"
@@ -117,7 +118,7 @@ export default function ProcessingServices() {
   }, [userWarehouseIds, erp])
 
   const isInventoryAdminOnly = userRoles.includes("inventory_admin") && !userRoles.includes("superadmin")
-  const hasWH1Access = !isInventoryAdminOnly || resolvedWarehouseIds.length === 0 || resolvedWarehouseIds.includes("WH1") || resolvedWarehouseIds.includes("WH1-AGRI-EXP")
+  const hasWH1Access = !isInventoryAdminOnly || resolvedWarehouseIds.length === 0 || resolvedWarehouseIds.some(id => isExportWarehouse(id))
 
   const [services, setServices] = useState<ProcessingServiceOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)

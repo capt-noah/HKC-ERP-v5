@@ -314,8 +314,15 @@ export default function FinancialReports() {
   const totalRevenue = accountsByType.Revenue.reduce((s, account) => s + accountBalance(account), 0)
   const totalExpenses = accountsByType.Expense.reduce((s, account) => s + accountBalance(account), 0)
   const netIncome = totalRevenue - totalExpenses
-  const cogsTotal = accountsByType.Expense.filter((account) => /^6|^5/i.test(account.code) || account.peachtree_type === "Cost of Sales" || /cogs|cost of/i.test(account.name)).reduce((total, account) => total + accountBalance(account), 0)
-  const operatingExpenseTotal = totalExpenses - cogsTotal
+  const isCogsAccount = (account: { code?: string | null; name?: string | null; peachtree_type?: string | null }) => {
+    if (!account) return false
+    if (account.peachtree_type === "Cost of Sales") return true
+    if (account.code === "5001" || account.code?.startsWith("6")) return true
+    if (/cogs|cost of (goods|sales)/i.test(account.name || "")) return true
+    return false
+  }
+  const cogsTotal = accountsByType.Expense.filter(isCogsAccount).reduce((total, account) => total + accountBalance(account), 0)
+  const operatingExpenseTotal = accountsByType.Expense.filter((account) => !isCogsAccount(account)).reduce((total, account) => total + accountBalance(account), 0)
   const monthlyReports = new Map<string, { month: string; revenue: number; cogs: number; expenses: number; netProfit: number; operating: number; investing: number; financing: number; netCash: number; cashBalance: number }>()
   let cumulativeCash = 0
   for (const transaction of [...allGlTransactions].sort((a, b) => a.entry_date.localeCompare(b.entry_date))) {
@@ -324,7 +331,8 @@ export default function FinancialReports() {
     if (transaction.account_type === "Revenue") row.revenue += transaction.credit_amount - transaction.debit_amount
     if (transaction.account_type === "Expense") {
       const amount = transaction.debit_amount - transaction.credit_amount
-      if (/^6|^5/i.test(transaction.account_code) || /cogs|cost of/i.test(transaction.account_name)) row.cogs += amount
+      const isCogsTx = transaction.account_code === "5001" || transaction.account_code?.startsWith("6") || /cogs|cost of (goods|sales)/i.test(transaction.account_name || "")
+      if (isCogsTx) row.cogs += amount
       else row.expenses += amount
     }
     if (transaction.account_type === "Asset" && (transaction.account_code.startsWith("1000") || /cash|bank/i.test(transaction.account_name))) row.operating += transaction.debit_amount - transaction.credit_amount
@@ -1394,10 +1402,10 @@ export default function FinancialReports() {
                     )}
                   </div>
 
-                  {/* Cost of Sales (6000 Series) Section */}
+                  {/* Cost of Sales Section */}
                   <div className="bg-zinc-50/80 p-4 rounded-xl border border-zinc-200/60">
                     <div className="flex justify-between items-center text-sm font-black text-zinc-900 uppercase font-sans mb-2 border-b border-zinc-200 pb-1.5">
-                      <span>2. Cost of Sales / Selling & Distribution (6000 Series)</span>
+                      <span>2. Cost of Sales / Direct Fulfillment (5000 & 6000 Series)</span>
                       <span className="text-rose-600 font-mono">ETB ({cogsTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
                     </div>
                     {isLoading ? (
@@ -1408,7 +1416,7 @@ export default function FinancialReports() {
                         </div>
                       ))
                     ) : (
-                      accountsByType.Expense.filter((a) => a.code.startsWith("6")).map((a) => (
+                      accountsByType.Expense.filter(isCogsAccount).map((a) => (
                         <div key={a.id} className="flex justify-between py-1.5 border-b border-zinc-100 text-zinc-700">
                           <span>{a.code} - {a.name}</span>
                           <span className="font-bold text-rose-600">ETB ({accountBalance(a).toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
@@ -1423,10 +1431,10 @@ export default function FinancialReports() {
                     <span className="font-mono text-emerald-800 text-base">ETB {(totalRevenue - cogsTotal).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                   </div>
 
-                  {/* Administrative & General Expenses (8000 Series) Section */}
+                  {/* Administrative & General Expenses Section */}
                   <div className="bg-zinc-50/80 p-4 rounded-xl border border-zinc-200/60">
                     <div className="flex justify-between items-center text-sm font-black text-zinc-900 uppercase font-sans mb-2 border-b border-zinc-200 pb-1.5">
-                      <span>3. Administrative & General Expenses (8000 Series)</span>
+                      <span>3. Administrative & General Expenses (5000 & 8000 Series)</span>
                       <span className="text-rose-600 font-mono">ETB ({operatingExpenseTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })})</span>
                     </div>
                     {isLoading ? (
@@ -1437,7 +1445,7 @@ export default function FinancialReports() {
                         </div>
                       ))
                     ) : (
-                      accountsByType.Expense.filter((a) => !a.code.startsWith("6")).map((a) => (
+                      accountsByType.Expense.filter((a) => !isCogsAccount(a)).map((a) => (
                         <div key={a.id} className="flex justify-between py-1.5 border-b border-zinc-100 text-zinc-700">
                           <span>{a.code} - {a.name}</span>
                           <span className="font-bold text-rose-600">

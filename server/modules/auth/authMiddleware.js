@@ -61,25 +61,41 @@ export function authenticateToken(req, res, next) {
 }
 
 export function authorizeRoles(...allowedRoles) {
+  const flatRoles = allowedRoles.flat().map((r) => String(r).toLowerCase().trim())
+
   return (req, res, next) => {
     if (req.method === "OPTIONS") {
       return next()
     }
 
     if (!req.user) {
-      return res.status(401).json({ error: "Not authenticated" })
+      return res.status(401).json({ error: "Not authenticated", code: "UNAUTHORIZED" })
     }
-    
-    const userRoles = req.user.roles || (req.user.role ? [req.user.role] : [])
 
-    // Superadmin always has access
+    let userRoles = req.user.roles || (req.user.role ? [req.user.role] : [])
+    if (typeof userRoles === "string") {
+      try {
+        userRoles = JSON.parse(userRoles)
+      } catch {
+        userRoles = [userRoles]
+      }
+    }
+    if (!Array.isArray(userRoles)) {
+      userRoles = [String(userRoles)]
+    }
+    userRoles = userRoles.map((r) => String(r).toLowerCase().trim())
+
+    // Superadmin always has universal access across all modules
     if (userRoles.includes("superadmin")) {
       return next()
     }
 
-    const hasAccess = userRoles.some(role => allowedRoles.includes(role))
+    const hasAccess = userRoles.some((role) => flatRoles.includes(role))
     if (!hasAccess) {
-      return res.status(403).json({ error: "Insufficient permissions" })
+      return res.status(403).json({
+        error: `Access Denied: Role [${userRoles.join(", ")}] does not have required permissions [${flatRoles.join(", ")}].`,
+        code: "FORBIDDEN",
+      })
     }
 
     next()

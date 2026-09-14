@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom"
 import { cn } from "@/lib/utils"
 import { useAuthStore } from "@/lib/authStore"
+import { isExportWarehouse } from "@/lib/warehouses"
 import type { Role } from "@/lib/authStore"
 import type { NavChild } from "@/components/FloatingNav"
 import { navSections } from "@/lib/nav-config"
@@ -24,7 +25,7 @@ export function SubPageNav({ items, variant = "light" }: SubPageNavProps) {
   const isDark = variant === "dark"
   const { user } = useAuthStore()
 
-  const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
+  const userRoles = user?.roles || []
   const isSuperAdmin = userRoles.includes("superadmin")
 
   const visibleSections = navSections.filter((s) => {
@@ -40,7 +41,7 @@ export function SubPageNav({ items, variant = "light" }: SubPageNavProps) {
   }
 
   const userWarehouseIds = (user?.warehouse_ids || ((user as any)?.warehouse_id ? [(user as any).warehouse_id] : [])).map((id: string) => String(id).toUpperCase())
-  const hasWH1Access = isSuperAdmin || userWarehouseIds.length === 0 || userWarehouseIds.some(id => id.includes("WH1") || id.includes("WH-01") || id.includes("WH 1") || id.includes("WAREHOUSE 1"))
+  const hasWH1Access = isSuperAdmin || userWarehouseIds.length === 0 || userWarehouseIds.some(id => isExportWarehouse(id))
 
   const visibleItems = items.filter(item => {
     if (item.path === "/inventory/processing-services" && !hasWH1Access) return false

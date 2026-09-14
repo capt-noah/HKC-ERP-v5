@@ -3,6 +3,7 @@ import { deleteResource, loadResource, persistResources } from "./apiPersistence
 import { useAuthStore } from "./authStore"
 import { validateJournalVoucher } from "../core/finance/ledgerEngine"
 import { sortNewestFirst } from "./utils"
+import { isExportWarehouse } from "./warehouses"
 import { COMPANY_CHART_OF_ACCOUNTS, DEFAULT_COMPANY_SETTINGS_COA, type GlAccountMapping, DEFAULT_GL_ACCOUNT_MAPPINGS } from "./companyCOA"
 import {
   type TaxRule,
@@ -583,9 +584,11 @@ class FinanceStore {
     if (this._loadInProgress) return
 
     this._loadInProgress = true
-    this._isLoading = true
-    this._loadError = null
-    this.listeners.forEach((l) => l())
+    if (!this._isLoaded) {
+      this._isLoading = true
+      this._loadError = null
+      this.listeners.forEach((l) => l())
+    }
     try {
       const [
         accounts,
@@ -790,9 +793,9 @@ class FinanceStore {
             const matchedCustName = custMap.get(si.customer_id) || matchedOrder?.customer || (si.customer_name && si.customer_name !== "Customer" ? si.customer_name : null) || si.customer || "Customer"
 
             const subtotal = Number(si.subtotal_amount || si.subtotal || lineItems.reduce((sum, item) => sum + item.line_total, 0))
-            const isWh1 = (si.warehouse_id || matchedOrder?.warehouse || "").toString().toUpperCase().startsWith("WH1")
-            const vatAmount = Number(si.tax_amount !== undefined ? si.tax_amount : (si.vat_amount !== undefined ? si.vat_amount : (isWh1 ? 0 : Math.round(subtotal * 0.15))))
-            const taxRate = Number(si.vat_rate !== undefined ? si.vat_rate : (vatAmount > 0 && subtotal > 0 ? Math.round((vatAmount / subtotal) * 100) : (isWh1 ? 0 : 15)))
+            const isExport = isExportWarehouse(si.warehouse_id || matchedOrder?.warehouse)
+            const vatAmount = Number(si.tax_amount !== undefined ? si.tax_amount : (si.vat_amount !== undefined ? si.vat_amount : (isExport ? 0 : Math.round(subtotal * 0.15))))
+            const taxRate = Number(si.vat_rate !== undefined ? si.vat_rate : (vatAmount > 0 && subtotal > 0 ? Math.round((vatAmount / subtotal) * 100) : (isExport ? 0 : 15)))
             const discountAmount = Number(si.discount_amount || 0)
             const whtAmount = Number(si.wht_amount || 0)
             const invoiceTotal = Number(si.total_amount || (subtotal + vatAmount - discountAmount))
@@ -4194,13 +4197,8 @@ export function useFinanceStore() {
     const unsubscribe = financeStore.subscribe(() => {
       setTick((t) => t + 1)
     })
-    const refresh = () => void financeStore.reloadFromApi()
-    const interval = window.setInterval(refresh, 30_000)
-    window.addEventListener("focus", refresh)
     return () => {
       unsubscribe()
-      window.clearInterval(interval)
-      window.removeEventListener("focus", refresh)
     }
   }, [])
 

@@ -43,6 +43,7 @@ import WH1ReceivingVoucherPrintModal from "@/components/stock/WH1ReceivingVouche
 import WH1ChildMovementLedger from "@/components/stock/WH1ChildMovementLedger"
 import WH1AddMovementModal from "@/components/stock/WH1AddMovementModal"
 import { getExpiryStatus, getExpiringItemsSummary } from "@/lib/expiryUtils"
+import { getLocalDateString, formatLocalDateDisplay } from "@/lib/dateUtils"
 
 const packagingUnits = ["Box", "Bottle", "Vial", "Sachet"]
 const TON_TO_QUINTAL = 10
@@ -61,7 +62,11 @@ interface StockEditForm {
   category: string
   warehouse: string
   batch: string
+  batchNo?: string
+  mfgDate?: string
+  manufacturingDate?: string
   expiry: string
+  expiryDate?: string
   entryDate?: string
   leaveDate?: string
   quantityPerPack?: string
@@ -113,7 +118,7 @@ export default function StockProducts() {
     ? allProducts.filter(p => isProductInWarehouseScope(p, resolvedWarehouseIds))
     : allProducts
 
-  const isLoading = erp.isLoading()
+  const isLoading = erp.isLoading() && !erp.isInventoryLoaded()
   const warehouseRecords = (isInventoryAdminOnly && resolvedWarehouseIds.length > 0)
     ? allWarehouses.filter(w => isWarehouseInScope(w.id, resolvedWarehouseIds) || isWarehouseInScope(w.code, resolvedWarehouseIds))
     : allWarehouses
@@ -171,11 +176,11 @@ export default function StockProducts() {
   const [addWarehouse, setAddWarehouse] = useState("")
   const [addBatchNumber, setAddBatchNumber] = useState("")
   const [addUnitPrice, setAddUnitPrice] = useState("")
-  const [addMfgDate, setAddMfgDate] = useState("")
+  const [addMfgDate, setAddMfgDate] = useState(getLocalDateString())
   const [addExpDate, setAddExpDate] = useState("")
   const [addQtyPerPack, setAddQtyPerPack] = useState("")
   const [addNumCartons, setAddNumCartons] = useState("")
-  const [addEntryDate, setAddEntryDate] = useState("")
+  const [addEntryDate, setAddEntryDate] = useState(getLocalDateString())
   const [addQuantity, setAddQuantity] = useState("")
   const [addNotes, setAddNotes] = useState("")
   const [isSavingAdd, setIsSavingAdd] = useState(false)
@@ -314,11 +319,11 @@ export default function StockProducts() {
     setAddWarehouse("")
     setAddBatchNumber("")
     setAddUnitPrice("")
-    setAddMfgDate("")
+    setAddMfgDate(getLocalDateString())
     setAddExpDate("")
     setAddQtyPerPack("")
     setAddNumCartons("")
-    setAddEntryDate("")
+    setAddEntryDate(getLocalDateString())
     setAddQuantity("")
     setAddNotes("")
     setSelectedExistingProduct(null)
@@ -411,10 +416,14 @@ export default function StockProducts() {
       cols.push(
         { key: "dosage", label: "Strength / Dosage", align: "left" },
         { key: "shelfNo", label: "Shelf Number", align: "left" },
+        { key: "batchNo", label: "Batch No", align: "left" },
+        { key: "mfgDate", label: "Mfg Date", align: "left" },
+        { key: "expiryDate", label: "Expiry Date", align: "left" },
         { key: "numberOfCartons", label: "Cartons", align: "right" },
         { key: "quantityPerPack", label: "Quantity/Pack", align: "right" },
         { key: "quantity", label: "Total Quantity", align: "right" },
         { key: "unit", label: "Packaging Unit", align: "left" },
+        { key: "unitCost", label: "Unit Price", align: "right" },
         { key: "totalStockValue", label: "Stock Value", align: "right" }
       )
     }
@@ -435,8 +444,10 @@ export default function StockProducts() {
     dosage: 130,
     shelfNo: 120,
     batch: 110,
-    manufacturingDate: 100,
-    expiryDate: 100,
+    batchNo: 110,
+    mfgDate: 110,
+    manufacturingDate: 110,
+    expiryDate: 110,
     unit: 100,
     numberOfCartons: 85,
     quantityPerPack: 95,
@@ -555,7 +566,7 @@ export default function StockProducts() {
         const product: Product = {
           id: productId,
           name: addDescription,
-          sku: `${addDescription.slice(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, "STK")}-${isWH1Form ? "WH1" : addBatchNumber}`,
+          sku: `${addDescription.slice(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, "STK")}-${isWH1Form ? (addWarehouse || "EXP") : addBatchNumber}`,
           voucherNo: isWH1Form ? (addVoucherNo.trim() || undefined) : undefined,
           customer: isWH1Form ? (addCustomer.trim() || undefined) : undefined,
           plateNumber: isWH1Form ? (addPlateNumber.trim() || undefined) : undefined,
@@ -753,8 +764,14 @@ export default function StockProducts() {
     const whRecord = allWarehouses.find(
       (w) => w.id === product.warehouse || w.code === product.warehouse || w.name === product.warehouse
     )
-    const resolvedWarehouse = whRecord?.id || product.warehouse || (isWH1(product.warehouse) ? "WH1" : "WH2")
+    const defaultExpWh = allWarehouses.find((w) => isExportWarehouse(w, allWarehouses))?.id || allWarehouses[0]?.id || "WH1"
+    const defaultPharmaWh = allWarehouses.find((w) => !isExportWarehouse(w, allWarehouses))?.id || allWarehouses[1]?.id || "WH2"
+    const resolvedWarehouse = whRecord?.id || product.warehouse || (isWH1(product.warehouse) ? defaultExpWh : defaultPharmaWh)
     const isWh1 = isWH1(resolvedWarehouse)
+
+    const initialBatch = product.batchNo || product.batch || (product.batches?.[0]?.batchNo || "BATCH-01")
+    const initialMfg = product.mfgDate || product.manufacturingDate || (product.batches?.[0]?.mfgDate || getLocalDateString())
+    const initialExpiry = product.expiryDate || product.expiry || (product.batches?.[0]?.expiry || "")
 
     setEditForm({
       name: product.name,
@@ -766,9 +783,13 @@ export default function StockProducts() {
       shelfNo: product.shelfNo || (product as any).shelf_number || (product as any).shelf_no || "",
       category: product.category || "",
       warehouse: resolvedWarehouse,
-      batch: product.batch || (product.batches?.[0]?.batchNo || ""),
-      expiry: product.expiry || (product.batches?.[0]?.expiry || ""),
-      entryDate: product.entryDate || "",
+      batch: initialBatch,
+      batchNo: initialBatch,
+      mfgDate: initialMfg,
+      manufacturingDate: initialMfg,
+      expiry: initialExpiry,
+      expiryDate: initialExpiry,
+      entryDate: product.entryDate || getLocalDateString(),
       leaveDate: product.leaveDate || "",
       quantityPerPack: String(product.quantityPerPack || (product as any).quantity_per_pack || 1),
       numberOfCartons: String(product.numberOfCartons || (product as any).number_of_cartons || 0),
@@ -798,6 +819,7 @@ export default function StockProducts() {
     const shelfNo = isWh1 ? undefined : (editForm.shelfNo?.trim() || undefined)
     const batch = isWh1 ? "" : (editForm.batch?.trim() || "BATCH-01")
     const expiry = isWh1 ? "" : (editForm.expiry?.trim() || "")
+    const mfgDate = isWh1 ? undefined : (editForm.mfgDate || editForm.manufacturingDate || getLocalDateString())
     const entryDate = isWh1 ? editForm.entryDate : undefined
     const leaveDate = isWh1 ? editForm.leaveDate : undefined
     const unit = editForm.unit
@@ -836,29 +858,44 @@ export default function StockProducts() {
       ? editingProduct.stockBreakdown.map((item, index) => index === 0 ? { ...item, warehouse } : item)
       : [{ warehouse, qty: editingProduct.quantity }]
     const nextBatches: BatchInfo[] = isWh1 ? [] : (editingProduct.batches.length
-      ? editingProduct.batches.map((item, index) => index === 0 ? { ...item, batchNo: batch || item.batchNo || "BATCH-01", expiry: expiry || item.expiry } : item)
-      : [{ batchNo: batch || "BATCH-01", qty: editingProduct.quantity, expiry: expiry || "", status: "Released" as const }])
+      ? editingProduct.batches.map((item, index) => index === 0
+          ? { ...item, batchNo: batch || item.batchNo || "BATCH-01", expiry: expiry || item.expiry, mfgDate: mfgDate || item.mfgDate, unitPrice: unitCost || item.unitPrice }
+          : { ...item, unitPrice: unitCost || item.unitPrice })
+      : [{ batchNo: batch || "BATCH-01", qty: editingProduct.quantity, expiry: expiry || "", mfgDate: mfgDate || getLocalDateString(), unitPrice: unitCost, status: "Released" as const }])
 
     let nextWh1Entries = editingProduct.wh1Entries
-    if (isWh1 && nextWh1Entries && nextWh1Entries.length === 1) {
-      nextWh1Entries = [{
-        ...nextWh1Entries[0],
-        voucherNo: voucherNo || nextWh1Entries[0].voucherNo,
-        customer: customer || nextWh1Entries[0].customer,
-        plateNumber: plateNumber || nextWh1Entries[0].plateNumber,
-        entryDate: entryDate || nextWh1Entries[0].entryDate,
-        unitPrice: unitCost || nextWh1Entries[0].unitPrice,
-      }]
+    if (isWh1 && nextWh1Entries && nextWh1Entries.length > 0) {
+      nextWh1Entries = nextWh1Entries.map((entry, idx) => {
+        if (idx === 0) {
+          return {
+            ...entry,
+            voucherNo: voucherNo || entry.voucherNo,
+            customer: customer || entry.customer,
+            plateNumber: plateNumber || entry.plateNumber,
+            entryDate: entryDate || entry.entryDate,
+            unitPrice: unitCost || entry.unitPrice,
+          }
+        }
+        return {
+          ...entry,
+          unitPrice: unitCost || entry.unitPrice,
+        }
+      })
     }
 
     let nextBinEntries = editingProduct.binCardEntries
-    if (!isWh1 && nextBinEntries && nextBinEntries.length === 1) {
-      nextBinEntries = [{
-        ...nextBinEntries[0],
-        batchNo: batch || nextBinEntries[0].batchNo,
-        expiryDate: expiry || nextBinEntries[0].expiryDate,
-        unitPrice: unitCost || nextBinEntries[0].unitPrice,
-      }]
+    if (nextBinEntries && nextBinEntries.length > 0) {
+      nextBinEntries = nextBinEntries.map((entry, idx) => {
+        if (entry.type === "entry" || Number(entry.qtyReceived || 0) > 0) {
+          return {
+            ...entry,
+            batchNo: (!isWh1 && idx === 0 && batch) ? batch : entry.batchNo,
+            expiryDate: (!isWh1 && idx === 0 && expiry) ? expiry : entry.expiryDate,
+            unitPrice: unitCost || entry.unitPrice,
+          }
+        }
+        return entry
+      })
     }
 
     setIsSavingEdit(true)
@@ -875,7 +912,14 @@ export default function StockProducts() {
         warehouse,
         warehouseName: selectedWarehouseRecord?.name,
         batch,
+        batchNo: batch,
+        batch_no: batch,
+        mfgDate,
+        manufacturingDate: mfgDate,
+        mfg_date: mfgDate,
         expiry,
+        expiryDate: expiry,
+        expiry_date: expiry,
         entryDate,
         leaveDate,
         quantityPerPack,
@@ -1248,11 +1292,9 @@ export default function StockProducts() {
                                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
                                       isWH1Item 
                                         ? "bg-amber-50 text-amber-800 border-amber-200" 
-                                        : (prod.warehouse === "WH2" || prod.warehouseName?.includes("2"))
-                                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                          : "bg-purple-50 text-purple-800 border-purple-200"
+                                        : "bg-emerald-50 text-emerald-800 border-emerald-200"
                                     }`}>
-                                      {prod.warehouseName || prod.warehouse || (isWH1Item ? "WH1" : "WH2")}
+                                      {prod.warehouseName || prod.warehouse || (isWH1Item ? "Export Terminal" : "Pharma Hub")}
                                     </span>
                                   </td>
 
@@ -1523,6 +1565,32 @@ export default function StockProducts() {
                                 {/* Shelf Number */}
                                 <td className="py-4 px-4 font-mono font-bold text-zinc-600 truncate">{prod.shelfNo || "—"}</td>
 
+                                {/* Batch No */}
+                                <td className="py-4 px-4 font-mono font-bold text-zinc-700 truncate">{prod.batchNo || prod.batch || "—"}</td>
+
+                                {/* Mfg Date */}
+                                <td className="py-4 px-4 font-mono text-xs font-bold text-zinc-600 truncate">{formatLocalDateDisplay(prod.mfgDate || prod.manufacturingDate)}</td>
+
+                                {/* Expiry Date */}
+                                <td className="py-4 px-4 font-mono text-xs font-bold text-zinc-600 truncate">
+                                  {prod.expiryDate || prod.expiry ? (
+                                    <div className="flex items-center gap-1.5">
+                                      <span>{formatLocalDateDisplay(prod.expiryDate || prod.expiry)}</span>
+                                      {(() => {
+                                        const s = getExpiryStatus(prod.expiryDate || prod.expiry)
+                                        if (s.tier !== "UNKNOWN") {
+                                          return (
+                                            <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border ${s.badgeClass}`}>
+                                              {s.label}
+                                            </span>
+                                          )
+                                        }
+                                        return null
+                                      })()}
+                                    </div>
+                                  ) : "—"}
+                                </td>
+
                                 {/* Cartons */}
                                 <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">
                                   {computedCartons > 0 ? computedCartons.toLocaleString() : (pharmaBalance > 0 ? "0" : "—")}
@@ -1543,6 +1611,11 @@ export default function StockProducts() {
 
                                 {/* Packaging Unit */}
                                 <td className="py-4 px-4 font-bold text-zinc-600 uppercase">{prod.unit}</td>
+
+                                {/* Unit Price */}
+                                <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">
+                                  ETB {money(prod.unitCost || 0)}
+                                </td>
 
                                 {/* Total Stock Value */}
                                 <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
@@ -1744,6 +1817,15 @@ export default function StockProducts() {
                       <label className="space-y-1">
                         <span className="block text-[11px] font-black uppercase text-zinc-500">Batch Number</span>
                         <input value={editForm.batch} onChange={(e) => updateEditForm({ batch: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Manufacturing Date</span>
+                        <input 
+                          type="date" 
+                          value={editForm.mfgDate || ""} 
+                          onChange={(e) => updateEditForm({ mfgDate: e.target.value, manufacturingDate: e.target.value })} 
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
+                        />
                       </label>
                       <label className="space-y-1">
                         <div className="flex items-center justify-between">

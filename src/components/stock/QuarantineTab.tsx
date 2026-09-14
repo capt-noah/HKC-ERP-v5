@@ -19,6 +19,8 @@ import { LoadingDots } from "@/components/ui/LoadingDots"
 import { GlassCard } from "@/components/GlassCard"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
+import { getLocalDateString } from "@/lib/dateUtils"
+import { isPharmaWarehouse, withOperatingWarehouses } from "@/lib/warehouses"
 
 interface QuarantineTabProps {
   warehouseId?: string
@@ -73,7 +75,7 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
   const [addProductId, setAddProductId] = useState("")
   const [addBatchNo, setAddBatchNo] = useState("")
   const [addNameEntered, setAddNameEntered] = useState(currentUserName)
-  const [addQuarantineDate, setAddQuarantineDate] = useState(new Date().toISOString().slice(0, 10))
+  const [addQuarantineDate, setAddQuarantineDate] = useState(getLocalDateString())
   const [addQuantity, setAddQuantity] = useState("")
   const [addProposedReleaseDate, setAddProposedReleaseDate] = useState("")
   const [addReason, setAddReason] = useState("")
@@ -100,25 +102,19 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
     const a = whA.toLowerCase().trim()
     const b = whB.toLowerCase().trim()
     if (a === b) return true
-    if (a.includes("wh2") && b.includes("wh2")) return true
-    if (a.includes("wh3") && b.includes("wh3")) return true
+    const pool = withOperatingWarehouses(erp.getWarehouses())
+    const whObjA = pool.find((w) => w.id?.toLowerCase() === a || w.code?.toLowerCase() === a || w.name?.toLowerCase() === a)
+    const whObjB = pool.find((w) => w.id?.toLowerCase() === b || w.code?.toLowerCase() === b || w.name?.toLowerCase() === b)
+    if (whObjA && whObjB) {
+      return (Boolean(whObjA.id) && whObjA.id === whObjB.id) || (Boolean(whObjA.code) && whObjA.code === whObjB.code)
+    }
     return a.includes(b) || b.includes(a)
   }
 
-  // Available commercial warehouses
+  // Available commercial warehouses (all pharmaceutical warehouses)
   const commercialWarehouses = useMemo(() => {
-    return erp.getWarehouses().filter((w) => {
-      const code = (w.code || w.id || w.name || "").toUpperCase()
-      return (
-        code.includes("WH2") ||
-        code.includes("WH3") ||
-        code.includes("WH-02") ||
-        code.includes("WH-03") ||
-        code.includes("WAREHOUSE 2") ||
-        code.includes("WAREHOUSE 3") ||
-        code.includes("VET")
-      )
-    })
+    const rawWhs = withOperatingWarehouses(erp.getWarehouses())
+    return rawWhs.filter((w) => isPharmaWarehouse(w, rawWhs))
   }, [erp])
 
   // Products available in the selected add modal warehouse
@@ -198,14 +194,15 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
   const metrics = useMemo(() => {
     const totalVolume = filteredRecords.reduce((sum, r) => sum + Number(r.quantity || 0), 0)
     const activeCount = filteredRecords.filter((r) => r.status === "Quarantined").length
-    const wh2Count = filteredRecords.filter((r) => {
+    const countMap = new Map<string, number>()
+    for (const r of filteredRecords) {
       const prod = allProducts.find((p) => p.id === r.productId || (r.sku && p.sku === r.sku))
-      return matchesWarehouse(r.warehouseId || prod?.warehouse, "WH2")
-    }).length
-    const wh3Count = filteredRecords.filter((r) => {
-      const prod = allProducts.find((p) => p.id === r.productId || (r.sku && p.sku === r.sku))
-      return matchesWarehouse(r.warehouseId || prod?.warehouse, "WH3")
-    }).length
+      const rawWh = r.warehouseId || prod?.warehouse
+      const whObj = commercialWarehouses.find((w) => matchesWarehouse(rawWh, w.code || w.id))
+      const label = whObj?.code || whObj?.id || rawWh || "Pharma Hub"
+      countMap.set(label, (countMap.get(label) || 0) + 1)
+    }
+    const warehouseBreakdown = Array.from(countMap.entries()).map(([label, count]) => ({ label, count }))
 
     const estimatedValue = filteredRecords.reduce((sum, r) => {
       const prod = allProducts.find((p) => p.id === r.productId || (r.sku && p.sku === r.sku))
@@ -213,8 +210,8 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
       return sum + Number(r.quantity || 0) * cost
     }, 0)
 
-    return { totalVolume, activeCount, wh2Count, wh3Count, estimatedValue }
-  }, [filteredRecords, allProducts])
+    return { totalVolume, activeCount, warehouseBreakdown, estimatedValue }
+  }, [filteredRecords, allProducts, commercialWarehouses])
 
   const openAddModal = () => {
     const defaultWh = selectedWarehouseFilter !== "ALL" ? selectedWarehouseFilter : (commercialWarehouses[0]?.code || "WH2")
@@ -222,7 +219,7 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
     setAddProductId("")
     setAddBatchNo("")
     setAddNameEntered(currentUserName)
-    setAddQuarantineDate(new Date().toISOString().slice(0, 10))
+    setAddQuarantineDate(getLocalDateString())
     setAddQuantity("")
     setAddProposedReleaseDate("")
     setAddReason("")
@@ -394,10 +391,17 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
           </div>
           <div>
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">Warehouse Breakdown</span>
-            <div className="flex items-center gap-2 mt-0.5 text-xs font-black">
-              <span className="text-zinc-800">WH2: <strong className="text-indigo-600 font-bold">{metrics.wh2Count}</strong></span>
-              <span className="text-zinc-300">&bull;</span>
-              <span className="text-zinc-800">WH3: <strong className="text-indigo-600 font-bold">{metrics.wh3Count}</strong></span>
+            <div className="flex items-center gap-2 mt-0.5 text-xs font-black flex-wrap">
+              {metrics.warehouseBreakdown.length > 0 ? (
+                metrics.warehouseBreakdown.map((item, idx) => (
+                  <span key={item.label} className="text-zinc-800">
+                    {idx > 0 && <span className="text-zinc-300 mr-1.5">&bull;</span>}
+                    {item.label}: <strong className="text-indigo-600 font-bold">{item.count}</strong>
+                  </span>
+                ))
+              ) : (
+                <span className="text-zinc-400">0 in hold</span>
+              )}
             </div>
           </div>
         </GlassCard>
@@ -444,8 +448,10 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
             ariaLabel: "Filter by Warehouse",
             options: [
               { value: "ALL", label: "All Commercial Warehouses" },
-              { value: "WH2", label: "Warehouse 2 (Indian)" },
-              { value: "WH3", label: "Warehouse 3 (Chinese)" },
+              ...commercialWarehouses.map((w) => ({
+                value: w.code || w.id,
+                label: w.name || w.code || w.id,
+              })),
             ],
           },
           {
@@ -479,8 +485,9 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
           const batchNo = rec.batchNo || prod?.batch || "—"
           const unit = rec.unit || prod?.unit || "Units"
           const qtyNum = Number(rec.quantity || 0)
-          const whId = rec.warehouseId || prod?.warehouse || "WH2"
-          const isWH2 = matchesWarehouse(whId, "WH2")
+          const whId = rec.warehouseId || prod?.warehouse || (commercialWarehouses[0]?.code || "WH")
+          const whObj = commercialWarehouses.find((w) => matchesWarehouse(whId, w.code || w.id))
+          const whLabel = whObj?.code || whObj?.id || whId
 
           return (
             <>
@@ -499,10 +506,8 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
 
               {/* Warehouse */}
               <td style={{ width: `${colWidths.warehouse}px` }} className="py-4 px-4 border-r border-zinc-100 overflow-hidden">
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
-                  isWH2 ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-purple-50 text-purple-700 border border-purple-200"
-                }`}>
-                  {isWH2 ? "WH2" : "WH3"}
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  {whLabel}
                 </span>
               </td>
 
@@ -826,7 +831,7 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
                 const editBatchNo = editingRecord.batchNo || editProd?.batch || "—"
                 const editUnit = editingRecord.unit || editProd?.unit || "Units"
                 const editQuantity = Number(editingRecord.quantity || 0)
-                const editWh = editingRecord.warehouseId || editProd?.warehouse || "WH2"
+                const editWh = editingRecord.warehouseId || editProd?.warehouse || (commercialWarehouses[0]?.code || "Warehouse")
 
                 return (
                   <>

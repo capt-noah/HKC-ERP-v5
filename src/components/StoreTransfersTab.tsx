@@ -17,7 +17,7 @@ import {
 } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useErpStore, type Transfer, type TransferLineItem, type TransferStatus, type Product } from "@/lib/erpStore"
-import { withOperatingWarehouses, isPharmaWarehouse, resolveWarehouseScope } from "@/lib/warehouses"
+import { withOperatingWarehouses, isPharmaWarehouse } from "@/lib/warehouses"
 import { printStoreTransferDocument, exportStoreTransferExcel } from "@/lib/exportUtils"
 import StoreTransferPrintModal from "@/components/stock/StoreTransferPrintModal"
 import { type TableColumn } from "@/components/ResizableTable"
@@ -49,94 +49,70 @@ export default function StoreTransfersTab() {
     return (user?.warehouse_ids || ((user as any)?.warehouse_id ? [(user as any).warehouse_id] : [])).map((id: string) => String(id).toUpperCase())
   }, [user])
 
-  // Dynamic user warehouse privileges for WH2 and WH3
-  const hasWH2Privilege = useMemo(() => {
-    if (isSuperAdmin) return true
-    if (userWarehouseIds.length === 0) return false
-    const resolved = resolveWarehouseScope(userWarehouseIds, erp.getWarehouses())
-    return (
-      resolved.some((id) => {
-        const upper = id.toUpperCase()
-        return upper === "WH2" || upper.includes("WH2") || upper.includes("WH-02") || upper.includes("WH 2")
-      }) ||
-      userWarehouseIds.some((id) => {
-        const upper = id.toUpperCase()
-        return upper === "WH2" || upper.includes("WH2") || upper.includes("WH-02")
-      })
-    )
-  }, [isSuperAdmin, userWarehouseIds, erp])
-
-  const hasWH3Privilege = useMemo(() => {
-    if (isSuperAdmin) return true
-    if (userWarehouseIds.length === 0) return false
-    const resolved = resolveWarehouseScope(userWarehouseIds, erp.getWarehouses())
-    return (
-      resolved.some((id) => {
-        const upper = id.toUpperCase()
-        return upper === "WH3" || upper.includes("WH3") || upper.includes("WH-03") || upper.includes("WH 3")
-      }) ||
-      userWarehouseIds.some((id) => {
-        const upper = id.toUpperCase()
-        return upper === "WH3" || upper.includes("WH3") || upper.includes("WH-03")
-      })
-    )
-  }, [isSuperAdmin, userWarehouseIds, erp])
-
-  // Warehouse classification helpers
-  const isWH2Warehouse = (whNameOrCode?: string): boolean => {
-    if (!whNameOrCode) return false
-    const upper = whNameOrCode.toUpperCase()
-    return upper.includes("WH2") || upper.includes("WH-02") || upper.includes("WH 2") || upper.includes("INDIA") || upper.includes("IND")
-  }
-
-  const isWH3Warehouse = (whNameOrCode?: string): boolean => {
-    if (!whNameOrCode) return false
-    const upper = whNameOrCode.toUpperCase()
-    return upper.includes("WH3") || upper.includes("WH-03") || upper.includes("WH 3") || upper.includes("CHINA") || upper.includes("CHN")
-  }
-
-  // Strict permission guards:
-  // A user can ONLY send/dispatch from a warehouse they have privilege for
-  const canSendFrom = (warehouse?: string): boolean => {
-    if (isSuperAdmin) return true
-    if (isWH2Warehouse(warehouse)) return hasWH2Privilege
-    if (isWH3Warehouse(warehouse)) return hasWH3Privilege
-    return false
-  }
-
-  // A user can ONLY approve/receive for a warehouse they have privilege for
-  const canApproveReceiptFor = (warehouse?: string): boolean => {
-    if (isSuperAdmin) return true
-    if (isWH2Warehouse(warehouse)) return hasWH2Privilege
-    if (isWH3Warehouse(warehouse)) return hasWH3Privilege
-    return false
-  }
-
-  // --- TRANSFERS & PRODUCTS DATA ---
-  const transfers = erp.getTransfers()
-  const products = erp.getProducts()
-  
   // Store-to-store transfers exist between all pharmaceutical depots
   const transferWarehouses = useMemo(() => {
     const rawWhs = withOperatingWarehouses(erp.getWarehouses())
     return rawWhs.filter((w) => isPharmaWarehouse(w, rawWhs))
   }, [erp])
 
-  const warehouseOptions = useMemo(
-    () => transferWarehouses.map((warehouse) => warehouse.code || warehouse.id).filter(Boolean),
-    [transferWarehouses]
-  )
+  // Transfers & Products data
+  const transfers: Transfer[] = erp.getTransfers()
+  const products: Product[] = erp.getProducts()
 
-  // Identify user's locked origin if assigned strictly to a single warehouse
-  const isAssignedOnlyToWH2 = hasWH2Privilege && !hasWH3Privilege && !isSuperAdmin
-  const isAssignedOnlyToWH3 = hasWH3Privilege && !hasWH2Privilege && !isSuperAdmin
+  // Dynamic user warehouse privileges
+  const hasWarehousePrivilege = (whIdOrCode?: string): boolean => {
+    if (isSuperAdmin) return true
+    if (!whIdOrCode || userWarehouseIds.length === 0) return false
+    const target = String(whIdOrCode).trim().toUpperCase()
+    const pool = withOperatingWarehouses(erp.getWarehouses())
+    
+    const allowed = new Set<string>()
+    for (const uid of userWarehouseIds) {
+      allowed.add(uid)
+      const match = pool.find(w => w.id?.toUpperCase() === uid || w.code?.toUpperCase() === uid)
+      if (match) {
+        if (match.id) allowed.add(match.id.toUpperCase())
+        if (match.code) allowed.add(match.code.toUpperCase())
+      }
+    }
 
-  const defaultOrigin = isAssignedOnlyToWH3 
-    ? (warehouseOptions.find(w => w.toUpperCase().includes("WH3")) || "WH3-VET-CHN") 
-    : (warehouseOptions.find(w => w.toUpperCase().includes("WH2")) || "WH2-VET-IND")
-  const defaultDestination = isAssignedOnlyToWH3 
-    ? (warehouseOptions.find(w => w.toUpperCase().includes("WH2")) || "WH2-VET-IND") 
-    : (warehouseOptions.find(w => w.toUpperCase().includes("WH3")) || "WH3-VET-CHN")
+    if (allowed.has(target)) return true
+    const targetMatch = pool.find(w => w.id?.toUpperCase() === target || w.code?.toUpperCase() === target)
+    if (targetMatch) {
+      if (targetMatch.id && allowed.has(targetMatch.id.toUpperCase())) return true
+      if (targetMatch.code && allowed.has(targetMatch.code.toUpperCase())) return true
+    }
+    return false
+  }
+
+  // Strict permission guards:
+  // A user can ONLY send/dispatch from a warehouse they have privilege for
+  const canSendFrom = (warehouse?: string): boolean => {
+    if (isSuperAdmin) return true
+    return hasWarehousePrivilege(warehouse)
+  }
+
+  // A user can ONLY approve/receive for a warehouse they have privilege for
+  const canApproveReceiptFor = (warehouse?: string): boolean => {
+    if (isSuperAdmin) return true
+    return hasWarehousePrivilege(warehouse)
+  }
+
+  // User's assigned pharmaceutical warehouses
+  const userAssignedWarehouses = useMemo(() => {
+    if (isSuperAdmin) return transferWarehouses
+    return transferWarehouses.filter(w => hasWarehousePrivilege(w.id) || hasWarehousePrivilege(w.code))
+  }, [isSuperAdmin, transferWarehouses, userWarehouseIds])
+
+  const isAssignedStrictlyToOne = !isSuperAdmin && userAssignedWarehouses.length === 1
+  const singleAssignedWarehouse = isAssignedStrictlyToOne ? userAssignedWarehouses[0] : null
+
+  const defaultOrigin = singleAssignedWarehouse
+    ? (singleAssignedWarehouse.code || singleAssignedWarehouse.id)
+    : (userAssignedWarehouses[0]?.code || userAssignedWarehouses[0]?.id || transferWarehouses[0]?.code || "WH2")
+  const defaultDestination = (transferWarehouses.find(w => (w.code || w.id) !== defaultOrigin)?.code || 
+    transferWarehouses.find(w => (w.code || w.id) !== defaultOrigin)?.id || 
+    transferWarehouses[1]?.code || "WH3")
 
   // --- LIST FILTER STATE ---
   const [searchQuery, setSearchQuery] = useState("")
@@ -154,27 +130,38 @@ export default function StoreTransfersTab() {
   const [formDate, setFormDate] = useState(new Date().toISOString().split("T")[0])
   const [formLineItems, setFormLineItems] = useState<TransferLineItem[]>([])
 
+  // Warehouse matching helper for origin stock
+  const matchesOriginWarehouse = (candidateWh?: string, originWhId?: string): boolean => {
+    if (!candidateWh || !originWhId) return false
+    const cand = candidateWh.trim().toUpperCase()
+    const orig = originWhId.trim().toUpperCase()
+    if (cand === orig) return true
+    const pool = withOperatingWarehouses(erp.getWarehouses())
+    const origWh = pool.find(w => w.id?.toUpperCase() === orig || w.code?.toUpperCase() === orig)
+    if (origWh) {
+      if (origWh.id && cand === origWh.id.toUpperCase()) return true
+      if (origWh.code && cand === origWh.code.toUpperCase()) return true
+    }
+    const candWh = pool.find(w => w.id?.toUpperCase() === cand || w.code?.toUpperCase() === cand)
+    if (candWh && origWh) {
+      return (Boolean(candWh.id) && candWh.id === origWh.id) || (Boolean(candWh.code) && candWh.code === origWh.code)
+    }
+    return cand.includes(orig) || orig.includes(cand)
+  }
+
   // Products available in selected Origin Store
   const originProducts = useMemo(() => {
     if (!formFromW) return []
-    const originUpper = formFromW.toUpperCase()
     return products.filter((p) => {
-      const pWh = (p.warehouse || "").toUpperCase()
-      const matchesWh = pWh === originUpper ||
-        (originUpper.includes("WH2") && pWh.includes("WH2")) ||
-        (originUpper.includes("WH3") && pWh.includes("WH3"))
+      const matchesWh = matchesOriginWarehouse(p.warehouse, formFromW)
       if (matchesWh && (p.quantity || 0) > 0) return true
 
       const hasBreakdown = (p.stockBreakdown || []).some((sb) => {
-        const sbWh = (sb.warehouse || "").toUpperCase()
-        const matchesSb = sbWh === originUpper ||
-          (originUpper.includes("WH2") && sbWh.includes("WH2")) ||
-          (originUpper.includes("WH3") && sbWh.includes("WH3"))
-        return matchesSb && Number(sb.qty || 0) > 0
+        return matchesOriginWarehouse(sb.warehouse, formFromW) && Number(sb.qty || 0) > 0
       })
       return hasBreakdown
     })
-  }, [products, formFromW])
+  }, [products, formFromW, erp])
 
   // --- RECEIPT MODAL STATE ---
   const [receivingTransfer, setReceivingTransfer] = useState<Transfer | null>(null)
@@ -291,11 +278,7 @@ export default function StoreTransfersTab() {
       totalStock = b ? b.qty : 0
     }
     if (totalStock === 0) {
-      const originUpper = formFromW.toUpperCase()
-      const breakdownEntry = prod.stockBreakdown?.find((sb) => {
-        const sbWh = (sb.warehouse || "").toUpperCase()
-        return sbWh === originUpper || (originUpper.includes("WH2") && sbWh.includes("WH2")) || (originUpper.includes("WH3") && sbWh.includes("WH3"))
-      })
+      const breakdownEntry = prod.stockBreakdown?.find((sb) => matchesOriginWarehouse(sb.warehouse, formFromW))
       totalStock = breakdownEntry != null ? Number(breakdownEntry.qty || 0) : Number(prod.quantity || 0)
     }
 
@@ -564,9 +547,8 @@ export default function StoreTransfersTab() {
   // --- DUAL-PARTY FILTERED TRANSFERS ---
   const filteredTransfers = useMemo(() => {
     return transfers.filter(t => {
-      // 1. Role / Facility Scope: WH2/WH3 users see transfers where their warehouse is sender or receiver
+      // 1. Role / Facility Scope: users see transfers where their warehouse is sender or receiver
       if (!isSuperAdmin) {
-        if (!hasWH2Privilege && !hasWH3Privilege) return false
         const matchesFrom = canSendFrom(t.from_warehouse)
         const matchesTo = canApproveReceiptFor(t.to_warehouse)
         if (!matchesFrom && !matchesTo) return false
@@ -599,7 +581,7 @@ export default function StoreTransfersTab() {
     <div className="space-y-6">
       <DataTable
         title="Store-to-Store Transfers"
-        subtitle={`${filteredTransfers.length} inter-store movements between WH2 & WH3`}
+        subtitle={`${filteredTransfers.length} inter-store movements between pharmaceutical hubs`}
         columns={transferColumns}
         data={filteredTransfers}
         isLoading={false}
@@ -813,13 +795,9 @@ export default function StoreTransfersTab() {
                     <span className="block text-[11px] font-black uppercase text-zinc-700">
                       Origin Warehouse (Sender) <span className="text-rose-600">*</span>
                     </span>
-                    {isAssignedOnlyToWH2 ? (
+                    {isAssignedStrictlyToOne && singleAssignedWarehouse ? (
                       <div className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-800">
-                        {transferWarehouses.find(w => (w.code || w.id || "").toUpperCase().includes("WH2"))?.name || "WH2 (Veterinary Import Hub)"}
-                      </div>
-                    ) : isAssignedOnlyToWH3 ? (
-                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-800">
-                        {transferWarehouses.find(w => (w.code || w.id || "").toUpperCase().includes("WH3"))?.name || "WH3 (Veterinary Import Hub)"}
+                        {singleAssignedWarehouse.name || singleAssignedWarehouse.code || singleAssignedWarehouse.id}
                       </div>
                     ) : (
                       <select
@@ -836,7 +814,7 @@ export default function StoreTransfersTab() {
                         }}
                         className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-900 outline-none focus:border-emerald-500 cursor-pointer shadow-xs"
                       >
-                        {transferWarehouses.map((w) => (
+                        {(userAssignedWarehouses.length > 0 ? userAssignedWarehouses : transferWarehouses).map((w) => (
                           <option key={w.id || w.code} value={w.code || w.id}>
                             {w.name || w.code || w.id}
                           </option>
@@ -850,27 +828,17 @@ export default function StoreTransfersTab() {
                     <span className="block text-[11px] font-black uppercase text-zinc-700">
                       Destination Warehouse (Receiver) <span className="text-rose-600">*</span>
                     </span>
-                    {isAssignedOnlyToWH2 ? (
-                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-800">
-                        {transferWarehouses.find(w => (w.code || w.id || "").toUpperCase().includes("WH3"))?.name || "WH3 (Veterinary Import Hub)"}
-                      </div>
-                    ) : isAssignedOnlyToWH3 ? (
-                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-800">
-                        {transferWarehouses.find(w => (w.code || w.id || "").toUpperCase().includes("WH2"))?.name || "WH2 (Veterinary Import Hub)"}
-                      </div>
-                    ) : (
-                      <select
-                        value={formToW}
-                        onChange={(e) => setFormToW(e.target.value)}
-                        className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-900 outline-none focus:border-emerald-500 cursor-pointer shadow-xs"
-                      >
-                        {transferWarehouses.filter(w => (w.code || w.id) !== formFromW).map((w) => (
-                          <option key={w.id || w.code} value={w.code || w.id}>
-                            {w.name || w.code || w.id}
-                          </option>
-                        ))}
-                      </select>
-                    )}
+                    <select
+                      value={formToW}
+                      onChange={(e) => setFormToW(e.target.value)}
+                      className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-900 outline-none focus:border-emerald-500 cursor-pointer shadow-xs"
+                    >
+                      {transferWarehouses.filter(w => (w.code || w.id) !== formFromW).map((w) => (
+                        <option key={w.id || w.code} value={w.code || w.id}>
+                          {w.name || w.code || w.id}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* Transfer Date */}

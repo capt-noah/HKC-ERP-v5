@@ -240,9 +240,8 @@ export function computeWH1SupplierQuality(
     // Sort suppliers by lowest reject rate (highest quality first)
     .sort((a, b) => a.rejectRate - b.rejectRate || b.totalReceived - a.totalReceived)
 
-  // 3. Compute overall WH1 enterprise aggregates
-  const hasRealData = supplierMetrics.length > 0
-  const finalMetrics = hasRealData ? supplierMetrics : DEFAULT_BENCHMARK_SUPPLIERS
+  // 3. Compute overall WH1 enterprise aggregates strictly from real data
+  const finalMetrics = supplierMetrics
 
   const overallTotalReceived = finalMetrics.reduce((sum, s) => sum + s.totalReceived, 0)
   const overallTotalRejected = finalMetrics.reduce((sum, s) => sum + s.totalRejected, 0)
@@ -266,48 +265,6 @@ export function computeWH1SupplierQuality(
     highestRejectSupplier,
     totalSuppliersCount: finalMetrics.length,
     availableProducts,
-    isSampleData: !hasRealData,
+    isSampleData: false,
   }
 }
-
-const DEFAULT_BENCHMARK_SUPPLIERS: SupplierQualityMetric[] = [
-  {
-    supplierName: "Abyssinia Agri Union",
-    totalReceived: 450,
-    totalRejected: 18,
-    netYield: 432,
-    rejectRate: 4.0,
-    cleanYieldRate: 96.0,
-    batchesCount: 4,
-    products: ["Sesame Grade 1"],
-    grade: "Grade A",
-    gradeLabel: "Grade A (Excellent ≤5% Loss)",
-    gradeColor: "emerald",
-  },
-  {
-    supplierName: "Nile Valley Produce",
-    totalReceived: 620,
-    totalRejected: 43.4,
-    netYield: 576.6,
-    rejectRate: 7.0,
-    cleanYieldRate: 93.0,
-    batchesCount: 5,
-    products: ["Soya Beans Export"],
-    grade: "Grade B",
-    gradeLabel: "Grade B (Moderate 5–10% Loss)",
-    gradeColor: "amber",
-  },
-  {
-    supplierName: "Rift Valley Farmers",
-    totalReceived: 320,
-    totalRejected: 38.4,
-    netYield: 281.6,
-    rejectRate: 12.0,
-    cleanYieldRate: 88.0,
-    batchesCount: 3,
-    products: ["Red Kidney Beans"],
-    grade: "Grade C",
-    gradeLabel: "Grade C (High Loss >10%)",
-    gradeColor: "rose",
-  },
-]

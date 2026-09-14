@@ -118,8 +118,6 @@ export default function StockBinCardLedger({
                 </th>
                 <th rowSpan={2} className="py-2.5 px-4 text-right border-r border-zinc-200">Unit Price</th>
                 <th rowSpan={2} className="py-2.5 px-4 text-right border-r border-zinc-200 text-emerald-800">Total Value (ETB)</th>
-                <th rowSpan={2} className="py-2.5 px-4 border-r border-zinc-200">Mfg Date</th>
-                <th rowSpan={2} className="py-2.5 px-4 border-r border-zinc-200">Expiry Date</th>
                 <th rowSpan={2} className="py-2.5 px-4 border-r border-zinc-200">Received From / Issued To</th>
                 <th rowSpan={2} className="py-2.5 px-4 border-r border-zinc-200">Remark</th>
                 <th rowSpan={2} className="py-2.5 px-4 text-center">Actions</th>
@@ -190,9 +188,7 @@ export default function StockBinCardLedger({
                       <span className="text-zinc-300 font-normal">—</span>
                     )}
                   </td>
-                  <td className="py-2.5 px-4 font-mono text-zinc-600 border-r border-zinc-100">{rec.mfgDate || "-"}</td>
-                  <td className="py-2.5 px-4 font-mono text-zinc-600 border-r border-zinc-100">{rec.expiryDate || "-"}</td>
-                  <td className="py-2.5 px-4 font-semibold text-zinc-800 border-r border-zinc-100">
+                    <td className="py-2.5 px-4 font-semibold text-zinc-800 border-r border-zinc-100">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {rec.type === "quarantine" && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
@@ -231,7 +227,7 @@ export default function StockBinCardLedger({
                 <td className="py-2.5 px-4 text-right font-black text-emerald-800 border-r border-zinc-200">
                   ETB {netPharmaVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </td>
-                <td colSpan={4} className="py-2.5 px-4 text-zinc-500 font-sans italic text-[10px]">
+                <td colSpan={3} className="py-2.5 px-4 text-zinc-500 font-sans italic text-[10px]">
                   Warehouse: {product.warehouseName || product.warehouse} &bull; Shelf: {product.shelfNo || "Unassigned"}
                 </td>
               </tr>

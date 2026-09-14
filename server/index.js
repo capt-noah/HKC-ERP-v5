@@ -46,6 +46,9 @@ app.use(logger.requestLogger)
 // 3. Parse JSON request bodies before any route handler runs.
 app.use(express.json({ limit: "10mb" }))
 
+// Disable ETags on API responses so clients/browsers always receive live fresh database states
+app.set("etag", false)
+
 import { pool } from "./db/client.js"
 import { ensureSuperAdmin } from "./modules/auth/authController.js"
 

@@ -1,7 +1,14 @@
 import { Router } from "express"
 import { salesService } from "../modules/sales/salesService.js"
+import { authorizeRoles } from "../modules/auth/authMiddleware.js"
 
 export const salesRouter = Router()
+
+// RBAC Role Guard Helpers
+const requireProcessingMutation = authorizeRoles("superadmin", "inventory_admin", "sales_manager")
+const requireShipmentDocMutation = authorizeRoles("superadmin", "hkc_docs_manager", "sales_manager")
+const requireSalesIssueMutation = authorizeRoles("superadmin", "sales_manager", "hkc_docs_manager")
+const requireSuperAdmin = authorizeRoles("superadmin")
 
 salesRouter.get(["/processing-services", "/processing_services"], async (req, res, next) => {
   try {
@@ -12,7 +19,7 @@ salesRouter.get(["/processing-services", "/processing_services"], async (req, re
   }
 })
 
-salesRouter.post(["/processing-services", "/processing_services"], async (req, res, next) => {
+salesRouter.post(["/processing-services", "/processing_services"], requireProcessingMutation, async (req, res, next) => {
   try {
     const result = await salesService.createProcessingService(req.body)
     res.status(result.status).json(result.body)
@@ -30,7 +37,7 @@ salesRouter.get(["/processing-services/:id", "/processing_services/:id"], async 
   }
 })
 
-salesRouter.patch(["/processing-services/:id", "/processing_services/:id"], async (req, res, next) => {
+salesRouter.patch(["/processing-services/:id", "/processing_services/:id"], requireProcessingMutation, async (req, res, next) => {
   try {
     const result = await salesService.updateProcessingService(req.body, req.params.id)
     res.status(result.status).json(result.body)
@@ -39,7 +46,7 @@ salesRouter.patch(["/processing-services/:id", "/processing_services/:id"], asyn
   }
 })
 
-salesRouter.post(["/processing-services/:id/transition", "/processing_services/:id/transition"], async (req, res, next) => {
+salesRouter.post(["/processing-services/:id/transition", "/processing_services/:id/transition"], requireProcessingMutation, async (req, res, next) => {
   try {
     const result = await salesService.transitionProcessingServiceStage(req.params.id, req.body.stage, req.body)
     res.status(result.status).json(result.body)
@@ -48,7 +55,7 @@ salesRouter.post(["/processing-services/:id/transition", "/processing_services/:
   }
 })
 
-salesRouter.delete(["/processing-services/:id", "/processing_services/:id"], async (req, res, next) => {
+salesRouter.delete(["/processing-services/:id", "/processing_services/:id"], requireProcessingMutation, async (req, res, next) => {
   try {
     const result = await salesService.deleteProcessingService(req.params.id)
     res.status(result.status).json(result.body)
@@ -57,7 +64,7 @@ salesRouter.delete(["/processing-services/:id", "/processing_services/:id"], asy
   }
 })
 
-salesRouter.post(["/processing-services/:id/upload-contract", "/processing_services/:id/upload-contract"], async (req, res, next) => {
+salesRouter.post(["/processing-services/:id/upload-contract", "/processing_services/:id/upload-contract"], requireProcessingMutation, async (req, res, next) => {
   try {
     // Accepts { contract_url, contract_file_name } in body (base64 data URL from client)
     const { contract_url, contract_file_name } = req.body
@@ -83,7 +90,7 @@ salesRouter.get(["/shipment-documents/officers", "/shipment_documents/officers"]
   }
 })
 
-salesRouter.post(["/shipment-documents/assign", "/shipment_documents/assign"], async (req, res, next) => {
+salesRouter.post(["/shipment-documents/assign", "/shipment_documents/assign"], requireShipmentDocMutation, async (req, res, next) => {
   try {
     const result = await salesService.assignOfficer(req.body)
     res.status(result.status).json(result.body)
@@ -110,7 +117,7 @@ salesRouter.get(["/shipment-documents", "/shipment_documents"], async (req, res,
   }
 })
 
-salesRouter.post(["/shipment-documents", "/shipment_documents"], async (req, res, next) => {
+salesRouter.post(["/shipment-documents", "/shipment_documents"], requireShipmentDocMutation, async (req, res, next) => {
   try {
     const result = await salesService.saveShipmentDoc(req.body)
     res.status(result.status).json(result.body)
@@ -119,7 +126,7 @@ salesRouter.post(["/shipment-documents", "/shipment_documents"], async (req, res
   }
 })
 
-salesRouter.delete(["/shipment-documents/:id", "/shipment_documents/:id"], async (req, res, next) => {
+salesRouter.delete(["/shipment-documents/:id", "/shipment_documents/:id"], requireShipmentDocMutation, async (req, res, next) => {
   try {
     const result = await salesService.deleteShipmentDoc(req.params.id)
     res.status(result.status).json(result.body)
@@ -146,7 +153,7 @@ salesRouter.get(["/sales-issues", "/sales_issues"], async (req, res, next) => {
   }
 })
 
-salesRouter.post(["/sales-issues", "/sales_issues"], async (req, res, next) => {
+salesRouter.post(["/sales-issues", "/sales_issues"], requireSalesIssueMutation, async (req, res, next) => {
   try {
     const result = await salesService.create(req.body)
     res.status(result.status).json(result.body)
@@ -164,7 +171,7 @@ salesRouter.get(["/sales-issues/:id", "/sales_issues/:id"], async (req, res, nex
   }
 })
 
-salesRouter.patch(["/sales-issues/:id", "/sales_issues/:id"], async (req, res, next) => {
+salesRouter.patch(["/sales-issues/:id", "/sales_issues/:id"], requireSalesIssueMutation, async (req, res, next) => {
   try {
     const result = await salesService.update(req.body, req.params.id)
     res.status(result.status).json(result.body)
@@ -173,7 +180,7 @@ salesRouter.patch(["/sales-issues/:id", "/sales_issues/:id"], async (req, res, n
   }
 })
 
-salesRouter.put(["/sales-issues/:id", "/sales_issues/:id"], async (req, res, next) => {
+salesRouter.put(["/sales-issues/:id", "/sales_issues/:id"], requireSalesIssueMutation, async (req, res, next) => {
   try {
     const result = await salesService.update(req.body, req.params.id)
     res.status(result.status).json(result.body)
@@ -182,7 +189,7 @@ salesRouter.put(["/sales-issues/:id", "/sales_issues/:id"], async (req, res, nex
   }
 })
 
-salesRouter.delete(["/sales-issues/:id", "/sales_issues/:id"], async (req, res, next) => {
+salesRouter.delete(["/sales-issues/:id", "/sales_issues/:id"], requireSalesIssueMutation, async (req, res, next) => {
   try {
     const result = await salesService.delete(req.params.id)
     res.status(result.status).json(result.body)
@@ -191,7 +198,7 @@ salesRouter.delete(["/sales-issues/:id", "/sales_issues/:id"], async (req, res, 
   }
 })
 
-salesRouter.post(["/sales-issues/:id/post", "/sales_issues/:id/post"], async (req, res, next) => {
+salesRouter.post(["/sales-issues/:id/post", "/sales_issues/:id/post"], requireSalesIssueMutation, async (req, res, next) => {
   try {
     const result = await salesService.post(req.body, req.params.id)
     res.status(result.status).json(result.body)
@@ -200,7 +207,7 @@ salesRouter.post(["/sales-issues/:id/post", "/sales_issues/:id/post"], async (re
   }
 })
 
-salesRouter.post(["/sales-issues/:id/cancel", "/sales_issues/:id/cancel"], async (req, res, next) => {
+salesRouter.post(["/sales-issues/:id/cancel", "/sales_issues/:id/cancel"], requireSalesIssueMutation, async (req, res, next) => {
   try {
     const result = await salesService.cancel(req.params.id)
     res.status(result.status).json(result.body)
@@ -208,3 +215,67 @@ salesRouter.post(["/sales-issues/:id/cancel", "/sales_issues/:id/cancel"], async
     next(err)
   }
 })
+
+// Superadmin approval routes for Sales Orders
+salesRouter.post(["/sales-orders/:id/approve", "/sales_orders/:id/approve"], requireSuperAdmin, async (req, res, next) => {
+  try {
+    const roles = req.user?.roles || []
+    if (!roles.includes("superadmin")) {
+      return res.status(403).json({ error: "Only superadmin can approve sales orders." })
+    }
+
+    const { getResource } = await import("../db/resourceRegistry.js")
+    const { drizzleGetRow, drizzleUpdateRow } = await import("../db/drizzleCrud.js")
+
+    const existing = await drizzleGetRow({ resource: getResource("sales_orders"), id: req.params.id })
+    if (!existing || !existing.body) {
+      return res.status(404).json({ error: `Sales Order '${req.params.id}' not found.` })
+    }
+
+    const currentData = existing.body?.payload ? { ...existing.body.payload, ...existing.body } : existing.body
+    const updated = {
+      ...currentData,
+      approvalStatus: "Approved",
+      approvedBy: req.user.fullname || req.user.username || "Super Admin",
+      approvedAt: new Date().toISOString(),
+      declineReason: null,
+    }
+
+    const result = await drizzleUpdateRow({ resource: getResource("sales_orders"), id: req.params.id, body: updated })
+    res.status(200).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
+salesRouter.post(["/sales-orders/:id/decline", "/sales_orders/:id/decline"], requireSuperAdmin, async (req, res, next) => {
+  try {
+    const roles = req.user?.roles || []
+    if (!roles.includes("superadmin")) {
+      return res.status(403).json({ error: "Only superadmin can decline sales orders." })
+    }
+
+    const { getResource } = await import("../db/resourceRegistry.js")
+    const { drizzleGetRow, drizzleUpdateRow } = await import("../db/drizzleCrud.js")
+
+    const existing = await drizzleGetRow({ resource: getResource("sales_orders"), id: req.params.id })
+    if (!existing || !existing.body) {
+      return res.status(404).json({ error: `Sales Order '${req.params.id}' not found.` })
+    }
+
+    const currentData = existing.body?.payload ? { ...existing.body.payload, ...existing.body } : existing.body
+    const updated = {
+      ...currentData,
+      approvalStatus: "Declined",
+      approvedBy: req.user.fullname || req.user.username || "Super Admin",
+      approvedAt: new Date().toISOString(),
+      declineReason: req.body?.reason || "Declined by Super Admin",
+    }
+
+    const result = await drizzleUpdateRow({ resource: getResource("sales_orders"), id: req.params.id, body: updated })
+    res.status(200).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+

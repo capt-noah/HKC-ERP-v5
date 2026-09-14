@@ -27,6 +27,7 @@ import {
   fetchTradeAndAdviceDocs,
 } from "@/lib/tradeDocumentService"
 import { uploadFile } from "@/lib/fileUpload"
+import { getLocalDateString } from "@/lib/dateUtils"
 
 import {
   createSalesIssue,
@@ -180,7 +181,7 @@ export default function SalesIssued() {
   // Partial Payment Installment Modal State
   const [payingIssue, setPayingIssue] = useState<SalesIssue | null>(null)
   const [payAmount, setPayAmount] = useState("")
-  const [payDate, setPayDate] = useState(new Date().toISOString().split("T")[0])
+  const [payDate, setPayDate] = useState(getLocalDateString())
   const [payBank, setPayBank] = useState("1000-02-26")
   const [payRef, setPayRef] = useState("")
   const [payAdviceFile, setPayAdviceFile] = useState<File | null>(null)
@@ -259,7 +260,7 @@ export default function SalesIssued() {
     const targetIsCash = explicitPaymentType === "cash" || (!explicitPaymentType && (so.payment_terms || so.paymentTerms || "").toString().toLowerCase() === "cash")
     setPaymentType(targetIsCash ? "Cash" : "Credit")
     setReferenceNo(so.id)
-    if (!saleDate) setSaleDate(new Date().toISOString().split("T")[0])
+    if (!saleDate) setSaleDate(getLocalDateString())
     setIssueFormErrors({})
 
     setIsDocsLoading(true)
@@ -367,7 +368,7 @@ export default function SalesIssued() {
     setIssueFormErrors({})
     const nextFs = `FS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
     setFsNo(nextFs)
-    setSaleDate(new Date().toISOString().split("T")[0])
+    setSaleDate(getLocalDateString())
     setStagedTradePaperName("")
     setStagedTradePaperUrl("")
     setStagedPaymentAdviceName("")
@@ -458,7 +459,7 @@ export default function SalesIssued() {
       setEditing(full)
       setFsNo(full.fs_no || full.id || "")
       setReferenceNo(full.reference_no || "")
-      setSaleDate(full.sale_date ? (typeof full.sale_date === "string" ? full.sale_date.split("T")[0] : new Date(full.sale_date).toISOString().split("T")[0]) : "")
+      setSaleDate(full.sale_date ? getLocalDateString(full.sale_date) : "")
       setCustomerName(full.customer_name || (full as any).customer || "")
       const canonicalWh = canonicalWarehouseId(full.warehouse_id || "")
       setWarehouseId(canonicalWh)
@@ -573,7 +574,7 @@ export default function SalesIssued() {
 
     setPayingIssue(issue)
     setPayAmount(dueVal > 0 ? String(dueVal) : "")
-    setPayDate(new Date().toISOString().split("T")[0])
+    setPayDate(getLocalDateString())
     setPayBank("1000-02-26")
     setPayRef(`DEP-${Date.now().toString().slice(-4)}`)
     setPayAdviceFile(null)

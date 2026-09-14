@@ -3,6 +3,7 @@ import { motion } from "framer-motion"
 import { Printer, Download, X } from "lucide-react"
 import type { SalesIssue } from "@/lib/salesIssuesApi"
 import { useErpStore } from "@/lib/erpStore"
+import { isExportWarehouse } from "@/lib/warehouses"
 import { API_BASE } from "@/lib/apiPersistence"
 import {
   printSalesIssueDocument,
@@ -70,7 +71,7 @@ export default function SalesIssuePrintModal({
       id: item.id,
       itemName: item.item_name || product?.name || item.item_id || "Product",
       batchNo: item.batch_no || product?.batch || "BATCH-MAIN",
-      packagingUnit: item.packaging_unit || product?.unit || ((issue.warehouse_id || "").toUpperCase().includes("WH1") ? "Quintal" : "Box"),
+      packagingUnit: item.packaging_unit || product?.unit || (isExportWarehouse(issue.warehouse_id) ? "Quintal" : "Box"),
       quantity: Number(item.quantity || 0),
       unitPrice: Number(item.unit_price || 0),
       amount: Number(item.amount || item.quantity * item.unit_price || 0),

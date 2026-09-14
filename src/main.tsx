@@ -9,6 +9,19 @@ import { FeedbackProvider } from "@/context/FeedbackContext.tsx"
 import { useAuthStore, isTokenExpired, handleAuthExpiry } from "@/lib/authStore"
 import { requestMonitor, evaluateRoleScoping } from "@/lib/requestMonitor"
 
+// Suppress known non-fatal browser/DevTools internal extension errors (e.g. Chrome Soft Navigation DevTools script 'startTime' error)
+if (typeof window !== "undefined") {
+  window.addEventListener("error", (event) => {
+    if (
+      event.message?.includes("reading 'startTime'") ||
+      (event.message?.includes("startTime") && (event.filename?.includes("anonymous") || event.filename?.includes("VM") || !event.filename))
+    ) {
+      event.preventDefault()
+      event.stopPropagation()
+    }
+  })
+}
+
 // Intercept all fetch requests globally to inject the JWT auth header & handle 401/expired tokens
 const originalFetch = window.fetch
 window.fetch = async (input, init) => {
