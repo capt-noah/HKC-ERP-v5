@@ -25,9 +25,10 @@ export const tableMap = {
   shipment_documents: schema.shipmentDocuments,
   hkc_doc_records: schema.hkcDocRecords,
 
-  // Finance & GL (10)
+  // Finance & GL (11)
   company_settings: schema.companySettings,
   chart_of_accounts: schema.chartOfAccounts,
+  gl_account_mappings: schema.glAccountMappings,
   journal_entries: schema.journalEntries,
   journal_entry_lines: schema.journalEntryLines,
   invoices: schema.invoices,
@@ -110,7 +111,9 @@ export function unwrapRow(row, storage) {
     }
   }
 
-  // Normalization for inventory_products
+  // Normalization for inventory_products and warehouses
+  if (out.warehouse_type !== undefined && out.warehouseType === undefined) out.warehouseType = out.warehouse_type
+  if (out.warehouseType !== undefined && out.warehouse_type === undefined) out.warehouse_type = out.warehouseType
   if (out.warehouse_id !== undefined && out.warehouse === undefined) out.warehouse = out.warehouse_id
   if (out.warehouse !== undefined && out.warehouse_id === undefined) out.warehouse_id = out.warehouse
   if (out.shelf_number !== undefined && out.shelfNo === undefined) out.shelfNo = out.shelf_number
@@ -155,6 +158,14 @@ export function unwrapRow(row, storage) {
   if (out.wh1_entries !== undefined && out.wh1Entries === undefined) out.wh1Entries = out.wh1_entries
   if (out.bin_card_entries !== undefined && out.binCardEntries === undefined) out.binCardEntries = out.bin_card_entries
 
+  // Normalization for pharma_product_batches
+  if ((out.product_id || out.productId) && (out.batch_no || out.batchNo)) {
+    if (!out.warehouse_id && !out.warehouseId) {
+      out.warehouse_id = "WH2"
+      out.warehouseId = "WH2"
+    }
+  }
+
   // Normalization for stock_movements
   if (out.product_id !== undefined && out.productId === undefined) out.productId = out.product_id
   if (out.movement_type !== undefined && out.type === undefined) out.type = out.movement_type
@@ -169,6 +180,19 @@ export function unwrapRow(row, storage) {
   if (out.quantity !== undefined) {
     out.quantity = Number(out.quantity)
     if (out.qty === undefined) out.qty = Number(out.quantity)
+  }
+  if (out.unit_price !== undefined) {
+    out.unit_price = Number(out.unit_price)
+    if (out.unitPrice === undefined) out.unitPrice = Number(out.unit_price)
+  }
+  if (out.unitPrice !== undefined && out.unit_price === undefined) {
+    out.unitPrice = Number(out.unitPrice)
+    out.unit_price = Number(out.unitPrice)
+  }
+  if (out.unit_cost !== undefined) {
+    out.unit_cost = Number(out.unit_cost)
+    if (out.unitCost === undefined) out.unitCost = Number(out.unit_cost)
+    if (out.unitPrice === undefined && out.unit_price === undefined) out.unitPrice = Number(out.unit_cost)
   }
   if (out.notes !== undefined) {
     if (out.remarks === undefined) out.remarks = out.notes
@@ -250,6 +274,68 @@ export function unwrapRow(row, storage) {
   if (out.prepared_by !== undefined && out.preparedBy === undefined) out.preparedBy = out.prepared_by
   if (out.approved_by !== undefined && out.approvedBy === undefined) out.approvedBy = out.approved_by
   if (out.paid_by !== undefined && out.paidBy === undefined) out.paidBy = out.paid_by
+
+  // Normalization for sales_issues and invoices
+  if (out.subtotal_amount !== undefined) {
+    out.subtotal_amount = Number(out.subtotal_amount)
+    if (out.subtotalAmount === undefined) out.subtotalAmount = out.subtotal_amount
+    if (out.subtotal === undefined) out.subtotal = out.subtotal_amount
+  }
+  if (out.subtotal !== undefined && out.subtotal_amount === undefined) {
+    out.subtotal = Number(out.subtotal)
+    out.subtotal_amount = out.subtotal
+    out.subtotalAmount = out.subtotal
+  }
+  if (out.tax_amount !== undefined) {
+    out.tax_amount = Number(out.tax_amount)
+    if (out.taxAmount === undefined) out.taxAmount = out.tax_amount
+    if (out.vat_amount === undefined) out.vat_amount = out.tax_amount
+    if (out.vatAmount === undefined) out.vatAmount = out.tax_amount
+  }
+  if (out.vat_amount !== undefined && out.tax_amount === undefined) {
+    out.vat_amount = Number(out.vat_amount)
+    out.tax_amount = out.vat_amount
+    out.taxAmount = out.vat_amount
+    out.vatAmount = out.vat_amount
+  }
+  if (out.vat_rate !== undefined) {
+    out.vat_rate = Number(out.vat_rate)
+    if (out.vatRate === undefined) out.vatRate = out.vat_rate
+  }
+  if (out.vatRate !== undefined && out.vat_rate === undefined) {
+    out.vatRate = Number(out.vatRate)
+    out.vat_rate = out.vatRate
+  }
+  if (out.total_amount !== undefined) {
+    out.total_amount = Number(out.total_amount)
+    if (out.totalAmount === undefined) out.totalAmount = out.total_amount
+  }
+  if (out.totalAmount !== undefined && out.total_amount === undefined) {
+    out.totalAmount = Number(out.totalAmount)
+    out.total_amount = out.totalAmount
+  }
+  if (out.fs_no !== undefined) {
+    if (out.fsNo === undefined) out.fsNo = out.fs_no
+    if (out.issue_number === undefined) out.issue_number = out.fs_no
+    if (out.issueNumber === undefined) out.issueNumber = out.fs_no
+  }
+  if (out.reference_no !== undefined) {
+    if (out.referenceNo === undefined) out.referenceNo = out.reference_no
+    if (out.sales_order_id === undefined) out.sales_order_id = out.reference_no
+    if (out.salesOrderId === undefined) out.salesOrderId = out.reference_no
+  }
+  if (out.sale_date !== undefined) {
+    if (out.saleDate === undefined) out.saleDate = out.sale_date
+    if (out.issue_date === undefined) out.issue_date = out.sale_date
+    if (out.issueDate === undefined) out.issueDate = out.sale_date
+  }
+  if (out.customer_name !== undefined) {
+    if (out.customerName === undefined) out.customerName = out.customer_name
+    if (out.customer === undefined) out.customer = out.customer_name
+  }
+  if (out.customer_id !== undefined && out.customerId === undefined) {
+    out.customerId = out.customer_id
+  }
 
   // Normalization for chart_of_accounts
   if (out.account_type !== undefined && out.accountType === undefined) out.accountType = out.account_type
@@ -542,6 +628,8 @@ function normalizeBodyToDbColumns(body, validCols) {
     shelfNumber: "shelf_number",
     warehouse: "warehouse_id",
     warehouseId: "warehouse_id",
+    warehouseType: "warehouse_type",
+    warehouse_type: "warehouse_type",
     quantityPerPack: "quantity_per_pack",
     numberOfCartons: "number_of_cartons",
     shelfLifeMonths: "shelf_life_months",
@@ -591,18 +679,66 @@ function normalizeBodyToDbColumns(body, validCols) {
     approved_by: "approved_by",
     paidBy: "paid_by",
     paid_by: "paid_by",
+    subtotal: "subtotal_amount",
+    subtotalAmount: "subtotal_amount",
+    subtotal_amount: "subtotal_amount",
+    vatAmount: "tax_amount",
+    vat_amount: "tax_amount",
+    taxAmount: "tax_amount",
+    tax_amount: "tax_amount",
+    vatRate: "vat_rate",
+    vat_rate: "vat_rate",
+    totalAmount: "total_amount",
+    total_amount: "total_amount",
+    totalQuantity: "total_quantity",
+    total_quantity: "total_quantity",
+    fsNo: "fs_no",
+    fs_no: "fs_no",
+    issueNumber: "issue_number",
+    issue_number: "issue_number",
+    referenceNo: "reference_no",
+    reference_no: "reference_no",
+    salesOrderId: "sales_order_id",
+    sales_order_id: "sales_order_id",
+    saleDate: "sale_date",
+    sale_date: "sale_date",
+    issueDate: "sale_date",
+    issue_date: "sale_date",
+    customerName: "customer_name",
+    customer_name: "customer_name",
+    customerId: "customer_id",
+    customer_id: "customer_id",
   }
 
+  // 1. Process aliases and camelCase first as fallbacks
   for (const [key, val] of Object.entries(body)) {
-    if (validCols && validCols.has(key)) {
-      normalized[key] = val
-    } else if (aliases[key] && (!validCols || validCols.has(aliases[key]))) {
-      normalized[aliases[key]] = val
+    if (aliases[key] && (!validCols || validCols.has(aliases[key]))) {
+      const targetCol = aliases[key]
+      if (normalized[targetCol] === undefined) {
+        normalized[targetCol] = val
+      }
     } else {
       const snake = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
       if (validCols && validCols.has(snake)) {
-        normalized[snake] = val
+        if (normalized[snake] === undefined) {
+          normalized[snake] = val
+        }
       }
+    }
+  }
+
+  // 2. Exact match database columns ALWAYS take absolute precedence
+  for (const [key, val] of Object.entries(body)) {
+    if (validCols && validCols.has(key)) {
+      normalized[key] = val
+    }
+  }
+
+  if (validCols && validCols.has("warehouse_id") && normalized.warehouse_id === undefined) {
+    if (body.warehouse_id || body.warehouse || body.warehouseId) {
+      normalized.warehouse_id = body.warehouse_id || body.warehouse || body.warehouseId
+    } else {
+      normalized.warehouse_id = "WH2"
     }
   }
 
@@ -770,6 +906,15 @@ export async function drizzleDeleteRow({ resource, id }) {
 
     const getRes = await drizzleGetRow({ resource, id: cleanId })
     const targetDbId = getRes.body?.id || cleanId
+
+    // Clean up dependent relational movements and batches before deleting the product
+    if (tableName === "export_products") {
+      await pool.query("DELETE FROM export_warehouse_movements WHERE product_id = ?", [String(targetDbId)]).catch(() => {})
+    }
+    if (tableName === "pharma_products") {
+      await pool.query("DELETE FROM pharma_product_batches WHERE product_id = ?", [String(targetDbId)]).catch(() => {})
+    }
+
     await pool.query(`DELETE FROM \`${tableName}\` WHERE id = ?`, [String(targetDbId)])
     return { status: 200, body: { ok: true, deletedId: id } }
   } catch (err) {

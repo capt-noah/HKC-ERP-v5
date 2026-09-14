@@ -62,7 +62,17 @@ function money(value: number) {
 function formatDate(d?: string | Date | null) {
   if (!d) return "—"
   try {
-    const str = typeof d === "string" ? (d.includes("T") ? d.split("T")[0] : d) : new Date(d).toISOString().split("T")[0]
+    let str = ""
+    if (typeof d === "string") {
+      str = d.includes("T") ? d.split("T")[0] : d.split(" ")[0]
+    } else if (d instanceof Date) {
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, "0")
+      const day = String(d.getDate()).padStart(2, "0")
+      str = `${year}-${month}-${day}`
+    } else {
+      str = String(d)
+    }
     const [y, m, day] = str.split("-")
     if (y && m && day) {
       const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -1765,16 +1775,17 @@ export default function SalesIssued() {
                             </div>
                           ) : (
                             <select
-                              value={item.batch_no}
+                              value={item.batch_id || item.batch_no}
                               onChange={(e) => {
                                 const rawOpts = batchOptions[index] || []
-                                const batch = rawOpts.find((b) => b.batch_no === e.target.value)
+                                const val = e.target.value
+                                const batch = rawOpts.find((b) => (b.batch_id && b.batch_id === val) || b.batch_no === val)
                                 void updateItem(index, {
-                                  batch_no: e.target.value,
-                                  batch_id: e.target.value,
+                                  batch_no: batch?.batch_no || val,
+                                  batch_id: batch?.batch_id || batch?.id || val,
                                   packaging_unit: batch?.packaging_unit || item.packaging_unit,
                                   available_quantity: batch?.available_quantity || item.available_quantity || 1000,
-                                  unit_price: batch?.unit_price ?? item.unit_price,
+                                  unit_price: Number(item.unit_price) > 0 ? item.unit_price : (batch?.unit_price ?? item.unit_price),
                                 })
                               }}
                               className={`h-10 w-full rounded-xl text-xs font-bold ${
@@ -1786,12 +1797,12 @@ export default function SalesIssued() {
                               <option value="">Select batch</option>
                               {(() => {
                                 const opts = batchOptions[index] || []
-                                const hasSelected = opts.some((b) => b.batch_no === item.batch_no)
+                                const hasSelected = opts.some((b) => (b.batch_id && b.batch_id === item.batch_id) || b.batch_no === item.batch_no)
                                 const displayOpts = item.batch_no && !hasSelected && item.batch_no !== "N/A"
-                                  ? [{ batch_no: item.batch_no, available_quantity: item.available_quantity || 1000, unit_price: item.unit_price, packaging_unit: item.packaging_unit }, ...opts]
+                                  ? [{ batch_id: item.batch_id || item.batch_no, batch_no: item.batch_no, available_quantity: item.available_quantity || 1000, unit_price: item.unit_price, packaging_unit: item.packaging_unit }, ...opts]
                                   : opts
                                 return displayOpts.map((b) => (
-                                  <option key={b.batch_no} value={b.batch_no}>
+                                  <option key={b.batch_id || b.batch_no} value={b.batch_id || b.batch_no}>
                                     {b.batch_no} {b.available_quantity ? `(${b.available_quantity} avail)` : ""}
                                   </option>
                                 ))

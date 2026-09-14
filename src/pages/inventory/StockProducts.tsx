@@ -19,7 +19,7 @@ import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import StoreTransfersTab from "@/components/StoreTransfersTab"
 import QuarantineTab from "@/components/stock/QuarantineTab"
-import { useErpStore, type Product, type WH1Entry, type BinCardMovementEntry } from "@/lib/erpStore"
+import { useErpStore, type Product, type WH1Entry, type BinCardMovementEntry, type BatchInfo } from "@/lib/erpStore"
 import {
   withOperatingWarehouses,
   resolveWarehouseScope,
@@ -134,7 +134,7 @@ export default function StockProducts() {
   const [selectedWarehouse, setSelectedWarehouse] = useState(defaultWarehouse)
 
   useEffect(() => {
-    void erp.loadInventoryData()
+    void erp.loadInventoryData(true)
   }, [])
 
   useEffect(() => {
@@ -503,18 +503,38 @@ export default function StockProducts() {
 
       if (selectedExistingProduct) {
         // Option A: Add sub-entry to existing item
-        const newEntryPayload: Omit<WH1Entry, "entryId"> = {
-          voucherNo: addVoucherNo.trim() || undefined,
-          customer: addCustomer.trim() || undefined,
-          plateNumber: addPlateNumber.trim() || undefined,
-          entryDate: addEntryDate,
-          leaveDate: undefined,
-          quantityReceived: addTotalQuantity,
-          quantityRemaining: addTotalQuantity,
-          unitPrice: Number(addUnitPrice || 0),
-          notes: addNotes.trim() || undefined,
+        if (isWH1Form) {
+          const newEntryPayload: Omit<WH1Entry, "entryId"> = {
+            voucherNo: addVoucherNo.trim() || undefined,
+            customer: addCustomer.trim() || undefined,
+            plateNumber: addPlateNumber.trim() || undefined,
+            entryDate: addEntryDate,
+            leaveDate: undefined,
+            quantityReceived: addTotalQuantity,
+            quantityRemaining: addTotalQuantity,
+            unitPrice: Number(addUnitPrice || 0),
+            notes: addNotes.trim() || undefined,
+          }
+          await erp.addWH1Entry(selectedExistingProduct.id, newEntryPayload)
+        } else {
+          const newBinPayload: Omit<BinCardMovementEntry, "id" | "balance"> = {
+            type: "entry",
+            date: addMfgDate || addEntryDate || now.slice(0, 10),
+            batchNo: addBatchNumber.trim() || "BATCH-NEW",
+            voucherNo: addVoucherNo.trim() || undefined,
+            plateNumber: addPlateNumber.trim() || undefined,
+            qtyReceived: addTotalQuantity,
+            qtyIssued: 0,
+            expiryDate: addExpDate || "",
+            mfgDate: addMfgDate || undefined,
+            party: addCustomer.trim() || selectedExistingProduct.supplierName || "Supplier Arrival",
+            unitPrice: Number(addUnitPrice || selectedExistingProduct.unitCost || 0),
+            remark: addNotes.trim() || "Batch replenishment",
+            createdAt: now,
+          }
+          await erp.addBinCardEntry(selectedExistingProduct.id, newBinPayload)
         }
-        await erp.addWH1Entry(selectedExistingProduct.id, newEntryPayload)
+        setExpandedProductIds((prev) => new Set([...prev, selectedExistingProduct.id]))
         showToast("Stock entry added", "success", `Entry added to existing item ${selectedExistingProduct.name}.`)
       } else {
         // Option B: Add new item entirely
@@ -564,7 +584,7 @@ export default function StockProducts() {
           leaveDate: undefined,
           status: addTotalQuantity > 0 ? "In Stock" : "Out of Stock",
           stockBreakdown: [{ warehouse: addWarehouse, qty: addTotalQuantity }],
-          batches: isWH1Form ? [] : [{ batchNo: addBatchNumber, qty: addTotalQuantity, expiry: addExpDate, status: "Released" }],
+          batches: isWH1Form ? [] : [{ batchNo: addBatchNumber, qty: addTotalQuantity, expiry: addExpDate, unitPrice: Number(addUnitPrice || 0), status: "Released" }],
           wh1Entries: isWH1Form ? initialWH1Entries : undefined,
           binCardEntries: (!isWH1Form && addTotalQuantity > 0) ? [{
             id: `BCE-${Date.now()}-init`,
@@ -590,6 +610,7 @@ export default function StockProducts() {
         }
 
         await erp.addProduct(product)
+        setExpandedProductIds((prev) => new Set([...prev, productId]))
         showToast("Stock item saved", "success", `${addDescription} was saved to inventory.`)
       }
 
@@ -609,6 +630,7 @@ export default function StockProducts() {
   // Handle saving direct slim sub-entry modal (WH1)
   const handleSaveWH1Entry = async (productId: string, entryData: Omit<WH1Entry, "entryId">) => {
     await erp.addWH1Entry(productId, entryData)
+    setExpandedProductIds((prev) => new Set([...prev, productId]))
   }
 
   const handleSaveWH1Leave = async (
@@ -624,6 +646,7 @@ export default function StockProducts() {
     }
   ) => {
     await erp.addWH1LeaveEntry(productId, leaveData)
+    setExpandedProductIds((prev) => new Set([...prev, productId]))
   }
 
   const handleSaveWH1Reject = async (
@@ -635,6 +658,7 @@ export default function StockProducts() {
     }
   ) => {
     await erp.addWH1RejectEntry(productId, rejectData)
+    setExpandedProductIds((prev) => new Set([...prev, productId]))
   }
 
   // Handle Edit/Delete Sub Entry
@@ -656,9 +680,10 @@ export default function StockProducts() {
     setIsSavingSubEdit(true)
     try {
       const nextQty = Number(editSubEntryQty)
-      const originalRemaining = editingSubEntry.entry.quantityRemaining
-      const difference = editingSubEntry.entry.quantityReceived - nextQty
-      const nextRemaining = Math.max(0, originalRemaining - difference)
+      const originalReceived = Number(editingSubEntry.entry.quantityReceived || 0)
+      const originalRemaining = Number(editingSubEntry.entry.quantityRemaining ?? originalReceived)
+      const deductionsAgainstEntry = Math.max(0, originalReceived - originalRemaining)
+      const nextRemaining = Math.max(0, nextQty - deductionsAgainstEntry)
 
       await erp.updateWH1Entry(editingSubEntry.product.id, editingSubEntry.entry.entryId, {
         voucherNo: editSubEntryVoucherNo.trim() || undefined,
@@ -702,6 +727,7 @@ export default function StockProducts() {
     } else {
       await erp.addBinCardEntry(productId, entryData)
     }
+    setExpandedProductIds((prev) => new Set([...prev, productId]))
   }
 
   const handleDeleteBinEntry = async (productId: string, entryId: string) => {
@@ -770,11 +796,11 @@ export default function StockProducts() {
     const plateNumber = isWh1 ? (editForm.plateNumber?.trim() || undefined) : undefined
     const dosage = isWh1 ? undefined : (editForm.dosage?.trim() || undefined)
     const shelfNo = isWh1 ? undefined : (editForm.shelfNo?.trim() || undefined)
-    const batch = isWh1 ? "" : editForm.batch.trim()
-    const expiry = isWh1 ? "" : editForm.expiry
+    const batch = isWh1 ? "" : (editForm.batch?.trim() || "BATCH-01")
+    const expiry = isWh1 ? "" : (editForm.expiry?.trim() || "")
     const entryDate = isWh1 ? editForm.entryDate : undefined
-    const leaveDate = (isWh1 && editForm.leaveDate) ? editForm.leaveDate : undefined
-    const unit = editForm.unit.trim()
+    const leaveDate = isWh1 ? editForm.leaveDate : undefined
+    const unit = editForm.unit
     const quantityPerPack = isWh1 ? undefined : (editForm.quantityPerPack ? Number(editForm.quantityPerPack) : undefined)
     const numberOfCartons = isWh1 ? undefined : (editForm.numberOfCartons ? Number(editForm.numberOfCartons) : undefined)
     
@@ -805,13 +831,35 @@ export default function StockProducts() {
       }
     }
 
-    const selectedWarehouseRecord = warehouseRecords.find((item) => (item.id || item.code) === warehouse || item.code === warehouse)
+    const selectedWarehouseRecord = allWarehouses.find((item) => (item.id || item.code) === warehouse || item.code === warehouse)
     const nextBreakdown = editingProduct.stockBreakdown.length
       ? editingProduct.stockBreakdown.map((item, index) => index === 0 ? { ...item, warehouse } : item)
       : [{ warehouse, qty: editingProduct.quantity }]
-    const nextBatches = isWh1 ? [] : (editingProduct.batches.length
-      ? editingProduct.batches.map((item, index) => index === 0 ? { ...item, batchNo: batch, expiry: expiry || item.expiry } : item)
+    const nextBatches: BatchInfo[] = isWh1 ? [] : (editingProduct.batches.length
+      ? editingProduct.batches.map((item, index) => index === 0 ? { ...item, batchNo: batch || item.batchNo || "BATCH-01", expiry: expiry || item.expiry } : item)
       : [{ batchNo: batch || "BATCH-01", qty: editingProduct.quantity, expiry: expiry || "", status: "Released" as const }])
+
+    let nextWh1Entries = editingProduct.wh1Entries
+    if (isWh1 && nextWh1Entries && nextWh1Entries.length === 1) {
+      nextWh1Entries = [{
+        ...nextWh1Entries[0],
+        voucherNo: voucherNo || nextWh1Entries[0].voucherNo,
+        customer: customer || nextWh1Entries[0].customer,
+        plateNumber: plateNumber || nextWh1Entries[0].plateNumber,
+        entryDate: entryDate || nextWh1Entries[0].entryDate,
+        unitPrice: unitCost || nextWh1Entries[0].unitPrice,
+      }]
+    }
+
+    let nextBinEntries = editingProduct.binCardEntries
+    if (!isWh1 && nextBinEntries && nextBinEntries.length === 1) {
+      nextBinEntries = [{
+        ...nextBinEntries[0],
+        batchNo: batch || nextBinEntries[0].batchNo,
+        expiryDate: expiry || nextBinEntries[0].expiryDate,
+        unitPrice: unitCost || nextBinEntries[0].unitPrice,
+      }]
+    }
 
     setIsSavingEdit(true)
     try {
@@ -839,6 +887,8 @@ export default function StockProducts() {
         totalStockValue: editingProduct.quantity * unitCost,
         stockBreakdown: nextBreakdown,
         batches: nextBatches,
+        wh1Entries: nextWh1Entries,
+        binCardEntries: nextBinEntries,
         approvalStatus: editForm.approvalStatus,
       })
       setEditingProduct(null)
@@ -1068,7 +1118,14 @@ export default function StockProducts() {
 
                           // WH1 entries and calculations
                           const wh1Entries = prod.wh1Entries || []
-                          const wh1TotalReceived = wh1Entries.reduce((sum, e) => sum + Number(e.quantityReceived || 0), 0)
+                          const wh1InboundFromEntries = wh1Entries.reduce((sum, e) => sum + Number(e.quantityReceived || 0), 0)
+                          const wh1InboundFromBin = (prod.binCardEntries || []).filter((b) => b.type === "entry" || Number(b.qtyReceived || 0) > 0).reduce((sum, b) => sum + Number(b.qtyReceived || 0), 0)
+
+                          const wh1TotalReceived = wh1InboundFromEntries > 0
+                            ? wh1InboundFromEntries
+                            : wh1InboundFromBin > 0
+                              ? wh1InboundFromBin
+                              : Number(prod.totalQuantity || prod.quantity || 0)
 
                           // Pharma bin card calculations
                           const binEntries = prod.binCardEntries || []
@@ -1084,13 +1141,65 @@ export default function StockProducts() {
                           const computedCartons = explicitCartons > 0 ? explicitCartons : (packSize > 0 ? Math.floor(pharmaBalance / packSize) : 0)
 
                           const displayQuantity = isWH1Item ? Number(prod.quantity || 0) : pharmaBalance
-                          const computedStockValue = Number(prod.totalStockValue || 0) > 0
-                            ? Number(prod.totalStockValue)
-                            : (isWH1Item
-                                ? displayQuantity * Number(prod.unitCost || 0)
-                                : (Array.isArray(prod.batches) && prod.batches.length > 0)
-                                  ? prod.batches.reduce((sum, b) => sum + (Number(b.qty ?? (b as any).quantity ?? 0) * Number((b as any).unitPrice ?? (prod as any).unitPrice ?? (prod as any).unit_price ?? 0)), 0)
-                                  : (displayQuantity * Number((prod as any).unitPrice ?? (prod as any).unit_price ?? prod.unitCost ?? 0)))
+                          const computedStockValue = (() => {
+                            const binCards = prod.binCardEntries || []
+                            if (binCards.length > 0) {
+                              let childNetVal = 0
+                              for (const b of binCards) {
+                                const isQuarantine = b.type === "quarantine"
+                                const isEntry = !isQuarantine && b.type !== "reject" && (b.type === "entry" || Number(b.qtyReceived || 0) > 0)
+                                const isDeduct = isQuarantine || b.type === "leave" || b.type === "reject" || Number(b.qtyIssued || 0) > 0
+                                const inQ = isEntry ? Number(b.qtyReceived || 0) : 0
+                                const outQ = isDeduct ? Number(b.qtyIssued || (b.type === "reject" ? (b as any).rejectQuantity || b.qtyReceived : 0) || 0) : 0
+                                const matchingBatch = (prod.batches || []).find((bat) => (bat.batchNo || "").toUpperCase() === (b.batchNo || "").toUpperCase())
+                                const batchCost = Number(matchingBatch?.unitPrice || (matchingBatch as any)?.unit_cost || prod.unitCost || 0)
+                                const price = Number(
+                                  b.unitPrice != null && Number(b.unitPrice) > 0
+                                    ? b.unitPrice
+                                    : isQuarantine
+                                    ? batchCost
+                                    : b.type === "leave"
+                                    ? (prod.sellingPrice || (prod as any).selling_price || prod.unitCost || 0)
+                                    : batchCost || (prod.unitCost || 0)
+                                )
+                                if (isEntry) {
+                                  childNetVal += inQ * price
+                                } else if (isDeduct) {
+                                  childNetVal -= outQ * price
+                                }
+                              }
+                              return displayQuantity <= 0 ? 0 : Math.max(0, Math.round(childNetVal * 100) / 100)
+                            }
+                            if (isWH1Item && Array.isArray(prod.wh1Entries) && prod.wh1Entries.length > 0) {
+                              let wh1NetVal = 0
+                              for (const e of prod.wh1Entries) {
+                                const eAny = e as any
+                                const isRej = eAny.type === "reject" || Boolean(eAny.isReject)
+                                const isLeave = eAny.type === "leave" || (Number(eAny.quantityIssued || 0) > 0 && Number(e.quantityReceived || 0) === 0)
+                                const inQ = isRej || isLeave ? 0 : Number(e.quantityReceived || 0)
+                                const outQ = isRej ? Number(eAny.rejectQuantity || eAny.quantityIssued || e.quantityReceived || 0) : isLeave ? Number(eAny.quantityIssued || 0) : 0
+                                const price = Number(
+                                  e.unitPrice != null && Number(e.unitPrice) > 0
+                                    ? e.unitPrice
+                                    : isLeave
+                                    ? (prod.sellingPrice || (prod as any).selling_price || prod.unitCost || 0)
+                                    : (prod.unitCost || 0)
+                                )
+                                if (isRej || isLeave) {
+                                  wh1NetVal -= outQ * price
+                                } else {
+                                  wh1NetVal += inQ * price
+                                }
+                              }
+                              if (wh1NetVal > 0) {
+                                return displayQuantity <= 0 ? 0 : Math.max(0, Math.round(wh1NetVal * 100) / 100)
+                              }
+                            }
+                            if (prod.totalStockValue !== undefined && Number(prod.totalStockValue) >= 0) {
+                              return Number(prod.totalStockValue)
+                            }
+                            return Math.round(displayQuantity * Number(prod.unitCost || 0) * 100) / 100
+                          })()
 
                           // 1. ALL Warehouses View
                           if (selectedWarehouse === "ALL") {
@@ -2411,6 +2520,20 @@ export default function StockProducts() {
                       className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
                     />
                   </label>
+
+                  <div className="space-y-1 block md:col-span-2 p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80 flex items-center justify-between shadow-2xs">
+                    <div>
+                      <span className="text-emerald-950 uppercase text-[10px] font-black block tracking-wider">Computed Row Total Value</span>
+                      <span className="text-xs text-emerald-800 font-semibold">
+                        {Number(editSubEntryQty || 0).toLocaleString()} {editingSubEntry.product.unit || "Quintals"} × ETB {Number(editSubEntryPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-base font-mono font-black text-emerald-900">
+                        ETB {(Number(editSubEntryQty || 0) * Number(editSubEntryPrice || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
 
                   <label className="space-y-1 block">
                     <span className="text-zinc-500 uppercase text-[10px] font-black">Entry Date</span>

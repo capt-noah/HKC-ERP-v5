@@ -26,7 +26,7 @@ import {
 import { useNavigate } from "react-router-dom"
 import { GlassCard } from "@/components/GlassCard"
 import { useAuthStore, type Role } from "@/lib/authStore"
-import { useErpStore, type Warehouse as WarehouseType } from "@/lib/erpStore"
+import { type Warehouse as WarehouseType } from "@/lib/erpStore"
 import { useFeedback } from "@/context/FeedbackContext"
 import { loadResource, API_BASE } from "@/lib/apiPersistence"
 import { LoadingDots } from "@/components/ui/LoadingDots"
@@ -178,8 +178,9 @@ const roleDescriptions: Record<Role, { title: string; desc: string; color: strin
 
 export default function Profile() {
   const navigate = useNavigate()
-  const erp = useErpStore()
-  const { user: authUser, logout, token } = useAuthStore()
+  const authUser = useAuthStore((s) => s.user)
+  const token = useAuthStore((s) => s.token)
+  const logout = useAuthStore((s) => s.logout)
   const { showToast, confirm } = useFeedback()
 
   const [loading, setLoading] = useState(true)
@@ -311,62 +312,77 @@ export default function Profile() {
   }
 
   useEffect(() => {
+    let isMounted = true
+
     async function loadProfile() {
+      const effectiveUser = authUser || useAuthStore.getState().user
+      const effectiveToken = token || useAuthStore.getState().token
+
+      if (!effectiveUser?.id && !effectiveToken) return
+
       setLoading(true)
       try {
-        if (!authUser?.id) return
-
         // 1. Fetch user's own profile safely via /api/auth/me
-        let current: any = authUser
-        try {
-          const res = await fetch(`${API_BASE}/api/auth/me`, {
-            headers: {
-              Authorization: `Bearer ${token || useAuthStore.getState().token}`,
-            },
-          })
-          if (res.ok) {
-            const data = await res.json()
-            if (data?.id) current = data
+        let current: any = effectiveUser
+        if (effectiveToken) {
+          try {
+            const res = await fetch(`${API_BASE}/api/auth/me`, {
+              headers: { Authorization: `Bearer ${effectiveToken}` },
+            })
+            if (res.ok) {
+              const data = await res.json()
+              if (data?.id) current = data
+            }
+          } catch (err) {
+            console.warn("Could not load /api/auth/me, using stored auth state:", err)
           }
-        } catch (err) {
-          console.warn("Could not load /api/auth/me, using stored auth state:", err)
         }
 
+        if (!isMounted) return
         setProfileData(current)
-        setNewName(current.fullname || authUser.fullname || "")
+        setNewName(current.fullname || effectiveUser?.fullname || "")
 
         // 2. Fetch linked employee details if employee_id is set
         if (current.employee_id) {
           try {
             const employees = await loadResource<LinkedEmployee>("employees")
             const emp = employees.find((e) => e.id === current.employee_id)
-            if (emp) setLinkedEmployee(emp)
+            if (emp && isMounted) setLinkedEmployee(emp)
           } catch {}
         }
 
         // 3. Fetch warehouses from API for warehouse-operating roles
         try {
           const whData = await loadResource<WarehouseType>("warehouses")
-          if (Array.isArray(whData) && whData.length > 0) {
+          if (Array.isArray(whData) && whData.length > 0 && isMounted) {
             setWarehouses(whData)
-          } else {
-            setWarehouses(erp.getWarehouses())
           }
-        } catch {
-          setWarehouses(erp.getWarehouses())
-        }
-
-        // 4. Fetch active sessions
-        fetchSessions()
+        } catch {}
       } catch (err) {
         console.error("Failed to load profile:", err)
       } finally {
-        setTimeout(() => setLoading(false), 200)
+        if (isMounted) {
+          setLoading(false)
+        }
       }
     }
 
     loadProfile()
-  }, [authUser, token, erp, fetchSessions])
+    fetchSessions()
+
+    return () => {
+      isMounted = false
+    }
+  }, [authUser, token, fetchSessions])
+
+  // Also ensure sessions are re-fetched whenever window regains focus
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchSessions()
+    }
+    window.addEventListener("focus", handleFocus)
+    return () => window.removeEventListener("focus", handleFocus)
+  }, [fetchSessions])
 
   const userRoles: Role[] = profileData?.roles || authUser?.roles || []
   const isSuperAdmin = userRoles.includes("superadmin")

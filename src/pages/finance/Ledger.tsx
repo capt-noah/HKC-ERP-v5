@@ -21,8 +21,8 @@ import {
   Download,
   Scale,
   Lock,
-  Unlock,
   ArrowLeftRight,
+  CalendarCheck,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -42,6 +42,7 @@ import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import PeachtreeBeginningBalancesModal from "@/components/finance/PeachtreeBeginningBalancesModal"
 import { PeachtreePeriodClosingModal } from "@/components/finance/PeachtreePeriodClosingModal"
 import TransactionMappingMatrix from "@/components/finance/TransactionMappingMatrix"
+import FiscalPeriodsTab from "@/components/finance/FiscalPeriodsTab"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -51,7 +52,7 @@ export default function Ledger() {
   const store = useFinanceStore()
   const isLoading = store.isLoading()
 
-  const [activeTab, setActiveTab] = useState<"Entries" | "Chart" | "Mappings">("Entries")
+  const [activeTab, setActiveTab] = useState<"Entries" | "Periods" | "Chart" | "Mappings">("Entries")
 
   // Store data
   const entries = store.getJournalEntries()
@@ -744,28 +745,6 @@ export default function Ledger() {
             </p>
           </div>
           <div className="flex items-center gap-3 self-end md:self-start">
-            <button
-              type="button"
-              onClick={() => setShowPeriodClosingModal(true)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition-all cursor-pointer active:scale-95 ${
-                periodLockStatus.is_locked
-                  ? "bg-amber-100 border border-amber-300 text-amber-900 hover:bg-amber-200"
-                  : "bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-50"
-              }`}
-              title="Manage Accounting Period Closings & Locking"
-            >
-              {periodLockStatus.is_locked ? (
-                <>
-                  <Lock className="size-3.5 text-amber-700" />
-                  <span>Locked: {periodLockStatus.locked_until_date}</span>
-                </>
-              ) : (
-                <>
-                  <Unlock className="size-3.5 text-emerald-600" />
-                  <span>Period Open</span>
-                </>
-              )}
-            </button>
             <SubPageNav items={getSectionChildren("/finance")} />
           </div>
         </motion.div>
@@ -775,6 +754,7 @@ export default function Ledger() {
           <div className="flex gap-1 min-w-max">
             {[
               { id: "Entries", label: "Journal Entries", icon: FileText },
+              { id: "Periods", label: "Fiscal Periods", icon: CalendarCheck },
               { id: "Chart", label: "Chart of Accounts", icon: FolderTree },
               { id: "Mappings", label: "Account Mappings", icon: ArrowLeftRight },
             ].map((tab) => {
@@ -831,10 +811,10 @@ export default function Ledger() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setShowPeriodClosingModal(true)}
+                      onClick={() => setActiveTab("Periods")}
                       className="text-amber-800 underline hover:text-amber-950 font-bold ml-2 shrink-0 cursor-pointer"
                     >
-                      Manage Lock
+                      Manage Fiscal Periods
                     </button>
                   </div>
                 )}
@@ -1206,7 +1186,20 @@ export default function Ledger() {
             </motion.div>
           )}
 
-          {/* TAB 2: Chart of Accounts Tree */}
+          {/* TAB 2: Fiscal Periods Dedicated Dashboard */}
+          {activeTab === "Periods" && (
+            <motion.div
+              key="periods-tab"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <FiscalPeriodsTab />
+            </motion.div>
+          )}
+
+          {/* TAB 3: Chart of Accounts Tree */}
           {activeTab === "Chart" && (
             <motion.div
               key="chart-tab"

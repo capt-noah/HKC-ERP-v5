@@ -360,14 +360,6 @@ export default function Banking() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setShowReconModal(true)}
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-2 shadow-sm active:scale-95 transition-all cursor-pointer"
-              title="Peachtree / Sage 50 Account Reconciliation Worksheet"
-            >
-              <FileSpreadsheet className="size-4" /> Account Reconciliation
-            </button>
             <SubPageNav items={getSectionChildren("/finance")} />
           </div>
         </motion.div>

@@ -160,9 +160,6 @@ export const PeachtreePeriodClosingModal: React.FC<PeachtreePeriodClosingModalPr
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-black text-zinc-900">Fiscal Period Lock & Closing</h2>
-                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700 border border-zinc-200">
-                    Peachtree Audit Guard
-                  </span>
                 </div>
                 <p className="text-xs text-zinc-500 font-medium">
                   Enforce accounting closure dates to prevent tampering or backdating of historical records.

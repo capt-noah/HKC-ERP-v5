@@ -59,6 +59,7 @@ export default function WH1AddMovementModal({
   const [leaveCustomer, setLeaveCustomer] = useState("")
   const [leavePlateNumber, setLeavePlateNumber] = useState("")
   const [leaveQuantity, setLeaveQuantity] = useState("")
+  const [leaveUnitPrice, setLeaveUnitPrice] = useState("")
   const [existingSalesIssues, setExistingSalesIssues] = useState<any[]>([])
   const [selectedIssueId, setSelectedIssueId] = useState("")
 
@@ -183,7 +184,7 @@ export default function WH1AddMovementModal({
       setLeavePlateNumber(found.plate_number || found.plateNumber || "")
       if (found.sale_date) setLeaveDate(found.sale_date)
 
-      // Find matching quantity for this product
+      // Find matching quantity and selling price for this product
       const item = (found.items || found.line_items || []).find(
         (it: any) =>
           it.item_id === product?.id ||
@@ -192,6 +193,14 @@ export default function WH1AddMovementModal({
       )
       if (item) {
         setLeaveQuantity(String(item.quantity || item.qty || ""))
+        const uPrice = Number(item.unit_price || item.unitPrice || 0)
+        if (uPrice > 0) {
+          setLeaveUnitPrice(String(uPrice))
+        } else if (product?.sellingPrice) {
+          setLeaveUnitPrice(String(product.sellingPrice))
+        }
+      } else if (product?.sellingPrice) {
+        setLeaveUnitPrice(String(product.sellingPrice))
       }
     }
   }
@@ -272,6 +281,7 @@ export default function WH1AddMovementModal({
         party: leaveCustomer.trim() || "Customer Dispatch",
         plateNumber: leavePlateNumber.trim() || "—",
         quantityIssued: rawQty,
+        unitPrice: Number(leaveUnitPrice) > 0 ? Number(leaveUnitPrice) : undefined,
         remark: leaveVoucherNo ? `Sales Issue FS-${leaveVoucherNo}` : "Outbound Dispatch",
       })
       showToast("Success", "success", `Outbound leave of ${rawQty.toLocaleString()} Quintals reconciled.`)
@@ -655,7 +665,7 @@ export default function WH1AddMovementModal({
                   />
                 </label>
 
-                <label className="space-y-1 block md:col-span-2">
+                <label className="space-y-1 block md:col-span-1">
                   <span className="text-zinc-500 uppercase text-[10px] font-black">Quantity Dispatched (Quintal)</span>
                   <input
                     type="number"
@@ -665,6 +675,18 @@ export default function WH1AddMovementModal({
                     onChange={(e) => setLeaveQuantity(e.target.value)}
                     className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono font-bold text-amber-900"
                     required
+                  />
+                </label>
+
+                <label className="space-y-1 block md:col-span-1">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Selling Unit Price (ETB)</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder={`e.g. ${product.sellingPrice || 280}`}
+                    value={leaveUnitPrice}
+                    onChange={(e) => setLeaveUnitPrice(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono font-bold text-emerald-900"
                   />
                 </label>
               </div>

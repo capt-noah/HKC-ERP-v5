@@ -12,7 +12,45 @@ export default function StockBinCardLedger({
   onEditEntry
 }: StockBinCardLedgerProps) {
   const entries = useMemo(() => {
-    const raw = [...(product.binCardEntries || [])]
+    let raw = [...(product.binCardEntries || [])]
+
+    // If no explicit bin card movement records exist yet, synthesize from batch records or initial stock
+    if (raw.length === 0) {
+      if (Array.isArray(product.batches) && product.batches.length > 0) {
+        raw = product.batches.map((b, idx) => ({
+          id: `batch-${product.id}-${idx}`,
+          type: "entry",
+          date: b.mfgDate || product.manufacturingDate || (product as any).created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+          batchNo: b.batchNo || `BATCH-00${idx + 1}`,
+          qtyReceived: Number(b.qty || 0),
+          qtyIssued: 0,
+          balance: Number(b.qty || 0),
+          unitPrice: Number(b.unitPrice || product.unitCost || 0),
+          mfgDate: b.mfgDate || product.manufacturingDate,
+          expiryDate: b.expiry || product.expiry || "",
+          party: product.supplierName || product.supplier || "Supplier Inbound Delivery",
+          remark: b.notes || "Initial Batch Registration",
+          createdAt: (product as any).created_at || new Date().toISOString(),
+        }))
+      } else if (Number(product.quantity || product.totalQuantity || 0) > 0 || product.batch) {
+        raw = [{
+          id: `init-${product.id}`,
+          type: "entry",
+          date: product.manufacturingDate || product.entryDate || (product as any).created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+          batchNo: product.batch || "BATCH-INITIAL",
+          qtyReceived: Number(product.quantity || product.totalQuantity || 0),
+          qtyIssued: 0,
+          balance: Number(product.quantity || product.totalQuantity || 0),
+          unitPrice: Number(product.unitCost || product.costPrice || 0),
+          mfgDate: product.manufacturingDate,
+          expiryDate: product.expiry || "",
+          party: product.supplierName || product.supplier || "Initial Inbound Stock",
+          remark: "Initial Stock Registration",
+          createdAt: (product as any).created_at || new Date().toISOString(),
+        }]
+      }
+    }
+
     raw.sort((a, b) => {
       const timeA = new Date(a.date && a.date !== "—" ? a.date : 0).getTime()
       const timeB = new Date(b.date && b.date !== "—" ? b.date : 0).getTime()
@@ -34,11 +72,32 @@ export default function StockBinCardLedger({
         balance: runningBal,
       }
     })
-  }, [product.binCardEntries])
+  }, [product.binCardEntries, product.batches, product.quantity, product.totalQuantity, product.batch, product.manufacturingDate, product.entryDate, product.expiry, product.supplierName, product.supplier, product.unitCost, product.costPrice, product.id])
 
   const totalReceived = entries.reduce((sum, e) => sum + Number(e.qtyReceived || 0), 0)
   const totalIssued = entries.reduce((sum, e) => sum + Number(e.qtyIssued || 0), 0)
   const currentBalance = entries.length > 0 ? entries[entries.length - 1].balance : product.quantity
+  const netPharmaVal = entries.length > 0
+    ? (currentBalance <= 0 ? 0 : Math.max(0, Math.round(entries.reduce((sum, rec) => {
+        const isQuarantine = rec.type === "quarantine"
+        const isEntry = !isQuarantine && rec.type !== "reject" && (rec.type === "entry" || Number(rec.qtyReceived || 0) > 0)
+        const isDeduct = isQuarantine || rec.type === "leave" || rec.type === "reject" || Number(rec.qtyIssued || 0) > 0
+        const inQty = Number(rec.qtyReceived || 0)
+        const outQty = Number(rec.qtyIssued || 0)
+        const matchingBatch = (product.batches || []).find((b) => (b.batchNo || "").toUpperCase() === (rec.batchNo || "").toUpperCase())
+        const batchCost = Number(matchingBatch?.unitPrice || (matchingBatch as any)?.unit_cost || product.unitCost || 0)
+        const rowPrice = Number(
+          rec.unitPrice != null && Number(rec.unitPrice) > 0
+            ? rec.unitPrice
+            : isQuarantine
+            ? batchCost
+            : rec.type === "leave"
+            ? (product.sellingPrice || (product as any).selling_price || product.unitCost || 0)
+            : batchCost || (product.unitCost || 0)
+        )
+        return sum + (isEntry ? inQty * rowPrice : isDeduct ? -(outQty * rowPrice) : 0)
+      }, 0) * 100) / 100))
+    : (Number(product.totalStockValue || 0) > 0 ? Number(product.totalStockValue) : Number(currentBalance || 0) * Number(product.unitCost || 0))
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden shadow-xs">
@@ -58,6 +117,7 @@ export default function StockBinCardLedger({
                   Quantity ({product.unit})
                 </th>
                 <th rowSpan={2} className="py-2.5 px-4 text-right border-r border-zinc-200">Unit Price</th>
+                <th rowSpan={2} className="py-2.5 px-4 text-right border-r border-zinc-200 text-emerald-800">Total Value (ETB)</th>
                 <th rowSpan={2} className="py-2.5 px-4 border-r border-zinc-200">Mfg Date</th>
                 <th rowSpan={2} className="py-2.5 px-4 border-r border-zinc-200">Expiry Date</th>
                 <th rowSpan={2} className="py-2.5 px-4 border-r border-zinc-200">Received From / Issued To</th>
@@ -73,8 +133,23 @@ export default function StockBinCardLedger({
             <tbody className="divide-y divide-zinc-150">
               {entries.map((rec) => {
                 const isQuarantine = rec.type === "quarantine"
-                const isEntry = !isQuarantine && (rec.type === "entry" || Number(rec.qtyReceived || 0) > 0)
+                const isEntry = !isQuarantine && rec.type !== "reject" && (rec.type === "entry" || Number(rec.qtyReceived || 0) > 0)
                 const isLeave = !isQuarantine && (rec.type === "leave" || Number(rec.qtyIssued || 0) > 0)
+                const isDeduct = isQuarantine || isLeave || rec.type === "reject"
+                const matchingBatch = (product.batches || []).find((b) => (b.batchNo || "").toUpperCase() === (rec.batchNo || "").toUpperCase())
+                const batchCost = Number(matchingBatch?.unitPrice || (matchingBatch as any)?.unit_cost || product.unitCost || 0)
+                const rowPrice = Number(
+                  rec.unitPrice != null && Number(rec.unitPrice) > 0
+                    ? rec.unitPrice
+                    : isQuarantine
+                    ? batchCost
+                    : isLeave
+                    ? (product.sellingPrice || (product as any).selling_price || product.unitCost || 0)
+                    : batchCost || (product.unitCost || 0)
+                )
+                const inQty = Number(rec.qtyReceived || 0)
+                const outQty = Number(rec.qtyIssued || 0)
+                const totalValue = isEntry ? (inQty * rowPrice) : isDeduct ? -(outQty * rowPrice) : 0
 
                 const rowBg = isQuarantine
                   ? "bg-amber-50/40 hover:bg-amber-50/70"
@@ -98,11 +173,22 @@ export default function StockBinCardLedger({
                       {rec.balance.toLocaleString()}
                     </td>
                   <td className="py-2.5 px-4 text-right font-mono font-bold text-zinc-800 border-r border-zinc-100">
-                    {rec.unitPrice != null && Number(rec.unitPrice) > 0
-                      ? `ETB ${Number(rec.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                      : product.unitCost
-                        ? `ETB ${Number(product.unitCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                        : "—"}
+                    {rowPrice > 0
+                      ? `ETB ${rowPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : "—"}
+                  </td>
+                  <td className="py-2.5 px-4 text-right font-mono font-black whitespace-nowrap border-r border-zinc-100">
+                    {totalValue > 0 ? (
+                      <span className="text-emerald-700">
+                        +ETB {totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    ) : totalValue < 0 ? (
+                      <span className={isQuarantine ? "text-amber-800" : "text-rose-700"}>
+                        -ETB {Math.abs(totalValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    ) : (
+                      <span className="text-zinc-300 font-normal">—</span>
+                    )}
                   </td>
                   <td className="py-2.5 px-4 font-mono text-zinc-600 border-r border-zinc-100">{rec.mfgDate || "-"}</td>
                   <td className="py-2.5 px-4 font-mono text-zinc-600 border-r border-zinc-100">{rec.expiryDate || "-"}</td>
@@ -139,7 +225,13 @@ export default function StockBinCardLedger({
                 <td className="py-2.5 px-4 text-right text-emerald-800 border-r border-zinc-200">+{totalReceived.toLocaleString()}</td>
                 <td className="py-2.5 px-4 text-right text-rose-800 border-r border-zinc-200">-{totalIssued.toLocaleString()}</td>
                 <td className="py-2.5 px-4 text-right font-black bg-zinc-200 border-r border-zinc-200">{currentBalance.toLocaleString()} {product.unit}</td>
-                <td colSpan={5} className="py-2.5 px-4 text-zinc-500 font-sans italic text-[10px]">
+                <td className="py-2.5 px-4 text-right uppercase text-[10px] font-black text-zinc-600 border-r border-zinc-200">
+                  Net Stock Value:
+                </td>
+                <td className="py-2.5 px-4 text-right font-black text-emerald-800 border-r border-zinc-200">
+                  ETB {netPharmaVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </td>
+                <td colSpan={4} className="py-2.5 px-4 text-zinc-500 font-sans italic text-[10px]">
                   Warehouse: {product.warehouseName || product.warehouse} &bull; Shelf: {product.shelfNo || "Unassigned"}
                 </td>
               </tr>

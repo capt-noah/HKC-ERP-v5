@@ -1,9 +1,8 @@
 const jsonb = { storage: "jsonb_document" }
 
 export const resources = {
-  // Inventory (Dedicated Relational Tables + Master Inventory Products)
+  // Inventory (Dedicated Relational Tables)
   warehouses: { table: "warehouses", module: "inventory", storage: "relational" },
-  inventory_products: { table: "inventory_products", module: "inventory", ...jsonb },
   export_products: { table: "export_products", module: "inventory", storage: "relational" },
   pharma_products: { table: "pharma_products", module: "inventory", storage: "relational" },
   pharma_product_batches: { table: "pharma_product_batches", module: "inventory", storage: "relational" },

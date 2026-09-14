@@ -22,20 +22,20 @@ function assert(condition, message) {
   }
 }
 
-// 1. Verify all 35 tables are defined in tableMap
+// 1. Verify all 37 tables are defined in tableMap
 const expectedTables = [
   "warehouses", "export_products", "pharma_products", "pharma_product_batches",
   "stock_movements", "store_transfers", "store_transfer_items", "export_warehouse_movements",
   "customers", "suppliers", "sales_orders", "purchase_orders", "sales_issues",
   "sales_issue_items", "processing_services", "shipment_documents", "hkc_doc_records",
-  "company_settings", "chart_of_accounts", "journal_entries", "journal_entry_lines",
+  "company_settings", "chart_of_accounts", "gl_account_mappings", "journal_entries", "journal_entry_lines",
   "invoices", "payments", "expenses", "recurring_expense_schedules", "vehicles", "tax_rules",
   "employees", "attendance_records", "payroll_periods", "payroll_records", "leave_types", "leave_requests",
-  "users", "user_activity_logs"
+  "users", "user_activity_logs", "user_sessions"
 ]
 
 console.log("--- TEST 1: Table Registration & Schema Mapping ---")
-assert(Object.keys(tableMap).length === 35, `Exactly 35 tables in tableMap (Found: ${Object.keys(tableMap).length})`)
+assert(Object.keys(tableMap).length === 37, `Exactly 37 tables in tableMap (Found: ${Object.keys(tableMap).length})`)
 
 for (const tbl of expectedTables) {
   const tableObj = getDrizzleTable(tbl)

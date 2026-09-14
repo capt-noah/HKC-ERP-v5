@@ -102,6 +102,7 @@ export const stockMovements = mysqlTable("stock_movements", {
   movementType: varchar("movement_type", { length: 50 }).notNull(),
   quantity: decimal("quantity", { precision: 18, scale: 2 }).default("0").notNull(),
   unitCost: decimal("unit_cost", { precision: 18, scale: 2 }).default("0"),
+  unitPrice: decimal("unit_price", { precision: 18, scale: 2 }).default("0"),
   balanceAfter: decimal("balance_after", { precision: 18, scale: 2 }).default("0").notNull(),
   batchNo: varchar("batch_no", { length: 100 }),
   expiryDate: varchar("expiry_date", { length: 50 }),
