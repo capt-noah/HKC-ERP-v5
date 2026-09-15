@@ -612,6 +612,10 @@ export default function StoreTransfersTab() {
             ],
           },
         ]}
+        onReload={async () => {
+          await erp.reloadFromApi()
+        }}
+        reloadTooltip="Reload store transfers from server"
         defaultWidths={{
           reference_number: 150,
           from_warehouse: 170,
@@ -662,7 +666,7 @@ export default function StoreTransfersTab() {
               {/* Total Quantity */}
               <td style={{ width: `${colWidths.total_quantity}px` }} className="py-4 px-4 text-right overflow-hidden">
                 <span className="font-mono font-black text-xs text-zinc-900 dark:text-zinc-100 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-0.5 rounded-md border border-zinc-200/80 inline-block">
-                  {transfer.total_quantity.toLocaleString()} units
+                  {Number(transfer.total_quantity || 0).toLocaleString()} units
                 </span>
               </td>
 

@@ -463,6 +463,11 @@ export default function Banking() {
                       variant: "emeraldLight",
                     },
                   ]}
+                  onReload={async () => {
+                    await store.reloadFromApi()
+                  }}
+                  isReloading={isLoading}
+                  reloadTooltip="Reload bank statement lines from server"
                 />
                 <TableScrollWrapper>
                   <table className="w-full text-left border-collapse table-fixed">

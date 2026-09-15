@@ -1,63 +1,47 @@
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Clock, ShieldAlert, LogOut, RefreshCw, AlertTriangle } from "lucide-react"
 import { useAuthStore, getEffectiveTimeRemaining, handleAuthExpiry } from "@/lib/authStore"
 import { useFeedback } from "@/context/FeedbackContext"
 import { API_BASE } from "@/lib/apiPersistence"
 
-// Warning threshold: show modal when 5 minutes (300 seconds) or less remain
-const WARNING_THRESHOLD_SECONDS = 300
-
 export function SessionExpiryWarningModal() {
   const { showToast } = useFeedback()
   const token = useAuthStore((state) => state.token)
   const sessionExpiresAt = useAuthStore((state) => state.sessionExpiresAt)
+  const isOpen = useAuthStore((state) => state.showExpiryWarning)
+  const setShowExpiryWarning = useAuthStore((state) => state.setShowExpiryWarning)
   const refreshToken = useAuthStore((state) => state.refreshToken)
   const setSessionExpiresAt = useAuthStore((state) => state.setSessionExpiresAt)
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated())
 
   const [secondsRemaining, setSecondsRemaining] = useState<number | null>(null)
-  const [isOpen, setIsOpen] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const checkIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const checkExpiry = useCallback(() => {
-    if (!token || !isAuthenticated) {
-      setIsOpen(false)
+  // Live countdown timer ONLY runs when warning modal is actively open
+  useEffect(() => {
+    if (!isOpen || !token || !isAuthenticated) {
       setSecondsRemaining(null)
       return
     }
 
-    const remaining = getEffectiveTimeRemaining(token, sessionExpiresAt)
-
-    if (remaining <= 0) {
-      setIsOpen(false)
-      handleAuthExpiry()
-      return
-    }
-
-    if (remaining <= WARNING_THRESHOLD_SECONDS) {
-      setSecondsRemaining(remaining)
-      setIsOpen(true)
-    } else {
-      setIsOpen(false)
+    const updateCountdown = () => {
+      const remaining = getEffectiveTimeRemaining(token, sessionExpiresAt)
+      if (remaining <= 0) {
+        setShowExpiryWarning(false)
+        handleAuthExpiry()
+        return
+      }
       setSecondsRemaining(remaining)
     }
-  }, [token, isAuthenticated, sessionExpiresAt])
 
-  useEffect(() => {
-    checkExpiry()
-
-    // Poll every 5 seconds when idle; every 1 second when modal is open for live countdown
-    const pollInterval = isOpen ? 1000 : 5000
-    checkIntervalRef.current = setInterval(checkExpiry, pollInterval)
+    updateCountdown()
+    const timer = setInterval(updateCountdown, 1000)
 
     return () => {
-      if (checkIntervalRef.current) {
-        clearInterval(checkIntervalRef.current)
-      }
+      clearInterval(timer)
     }
-  }, [checkExpiry, isOpen])
+  }, [isOpen, token, isAuthenticated, sessionExpiresAt, setShowExpiryWarning])
 
   const handleExtendSession = async () => {
     if (!token || isRefreshing) return
@@ -78,12 +62,12 @@ export function SessionExpiryWarningModal() {
         throw new Error(data.error || "Failed to extend session.")
       }
 
-      // Update token & db expiration in Zustand store and localStorage
+      // Update token & db expiration in Zustand store and localStorage (reschedules 6h timers)
       refreshToken(data.token, data.expiresAt)
       if (data.expiresAt) {
         setSessionExpiresAt(data.expiresAt)
       }
-      setIsOpen(false)
+      setShowExpiryWarning(false)
       showToast(
         "Session Extended",
         "success",
@@ -101,7 +85,7 @@ export function SessionExpiryWarningModal() {
   }
 
   const handleManualLogout = () => {
-    setIsOpen(false)
+    setShowExpiryWarning(false)
     handleAuthExpiry()
   }
 

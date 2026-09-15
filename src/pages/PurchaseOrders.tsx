@@ -625,6 +625,11 @@ export default function PurchaseOrders() {
               variant: "primary",
             },
           ]}
+          onReload={async () => {
+            await erp.reloadFromApi()
+          }}
+          isReloading={isLoading}
+          reloadTooltip="Reload purchase orders from server"
           defaultWidths={defaultColWidths}
           keyExtractor={(po) => po.id}
           renderRow={(po: PurchaseOrder, colWidths: Record<string, number>) => {

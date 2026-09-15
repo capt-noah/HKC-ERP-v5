@@ -41,6 +41,22 @@ export function authenticateToken(req, res, next) {
         })
       }
 
+      // Real-time live role sync: inherit latest permissions without requiring re-login
+      if (sessionCheck.user) {
+        let currentRoles = sessionCheck.user.roles
+        if (typeof currentRoles === "string") {
+          try {
+            currentRoles = JSON.parse(currentRoles)
+          } catch {
+            currentRoles = [sessionCheck.user.role || "viewer"]
+          }
+        }
+        if (Array.isArray(currentRoles) && currentRoles.length > 0) {
+          decodedUser.roles = currentRoles
+          decodedUser.role = currentRoles[0]
+        }
+      }
+
       req.user = decodedUser
       req.sessionId = decodedUser.sessionId
 

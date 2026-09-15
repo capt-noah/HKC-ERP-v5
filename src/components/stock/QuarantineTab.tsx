@@ -466,6 +466,10 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
             ],
           },
         ]}
+        onReload={async () => {
+          await erp.reloadFromApi()
+        }}
+        reloadTooltip="Reload quarantine records from server"
         defaultWidths={{
           item: 200,
           batchNo: 130,

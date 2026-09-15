@@ -1,0 +1,841 @@
+[
+  {
+    "id": "inv-0083",
+    "payload": {
+      "id": "inv-0083",
+      "total": 690000,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-06",
+      "subtotal": 600000,
+      "issue_date": "2026-08-07",
+      "line_items": [
+        {
+          "quantity": 500,
+          "line_total": 600000,
+          "unit_price": 1200,
+          "description": "Ciprofloxacin 500mg"
+        }
+      ],
+      "tax_amount": 90000,
+      "amount_paid": 0,
+      "balance_due": 690000,
+      "total_amount": 690000,
+      "customer_name": "Mekelle Agro-Vet Supplies Union",
+      "payment_terms": "Net 30",
+      "invoice_number": "INV-2026-0083",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-10T07:04:00.899Z",
+    "updated_at": "2026-09-01T12:56:25.364Z"
+  },
+  {
+    "id": "inv-1787724000229-hxekd",
+    "payload": {
+      "id": "inv-1787724000229-hxekd",
+      "total": 182850,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-25",
+      "subtotal": 159000,
+      "tax_rate": 15,
+      "issue_date": "2026-08-26",
+      "line_items": [
+        {
+          "quantity": 100,
+          "line_total": 159000,
+          "unit_price": 1590,
+          "description": "yadeal adnew"
+        }
+      ],
+      "tax_amount": 23850,
+      "amount_paid": 0,
+      "balance_due": 182850,
+      "total_amount": 182850,
+      "customer_name": "Mekelle Agro-Vet Supplies Union",
+      "payment_terms": "Net 30",
+      "invoice_number": "INV-2026-0229",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-26T06:00:08.839Z",
+    "updated_at": "2026-09-01T12:56:25.319Z"
+  },
+  {
+    "id": "inv-2311",
+    "payload": {
+      "id": "inv-2311",
+      "total": 57500,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-09",
+      "subtotal": 50000,
+      "issue_date": "2026-08-10",
+      "line_items": [
+        {
+          "quantity": 100,
+          "line_total": 50000,
+          "unit_price": 500,
+          "description": "fasinash sheep"
+        }
+      ],
+      "tax_amount": 7500,
+      "amount_paid": 0,
+      "balance_due": 57500,
+      "total_amount": 57500,
+      "customer_name": "Dr Abdela",
+      "payment_terms": "Net 30",
+      "invoice_number": "INV-2026-2311",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-10T07:04:00.899Z",
+    "updated_at": "2026-09-01T12:56:25.356Z"
+  },
+  {
+    "id": "inv-3256",
+    "payload": {
+      "id": "inv-3256",
+      "total": 208725,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-12",
+      "subtotal": 181500,
+      "issue_date": "2026-08-13",
+      "line_items": [
+        {
+          "quantity": 330,
+          "line_total": 181500,
+          "unit_price": 550,
+          "description": "fasinash sheep"
+        }
+      ],
+      "tax_amount": 27225,
+      "amount_paid": 0,
+      "balance_due": 208725,
+      "total_amount": 208725,
+      "customer_name": "Mekelle Agro-Vet Supplies Union",
+      "payment_terms": "Net 30",
+      "invoice_number": "INV-2026-3255",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-13T09:25:27.550Z",
+    "updated_at": "2026-09-01T12:56:25.350Z"
+  },
+  {
+    "id": "inv-3354",
+    "payload": {
+      "id": "inv-3354",
+      "total": 208725,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-12",
+      "subtotal": 181500,
+      "issue_date": "2026-08-13",
+      "line_items": [
+        {
+          "quantity": 330,
+          "line_total": 181500,
+          "unit_price": 550,
+          "description": "fasinash sheep"
+        }
+      ],
+      "tax_amount": 27225,
+      "amount_paid": 0,
+      "balance_due": 208725,
+      "total_amount": 208725,
+      "customer_name": "Mekelle Agro-Vet Supplies Union",
+      "payment_terms": "Net 30",
+      "invoice_number": "INV-2026-3354",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-13T09:25:32.567Z",
+    "updated_at": "2026-09-01T12:56:25.347Z"
+  },
+  {
+    "id": "inv-3382",
+    "payload": {
+      "id": "inv-3382",
+      "total": 286870,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-20",
+      "subtotal": 249452,
+      "issue_date": "2026-08-21",
+      "line_items": [
+        {
+          "quantity": 7,
+          "line_total": 249452,
+          "unit_price": 35636,
+          "description": "fasinash sheep"
+        }
+      ],
+      "tax_amount": 37418,
+      "amount_paid": 0,
+      "balance_due": 286870,
+      "total_amount": 286870,
+      "customer_name": "Mekelle Agro-Vet Supplies Union",
+      "payment_terms": "Net 30",
+      "invoice_number": "INV-2026-3382",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-21T07:31:11.674Z",
+    "updated_at": "2026-09-01T12:56:25.326Z"
+  },
+  {
+    "id": "inv-3384",
+    "payload": {
+      "id": "inv-3384",
+      "total": 208725,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-12",
+      "subtotal": 181500,
+      "issue_date": "2026-08-13",
+      "line_items": [
+        {
+          "quantity": 330,
+          "line_total": 181500,
+          "unit_price": 550,
+          "description": "fasinash sheep"
+        }
+      ],
+      "tax_amount": 27225,
+      "amount_paid": 0,
+      "balance_due": 208725,
+      "total_amount": 208725,
+      "customer_name": "Mekelle Agro-Vet Supplies Union",
+      "payment_terms": "Net 30",
+      "invoice_number": "INV-2026-3384",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-13T09:25:36.093Z",
+    "updated_at": "2026-09-01T12:56:25.341Z"
+  },
+  {
+    "id": "inv-4296",
+    "payload": {
+      "id": "inv-4296",
+      "total": 17250,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-07",
+      "subtotal": 15000,
+      "issue_date": "2026-08-08",
+      "line_items": [
+        {
+          "quantity": 100,
+          "line_total": 15000,
+          "unit_price": 150,
+          "description": "fasinash sheep"
+        }
+      ],
+      "tax_amount": 2250,
+      "amount_paid": 0,
+      "balance_due": 17250,
+      "total_amount": 17250,
+      "customer_name": "Hamburg Coffee Importers GmbH",
+      "payment_terms": "Net 30",
+      "invoice_number": "INV-2026-4296",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-10T07:04:00.899Z",
+    "updated_at": "2026-09-01T12:56:25.362Z"
+  },
+  {
+    "id": "inv-4501",
+    "payload": {
+      "id": "inv-4501",
+      "total": 215625,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-08",
+      "subtotal": 187500,
+      "issue_date": "2026-08-09",
+      "line_items": [
+        {
+          "quantity": 250,
+          "line_total": 187500,
+          "unit_price": 750,
+          "description": "LiverFluke 1"
+        }
+      ],
+      "tax_amount": 28125,
+      "amount_paid": 0,
+      "balance_due": 215625,
+      "total_amount": 215625,
+      "customer_name": "Dr Abdela",
+      "payment_terms": "Net 30",
+      "invoice_number": "INV-2026-4501",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-10T07:04:00.899Z",
+    "updated_at": "2026-09-01T12:56:25.359Z"
+  },
+  {
+    "id": "inv-4790",
+    "payload": {
+      "id": "inv-4790",
+      "total": 276000,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-06",
+      "subtotal": 240000,
+      "issue_date": "2026-08-07",
+      "line_items": [
+        {
+          "quantity": 200,
+          "line_total": 240000,
+          "unit_price": 1200,
+          "description": "Ciprofloxacin 500mg"
+        }
+      ],
+      "tax_amount": 36000,
+      "amount_paid": 0,
+      "balance_due": 276000,
+      "total_amount": 276000,
+      "customer_name": "Bishoftu Commercial Poultry Farms",
+      "payment_terms": "Net 30",
+      "invoice_number": "INV-2026-4790",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-10T07:04:00.899Z",
+    "updated_at": "2026-09-01T12:56:25.363Z"
+  },
+  {
+    "id": "inv-5395",
+    "payload": {
+      "id": "inv-5395",
+      "total": 1725,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-09",
+      "subtotal": 1500,
+      "issue_date": "2026-08-10",
+      "line_items": [
+        {
+          "quantity": 10,
+          "line_total": 1500,
+          "unit_price": 150,
+          "description": "fasinash sheep"
+        }
+      ],
+      "tax_amount": 225,
+      "amount_paid": 0,
+      "balance_due": 1725,
+      "total_amount": 1725,
+      "customer_name": "Dr Abdela",
+      "payment_terms": "Net 30",
+      "invoice_number": "INV-2026-5395",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-10T07:04:00.899Z",
+    "updated_at": "2026-09-01T12:56:25.356Z"
+  },
+  {
+    "id": "inv-6422",
+    "payload": {
+      "id": "inv-6422",
+      "total": 57500,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-09",
+      "subtotal": 50000,
+      "issue_date": "2026-08-10",
+      "line_items": [
+        {
+          "quantity": 100,
+          "line_total": 50000,
+          "unit_price": 500,
+          "description": "fasinash sheep"
+        }
+      ],
+      "tax_amount": 7500,
+      "amount_paid": 0,
+      "balance_due": 57500,
+      "total_amount": 57500,
+      "customer_name": "Dr Abdela",
+      "payment_terms": "Net 30",
+      "invoice_number": "INV-2026-6422",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-10T07:04:00.899Z",
+    "updated_at": "2026-09-01T12:56:25.355Z"
+  },
+  {
+    "id": "inv-7775",
+    "payload": {
+      "id": "inv-7775",
+      "total": 177503,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-13",
+      "subtotal": 154350,
+      "issue_date": "2026-08-14",
+      "line_items": [
+        {
+          "quantity": 343,
+          "line_total": 154350,
+          "unit_price": 450,
+          "description": "yadeal adnew"
+        }
+      ],
+      "tax_amount": 23153,
+      "amount_paid": 0,
+      "balance_due": 177503,
+      "total_amount": 177503,
+      "customer_name": "Dr Abdella",
+      "payment_terms": "Net 30",
+      "invoice_number": "INV-2026-7775",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-14T11:35:08.146Z",
+    "updated_at": "2026-09-01T12:56:25.332Z"
+  },
+  {
+    "id": "INV-PS-PS-2026-001",
+    "payload": {
+      "id": "INV-PS-PS-2026-001",
+      "status": "Unpaid",
+      "currency": "ETB",
+      "due_date": "2026-09-13",
+      "subtotal": 75000,
+      "issue_date": "2026-08-14",
+      "line_items": [
+        {
+          "qty": 500,
+          "total": 75000,
+          "unit_price": 150,
+          "description": "Toll processing fee for Raw Arabica Coffee Beans (Grade 4 Unwashed) (500 Quintal)"
+        }
+      ],
+      "tax_amount": 0,
+      "amount_paid": 0,
+      "balance_due": 75000,
+      "total_amount": 75000,
+      "customer_name": "Limmu Coffee Growers Union",
+      "invoice_number": "INV-PS-PS-2026-001",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-14T12:16:20.713Z",
+    "updated_at": "2026-09-01T12:56:25.330Z"
+  },
+  {
+    "id": "INV-PS-PS-AUDIT-1788287068340",
+    "payload": {
+      "id": "INV-PS-PS-AUDIT-1788287068340",
+      "status": "Unpaid",
+      "currency": "ETB",
+      "due_date": "2026-10-01",
+      "subtotal": 10500,
+      "issue_date": "2026-09-01",
+      "line_items": [
+        {
+          "qty": 50,
+          "total": 10500,
+          "unit_price": 210,
+          "description": "Toll processing & storage fee for Raw Natural Coffee Cherry (Export Grade) (50.0000 Quintal)"
+        }
+      ],
+      "tax_amount": 0,
+      "amount_paid": 0,
+      "balance_due": 10500,
+      "total_amount": 10500,
+      "customer_name": "Oromia Coffee Cooperative Union",
+      "invoice_number": "INV-PS-PS-AUDIT-1788287068340",
+      "discount_amount": 0
+    },
+    "created_at": "2026-09-01T18:24:28.343Z",
+    "updated_at": "2026-09-01T18:24:28.343Z"
+  },
+  {
+    "id": "INV-PS-PS-TEST-PERSISTENCE-01",
+    "payload": {
+      "id": "INV-PS-PS-TEST-PERSISTENCE-01",
+      "status": "Unpaid",
+      "currency": "ETB",
+      "due_date": "2026-09-29",
+      "subtotal": 32500,
+      "issue_date": "2026-08-30",
+      "line_items": [
+        {
+          "qty": 200,
+          "total": 32500,
+          "unit_price": 162.5,
+          "description": "Toll processing & storage fee for Arabica Grade 2 (200 Quintal)"
+        }
+      ],
+      "tax_amount": 0,
+      "amount_paid": 0,
+      "balance_due": 32500,
+      "total_amount": 32500,
+      "customer_name": "Limmu Union Co.",
+      "invoice_number": "INV-PS-PS-TEST-PERSISTENCE-01",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-30T16:17:01.651Z",
+    "updated_at": "2026-09-01T12:56:25.311Z"
+  },
+  {
+    "id": "INV-SI-SI-00955",
+    "payload": {
+      "id": "INV-SI-SI-00955",
+      "fs_no": "SI-UPDATE-101",
+      "total": 6000,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-08-06T21:00:00.000Z",
+      "subtotal": 6000,
+      "tax_rate": 0,
+      "issue_date": "2026-08-06T21:00:00.000Z",
+      "line_items": [
+        {
+          "quantity": 5,
+          "line_total": 6000,
+          "unit_price": 1200,
+          "description": "Ciprofloxacin 500mg"
+        }
+      ],
+      "tax_amount": 0,
+      "amount_paid": 6000,
+      "balance_due": 0,
+      "total_amount": 6000,
+      "customer_name": "Test Customer",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-SI-UPDATE-101",
+      "sales_issue_id": "SI-00955",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-23T19:35:57.464Z",
+    "updated_at": "2026-09-01T12:56:25.370Z"
+  },
+  {
+    "id": "INV-SI-SI-05547",
+    "payload": {
+      "id": "INV-SI-SI-05547",
+      "fs_no": "SI-TEST-999",
+      "total": 12000,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-08-06T21:00:00.000Z",
+      "subtotal": 12000,
+      "tax_rate": 0,
+      "issue_date": "2026-08-06T21:00:00.000Z",
+      "line_items": [
+        {
+          "quantity": 10,
+          "line_total": 12000,
+          "unit_price": 1200,
+          "description": "Ciprofloxacin 500mg"
+        }
+      ],
+      "tax_amount": 0,
+      "amount_paid": 12000,
+      "balance_due": 0,
+      "total_amount": 12000,
+      "customer_name": "Test Customer Corp",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-SI-TEST-999",
+      "sales_issue_id": "SI-05547",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-26T09:39:50.170Z",
+    "updated_at": "2026-09-01T12:56:25.369Z"
+  },
+  {
+    "id": "INV-SI-SI-08032",
+    "payload": {
+      "id": "INV-SI-SI-08032",
+      "fs_no": "SI-08032",
+      "total": 249452,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-08-31T21:00:00.000Z",
+      "subtotal": 249452,
+      "tax_rate": 0,
+      "issue_date": "2026-08-31T21:00:00.000Z",
+      "line_items": [
+        {
+          "quantity": 7,
+          "line_total": 249452,
+          "unit_price": 35636,
+          "description": "fasinash sheep"
+        }
+      ],
+      "tax_amount": 0,
+      "amount_paid": 249452,
+      "balance_due": 0,
+      "total_amount": 249452,
+      "customer_name": "Walk-in Customer",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-SI-08032",
+      "sales_issue_id": "SI-08032",
+      "discount_amount": 0,
+      "settlement_status": "Ongoing"
+    },
+    "created_at": "2026-08-23T19:35:57.464Z",
+    "updated_at": "2026-09-01T12:56:25.328Z"
+  },
+  {
+    "id": "INV-SI-SI-11932",
+    "payload": {
+      "id": "INV-SI-SI-11932",
+      "fs_no": "FS00008986",
+      "total": 15150,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-08-12T21:00:00.000Z",
+      "subtotal": 15150,
+      "tax_rate": 0,
+      "issue_date": "2026-08-12T21:00:00.000Z",
+      "line_items": [
+        {
+          "quantity": 101,
+          "line_total": 15150,
+          "unit_price": 150,
+          "description": "fasinash sheep"
+        }
+      ],
+      "tax_amount": 0,
+      "amount_paid": 15150,
+      "balance_due": 0,
+      "total_amount": 15150,
+      "customer_name": "Hamburg Coffee Importers GmbH",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-FS00008986",
+      "sales_issue_id": "SI-11932",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-26T09:39:50.170Z",
+    "updated_at": "2026-09-01T12:56:25.353Z"
+  },
+  {
+    "id": "INV-SI-SI-35413",
+    "payload": {
+      "id": "INV-SI-SI-35413",
+      "fs_no": "FS002022",
+      "total": 1875000,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-08-11T21:00:00.000Z",
+      "subtotal": 1875000,
+      "tax_rate": 0,
+      "issue_date": "2026-08-11T21:00:00.000Z",
+      "line_items": [
+        {
+          "quantity": 2500,
+          "line_total": 1875000,
+          "unit_price": 750,
+          "description": "LiverFluke 1"
+        }
+      ],
+      "tax_amount": 0,
+      "amount_paid": 1875000,
+      "balance_due": 0,
+      "total_amount": 1875000,
+      "customer_name": "Dr Abdella",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-FS002022",
+      "sales_issue_id": "SI-35413",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-23T19:35:57.464Z",
+    "updated_at": "2026-09-01T12:56:25.354Z"
+  },
+  {
+    "id": "INV-SI-SI-37748",
+    "payload": {
+      "id": "INV-SI-SI-37748",
+      "fs_no": "123456",
+      "total": 154350,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-08-13T21:00:00.000Z",
+      "subtotal": 154350,
+      "tax_rate": 0,
+      "issue_date": "2026-08-13T21:00:00.000Z",
+      "line_items": [
+        {
+          "quantity": 343,
+          "line_total": 154350,
+          "unit_price": 450,
+          "description": "yadeal adnew"
+        }
+      ],
+      "tax_amount": 0,
+      "amount_paid": 154350,
+      "balance_due": 0,
+      "total_amount": 154350,
+      "customer_name": "Dr Abdella",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-123456",
+      "sales_issue_id": "SI-37748",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-26T09:39:50.170Z",
+    "updated_at": "2026-09-01T12:56:25.335Z"
+  },
+  {
+    "id": "INV-SI-SI-59099",
+    "payload": {
+      "id": "INV-SI-SI-59099",
+      "fs_no": "uy1414555",
+      "total": 11130,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-08-25T21:00:00.000Z",
+      "subtotal": 11130,
+      "tax_rate": 0,
+      "issue_date": "2026-08-25T21:00:00.000Z",
+      "line_items": [
+        {
+          "quantity": 7,
+          "line_total": 11130,
+          "unit_price": 1590,
+          "description": "yadeal adnew"
+        }
+      ],
+      "tax_amount": 0,
+      "amount_paid": 11130,
+      "balance_due": 0,
+      "total_amount": 11130,
+      "customer_name": "Mekelle Agro-Vet Supplies Union",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-uy1414555",
+      "sales_issue_id": "SI-59099",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-26T09:39:50.170Z",
+    "updated_at": "2026-09-01T12:56:25.321Z"
+  },
+  {
+    "id": "INV-SI-SI-67712",
+    "payload": {
+      "id": "INV-SI-SI-67712",
+      "fs_no": "3456",
+      "total": 15000,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-08-07T21:00:00.000Z",
+      "subtotal": 15000,
+      "tax_rate": 0,
+      "issue_date": "2026-08-07T21:00:00.000Z",
+      "line_items": [
+        {
+          "quantity": 100,
+          "line_total": 15000,
+          "unit_price": 150,
+          "description": "fasinash sheep"
+        }
+      ],
+      "tax_amount": 0,
+      "amount_paid": 15000,
+      "balance_due": 0,
+      "total_amount": 15000,
+      "customer_name": "Hamburg Coffee Importers GmbH",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-3456",
+      "sales_issue_id": "SI-67712",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-23T19:35:57.464Z",
+    "updated_at": "2026-09-01T12:56:25.363Z"
+  },
+  {
+    "id": "INV-SI-SI-72341",
+    "payload": {
+      "id": "INV-SI-SI-72341",
+      "fs_no": "356666",
+      "total": 240000,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-08-08T21:00:00.000Z",
+      "subtotal": 240000,
+      "tax_rate": 0,
+      "issue_date": "2026-08-08T21:00:00.000Z",
+      "line_items": [
+        {
+          "quantity": 200,
+          "line_total": 240000,
+          "unit_price": 1200,
+          "description": "Ciprofloxacin 500mg"
+        }
+      ],
+      "tax_amount": 0,
+      "amount_paid": 240000,
+      "balance_due": 0,
+      "total_amount": 240000,
+      "customer_name": "Bishoftu Commercial Poultry Farms",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-356666",
+      "sales_issue_id": "SI-72341",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-23T19:35:57.464Z",
+    "updated_at": "2026-09-01T12:56:25.360Z"
+  },
+  {
+    "id": "INV-SI-SI-83199",
+    "payload": {
+      "id": "INV-SI-SI-83199",
+      "fs_no": "87655",
+      "total": 50000,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-08-09T21:00:00.000Z",
+      "subtotal": 50000,
+      "tax_rate": 0,
+      "issue_date": "2026-08-09T21:00:00.000Z",
+      "line_items": [
+        {
+          "quantity": 100,
+          "line_total": 50000,
+          "unit_price": 500,
+          "description": "fasinash sheep"
+        }
+      ],
+      "tax_amount": 0,
+      "amount_paid": 50000,
+      "balance_due": 0,
+      "total_amount": 50000,
+      "customer_name": "Dr Abdela",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-87655",
+      "sales_issue_id": "SI-83199",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-26T09:39:50.170Z",
+    "updated_at": "2026-09-01T12:56:25.357Z"
+  },
+  {
+    "id": "INV-SI-SI-97841",
+    "payload": {
+      "id": "INV-SI-SI-97841",
+      "fs_no": "FS 00000409",
+      "total": 240000,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-08-06T21:00:00.000Z",
+      "subtotal": 240000,
+      "tax_rate": 0,
+      "issue_date": "2026-08-06T21:00:00.000Z",
+      "line_items": [
+        {
+          "quantity": 200,
+          "line_total": 240000,
+          "unit_price": 1200,
+          "description": "Ciprofloxacin 500mg"
+        }
+      ],
+      "tax_amount": 0,
+      "amount_paid": 240000,
+      "balance_due": 0,
+      "total_amount": 240000,
+      "customer_name": "Bishoftu Commercial Poultry Farms",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-FS 00000409",
+      "sales_issue_id": "SI-97841",
+      "discount_amount": 0
+    },
+    "created_at": "2026-08-23T19:35:57.464Z",
+    "updated_at": "2026-09-01T12:56:25.368Z"
+  }
+]

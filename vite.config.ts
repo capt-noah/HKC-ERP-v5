@@ -6,10 +6,10 @@ import { defineConfig, loadEnv } from "vite";
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const serverPort = env.PORT || env.SERVER_PORT || process.env.PORT || process.env.SERVER_PORT || "8787";
+  const serverPort = env.SERVER_PORT || process.env.SERVER_PORT || (env.PORT && env.PORT !== "1000" ? env.PORT : "") || "5000";
   let backendTarget = env.VITE_API_URL || process.env.VITE_API_URL || `http://127.0.0.1:${serverPort}`;
-  // Avoid self-proxying if VITE_API_URL is set to Vite's own dev port (3000)
-  if (backendTarget.includes(":3000")) {
+  // Avoid self-proxying if VITE_API_URL points to Vite's own dev port (1000)
+  if (backendTarget.includes(":1000")) {
     backendTarget = `http://127.0.0.1:${serverPort}`;
   }
 
@@ -36,7 +36,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: "0.0.0.0",
-      port: 3000,
+      port: 1000,
       allowedHosts: true,
       proxy: {
         "/api": {

@@ -19,7 +19,7 @@ import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import StoreTransfersTab from "@/components/StoreTransfersTab"
 import QuarantineTab from "@/components/stock/QuarantineTab"
-import { useErpStore, type Product, type WH1Entry, type BinCardMovementEntry, type BatchInfo } from "@/lib/erpStore"
+import { useErpStore, type Product, type WH1Entry, type BinCardMovementEntry } from "@/lib/erpStore"
 import {
   withOperatingWarehouses,
   resolveWarehouseScope,
@@ -43,7 +43,6 @@ import WH1ReceivingVoucherPrintModal from "@/components/stock/WH1ReceivingVouche
 import WH1ChildMovementLedger from "@/components/stock/WH1ChildMovementLedger"
 import WH1AddMovementModal from "@/components/stock/WH1AddMovementModal"
 import { getExpiryStatus, getExpiringItemsSummary } from "@/lib/expiryUtils"
-import { getLocalDateString, formatLocalDateDisplay } from "@/lib/dateUtils"
 
 const packagingUnits = ["Box", "Bottle", "Vial", "Sachet"]
 const TON_TO_QUINTAL = 10
@@ -62,11 +61,7 @@ interface StockEditForm {
   category: string
   warehouse: string
   batch: string
-  batchNo?: string
-  mfgDate?: string
-  manufacturingDate?: string
   expiry: string
-  expiryDate?: string
   entryDate?: string
   leaveDate?: string
   quantityPerPack?: string
@@ -118,7 +113,7 @@ export default function StockProducts() {
     ? allProducts.filter(p => isProductInWarehouseScope(p, resolvedWarehouseIds))
     : allProducts
 
-  const isLoading = erp.isLoading() && !erp.isInventoryLoaded()
+  const isLoading = erp.isInventoryLoading()
   const warehouseRecords = (isInventoryAdminOnly && resolvedWarehouseIds.length > 0)
     ? allWarehouses.filter(w => isWarehouseInScope(w.id, resolvedWarehouseIds) || isWarehouseInScope(w.code, resolvedWarehouseIds))
     : allWarehouses
@@ -137,9 +132,22 @@ export default function StockProducts() {
     ? (warehouseRecords[0].code || warehouseRecords[0].id)
     : "ALL"
   const [selectedWarehouse, setSelectedWarehouse] = useState(defaultWarehouse)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    try {
+      await erp.loadInventoryData(true)
+      showToast("Inventory Refreshed", "success", "Latest warehouse inventory loaded.")
+    } catch (err: any) {
+      showToast("Refresh Failed", "warning", err?.message || "Failed to reload inventory.")
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
 
   useEffect(() => {
-    void erp.loadInventoryData(true)
+    void erp.loadInventoryData()
   }, [])
 
   useEffect(() => {
@@ -176,11 +184,11 @@ export default function StockProducts() {
   const [addWarehouse, setAddWarehouse] = useState("")
   const [addBatchNumber, setAddBatchNumber] = useState("")
   const [addUnitPrice, setAddUnitPrice] = useState("")
-  const [addMfgDate, setAddMfgDate] = useState(getLocalDateString())
+  const [addMfgDate, setAddMfgDate] = useState("")
   const [addExpDate, setAddExpDate] = useState("")
   const [addQtyPerPack, setAddQtyPerPack] = useState("")
   const [addNumCartons, setAddNumCartons] = useState("")
-  const [addEntryDate, setAddEntryDate] = useState(getLocalDateString())
+  const [addEntryDate, setAddEntryDate] = useState("")
   const [addQuantity, setAddQuantity] = useState("")
   const [addNotes, setAddNotes] = useState("")
   const [isSavingAdd, setIsSavingAdd] = useState(false)
@@ -319,11 +327,11 @@ export default function StockProducts() {
     setAddWarehouse("")
     setAddBatchNumber("")
     setAddUnitPrice("")
-    setAddMfgDate(getLocalDateString())
+    setAddMfgDate("")
     setAddExpDate("")
     setAddQtyPerPack("")
     setAddNumCartons("")
-    setAddEntryDate(getLocalDateString())
+    setAddEntryDate("")
     setAddQuantity("")
     setAddNotes("")
     setSelectedExistingProduct(null)
@@ -416,14 +424,10 @@ export default function StockProducts() {
       cols.push(
         { key: "dosage", label: "Strength / Dosage", align: "left" },
         { key: "shelfNo", label: "Shelf Number", align: "left" },
-        { key: "batchNo", label: "Batch No", align: "left" },
-        { key: "mfgDate", label: "Mfg Date", align: "left" },
-        { key: "expiryDate", label: "Expiry Date", align: "left" },
         { key: "numberOfCartons", label: "Cartons", align: "right" },
         { key: "quantityPerPack", label: "Quantity/Pack", align: "right" },
         { key: "quantity", label: "Total Quantity", align: "right" },
         { key: "unit", label: "Packaging Unit", align: "left" },
-        { key: "unitCost", label: "Unit Price", align: "right" },
         { key: "totalStockValue", label: "Stock Value", align: "right" }
       )
     }
@@ -444,10 +448,8 @@ export default function StockProducts() {
     dosage: 130,
     shelfNo: 120,
     batch: 110,
-    batchNo: 110,
-    mfgDate: 110,
-    manufacturingDate: 110,
-    expiryDate: 110,
+    manufacturingDate: 100,
+    expiryDate: 100,
     unit: 100,
     numberOfCartons: 85,
     quantityPerPack: 95,
@@ -514,38 +516,18 @@ export default function StockProducts() {
 
       if (selectedExistingProduct) {
         // Option A: Add sub-entry to existing item
-        if (isWH1Form) {
-          const newEntryPayload: Omit<WH1Entry, "entryId"> = {
-            voucherNo: addVoucherNo.trim() || undefined,
-            customer: addCustomer.trim() || undefined,
-            plateNumber: addPlateNumber.trim() || undefined,
-            entryDate: addEntryDate,
-            leaveDate: undefined,
-            quantityReceived: addTotalQuantity,
-            quantityRemaining: addTotalQuantity,
-            unitPrice: Number(addUnitPrice || 0),
-            notes: addNotes.trim() || undefined,
-          }
-          await erp.addWH1Entry(selectedExistingProduct.id, newEntryPayload)
-        } else {
-          const newBinPayload: Omit<BinCardMovementEntry, "id" | "balance"> = {
-            type: "entry",
-            date: addMfgDate || addEntryDate || now.slice(0, 10),
-            batchNo: addBatchNumber.trim() || "BATCH-NEW",
-            voucherNo: addVoucherNo.trim() || undefined,
-            plateNumber: addPlateNumber.trim() || undefined,
-            qtyReceived: addTotalQuantity,
-            qtyIssued: 0,
-            expiryDate: addExpDate || "",
-            mfgDate: addMfgDate || undefined,
-            party: addCustomer.trim() || selectedExistingProduct.supplierName || "Supplier Arrival",
-            unitPrice: Number(addUnitPrice || selectedExistingProduct.unitCost || 0),
-            remark: addNotes.trim() || "Batch replenishment",
-            createdAt: now,
-          }
-          await erp.addBinCardEntry(selectedExistingProduct.id, newBinPayload)
+        const newEntryPayload: Omit<WH1Entry, "entryId"> = {
+          voucherNo: addVoucherNo.trim() || undefined,
+          customer: addCustomer.trim() || undefined,
+          plateNumber: addPlateNumber.trim() || undefined,
+          entryDate: addEntryDate,
+          leaveDate: undefined,
+          quantityReceived: addTotalQuantity,
+          quantityRemaining: addTotalQuantity,
+          unitPrice: Number(addUnitPrice || 0),
+          notes: addNotes.trim() || undefined,
         }
-        setExpandedProductIds((prev) => new Set([...prev, selectedExistingProduct.id]))
+        await erp.addWH1Entry(selectedExistingProduct.id, newEntryPayload)
         showToast("Stock entry added", "success", `Entry added to existing item ${selectedExistingProduct.name}.`)
       } else {
         // Option B: Add new item entirely
@@ -566,7 +548,7 @@ export default function StockProducts() {
         const product: Product = {
           id: productId,
           name: addDescription,
-          sku: `${addDescription.slice(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, "STK")}-${isWH1Form ? (addWarehouse || "EXP") : addBatchNumber}`,
+          sku: `${addDescription.slice(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, "STK")}-${isWH1Form ? "WH1" : addBatchNumber}`,
           voucherNo: isWH1Form ? (addVoucherNo.trim() || undefined) : undefined,
           customer: isWH1Form ? (addCustomer.trim() || undefined) : undefined,
           plateNumber: isWH1Form ? (addPlateNumber.trim() || undefined) : undefined,
@@ -595,7 +577,7 @@ export default function StockProducts() {
           leaveDate: undefined,
           status: addTotalQuantity > 0 ? "In Stock" : "Out of Stock",
           stockBreakdown: [{ warehouse: addWarehouse, qty: addTotalQuantity }],
-          batches: isWH1Form ? [] : [{ batchNo: addBatchNumber, qty: addTotalQuantity, expiry: addExpDate, unitPrice: Number(addUnitPrice || 0), status: "Released" }],
+          batches: isWH1Form ? [] : [{ batchNo: addBatchNumber, qty: addTotalQuantity, expiry: addExpDate, status: "Released" }],
           wh1Entries: isWH1Form ? initialWH1Entries : undefined,
           binCardEntries: (!isWH1Form && addTotalQuantity > 0) ? [{
             id: `BCE-${Date.now()}-init`,
@@ -621,7 +603,6 @@ export default function StockProducts() {
         }
 
         await erp.addProduct(product)
-        setExpandedProductIds((prev) => new Set([...prev, productId]))
         showToast("Stock item saved", "success", `${addDescription} was saved to inventory.`)
       }
 
@@ -641,7 +622,6 @@ export default function StockProducts() {
   // Handle saving direct slim sub-entry modal (WH1)
   const handleSaveWH1Entry = async (productId: string, entryData: Omit<WH1Entry, "entryId">) => {
     await erp.addWH1Entry(productId, entryData)
-    setExpandedProductIds((prev) => new Set([...prev, productId]))
   }
 
   const handleSaveWH1Leave = async (
@@ -657,19 +637,22 @@ export default function StockProducts() {
     }
   ) => {
     await erp.addWH1LeaveEntry(productId, leaveData)
-    setExpandedProductIds((prev) => new Set([...prev, productId]))
   }
 
   const handleSaveWH1Reject = async (
     productId: string,
     rejectData: {
+      entryId?: string
       date: string
-      rejectQuantity: number
+      voucherNo?: string
       party?: string
+      plateNumber?: string
+      rejectQuantity: number
+      reason?: string
+      notes?: string
     }
   ) => {
     await erp.addWH1RejectEntry(productId, rejectData)
-    setExpandedProductIds((prev) => new Set([...prev, productId]))
   }
 
   // Handle Edit/Delete Sub Entry
@@ -691,12 +674,12 @@ export default function StockProducts() {
     setIsSavingSubEdit(true)
     try {
       const nextQty = Number(editSubEntryQty)
-      const originalReceived = Number(editingSubEntry.entry.quantityReceived || 0)
-      const originalRemaining = Number(editingSubEntry.entry.quantityRemaining ?? originalReceived)
-      const deductionsAgainstEntry = Math.max(0, originalReceived - originalRemaining)
-      const nextRemaining = Math.max(0, nextQty - deductionsAgainstEntry)
+      const originalRemaining = editingSubEntry.entry.quantityRemaining
+      const difference = editingSubEntry.entry.quantityReceived - nextQty
+      const nextRemaining = Math.max(0, originalRemaining - difference)
 
-      await erp.updateWH1Entry(editingSubEntry.product.id, editingSubEntry.entry.entryId, {
+      const targetEntryId = editingSubEntry.entry.entryId || editingSubEntry.entry.id || ""
+      await erp.updateWH1Entry(editingSubEntry.product.id, targetEntryId, {
         voucherNo: editSubEntryVoucherNo.trim() || undefined,
         customer: editSubEntryCustomer.trim() || undefined,
         plateNumber: editSubEntryPlateNumber.trim() || undefined,
@@ -738,7 +721,6 @@ export default function StockProducts() {
     } else {
       await erp.addBinCardEntry(productId, entryData)
     }
-    setExpandedProductIds((prev) => new Set([...prev, productId]))
   }
 
   const handleDeleteBinEntry = async (productId: string, entryId: string) => {
@@ -764,14 +746,8 @@ export default function StockProducts() {
     const whRecord = allWarehouses.find(
       (w) => w.id === product.warehouse || w.code === product.warehouse || w.name === product.warehouse
     )
-    const defaultExpWh = allWarehouses.find((w) => isExportWarehouse(w, allWarehouses))?.id || allWarehouses[0]?.id || "WH1"
-    const defaultPharmaWh = allWarehouses.find((w) => !isExportWarehouse(w, allWarehouses))?.id || allWarehouses[1]?.id || "WH2"
-    const resolvedWarehouse = whRecord?.id || product.warehouse || (isWH1(product.warehouse) ? defaultExpWh : defaultPharmaWh)
+    const resolvedWarehouse = whRecord?.id || product.warehouse || (isWH1(product.warehouse) ? "WH1" : "WH2")
     const isWh1 = isWH1(resolvedWarehouse)
-
-    const initialBatch = product.batchNo || product.batch || (product.batches?.[0]?.batchNo || "BATCH-01")
-    const initialMfg = product.mfgDate || product.manufacturingDate || (product.batches?.[0]?.mfgDate || getLocalDateString())
-    const initialExpiry = product.expiryDate || product.expiry || (product.batches?.[0]?.expiry || "")
 
     setEditForm({
       name: product.name,
@@ -783,13 +759,9 @@ export default function StockProducts() {
       shelfNo: product.shelfNo || (product as any).shelf_number || (product as any).shelf_no || "",
       category: product.category || "",
       warehouse: resolvedWarehouse,
-      batch: initialBatch,
-      batchNo: initialBatch,
-      mfgDate: initialMfg,
-      manufacturingDate: initialMfg,
-      expiry: initialExpiry,
-      expiryDate: initialExpiry,
-      entryDate: product.entryDate || getLocalDateString(),
+      batch: product.batch || (product.batches?.[0]?.batchNo || ""),
+      expiry: product.expiry || (product.batches?.[0]?.expiry || ""),
+      entryDate: product.entryDate || "",
       leaveDate: product.leaveDate || "",
       quantityPerPack: String(product.quantityPerPack || (product as any).quantity_per_pack || 1),
       numberOfCartons: String(product.numberOfCartons || (product as any).number_of_cartons || 0),
@@ -817,12 +789,11 @@ export default function StockProducts() {
     const plateNumber = isWh1 ? (editForm.plateNumber?.trim() || undefined) : undefined
     const dosage = isWh1 ? undefined : (editForm.dosage?.trim() || undefined)
     const shelfNo = isWh1 ? undefined : (editForm.shelfNo?.trim() || undefined)
-    const batch = isWh1 ? "" : (editForm.batch?.trim() || "BATCH-01")
-    const expiry = isWh1 ? "" : (editForm.expiry?.trim() || "")
-    const mfgDate = isWh1 ? undefined : (editForm.mfgDate || editForm.manufacturingDate || getLocalDateString())
+    const batch = isWh1 ? "" : editForm.batch.trim()
+    const expiry = isWh1 ? "" : editForm.expiry
     const entryDate = isWh1 ? editForm.entryDate : undefined
-    const leaveDate = isWh1 ? editForm.leaveDate : undefined
-    const unit = editForm.unit
+    const leaveDate = (isWh1 && editForm.leaveDate) ? editForm.leaveDate : undefined
+    const unit = editForm.unit.trim()
     const quantityPerPack = isWh1 ? undefined : (editForm.quantityPerPack ? Number(editForm.quantityPerPack) : undefined)
     const numberOfCartons = isWh1 ? undefined : (editForm.numberOfCartons ? Number(editForm.numberOfCartons) : undefined)
     
@@ -853,50 +824,18 @@ export default function StockProducts() {
       }
     }
 
-    const selectedWarehouseRecord = allWarehouses.find((item) => (item.id || item.code) === warehouse || item.code === warehouse)
+    const selectedWarehouseRecord = warehouseRecords.find((item) => (item.id || item.code) === warehouse || item.code === warehouse)
     const nextBreakdown = editingProduct.stockBreakdown.length
       ? editingProduct.stockBreakdown.map((item, index) => index === 0 ? { ...item, warehouse } : item)
       : [{ warehouse, qty: editingProduct.quantity }]
-    const nextBatches: BatchInfo[] = isWh1 ? [] : (editingProduct.batches.length
-      ? editingProduct.batches.map((item, index) => index === 0
-          ? { ...item, batchNo: batch || item.batchNo || "BATCH-01", expiry: expiry || item.expiry, mfgDate: mfgDate || item.mfgDate, unitPrice: unitCost || item.unitPrice }
-          : { ...item, unitPrice: unitCost || item.unitPrice })
-      : [{ batchNo: batch || "BATCH-01", qty: editingProduct.quantity, expiry: expiry || "", mfgDate: mfgDate || getLocalDateString(), unitPrice: unitCost, status: "Released" as const }])
+    const nextBatches = isWh1 ? [] : (editingProduct.batches.length
+      ? editingProduct.batches.map((item, index) => index === 0 ? { ...item, batchNo: batch, expiry: expiry || item.expiry } : item)
+      : [{ batchNo: batch || "BATCH-01", qty: editingProduct.quantity, expiry: expiry || "", status: "Released" as const }])
 
-    let nextWh1Entries = editingProduct.wh1Entries
-    if (isWh1 && nextWh1Entries && nextWh1Entries.length > 0) {
-      nextWh1Entries = nextWh1Entries.map((entry, idx) => {
-        if (idx === 0) {
-          return {
-            ...entry,
-            voucherNo: voucherNo || entry.voucherNo,
-            customer: customer || entry.customer,
-            plateNumber: plateNumber || entry.plateNumber,
-            entryDate: entryDate || entry.entryDate,
-            unitPrice: unitCost || entry.unitPrice,
-          }
-        }
-        return {
-          ...entry,
-          unitPrice: unitCost || entry.unitPrice,
-        }
-      })
-    }
-
-    let nextBinEntries = editingProduct.binCardEntries
-    if (nextBinEntries && nextBinEntries.length > 0) {
-      nextBinEntries = nextBinEntries.map((entry, idx) => {
-        if (entry.type === "entry" || Number(entry.qtyReceived || 0) > 0) {
-          return {
-            ...entry,
-            batchNo: (!isWh1 && idx === 0 && batch) ? batch : entry.batchNo,
-            expiryDate: (!isWh1 && idx === 0 && expiry) ? expiry : entry.expiryDate,
-            unitPrice: unitCost || entry.unitPrice,
-          }
-        }
-        return entry
-      })
-    }
+    const hasWH1Entries = isWh1 && Array.isArray(editingProduct.wh1Entries) && (editingProduct.wh1Entries || []).length > 0
+    const computedTotalStockVal = hasWH1Entries
+      ? (editingProduct.wh1Entries || []).reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || unitCost || 0)), 0)
+      : editingProduct.quantity * unitCost
 
     setIsSavingEdit(true)
     try {
@@ -912,14 +851,7 @@ export default function StockProducts() {
         warehouse,
         warehouseName: selectedWarehouseRecord?.name,
         batch,
-        batchNo: batch,
-        batch_no: batch,
-        mfgDate,
-        manufacturingDate: mfgDate,
-        mfg_date: mfgDate,
         expiry,
-        expiryDate: expiry,
-        expiry_date: expiry,
         entryDate,
         leaveDate,
         quantityPerPack,
@@ -928,11 +860,9 @@ export default function StockProducts() {
         unitCost,
         sellingPrice,
         reorderLevel,
-        totalStockValue: editingProduct.quantity * unitCost,
+        totalStockValue: computedTotalStockVal,
         stockBreakdown: nextBreakdown,
         batches: nextBatches,
-        wh1Entries: nextWh1Entries,
-        binCardEntries: nextBinEntries,
         approvalStatus: editForm.approvalStatus,
       })
       setEditingProduct(null)
@@ -1091,6 +1021,8 @@ export default function StockProducts() {
                     searchValue={searchQuery}
                     onSearchChange={setSearchQuery}
                     searchPlaceholder="Search product name, SKU..."
+                    onRefresh={handleRefresh}
+                    isRefreshing={isRefreshing}
                     filters={[
                       ...(warehouseRecords.length > 1
                         ? [
@@ -1162,14 +1094,7 @@ export default function StockProducts() {
 
                           // WH1 entries and calculations
                           const wh1Entries = prod.wh1Entries || []
-                          const wh1InboundFromEntries = wh1Entries.reduce((sum, e) => sum + Number(e.quantityReceived || 0), 0)
-                          const wh1InboundFromBin = (prod.binCardEntries || []).filter((b) => b.type === "entry" || Number(b.qtyReceived || 0) > 0).reduce((sum, b) => sum + Number(b.qtyReceived || 0), 0)
-
-                          const wh1TotalReceived = wh1InboundFromEntries > 0
-                            ? wh1InboundFromEntries
-                            : wh1InboundFromBin > 0
-                              ? wh1InboundFromBin
-                              : Number(prod.totalQuantity || prod.quantity || 0)
+                          const wh1TotalReceived = wh1Entries.reduce((sum, e) => sum + Number(e.quantityReceived || 0), 0)
 
                           // Pharma bin card calculations
                           const binEntries = prod.binCardEntries || []
@@ -1185,65 +1110,13 @@ export default function StockProducts() {
                           const computedCartons = explicitCartons > 0 ? explicitCartons : (packSize > 0 ? Math.floor(pharmaBalance / packSize) : 0)
 
                           const displayQuantity = isWH1Item ? Number(prod.quantity || 0) : pharmaBalance
-                          const computedStockValue = (() => {
-                            const binCards = prod.binCardEntries || []
-                            if (binCards.length > 0) {
-                              let childNetVal = 0
-                              for (const b of binCards) {
-                                const isQuarantine = b.type === "quarantine"
-                                const isEntry = !isQuarantine && b.type !== "reject" && (b.type === "entry" || Number(b.qtyReceived || 0) > 0)
-                                const isDeduct = isQuarantine || b.type === "leave" || b.type === "reject" || Number(b.qtyIssued || 0) > 0
-                                const inQ = isEntry ? Number(b.qtyReceived || 0) : 0
-                                const outQ = isDeduct ? Number(b.qtyIssued || (b.type === "reject" ? (b as any).rejectQuantity || b.qtyReceived : 0) || 0) : 0
-                                const matchingBatch = (prod.batches || []).find((bat) => (bat.batchNo || "").toUpperCase() === (b.batchNo || "").toUpperCase())
-                                const batchCost = Number(matchingBatch?.unitPrice || (matchingBatch as any)?.unit_cost || prod.unitCost || 0)
-                                const price = Number(
-                                  b.unitPrice != null && Number(b.unitPrice) > 0
-                                    ? b.unitPrice
-                                    : isQuarantine
-                                    ? batchCost
-                                    : b.type === "leave"
-                                    ? (prod.sellingPrice || (prod as any).selling_price || prod.unitCost || 0)
-                                    : batchCost || (prod.unitCost || 0)
-                                )
-                                if (isEntry) {
-                                  childNetVal += inQ * price
-                                } else if (isDeduct) {
-                                  childNetVal -= outQ * price
-                                }
-                              }
-                              return displayQuantity <= 0 ? 0 : Math.max(0, Math.round(childNetVal * 100) / 100)
-                            }
-                            if (isWH1Item && Array.isArray(prod.wh1Entries) && prod.wh1Entries.length > 0) {
-                              let wh1NetVal = 0
-                              for (const e of prod.wh1Entries) {
-                                const eAny = e as any
-                                const isRej = eAny.type === "reject" || Boolean(eAny.isReject)
-                                const isLeave = eAny.type === "leave" || (Number(eAny.quantityIssued || 0) > 0 && Number(e.quantityReceived || 0) === 0)
-                                const inQ = isRej || isLeave ? 0 : Number(e.quantityReceived || 0)
-                                const outQ = isRej ? Number(eAny.rejectQuantity || eAny.quantityIssued || e.quantityReceived || 0) : isLeave ? Number(eAny.quantityIssued || 0) : 0
-                                const price = Number(
-                                  e.unitPrice != null && Number(e.unitPrice) > 0
-                                    ? e.unitPrice
-                                    : isLeave
-                                    ? (prod.sellingPrice || (prod as any).selling_price || prod.unitCost || 0)
-                                    : (prod.unitCost || 0)
-                                )
-                                if (isRej || isLeave) {
-                                  wh1NetVal -= outQ * price
-                                } else {
-                                  wh1NetVal += inQ * price
-                                }
-                              }
-                              if (wh1NetVal > 0) {
-                                return displayQuantity <= 0 ? 0 : Math.max(0, Math.round(wh1NetVal * 100) / 100)
-                              }
-                            }
-                            if (prod.totalStockValue !== undefined && Number(prod.totalStockValue) >= 0) {
-                              return Number(prod.totalStockValue)
-                            }
-                            return Math.round(displayQuantity * Number(prod.unitCost || 0) * 100) / 100
-                          })()
+                          const computedStockValue = Number(prod.totalStockValue || 0) > 0
+                            ? Number(prod.totalStockValue)
+                            : (isWH1Item
+                                ? displayQuantity * Number(prod.unitCost || 0)
+                                : (Array.isArray(prod.batches) && prod.batches.length > 0)
+                                  ? prod.batches.reduce((sum, b) => sum + (Number(b.qty ?? (b as any).quantity ?? 0) * Number((b as any).unitPrice ?? (prod as any).unitPrice ?? (prod as any).unit_price ?? 0)), 0)
+                                  : (displayQuantity * Number((prod as any).unitPrice ?? (prod as any).unit_price ?? prod.unitCost ?? 0)))
 
                           // 1. ALL Warehouses View
                           if (selectedWarehouse === "ALL") {
@@ -1292,9 +1165,11 @@ export default function StockProducts() {
                                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
                                       isWH1Item 
                                         ? "bg-amber-50 text-amber-800 border-amber-200" 
-                                        : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                        : (prod.warehouse === "WH2" || prod.warehouseName?.includes("2"))
+                                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                          : "bg-purple-50 text-purple-800 border-purple-200"
                                     }`}>
-                                      {prod.warehouseName || prod.warehouse || (isWH1Item ? "Export Terminal" : "Pharma Hub")}
+                                      {prod.warehouseName || prod.warehouse || (isWH1Item ? "WH1" : "WH2")}
                                     </span>
                                   </td>
 
@@ -1565,32 +1440,6 @@ export default function StockProducts() {
                                 {/* Shelf Number */}
                                 <td className="py-4 px-4 font-mono font-bold text-zinc-600 truncate">{prod.shelfNo || "—"}</td>
 
-                                {/* Batch No */}
-                                <td className="py-4 px-4 font-mono font-bold text-zinc-700 truncate">{prod.batchNo || prod.batch || "—"}</td>
-
-                                {/* Mfg Date */}
-                                <td className="py-4 px-4 font-mono text-xs font-bold text-zinc-600 truncate">{formatLocalDateDisplay(prod.mfgDate || prod.manufacturingDate)}</td>
-
-                                {/* Expiry Date */}
-                                <td className="py-4 px-4 font-mono text-xs font-bold text-zinc-600 truncate">
-                                  {prod.expiryDate || prod.expiry ? (
-                                    <div className="flex items-center gap-1.5">
-                                      <span>{formatLocalDateDisplay(prod.expiryDate || prod.expiry)}</span>
-                                      {(() => {
-                                        const s = getExpiryStatus(prod.expiryDate || prod.expiry)
-                                        if (s.tier !== "UNKNOWN") {
-                                          return (
-                                            <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border ${s.badgeClass}`}>
-                                              {s.label}
-                                            </span>
-                                          )
-                                        }
-                                        return null
-                                      })()}
-                                    </div>
-                                  ) : "—"}
-                                </td>
-
                                 {/* Cartons */}
                                 <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">
                                   {computedCartons > 0 ? computedCartons.toLocaleString() : (pharmaBalance > 0 ? "0" : "—")}
@@ -1611,11 +1460,6 @@ export default function StockProducts() {
 
                                 {/* Packaging Unit */}
                                 <td className="py-4 px-4 font-bold text-zinc-600 uppercase">{prod.unit}</td>
-
-                                {/* Unit Price */}
-                                <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">
-                                  ETB {money(prod.unitCost || 0)}
-                                </td>
 
                                 {/* Total Stock Value */}
                                 <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
@@ -1817,15 +1661,6 @@ export default function StockProducts() {
                       <label className="space-y-1">
                         <span className="block text-[11px] font-black uppercase text-zinc-500">Batch Number</span>
                         <input value={editForm.batch} onChange={(e) => updateEditForm({ batch: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="block text-[11px] font-black uppercase text-zinc-500">Manufacturing Date</span>
-                        <input 
-                          type="date" 
-                          value={editForm.mfgDate || ""} 
-                          onChange={(e) => updateEditForm({ mfgDate: e.target.value, manufacturingDate: e.target.value })} 
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
-                        />
                       </label>
                       <label className="space-y-1">
                         <div className="flex items-center justify-between">
@@ -2603,20 +2438,6 @@ export default function StockProducts() {
                     />
                   </label>
 
-                  <div className="space-y-1 block md:col-span-2 p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80 flex items-center justify-between shadow-2xs">
-                    <div>
-                      <span className="text-emerald-950 uppercase text-[10px] font-black block tracking-wider">Computed Row Total Value</span>
-                      <span className="text-xs text-emerald-800 font-semibold">
-                        {Number(editSubEntryQty || 0).toLocaleString()} {editingSubEntry.product.unit || "Quintals"} × ETB {Number(editSubEntryPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-base font-mono font-black text-emerald-900">
-                        ETB {(Number(editSubEntryQty || 0) * Number(editSubEntryPrice || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  </div>
-
                   <label className="space-y-1 block">
                     <span className="text-zinc-500 uppercase text-[10px] font-black">Entry Date</span>
                     <input 
@@ -2648,23 +2469,40 @@ export default function StockProducts() {
                   </label>
                 </div>
 
-                <div className="flex justify-end gap-2 border-t border-zinc-150 pt-4 mt-6">
-                  <button 
+                <div className="flex items-center justify-between border-t border-zinc-150 pt-4 mt-6">
+                  <button
                     type="button"
                     disabled={isSavingSubEdit}
-                    onClick={() => setEditingSubEntry(null)} 
-                    className="h-9 rounded-xl border border-zinc-200 px-4 text-xs font-bold disabled:opacity-50"
+                    onClick={async () => {
+                      if (!editingSubEntry) return
+                      const subId = editingSubEntry.entry.entryId || editingSubEntry.entry.id
+                      if (subId) {
+                        await handleDeleteSubEntry(editingSubEntry.product, subId)
+                        setEditingSubEntry(null)
+                      }
+                    }}
+                    className="h-9 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 px-4 text-xs font-bold transition-colors cursor-pointer"
                   >
-                    Cancel
+                    Delete Entry
                   </button>
-                  <button 
-                    type="button"
-                    disabled={isSavingSubEdit} 
-                    onClick={handleSaveSubEntryEdit} 
-                    className="h-9 min-w-[110px] inline-flex items-center justify-center rounded-xl bg-zinc-950 hover:bg-zinc-800 text-white px-5 text-xs font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {isSavingSubEdit ? <LoadingDots color="bg-white" size="sm" /> : "Save Changes"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      type="button"
+                      disabled={isSavingSubEdit}
+                      onClick={() => setEditingSubEntry(null)} 
+                      className="h-9 rounded-xl border border-zinc-200 px-4 text-xs font-bold disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      type="button"
+                      disabled={isSavingSubEdit} 
+                      onClick={handleSaveSubEntryEdit} 
+                      className="h-9 min-w-[110px] inline-flex items-center justify-center rounded-xl bg-zinc-950 hover:bg-zinc-800 text-white px-5 text-xs font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {isSavingSubEdit ? <LoadingDots color="bg-white" size="sm" /> : "Save Changes"}
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>

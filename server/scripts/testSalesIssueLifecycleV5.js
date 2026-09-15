@@ -67,6 +67,10 @@ async function runTests() {
     },
   })
 
+  // Clear auto-seeded initial batch so we test specifically with the two distinct test batches
+  await pool.query("DELETE FROM pharma_product_batches WHERE product_id = ?", [pharmaProdId])
+  await pool.query("DELETE FROM stock_movements WHERE product_id = ?", [pharmaProdId])
+
   // Create Batch 1: 100 qty @ 10 ETB (Stock value = 1,000 ETB)
   await drizzleCreateRow({
     resource: getResource("pharma_product_batches"),
@@ -214,6 +218,9 @@ async function runTests() {
       status: "In Stock",
     },
   })
+
+  // Clear auto-seeded initial movement so we test specifically with the two distinct test parcels
+  await pool.query("DELETE FROM export_warehouse_movements WHERE product_id = ?", [exportProdId])
 
   // Create GRV Parcel 1: 100 quintals @ 5,000 ETB (Value = 500,000 ETB)
   await drizzleCreateRow({

@@ -1,6 +1,6 @@
 import { useState } from "react"
 import type { ReactNode, MouseEvent } from "react"
-import { Search, Plus, ArrowUp, ArrowDown, ChevronDown, RotateCcw } from "lucide-react"
+import { Search, Plus, ArrowUp, ArrowDown, ChevronDown, RotateCcw, RefreshCw } from "lucide-react"
 
 export interface TableColumn {
   key: string
@@ -37,6 +37,9 @@ interface HRTableToolbarProps {
   searchPlaceholder?: string
   filters?: HRTableFilter[]
   actions?: HRTableAction[]
+  onReload?: () => Promise<void> | void
+  isReloading?: boolean
+  reloadTooltip?: string
   children?: ReactNode
   secondary?: ReactNode
 }
@@ -49,15 +52,51 @@ export function HRTableToolbar({
   searchPlaceholder = "Search...",
   filters = [],
   actions = [],
+  onReload,
+  isReloading = false,
+  reloadTooltip,
   children,
   secondary,
 }: HRTableToolbarProps) {
+  const [isLocalReloading, setIsLocalReloading] = useState(false)
+  const reloading = isReloading || isLocalReloading
+
+  const handleReload = async () => {
+    if (!onReload || reloading) return
+    setIsLocalReloading(true)
+    try {
+      await onReload()
+    } catch (err) {
+      console.warn("[HRTableToolbar] Reload notice:", err)
+    } finally {
+      setIsLocalReloading(false)
+    }
+  }
+
   return (
     <div className="px-5 pt-5 pb-3 bg-black/[0.01] border-b border-black/5">
       <div className="flex items-center justify-between flex-wrap gap-4 mb-2">
-        <div>
-          <h3 className="font-extrabold text-sm md:text-base text-black uppercase tracking-tight">{title}</h3>
-          {subtitle && <p className="text-xs text-zinc-500 font-medium">{subtitle}</p>}
+        <div className="flex items-center gap-2.5">
+          <div>
+            <h3 className="font-extrabold text-sm md:text-base text-black uppercase tracking-tight">{title}</h3>
+            {subtitle && <p className="text-xs text-zinc-500 font-medium">{subtitle}</p>}
+          </div>
+
+          {onReload && (
+            <button
+              type="button"
+              onClick={handleReload}
+              disabled={reloading}
+              title={reloadTooltip || "Reload table data from server"}
+              aria-label="Reload table data"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm shadow-emerald-700/20 hover:shadow-md hover:shadow-emerald-700/30 transition-all cursor-pointer shrink-0 disabled:opacity-50 active:scale-95"
+            >
+              <RefreshCw className={`size-3.5 text-white shrink-0 ${reloading ? "animate-spin" : ""}`} />
+              <span className="text-xs font-bold text-white tracking-tight">
+                {reloading ? "Reloading..." : "Reload"}
+              </span>
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap justify-end">

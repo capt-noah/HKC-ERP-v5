@@ -17,7 +17,7 @@ interface UnifiedWH1Row {
   qtyOut: number
   balance: number
   unitPrice: number
-  totalValue: number
+  sellingPrice?: number
   remark: string
   rawEntry?: WH1Entry
   rawBinEntry?: BinCardMovementEntry
@@ -27,125 +27,69 @@ export default function WH1ChildMovementLedger({
   product,
   onEditEntry,
 }: WH1ChildMovementLedgerProps) {
-  // Build unified transaction list from binCardEntries (canonical ledger) or wh1Entries
+  // Build unified transaction list by combining BOTH inbound arrival entries, outbound leaves, and reject losses
   const rows: UnifiedWH1Row[] = (() => {
     const wh1Entries = product.wh1Entries || []
     const binEntries = product.binCardEntries || []
+    const inboundIds = new Set(wh1Entries.map((e) => e.entryId || e.id).filter(Boolean))
 
-    let rawList: UnifiedWH1Row[] = []
+    // 1. Inbound truckload entries from wh1Entries (Single source of truth for receipts)
+    const inboundRows: UnifiedWH1Row[] = wh1Entries.map((e, idx) => {
+      const qtyIn = Number(e.quantityReceived || e.quantity || 0)
+      return {
+        id: e.entryId || e.id || `wh1e-${idx}`,
+        type: "entry" as const,
+        date: e.entryDate || product.entryDate || "—",
+        voucherNo: e.voucherNo ? (e.voucherNo.startsWith("No.") ? e.voucherNo : `No. ${e.voucherNo}`) : "—",
+        party: e.customer || product.customer || "Supplier Arrival",
+        plateNumber: e.plateNumber || product.plateNumber || "—",
+        qtyIn,
+        qtyOut: 0,
+        balance: 0,
+        unitPrice: Number(e.unitPrice ?? product.unitCost ?? 0),
+        sellingPrice: undefined,
+        remark: e.notes || "",
+        rawEntry: e,
+      }
+    })
 
-    if (binEntries.length > 0) {
-      rawList = binEntries.map((rec, idx) => {
-        const isReject = rec.type === "reject"
-        const isEntry = !isReject && (rec.type === "entry" || (Number(rec.qtyReceived || 0) > 0 && Number(rec.qtyIssued || 0) === 0))
-        const isLeave = !isReject && !isEntry
-        const qtyIn = isReject || isLeave ? 0 : Number(rec.qtyReceived || 0)
+    // 2. Outbound leave entries and reject losses from binCardEntries (strictly non-entry rows)
+    const nonEntryBinRows: UnifiedWH1Row[] = binEntries
+      .filter((rec) => {
+        if (rec.id && inboundIds.has(rec.id)) return false
+        const mType = (rec.type as string || "").toLowerCase()
+        const isReject = mType === "reject" || (rec.remark && /reject|loss|cleaning/i.test(rec.remark))
+        const isEntry = !isReject && (mType === "entry" || (Number(rec.qtyReceived || 0) > 0 && Number(rec.qtyIssued || 0) === 0))
+        return !isEntry
+      })
+      .map((rec, idx) => {
+        const mType = (rec.type as string || "").toLowerCase()
+        const isReject = mType === "reject" || (rec.remark && /reject|loss|cleaning/i.test(rec.remark))
         const qtyOut = Number(rec.qtyIssued || 0)
-
-        const matchingWH1 = wh1Entries.find(
-          (w) => (w.voucherNo && rec.voucherNo && w.voucherNo === rec.voucherNo) || w.entryId === rec.id
-        )
-
-        const rawEntry: WH1Entry | undefined = isEntry
-          ? matchingWH1 || {
-              entryId: rec.id || `wh1e-${idx}`,
-              voucherNo: rec.voucherNo || "",
-              customer: rec.party || product.customer || "Supplier Arrival",
-              plateNumber: rec.plateNumber || product.plateNumber || "",
-              entryDate: rec.date || "",
-              quantityReceived: qtyIn,
-              quantityRemaining: qtyIn,
-              unitPrice: Number(rec.unitPrice || product.unitCost || 0),
-              notes: rec.remark || "",
-            }
-          : undefined
-
-        const unitPrice = isEntry
-          ? Number(rec.unitPrice || matchingWH1?.unitPrice || product.unitCost || 0)
-          : isReject
-          ? Number(rec.unitPrice || matchingWH1?.unitPrice || product.unitCost || 0)
-          : Number(rec.unitPrice || product.sellingPrice || (product as any).selling_price || product.unitCost || 0)
-        const totalValue = isEntry ? (qtyIn * unitPrice) : -(qtyOut * unitPrice)
+        const effectiveUnitPrice = Number(rec.unitPrice || product.unitCost || 0)
+        const effectiveSellingPrice = rec.sellingPrice != null ? Number(rec.sellingPrice) : undefined
 
         return {
           id: rec.id || `bin-${idx}`,
-          type: isReject ? ("reject" as const) : isEntry ? ("entry" as const) : ("leave" as const),
+          type: isReject ? ("reject" as const) : ("leave" as const),
           date: rec.date || "—",
           voucherNo: rec.voucherNo || (rec.batchNo?.startsWith("GRV-") ? rec.batchNo.slice(4) : rec.batchNo || "—"),
-          party: rec.party || (isReject ? "Cleaning Loss Deduction" : isEntry ? "Supplier Arrival" : "Customer Dispatch"),
-          plateNumber: rec.plateNumber || matchingWH1?.plateNumber || product.plateNumber || "—",
-          qtyIn,
+          party: rec.party || (isReject ? "Cleaning Loss Deduction" : "Customer Dispatch"),
+          plateNumber: rec.plateNumber || "—",
+          qtyIn: 0,
           qtyOut,
           balance: 0,
-          unitPrice,
-          totalValue,
-          remark: rec.remark || "",
-          rawEntry,
+          unitPrice: effectiveUnitPrice,
+          sellingPrice: !isReject ? effectiveSellingPrice : undefined,
+          remark: rec.remark || (isReject ? "Reject / Cleaning Loss" : "Outbound Dispatch"),
           rawBinEntry: rec,
         }
       })
-    } else if (wh1Entries.length > 0) {
-      rawList = wh1Entries.map((e, idx) => {
-        const eAny = e as any
-        const isReject = eAny.type === "reject" || Boolean(eAny.isReject)
-        const isLeave = eAny.type === "leave" || (Number(eAny.quantityIssued || 0) > 0 && Number(e.quantityReceived || 0) === 0)
-        const qtyIn = isReject || isLeave ? 0 : Number(e.quantityReceived || 0)
-        const qtyOut = isReject ? Number(eAny.rejectQuantity || eAny.quantityIssued || e.quantityReceived || 0) : isLeave ? Number(eAny.quantityIssued || 0) : 0
-        const unitPrice = isLeave
-          ? Number(e.unitPrice || product.sellingPrice || (product as any).selling_price || product.unitCost || 0)
-          : Number(e.unitPrice || product.unitCost || 0)
-        const totalValue = isReject || isLeave ? -(qtyOut * unitPrice) : (qtyIn * unitPrice)
 
-        return {
-          id: e.entryId || `wh1e-${idx}`,
-          type: isReject ? ("reject" as const) : isLeave ? ("leave" as const) : ("entry" as const),
-          date: e.entryDate || eAny.date || product.entryDate || "—",
-          voucherNo: e.voucherNo ? (e.voucherNo.startsWith("No.") ? e.voucherNo : `No. ${e.voucherNo}`) : "—",
-          party: e.customer || eAny.supplier || eAny.party || (isReject ? "Cleaning Rejection" : isLeave ? "Customer Dispatch" : "Supplier Arrival"),
-          plateNumber: e.plateNumber || product.plateNumber || "—",
-          qtyIn,
-          qtyOut,
-          balance: 0,
-          unitPrice,
-          totalValue,
-          remark: e.notes || eAny.remark || "",
-          rawEntry: e,
-        }
-      })
-    } else if (Number(product.quantity || product.totalQuantity || 0) > 0) {
-      const initQty = Number(product.totalQuantity || product.quantity || 0)
-      const unitPrice = Number(product.unitCost || 0)
-      rawList = [
-        {
-          id: `wh1-init-${product.id}`,
-          type: "entry" as const,
-          date: product.entryDate || product.createdDate || (product as any).created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
-          voucherNo: product.voucherNo || "—",
-          party: product.customer || product.supplierName || "Supplier Inbound Arrival",
-          plateNumber: product.plateNumber || "—",
-          qtyIn: initQty,
-          qtyOut: 0,
-          balance: initQty,
-          unitPrice,
-          totalValue: initQty * unitPrice,
-          remark: "Initial Stock Registration",
-          rawEntry: {
-            entryId: `wh1-init-${product.id}`,
-            voucherNo: product.voucherNo || "",
-            customer: product.customer || product.supplierName || "Supplier Inbound Arrival",
-            plateNumber: product.plateNumber || "",
-            entryDate: product.entryDate || "",
-            quantityReceived: initQty,
-            quantityRemaining: initQty,
-            unitPrice,
-            notes: "Initial Stock Registration",
-          },
-        },
-      ]
-    }
+    // Combine: Chronologically ordered stock movement transactions
+    const allRows = [...inboundRows, ...nonEntryBinRows]
 
-    // Sort chronologically
-    rawList.sort((a, b) => {
+    allRows.sort((a, b) => {
       const timeA = new Date(a.date && a.date !== "—" ? a.date : 0).getTime()
       const timeB = new Date(b.date && b.date !== "—" ? b.date : 0).getTime()
       if (timeA !== timeB) return timeA - timeB
@@ -154,9 +98,9 @@ export default function WH1ChildMovementLedger({
       return 0
     })
 
-    // Compute dynamic sequential running balance
+    // 3. Compute dynamic sequential running balance
     let runningBal = 0
-    return rawList.map((row) => {
+    return allRows.map((row) => {
       runningBal += row.qtyIn - row.qtyOut
       return {
         ...row,
@@ -168,9 +112,14 @@ export default function WH1ChildMovementLedger({
   const totalIn = rows.reduce((sum, r) => sum + r.qtyIn, 0)
   const totalOut = rows.reduce((sum, r) => sum + r.qtyOut, 0)
   const finalBalance = rows.length > 0 ? rows[rows.length - 1].balance : product.quantity
-  const netStockVal = rows.length > 0
-    ? (finalBalance <= 0 ? 0 : Math.max(0, Math.round(rows.reduce((sum, r) => sum + Number(r.totalValue || 0), 0) * 100) / 100))
-    : (Number(product.totalStockValue || 0) > 0 ? Number(product.totalStockValue) : Number(finalBalance || 0) * Number(product.unitCost || 0))
+
+  const totalInvoicedSalesValue = rows
+    .filter((r) => r.type === "leave" && r.sellingPrice && r.sellingPrice > 0)
+    .reduce((sum, r) => sum + (r.qtyOut * (r.sellingPrice || 0)), 0)
+
+  const netRemainingStockValue = Array.isArray(product.wh1Entries) && product.wh1Entries.length > 0
+    ? product.wh1Entries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || product.unitCost || 0)), 0)
+    : finalBalance * Number(product.unitCost || 0)
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white overflow-hidden shadow-xs">
@@ -191,8 +140,8 @@ export default function WH1ChildMovementLedger({
                 <th className="py-3 px-4 text-right text-emerald-700">Qty In (+)</th>
                 <th className="py-3 px-4 text-right text-rose-700">Qty Out / Loss (-)</th>
                 <th className="py-3 px-4 text-right text-zinc-950 bg-zinc-100/50">Running Balance</th>
-                <th className="py-3 px-4 text-right">Unit Price</th>
-                <th className="py-3 px-4 text-right text-emerald-800">Total Value (ETB)</th>
+                <th className="py-3 px-4 text-right text-indigo-950">Unit Cost (ETB)</th>
+                <th className="py-3 px-4 text-right text-blue-900">Selling Price / Value (ETB)</th>
                 <th className="py-3 px-4 text-center">Actions</th>
               </tr>
             </thead>
@@ -291,21 +240,37 @@ export default function WH1ChildMovementLedger({
                       {row.balance.toLocaleString()} <span className="text-[10px] text-zinc-400 font-normal">{product.unit}</span>
                     </td>
 
-                    {/* Unit Price */}
-                    <td className="py-2.5 px-4 text-right font-mono text-zinc-700 whitespace-nowrap">
-                      {row.unitPrice > 0 ? `ETB ${row.unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
+                    {/* Unit Cost (ETB) */}
+                    <td className="py-2.5 px-4 text-right font-mono text-zinc-800 whitespace-nowrap">
+                      {row.unitPrice > 0 ? (
+                        <div>
+                          <div className="font-bold">
+                            ETB {row.unitPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div className="text-[10px] text-zinc-400 font-sans">
+                            {isEntry
+                              ? `Cost: ETB ${(row.qtyIn * row.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : isReject
+                              ? `Loss: ETB ${(row.qtyOut * row.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : `COGS: ETB ${(row.qtyOut * row.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                          </div>
+                        </div>
+                      ) : (
+                        "—"
+                      )}
                     </td>
 
-                    {/* Total Value (ETB) */}
-                    <td className="py-2.5 px-4 text-right font-mono font-black whitespace-nowrap">
-                      {row.totalValue > 0 ? (
-                        <span className="text-emerald-700">
-                          +ETB {row.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>
-                      ) : row.totalValue < 0 ? (
-                        <span className={isReject ? "text-rose-700" : "text-amber-800"}>
-                          -ETB {Math.abs(row.totalValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>
+                    {/* Selling Price / Value (ETB) */}
+                    <td className="py-2.5 px-4 text-right font-mono text-blue-950 whitespace-nowrap">
+                      {row.sellingPrice && row.sellingPrice > 0 ? (
+                        <div>
+                          <div className="font-extrabold text-blue-700">
+                            ETB {row.sellingPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div className="text-[10px] text-blue-600/80 font-sans font-semibold">
+                            Invoiced: ETB {(row.qtyOut * row.sellingPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        </div>
                       ) : (
                         <span className="text-zinc-300 font-normal">—</span>
                       )}
@@ -347,13 +312,15 @@ export default function WH1ChildMovementLedger({
                 <td className="py-2.5 px-4 text-right font-black bg-zinc-200 border-r border-zinc-200">
                   {finalBalance.toLocaleString()} {product.unit}
                 </td>
-                <td className="py-2.5 px-4 text-right uppercase text-[10px] font-black text-zinc-600 border-r border-zinc-200">
-                  Net Stock Value:
+                <td className="py-2.5 px-4 text-right font-black text-indigo-900 border-r border-zinc-200">
+                  <div className="text-[9px] uppercase tracking-wider text-indigo-600 font-sans font-semibold">Net Stock Value</div>
+                  <div>ETB {netRemainingStockValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 </td>
-                <td className="py-2.5 px-4 text-right font-black text-emerald-800 border-r border-zinc-200">
-                  ETB {netStockVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <td className="py-2.5 px-4 text-right font-black text-blue-900 border-r border-zinc-200">
+                  <div className="text-[9px] uppercase tracking-wider text-blue-600 font-sans font-semibold">Total Invoiced Sales</div>
+                  <div>ETB {totalInvoicedSalesValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 </td>
-                <td className="py-2.5 px-4 text-zinc-500 font-sans italic text-[10px] text-center">
+                <td className="py-2.5 px-4 text-center text-zinc-500 font-sans italic text-[10px]">
                   {product.warehouseName || product.warehouse}
                 </td>
               </tr>

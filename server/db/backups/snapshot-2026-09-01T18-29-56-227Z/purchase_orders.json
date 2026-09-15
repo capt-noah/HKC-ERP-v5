@@ -1,0 +1,54 @@
+[
+  {
+    "id": "PO-6418",
+    "payload": {
+      "eta": "14 Days",
+      "date": "2026-08-07",
+      "items": [
+        {
+          "qty": 1500,
+          "sku": "SKU-6418",
+          "name": "Grade A Yergacheffe coffee",
+          "unit": "units",
+          "total": 1875000,
+          "productId": "P-1786117484549",
+          "unitPrice": 1250
+        }
+      ],
+      "amount": 1875000,
+      "paidTo": "Hebei Vet Chem Ltd",
+      "status": "PAID",
+      "category": "Local Agricultural Sourcing",
+      "chequeNo": "CHQ-009238",
+      "currency": "ETB",
+      "poNumber": "PO-2026-289",
+      "supplier": "Hebei Vet Chem Ltd",
+      "voucherNo": "PO-2026-289",
+      "warehouse": "WH1",
+      "supplierId": "SUPP-007",
+      "attachments": [],
+      "statusColor": "bg-emerald-500",
+      "amountInWords": "One Million Eight Hundred Seventy Five Thousand Ethiopian Birr Only",
+      "billingStatus": "Not Billed",
+      "receiptStatus": "Not Received",
+      "warehouseName": "WH1-AGRI-EXP - WH1 - Ethiopia Agricultural Export Hub",
+      "accountEntries": [
+        {
+          "debit": 1875000,
+          "credit": 200,
+          "accountId": "ACC-1410",
+          "accountCode": "1410",
+          "accountName": "Stock in Hand / Inventory Asset",
+          "description": ""
+        }
+      ],
+      "journalEntryId": "JE-2026-2026002",
+      "targetAccountId": "ACC-1410",
+      "reasonForPayment": "Local Agricultural Sourcing",
+      "targetAccountCode": "1410",
+      "targetAccountName": "Stock in Hand / Inventory Asset"
+    },
+    "created_at": "2026-08-07T19:59:37.211Z",
+    "updated_at": "2026-08-31T16:05:18.631Z"
+  }
+]

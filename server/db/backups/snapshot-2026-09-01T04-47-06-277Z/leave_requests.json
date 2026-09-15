@@ -1,0 +1,82 @@
+[
+  {
+    "id": "LR-101",
+    "payload": {
+      "id": "LR-101",
+      "role": "Chief People Officer",
+      "type": "Annual Paid Leave",
+      "range": "Jul 10 - Jul 12, 2026",
+      "avatar": "SC",
+      "reason": "Family engagement travel & personal restructuring.",
+      "status": "Pending",
+      "endDate": "2026-07-12",
+      "appliedOn": "2026-07-01",
+      "startDate": "2026-07-10",
+      "totalDays": 3,
+      "employeeId": "EMP-003",
+      "leaveTypeId": "LT-ANNUAL",
+      "employeeName": "Sophia Chen"
+    },
+    "created_at": "2026-07-25T10:58:27.63605+00:00",
+    "updated_at": "2026-08-03T21:30:03.346786+00:00"
+  },
+  {
+    "id": "LR-102",
+    "payload": {
+      "id": "LR-102",
+      "role": "DevOps Architect",
+      "type": "Medical / Sick Leave",
+      "range": "Jul 14 - Jul 15, 2026",
+      "avatar": "AM",
+      "reason": "Routine outpatient health assessment & calibration.",
+      "status": "Approved",
+      "endDate": "2026-07-15",
+      "appliedOn": "2026-07-08",
+      "startDate": "2026-07-14",
+      "totalDays": 2,
+      "employeeId": "EMP-004",
+      "leaveTypeId": "LT-SICK",
+      "employeeName": "Alex Mercer"
+    },
+    "created_at": "2026-07-25T10:58:28.214968+00:00",
+    "updated_at": "2026-08-03T21:30:03.881563+00:00"
+  },
+  {
+    "id": "LR-103",
+    "payload": {
+      "id": "LR-103",
+      "role": "Sales Director",
+      "type": "Annual Paid Leave",
+      "range": "Jul 22 - Jul 26, 2026",
+      "avatar": "MV",
+      "reason": "Annual vacation renewal with family.",
+      "status": "Pending",
+      "endDate": "2026-07-26",
+      "appliedOn": "2026-07-15",
+      "startDate": "2026-07-22",
+      "totalDays": 5,
+      "employeeId": "EMP-005",
+      "leaveTypeId": "LT-ANNUAL",
+      "employeeName": "Marcus Vance"
+    },
+    "created_at": "2026-07-25T10:58:28.793661+00:00",
+    "updated_at": "2026-08-03T21:30:04.343146+00:00"
+  },
+  {
+    "id": "LR-5c2268ee-343b-4f5a-9868-96adce807280",
+    "payload": {
+      "id": "LR-5c2268ee-343b-4f5a-9868-96adce807280",
+      "notes": "yy",
+      "reason": "bh",
+      "status": "Cancelled",
+      "end_date": "2026-08-08",
+      "leave_type": "Sick Leave",
+      "start_date": "2026-08-04",
+      "employee_id": "1",
+      "document_path": "Screenshot 2025-11-25 at 4.47.06 in the afternoon.png",
+      "number_of_days": 5
+    },
+    "created_at": "2026-08-04T12:02:49.552068+00:00",
+    "updated_at": "2026-08-26T18:04:06.480203+00:00"
+  }
+]

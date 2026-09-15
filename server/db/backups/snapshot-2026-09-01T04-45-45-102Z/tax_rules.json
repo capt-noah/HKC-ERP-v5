@@ -1,0 +1,133 @@
+[
+  {
+    "id": "TAX-003",
+    "payload": {
+      "id": "TAX-003",
+      "name": "Import Customs Duty (10%)",
+      "rate": 10,
+      "type": "Import Duty",
+      "accountCode": "2210",
+      "description": "Customs duty rate on imported agricultural & tech goods",
+      "isInclusive": false,
+      "ratePercent": 10,
+      "is_inclusive": false,
+      "gl_account_code": "2210"
+    },
+    "created_at": "2026-08-12T16:32:45.335798+00:00",
+    "updated_at": "2026-08-29T16:07:48.466021+00:00"
+  },
+  {
+    "id": "TAX-002",
+    "payload": {
+      "id": "TAX-002",
+      "name": "Withholding Tax (TDS 2%)",
+      "rate": 2,
+      "type": "Withholding Tax (TDS)",
+      "accountCode": "2210",
+      "description": "2% Tax Deducted at Source for commercial services",
+      "isInclusive": false,
+      "ratePercent": 2,
+      "is_inclusive": false,
+      "gl_account_code": "2210"
+    },
+    "created_at": "2026-08-12T16:32:45.335798+00:00",
+    "updated_at": "2026-08-29T16:07:48.466021+00:00"
+  },
+  {
+    "id": "TAX-001",
+    "payload": {
+      "id": "TAX-001",
+      "name": "Standard VAT (15%)",
+      "rate": 15,
+      "type": "VAT/GST",
+      "accountCode": "",
+      "description": "Standard Ethiopian Value Added Tax rate of 15%",
+      "isInclusive": false,
+      "ratePercent": 15,
+      "is_inclusive": false,
+      "gl_account_code": "2210"
+    },
+    "created_at": "2026-08-12T16:32:45.335798+00:00",
+    "updated_at": "2026-08-29T16:07:48.466021+00:00"
+  },
+  {
+    "id": "TAX-VAT-15",
+    "payload": {
+      "name": "Standard VAT (15%)",
+      "type": "VAT/GST",
+      "appliesTo": "BOTH",
+      "is_active": true,
+      "accountCode": "2000-05",
+      "description": "Standard 15% Ethiopian Value Added Tax (Output VAT / Input VAT)",
+      "isDeduction": false,
+      "isInclusive": false,
+      "ratePercent": 15
+    },
+    "created_at": "2026-08-29T05:49:31.181124+00:00",
+    "updated_at": "2026-08-31T16:37:54.59639+00:00"
+  },
+  {
+    "id": "TAX-WHT-2",
+    "payload": {
+      "name": "Withholding Tax (2% Services)",
+      "type": "Withholding Tax (TDS)",
+      "appliesTo": "BOTH",
+      "is_active": true,
+      "accountCode": "1320-06-01",
+      "description": "2% Tax Deducted at Source for commercial service contracts",
+      "isDeduction": true,
+      "isInclusive": false,
+      "ratePercent": 2
+    },
+    "created_at": "2026-08-29T05:49:31.181124+00:00",
+    "updated_at": "2026-08-31T16:37:54.59639+00:00"
+  },
+  {
+    "id": "TAX-WHT-3",
+    "payload": {
+      "name": "Withholding Tax (3% Goods/Rent)",
+      "type": "Withholding Tax (TDS)",
+      "appliesTo": "BOTH",
+      "is_active": true,
+      "accountCode": "1320-06-01",
+      "description": "3% Withholding Tax asset deducted on goods supplies and rental",
+      "isDeduction": true,
+      "isInclusive": false,
+      "ratePercent": 3
+    },
+    "created_at": "2026-08-29T05:49:31.181124+00:00",
+    "updated_at": "2026-08-31T16:37:54.59639+00:00"
+  },
+  {
+    "id": "TAX-TOT-2",
+    "payload": {
+      "name": "Turnover Tax (2% TOT)",
+      "type": "Turnover Tax (TOT)",
+      "appliesTo": "SALES",
+      "is_active": true,
+      "accountCode": "2000-05",
+      "description": "2% Turnover Tax for non-VAT registered service transactions",
+      "isDeduction": false,
+      "isInclusive": false,
+      "ratePercent": 2
+    },
+    "created_at": "2026-08-29T05:49:31.181124+00:00",
+    "updated_at": "2026-08-31T16:37:54.59639+00:00"
+  },
+  {
+    "id": "TAX-ZERO",
+    "payload": {
+      "name": "Zero-Rated / Export Exempt (0%)",
+      "type": "Exempt",
+      "appliesTo": "BOTH",
+      "is_active": true,
+      "accountCode": "2000-05",
+      "description": "Zero-rated export commodities (Green Mung, Sesame) and exempt supplies",
+      "isDeduction": false,
+      "isInclusive": false,
+      "ratePercent": 0
+    },
+    "created_at": "2026-08-29T05:49:31.181124+00:00",
+    "updated_at": "2026-08-31T16:37:54.59639+00:00"
+  }
+]

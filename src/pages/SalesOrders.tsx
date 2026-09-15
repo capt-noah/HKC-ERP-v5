@@ -989,6 +989,11 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               variant: "primary",
             },
           ]}
+          onReload={async () => {
+            await erp.reloadFromApi()
+          }}
+          isReloading={isLoading}
+          reloadTooltip="Reload sales orders from server"
           defaultWidths={{
             id: 110,
             customer: 220,
@@ -1154,7 +1159,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               </td>
 
               <td style={{ width: `${colWidths.amount}px` }} className="py-4 px-4 text-right font-mono text-xs overflow-hidden">
-                <div className="font-black text-zinc-950">ETB {so.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}</div>
+                <div className="font-black text-zinc-950">ETB {Number(so.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</div>
                 <div className="mt-0.5 text-[9px] font-bold uppercase text-zinc-400">{so.items?.length || 0} items</div>
               </td>
 
@@ -2567,7 +2572,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         isOpen={!!deletingOrder}
         title="Delete Sales Order Contract?"
         recordId={deletingOrder?.id}
-        recordName={deletingOrder ? `${deletingOrder.customer} — ETB ${deletingOrder.amount.toLocaleString()}` : ""}
+        recordName={deletingOrder ? `${deletingOrder.customer} — ETB ${Number(deletingOrder.amount || 0).toLocaleString()}` : ""}
         description="This will permanently delete this Sales Order contract from system registry."
         onClose={() => setDeletingOrder(null)}
         onConfirmDelete={() => {

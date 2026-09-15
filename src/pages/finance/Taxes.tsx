@@ -364,6 +364,11 @@ export default function Taxes() {
                   },
                 ]}
                 actions={[{ label: "Add Tax Rule", onClick: () => setShowAddRuleModal(true) }]}
+                onReload={async () => {
+                  await finance.reloadFromApi()
+                }}
+                isReloading={isLoading}
+                reloadTooltip="Reload tax rules from server"
               />
 
               <TableScrollWrapper>

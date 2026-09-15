@@ -208,6 +208,9 @@ export default function Employees() {
                 { value: employmentType, onChange: setEmploymentType, options: ["All", ...EMPLOYMENT_TYPES].map((item) => ({ value: item, label: item })) },
               ]}
               actions={[{ label: "Add Employee", onClick: openAdd }]}
+              onReload={refresh}
+              isReloading={loading}
+              reloadTooltip="Reload employee records from server"
             />
             <TableScrollWrapper>
               <table className="w-full text-left border-collapse table-fixed">

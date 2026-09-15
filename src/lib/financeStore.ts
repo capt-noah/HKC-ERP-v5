@@ -745,7 +745,7 @@ class FinanceStore {
       this._isLoaded = true
     } finally {
       this._isLoading = false
-      this.notify()
+      this.notify(false)
     }
   }
 
@@ -1328,6 +1328,7 @@ class FinanceStore {
   }
 
   public async reloadFromApi() {
+    this._isLoaded = false
     await this.loadFromApi(true)
   }
 
@@ -1346,11 +1347,12 @@ class FinanceStore {
     }
   }
 
-  private notify() {
-    void this.saveToApi().catch((error) => {
-      console.error("Failed to persist finance data to Database.", error)
-      void this.loadFromApi()
-    })
+  private notify(persist = true) {
+    if (persist) {
+      void this.saveToApi().catch((error) => {
+        console.error("Failed to persist finance data to Database.", error)
+      })
+    }
     this.listeners.forEach((l) => l())
   }
 

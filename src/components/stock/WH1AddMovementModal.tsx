@@ -20,9 +20,14 @@ interface WH1AddMovementModalProps {
     unitPrice?: number
   }) => Promise<void>
   onSaveReject: (productId: string, rejectData: {
+    entryId?: string
     date: string
-    rejectQuantity: number
+    voucherNo?: string
     party?: string
+    plateNumber?: string
+    rejectQuantity: number
+    reason?: string
+    notes?: string
   }) => Promise<void>
 }
 
@@ -63,11 +68,14 @@ export default function WH1AddMovementModal({
   const [existingSalesIssues, setExistingSalesIssues] = useState<any[]>([])
   const [selectedIssueId, setSelectedIssueId] = useState("")
 
-  // Reject Loss Form State (Simplified strictly as requested)
+  // Reject Loss Form State
   const [rejectDate, setRejectDate] = useState("")
   const [rejectQuantity, setRejectQuantity] = useState("")
+  const [selectedRejectEntryId, setSelectedRejectEntryId] = useState("")
   const [rejectParty, setRejectParty] = useState("")
   const [showRejectSupplierDropdown, setShowRejectSupplierDropdown] = useState(false)
+  const [rejectReason, setRejectReason] = useState("Cleaning & Impurities")
+  const [rejectNotes, setRejectNotes] = useState("")
 
   useEffect(() => {
     if (isOpen && product) {
@@ -123,8 +131,11 @@ export default function WH1AddMovementModal({
       // Reset Reject fields
       setRejectDate(new Date().toISOString().slice(0, 10))
       setRejectQuantity("")
+      setSelectedRejectEntryId("")
       setRejectParty(defaultSupplier)
       setShowRejectSupplierDropdown(false)
+      setRejectReason("Cleaning & Impurities")
+      setRejectNotes("")
 
       // Load matching sales issues for fallback reconciliation
       loadResource<any>("sales_issues")
@@ -293,6 +304,27 @@ export default function WH1AddMovementModal({
     }
   }
 
+  const handleSelectRejectEntry = (entryId: string) => {
+    setSelectedRejectEntryId(entryId)
+    if (entryId && product?.wh1Entries) {
+      const found = product.wh1Entries.find((e) => (e.entryId || e.id) === entryId)
+      if (found && (found.customer || (found as any).party)) {
+        setRejectParty(found.customer || (found as any).party || "")
+      }
+    }
+  }
+
+  const selectedRejectEntry = product?.wh1Entries?.find(
+    (e) => (e.entryId || e.id) === selectedRejectEntryId
+  )
+  const availableRejectStock = selectedRejectEntry
+    ? selectedRejectEntry.quantityRemaining
+    : product?.quantity || 0
+  const effectiveRejectUnitCost = selectedRejectEntry
+    ? Number(selectedRejectEntry.unitPrice || 0)
+    : Number(product?.unitCost || 0)
+  const computedRejectLossValue = (Number(rejectQuantity) || 0) * effectiveRejectUnitCost
+
   const handleSaveRejectSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const rawQty = Number(rejectQuantity)
@@ -301,19 +333,34 @@ export default function WH1AddMovementModal({
       return
     }
 
-    if (rawQty > product.quantity) {
-      showToast("Stock Error", "warning", `Cannot reject ${rawQty} Qtl. Current balance is only ${product.quantity} Qtl.`)
+    if (rawQty > availableRejectStock) {
+      showToast(
+        "Stock Error",
+        "warning",
+        selectedRejectEntry
+          ? `Cannot reject ${rawQty} Qtl from Entry No. ${selectedRejectEntry.voucherNo || selectedRejectEntry.entryId}. Available in this child entry is only ${selectedRejectEntry.quantityRemaining} Qtl.`
+          : `Cannot reject ${rawQty} Qtl. Total warehouse balance is only ${product.quantity} Qtl.`
+      )
       return
     }
 
     setIsSaving(true)
     try {
       await onSaveReject(product.id, {
+        entryId: selectedRejectEntryId || undefined,
         date: rejectDate,
+        voucherNo: selectedRejectEntry?.voucherNo || undefined,
+        party: rejectParty.trim() || selectedRejectEntry?.customer || product.customer || product.supplierName || "Direct Supplier",
+        plateNumber: selectedRejectEntry?.plateNumber || undefined,
         rejectQuantity: rawQty,
-        party: rejectParty.trim() || product.customer || product.supplierName || "Direct Supplier",
+        reason: rejectReason.trim() || "Cleaning & Impurities",
+        notes: rejectNotes.trim() || undefined,
       })
-      showToast("Success", "success", `Reject loss deduction of ${rawQty.toLocaleString()} Quintals recorded.`)
+      showToast(
+        "Success",
+        "success",
+        `Reject loss deduction of ${rawQty.toLocaleString()} Quintals recorded (Loss Value: ETB ${computedRejectLossValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`
+      )
       onClose()
     } catch (err: any) {
       showToast("Save Error", "warning", err.message || "Failed to record rejection deduction.")
@@ -722,6 +769,68 @@ export default function WH1AddMovementModal({
           {/* TAB 3: REJECT LOSS (CLEANING DEDUCTION) */}
           {activeTab === "reject" && (
             <form onSubmit={handleSaveRejectSubmit} className="space-y-4 text-xs font-semibold">
+              {/* Child Entry Source Selector */}
+              <label className="space-y-1 block">
+                <span className="text-zinc-500 uppercase text-[10px] font-black">
+                  Source Inbound Entry / Specific Truckload
+                </span>
+                <select
+                  value={selectedRejectEntryId}
+                  onChange={(e) => handleSelectRejectEntry(e.target.value)}
+                  className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono cursor-pointer bg-zinc-50/50 text-xs"
+                >
+                  <option value="">
+                    -- Auto FIFO / All Warehouse Balance (Avg: ETB {(product.unitCost || 0).toLocaleString()}/Qtl) --
+                  </option>
+                  {(product.wh1Entries || []).map((entry, idx) => {
+                    const eId = entry.entryId || entry.id || String(idx)
+                    return (
+                      <option key={eId} value={eId}>
+                        Entry #{idx + 1} {entry.voucherNo ? `(GRV-${entry.voucherNo})` : ""} &bull; {entry.customer || "Direct"} &bull; {entry.plateNumber || "—"} &bull; Avail: {entry.quantityRemaining} {product.unit} @ ETB {entry.unitPrice}/Qtl
+                      </option>
+                    )
+                  })}
+                </select>
+              </label>
+
+              {/* Dynamic Live Loss Card */}
+              <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200/80 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-rose-900 font-extrabold flex items-center gap-1.5">
+                    <MinusCircle className="size-3.5 text-rose-600" />
+                    {selectedRejectEntry
+                      ? `Deducting from Inbound Entry No. ${selectedRejectEntry.voucherNo || selectedRejectEntry.entryId}`
+                      : "Deducting from Total Warehouse Balance (FIFO)"}
+                  </span>
+                  <span className="font-mono text-zinc-500 text-[11px]">
+                    Available: <strong className="text-zinc-900">{availableRejectStock.toLocaleString()} {product.unit}</strong>
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 border-t border-rose-200/50 text-[11px]">
+                  <div className="bg-white/80 p-2 rounded-xl border border-rose-100">
+                    <span className="text-zinc-400 block text-[9px] uppercase font-bold">Acquisition Unit Cost</span>
+                    <span className="font-mono font-black text-zinc-900">
+                      ETB {effectiveRejectUnitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="bg-white/80 p-2 rounded-xl border border-rose-100">
+                    <span className="text-zinc-400 block text-[9px] uppercase font-bold">Deducted Quantity</span>
+                    <span className="font-mono font-black text-rose-700">
+                      {Number(rejectQuantity) > 0 ? Number(rejectQuantity).toLocaleString() : "0"} {product.unit}
+                    </span>
+                  </div>
+                  <div className="bg-white/80 p-2 rounded-xl border border-rose-100 col-span-2 sm:col-span-1">
+                    <span className="text-zinc-400 block text-[9px] uppercase font-bold">Total Loss Valuation</span>
+                    <span className="font-mono font-black text-rose-700">
+                      ETB {computedRejectLossValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-rose-800/80 italic pt-0.5">
+                  💡 Zero-Homogenization: Stock asset value will decrease exactly by ETB {computedRejectLossValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} at this entry's exact unit acquisition cost.
+                </p>
+              </div>
+
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="space-y-1 block">
                   <span className="text-zinc-500 uppercase text-[10px] font-black">Rejection Date</span>
@@ -734,7 +843,23 @@ export default function WH1AddMovementModal({
                   />
                 </label>
 
-                <div className="space-y-1 relative">
+                <label className="space-y-1 block">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Rejection Reason / Category</span>
+                  <select
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 cursor-pointer bg-white"
+                  >
+                    <option value="Cleaning & Impurities">Cleaning & Impurities</option>
+                    <option value="Moisture Loss / Drying">Moisture Loss / Drying</option>
+                    <option value="Foreign Matter / Stones">Foreign Matter / Stones</option>
+                    <option value="Broken / Damaged Kernels">Broken / Damaged Kernels</option>
+                    <option value="Grading Degradation">Grading Degradation</option>
+                    <option value="Other Rejection">Other Rejection</option>
+                  </select>
+                </label>
+
+                <div className="space-y-1 relative md:col-span-1">
                   <span className="text-zinc-500 uppercase text-[10px] font-black">Supplier / Source</span>
                   <div className="relative flex items-center">
                     <input
@@ -806,8 +931,10 @@ export default function WH1AddMovementModal({
                   )}
                 </div>
 
-                <label className="space-y-1 block md:col-span-2">
-                  <span className="text-zinc-500 uppercase text-[10px] font-black">Deducted Reject Quantity (Quintal)</span>
+                <label className="space-y-1 block md:col-span-1">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">
+                    Deducted Reject Quantity ({product.unit})
+                  </span>
                   <input
                     type="number"
                     step="0.01"
@@ -816,6 +943,17 @@ export default function WH1AddMovementModal({
                     onChange={(e) => setRejectQuantity(e.target.value)}
                     className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono font-bold text-rose-900"
                     required
+                  />
+                </label>
+
+                <label className="space-y-1 block md:col-span-2">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Quality / QC Notes (Optional)</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. Broken seeds removed during optical sorting"
+                    value={rejectNotes}
+                    onChange={(e) => setRejectNotes(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3"
                   />
                 </label>
               </div>

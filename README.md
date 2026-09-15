@@ -1,42 +1,39 @@
-# HKC-ERP-v5
+# HKC ERP v5
 
-Enterprise Resource Planning system powered by React 19, TypeScript, Express, MySQL, and Drizzle ORM.
+Enterprise Resource Planning system tailored for Ethiopian Agricultural Commodity Export (WH1) and Pharmaceutical/Veterinary Import Hubs (WH2/WH3).
+
+> 📖 **Full System Architecture & Context**: See [SYSTEM_CONTEXT_V5.md](./SYSTEM_CONTEXT_V5.md) for complete details on the architecture, 38 MySQL database tables, FIFO COGS calculations, sub-entry pricing, and RBAC rules.
+
+---
 
 ## Quick Start
 
-### 1. Install Dependencies
+### 1. Prerequisites
+- Node.js 20+ / 22+
+- MySQL 8.0+ running on `127.0.0.1:3306` (Database: `hkc_trading`)
+
+### 2. Install Dependencies
 ```bash
 npm install
 ```
 
-### 2. Configure Environment
-Copy `.env.example` to `.env` and configure your MySQL database credentials:
+### 3. Run Locally in Development Mode
 ```bash
-cp .env.example .env
-```
-
-### 3. Database Setup & Migrations
-```bash
-# Push schema to MySQL database
-npm run db:push
-
-# Seed default Superadmin user (admin / SuperadminPassword1!)
-npm run seed:auth
-```
-
-### 4. Run Development Servers
-```bash
-# Start frontend (Vite)
-npm run dev
-
-# Start backend API server (Express + MySQL)
+# Terminal 1: Backend Express API Server (Port 5000)
 npm run server
+
+# Terminal 2: Frontend Vite Dev Server (Port 1000, proxies /api to port 5000)
+npm run dev
 ```
 
-### 5. Build for Production
+### 4. Build for Production
 ```bash
 npm run build
 ```
 
-## Documentation
-For complete database design, Drizzle schema breakdown, and deployment options, see [DATABASE_ARCHITECTURE.md](docs/DATABASE_ARCHITECTURE.md).
+---
+
+## Key Credentials & Default Accounts
+- **Database**: `hkc_trading` on `127.0.0.1:3306` (User: `habtom`)
+- **Superadmin**: `admin` / `SuperadminPassword1!`
+- **Reset Admin Script**: `npm run admin:reset`

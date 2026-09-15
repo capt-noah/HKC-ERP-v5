@@ -15,6 +15,8 @@ interface AuthState {
   user: User | null
   token: string | null
   sessionExpiresAt: string | null
+  showExpiryWarning: boolean
+  setShowExpiryWarning: (show: boolean) => void
   login: (user: User, token: string, sessionExpiresAt?: string | null) => void
   refreshToken: (token: string, sessionExpiresAt?: string | null) => void
   setSessionExpiresAt: (expiresAt: string | null) => void
@@ -23,26 +25,42 @@ interface AuthState {
 }
 
 /**
- * Returns remaining validity of JWT in seconds.
+ * Safely decodes a JWT payload JSON object handling base64url padding and Unicode characters.
  */
-export function getTokenTimeRemaining(token: string | null): number {
-  if (!token || typeof token !== "string") return 0
+export function decodeJwtPayload(token: string | null): any | null {
+  if (!token || typeof token !== "string") return null
   try {
     const parts = token.split(".")
-    if (parts.length !== 3) return 0
-    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/")
+    if (parts.length !== 3) return null
+    let base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/")
+    base64 = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=")
     const jsonPayload = decodeURIComponent(
       atob(base64)
         .split("")
         .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
         .join("")
     )
-    const payload = JSON.parse(jsonPayload)
-    if (!payload.exp) return 0
-    return Math.max(0, Math.floor((payload.exp * 1000 - Date.now()) / 1000))
+    return JSON.parse(jsonPayload)
   } catch {
-    return 0
+    try {
+      // Fallback decode without URI decoding
+      const parts = token.split(".")
+      let base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/")
+      base64 = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=")
+      return JSON.parse(atob(base64))
+    } catch {
+      return null
+    }
   }
+}
+
+/**
+ * Returns remaining validity of JWT in seconds.
+ */
+export function getTokenTimeRemaining(token: string | null): number {
+  const payload = decodeJwtPayload(token)
+  if (!payload || !payload.exp) return 0
+  return Math.max(0, Math.floor((payload.exp * 1000 - Date.now()) / 1000))
 }
 
 /**
@@ -73,52 +91,83 @@ export function getEffectiveTimeRemaining(token: string | null, sessionExpiresAt
  * Buffers 10 seconds before exact exp timestamp to avoid race conditions.
  */
 export function isTokenExpired(token: string | null): boolean {
-  if (!token || typeof token !== "string") return true
-  try {
-    const parts = token.split(".")
-    if (parts.length !== 3) return true
+  const payload = decodeJwtPayload(token)
+  if (!payload || !payload.exp) return true
+  // Expired if current time is within 10 seconds of expiry
+  return Date.now() >= (payload.exp * 1000) - 10000
+}
 
-    const base64Url = parts[1]
-    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/")
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split("")
-        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-        .join("")
-    )
-    const payload = JSON.parse(jsonPayload)
-    if (!payload.exp) return false
+export const WARNING_THRESHOLD_SECONDS = 300 // 5 minutes warning window before 6hr expiry
 
-    // Expired if current time is within 10 seconds of expiry
-    return Date.now() >= (payload.exp * 1000) - 10000
-  } catch {
-    return true
+let isHandlingExpiry = false
+let warningTimeout: ReturnType<typeof setTimeout> | null = null
+let logoutTimeout: ReturnType<typeof setTimeout> | null = null
+
+export function clearSessionTimers() {
+  if (warningTimeout) {
+    clearTimeout(warningTimeout)
+    warningTimeout = null
+  }
+  if (logoutTimeout) {
+    clearTimeout(logoutTimeout)
+    logoutTimeout = null
   }
 }
 
-let isHandlingExpiry = false
-let expiryTimeout: ReturnType<typeof setTimeout> | null = null
+function setExpiryWarningSafely(show: boolean) {
+  try {
+    if (typeof useAuthStore !== "undefined" && typeof useAuthStore.getState === "function") {
+      useAuthStore.getState().setShowExpiryWarning(show)
+    }
+  } catch {}
+}
 
 /**
- * Proactively schedules a timer to trigger logout the second the JWT or database session expires.
+ * Non-polling precision timer scheduling:
+ * 1. Schedules a 5-minute pre-expiry warning modal trigger.
+ * 2. Schedules automatic logout when the 6-hour window expires.
  */
 export function scheduleSessionExpiryTimer(token: string | null, sessionExpiresAt?: string | null) {
-  if (expiryTimeout) {
-    clearTimeout(expiryTimeout)
-    expiryTimeout = null
+  clearSessionTimers()
+
+  if (!token) {
+    setExpiryWarningSafely(false)
+    return
   }
-  if (!token) return
 
   const remainingSeconds = getEffectiveTimeRemaining(token, sessionExpiresAt)
+
+  // 1. Session already expired -> immediate logout
   if (remainingSeconds <= 0) {
+    setExpiryWarningSafely(false)
     handleAuthExpiry()
-  } else {
-    // Schedule auto-logout (capped at 32-bit max integer ~24.8 days)
-    const timeoutMs = Math.min(Math.max(remainingSeconds * 1000, 1000), 2147483647)
-    expiryTimeout = setTimeout(() => {
-      handleAuthExpiry()
-    }, timeoutMs)
+    return
   }
+
+  // 2. Already within the 5-minute warning window -> show modal immediately & schedule logout
+  if (remainingSeconds <= WARNING_THRESHOLD_SECONDS) {
+    setExpiryWarningSafely(true)
+    const logoutMs = Math.min(Math.max(remainingSeconds * 1000, 1000), 2147483647)
+    logoutTimeout = setTimeout(() => {
+      handleAuthExpiry()
+    }, logoutMs)
+    return
+  }
+
+  // 3. More than 5 minutes remaining -> hide warning modal, schedule 5-min warning timer & 6-hr logout timer
+  setExpiryWarningSafely(false)
+
+  const secondsUntilWarning = remainingSeconds - WARNING_THRESHOLD_SECONDS
+  const warningMs = Math.min(Math.max(secondsUntilWarning * 1000, 1000), 2147483647)
+  const logoutMs = Math.min(Math.max(remainingSeconds * 1000, 1000), 2147483647)
+
+  warningTimeout = setTimeout(() => {
+    setExpiryWarningSafely(true)
+  }, warningMs)
+
+  logoutTimeout = setTimeout(() => {
+    handleAuthExpiry()
+  }, logoutMs)
 }
 
 export function scheduleTokenExpiryTimer(token: string | null) {
@@ -132,10 +181,7 @@ export function handleAuthExpiry() {
   if (isHandlingExpiry) return
   isHandlingExpiry = true
 
-  if (expiryTimeout) {
-    clearTimeout(expiryTimeout)
-    expiryTimeout = null
-  }
+  clearSessionTimers()
 
   try {
     useAuthStore.getState().logout()
@@ -177,9 +223,6 @@ function getInitialAuthState(): { user: User | null; token: string | null; sessi
 }
 
 const initialAuth = getInitialAuthState()
-if (initialAuth.token) {
-  scheduleSessionExpiryTimer(initialAuth.token, initialAuth.sessionExpiresAt)
-}
 
 export const useAuthStore = create<AuthState>()(
   persist(
@@ -187,16 +230,19 @@ export const useAuthStore = create<AuthState>()(
       user: initialAuth.user,
       token: initialAuth.token,
       sessionExpiresAt: initialAuth.sessionExpiresAt,
+      showExpiryWarning: false,
+      setShowExpiryWarning: (show: boolean) => set({ showExpiryWarning: show }),
       login: (user: User, token: string, sessionExpiresAt?: string | null) => {
-        set({ user, token, sessionExpiresAt: sessionExpiresAt || null })
+        set({ user, token, sessionExpiresAt: sessionExpiresAt || null, showExpiryWarning: false })
         scheduleSessionExpiryTimer(token, sessionExpiresAt)
       },
       refreshToken: (token: string, sessionExpiresAt?: string | null) => {
         const effectiveExpires = sessionExpiresAt !== undefined ? sessionExpiresAt : get().sessionExpiresAt
-        set({ token, sessionExpiresAt: effectiveExpires })
+        set({ token, sessionExpiresAt: effectiveExpires, showExpiryWarning: false })
         scheduleSessionExpiryTimer(token, effectiveExpires)
       },
       setSessionExpiresAt: (expiresAt: string | null) => {
+        if (get().sessionExpiresAt === expiresAt) return
         set({ sessionExpiresAt: expiresAt })
         const token = get().token
         if (token) {
@@ -204,11 +250,8 @@ export const useAuthStore = create<AuthState>()(
         }
       },
       logout: () => {
-        if (expiryTimeout) {
-          clearTimeout(expiryTimeout)
-          expiryTimeout = null
-        }
-        set({ user: null, token: null, sessionExpiresAt: null })
+        clearSessionTimers()
+        set({ user: null, token: null, sessionExpiresAt: null, showExpiryWarning: false })
       },
       isAuthenticated: () => {
         const { token, sessionExpiresAt } = get()
@@ -243,6 +286,11 @@ export const useAuthStore = create<AuthState>()(
   )
 )
 
+// Schedule timers now that useAuthStore is fully defined and initialized
+if (initialAuth.token) {
+  scheduleSessionExpiryTimer(initialAuth.token, initialAuth.sessionExpiresAt)
+}
+
 // Tab Re-focus Heartbeat: Verify session validity only when returning to an idle tab (throttled to 10s, NO interval polling)
 if (typeof window !== "undefined") {
   let lastFocusCheck = 0
@@ -273,6 +321,32 @@ if (typeof window !== "undefined") {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       verifyOnTabReturn()
+    }
+  })
+
+  // Cross-Tab Session Synchronizer: Keep all open tabs synced on login, refresh, or logout without desync
+  window.addEventListener("storage", (event) => {
+    if (event.key === "auth-storage") {
+      try {
+        if (!event.newValue) {
+          useAuthStore.getState().logout()
+          return
+        }
+        const parsed = JSON.parse(event.newValue)
+        const state = parsed?.state
+        if (!state?.token || isTokenExpired(state.token)) {
+          useAuthStore.getState().logout()
+        } else {
+          // Sync refreshed token and updated session expiration from another active tab
+          useAuthStore.setState({
+            user: state.user || null,
+            token: state.token,
+            sessionExpiresAt: state.sessionExpiresAt || null,
+            showExpiryWarning: false,
+          })
+          scheduleSessionExpiryTimer(state.token, state.sessionExpiresAt)
+        }
+      } catch {}
     }
   })
 

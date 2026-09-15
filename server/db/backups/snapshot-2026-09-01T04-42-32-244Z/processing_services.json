@@ -1,0 +1,38 @@
+[
+  {
+    "id": "PS-09746",
+    "reference_number": "PS-09746",
+    "client_company_name": "Hagos",
+    "customer_id": "CUST-4260",
+    "goods_description": "sesame seed",
+    "quantity": 870,
+    "uom": "Quintal",
+    "entry_date": "2026-08-30",
+    "agreed_price": 174000,
+    "currency": "ETB",
+    "status": "Processed",
+    "status_history": [
+      {
+        "stage": "Received",
+        "timestamp": "2026-08-30T16:20:09.746Z"
+      },
+      {
+        "stage": "Processed",
+        "timestamp": "2026-08-30T16:21:11.659Z"
+      }
+    ],
+    "assigned_to": null,
+    "invoice_id": null,
+    "notes": "",
+    "contract_url": null,
+    "contract_file_name": null,
+    "created_at": "2026-08-30T16:20:09.746+00:00",
+    "updated_at": "2026-08-30T16:21:11.661+00:00",
+    "locked_processing_rate": 200,
+    "locked_processing_fee": 174000,
+    "locked_storage_fee": null,
+    "locked_total_fee": null,
+    "processed_at": "2026-08-30T16:21:11.659+00:00",
+    "delivered_at": null
+  }
+]

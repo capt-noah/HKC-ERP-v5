@@ -34,6 +34,7 @@ window.fetch = async (input, init) => {
 
   const isApiRequest = url.includes("/api/")
   const isAuthLogin = url.includes("/api/auth/login")
+  const isAuthRefresh = url.includes("/api/auth/refresh-session")
   const method = init?.method || "GET"
 
   // Extract clean resource identifier (e.g. "inventory_products" from "/api/inventory_products?query=...")
@@ -50,8 +51,8 @@ window.fetch = async (input, init) => {
     if (!isAuthLogin) {
       const token = useAuthStore.getState().token
       if (token) {
-        // Proactively check if token is expired before dispatching request
-        if (isTokenExpired(token)) {
+        // Proactively check if token is expired before dispatching request (except when extending session)
+        if (!isAuthRefresh && isTokenExpired(token)) {
           handleAuthExpiry()
           return new Response(JSON.stringify({ error: "Token expired", code: "TOKEN_EXPIRED" }), {
             status: 401,

@@ -1,0 +1,441 @@
+[
+  {
+    "id": "P-1786117484549",
+    "payload": {
+      "sku": "CIP-ALS25064",
+      "name": "Ciprofloxacin 500mg",
+      "unit": "Box",
+      "batch": "ALS25064",
+      "expiry": "2030-04-17",
+      "origin": "",
+      "status": "In Stock",
+      "batches": [
+        {
+          "qty": 585,
+          "expiry": "2030-04-17",
+          "status": "Released",
+          "batchNo": "ALS25064"
+        }
+      ],
+      "category": "",
+      "itemType": "",
+      "quantity": 85,
+      "unitCost": 1000,
+      "createdAt": "2026-08-07T15:44:44.549Z",
+      "updatedAt": "2026-08-11T06:32:49.712Z",
+      "warehouse": "WH2-VET-IND",
+      "createdDate": "2026-08-07T15:44:44.549Z",
+      "description": "Ciprofloxacin 500mg",
+      "quantitySold": 415,
+      "sellingPrice": 1200,
+      "supplierName": "",
+      "totalQuantity": 1000,
+      "warehouseName": "WH2 - Veterinary Import Hub (India)",
+      "approvalStatus": "Approved",
+      "openingBalance": 1000,
+      "stockBreakdown": [
+        {
+          "qty": 495,
+          "warehouse": "WH2-VET-IND"
+        },
+        {
+          "qty": 5,
+          "warehouse": "WH3-VET-CHN"
+        }
+      ],
+      "numberOfCartons": 8,
+      "quantityPerPack": 10,
+      "shelfLifeMonths": 48,
+      "totalStockValue": 85000,
+      "manufacturingDate": "2026-04-17",
+      "itemRegistrationStatus": "Active"
+    },
+    "created_at": "2026-08-07T15:44:45.964Z",
+    "updated_at": "2026-08-31T16:05:18.639Z"
+  },
+  {
+    "id": "P-1786176590673",
+    "payload": {
+      "sku": "FAS-als25065",
+      "name": "fasinash sheep",
+      "unit": "Box",
+      "batch": "als25065",
+      "expiry": "2027-09-28",
+      "origin": "",
+      "status": "In Stock",
+      "batches": [
+        {
+          "qty": 893,
+          "expiry": "2027-09-28",
+          "status": "Released",
+          "batchNo": "als25065"
+        }
+      ],
+      "category": "",
+      "itemType": "",
+      "quantity": 893,
+      "unitCost": 0,
+      "createdAt": "2026-08-08T08:09:50.673Z",
+      "updatedAt": "2026-08-21T07:32:21.083Z",
+      "warehouse": "WH3-VET-CHN",
+      "wh1Entries": [],
+      "createdDate": "2026-08-08T08:09:50.673Z",
+      "description": "fasinash sheep",
+      "quantitySold": 107,
+      "sellingPrice": 0,
+      "supplierName": "",
+      "totalQuantity": 1000,
+      "warehouseName": "WH3 - Veterinary Import Hub (China)",
+      "approvalStatus": "Approved",
+      "openingBalance": 1000,
+      "stockBreakdown": [
+        {
+          "qty": 983,
+          "warehouse": "WH3-VET-CHN"
+        },
+        {
+          "qty": 10,
+          "warehouse": "WH2-VET-IND"
+        }
+      ],
+      "numberOfCartons": 8,
+      "quantityPerPack": 100,
+      "shelfLifeMonths": 11.1,
+      "totalStockValue": 0,
+      "manufacturingDate": "2026-10-25",
+      "itemRegistrationStatus": "Active"
+    },
+    "created_at": "2026-08-08T08:09:52.170Z",
+    "updated_at": "2026-08-31T16:05:18.639Z"
+  },
+  {
+    "id": "P-1786299783215",
+    "payload": {
+      "sku": "LIV-AA12423",
+      "name": "LiverFluke 1",
+      "unit": "Box",
+      "batch": "AA12423",
+      "expiry": "2030-08-20",
+      "origin": "",
+      "status": "In Stock",
+      "batches": [
+        {
+          "qty": 2100,
+          "expiry": "2030-08-20",
+          "status": "Released",
+          "batchNo": "AA12423"
+        }
+      ],
+      "category": "",
+      "itemType": "",
+      "quantity": 2100,
+      "unitCost": 750,
+      "createdAt": "2026-08-09T18:23:03.215Z",
+      "updatedAt": "2026-08-12T16:13:23.508Z",
+      "warehouse": "WH3-VET-CHN",
+      "createdDate": "2026-08-09T18:23:03.215Z",
+      "description": "LiverFluke 1",
+      "quantitySold": 2500,
+      "sellingPrice": 750,
+      "supplierName": "",
+      "totalQuantity": 4600,
+      "warehouseName": "WH3 - Veterinary Import Hub (China)",
+      "approvalStatus": "Approved",
+      "openingBalance": 4600,
+      "stockBreakdown": [
+        {
+          "qty": 4600,
+          "warehouse": "WH3-VET-CHN"
+        }
+      ],
+      "numberOfCartons": 52,
+      "quantityPerPack": 40,
+      "shelfLifeMonths": 56.9,
+      "totalStockValue": 1575000,
+      "manufacturingDate": "2025-11-22",
+      "itemRegistrationStatus": "Active"
+    },
+    "created_at": "2026-08-09T18:23:04.627Z",
+    "updated_at": "2026-08-31T16:05:18.639Z"
+  },
+  {
+    "id": "P-1786342889792",
+    "payload": {
+      "sku": "YAD-202656",
+      "name": "yadeal adnew",
+      "unit": "Box",
+      "batch": "202656",
+      "expiry": "2027-08-10",
+      "origin": "",
+      "status": "In Stock",
+      "batches": [
+        {
+          "qty": 99993,
+          "expiry": "2027-08-10",
+          "status": "Released",
+          "batchNo": "202656"
+        }
+      ],
+      "category": "",
+      "itemType": "",
+      "quantity": 99993,
+      "unitCost": 0,
+      "createdAt": "2026-08-10T06:21:29.792Z",
+      "updatedAt": "2026-08-26T12:23:18.860Z",
+      "warehouse": "WH3-VET-CHN",
+      "wh1Entries": [],
+      "createdDate": "2026-08-10T06:21:29.792Z",
+      "description": "yadeal adnew",
+      "quantitySold": 7,
+      "sellingPrice": 0,
+      "supplierName": "",
+      "totalQuantity": 100000,
+      "warehouseName": "WH3 - Veterinary Import Hub (China)",
+      "approvalStatus": "Approved",
+      "openingBalance": 100000,
+      "stockBreakdown": [
+        {
+          "qty": 99993,
+          "warehouse": "WH3-VET-CHN"
+        }
+      ],
+      "numberOfCartons": 1999,
+      "quantityPerPack": 50,
+      "shelfLifeMonths": 12,
+      "totalStockValue": 0,
+      "manufacturingDate": "2026-08-10",
+      "itemRegistrationStatus": "Active"
+    },
+    "created_at": "2026-08-10T06:21:32.438Z",
+    "updated_at": "2026-08-31T16:05:18.639Z"
+  },
+  {
+    "id": "P-1786344896019",
+    "payload": {
+      "sku": "NOA-4568",
+      "name": "NOAH",
+      "unit": "Box",
+      "batch": "4568",
+      "expiry": "2028-08-10",
+      "origin": "",
+      "status": "In Stock",
+      "batches": [
+        {
+          "qty": 20,
+          "expiry": "2028-08-10",
+          "status": "Released",
+          "batchNo": "4568"
+        }
+      ],
+      "category": "",
+      "itemType": "",
+      "quantity": 20,
+      "unitCost": 100,
+      "createdAt": "2026-08-10T06:54:56.019Z",
+      "updatedAt": "2026-08-23T09:03:54.073Z",
+      "warehouse": "WH3-VET-CHN",
+      "createdDate": "2026-08-10T06:54:56.019Z",
+      "description": "NOAH",
+      "quantitySold": 0,
+      "sellingPrice": 100,
+      "supplierName": "",
+      "totalQuantity": 20,
+      "warehouseName": "WH3 - Veterinary Import Hub (China)",
+      "approvalStatus": "Approved",
+      "binCardEntries": [
+        {
+          "id": "BCE-1787475834073-w2e8",
+          "date": "2026-08-23",
+          "party": "",
+          "remark": "",
+          "balance": 20,
+          "batchNo": "4568",
+          "qtyIssued": 0,
+          "unitPrice": 100,
+          "expiryDate": "2028-08-10",
+          "qtyReceived": 20
+        }
+      ],
+      "openingBalance": 10000,
+      "stockBreakdown": [
+        {
+          "qty": 20,
+          "warehouse": "WH3-VET-CHN"
+        }
+      ],
+      "numberOfCartons": 100,
+      "quantityPerPack": 100,
+      "shelfLifeMonths": 24,
+      "totalStockValue": 2000,
+      "manufacturingDate": "2026-08-10",
+      "itemRegistrationStatus": "Active"
+    },
+    "created_at": "2026-08-10T06:54:58.198Z",
+    "updated_at": "2026-08-31T16:05:18.639Z"
+  },
+  {
+    "id": "P-1786370108581",
+    "payload": {
+      "sku": "SES-HKC-B-29849",
+      "name": "Sesame Seed",
+      "unit": "Quintal",
+      "batch": "HKC-B-29849",
+      "expiry": "",
+      "origin": "",
+      "status": "In Stock",
+      "batches": [
+        {
+          "qty": 150,
+          "expiry": "",
+          "status": "Released",
+          "batchNo": "HKC-B-29849"
+        }
+      ],
+      "category": "",
+      "itemType": "",
+      "quantity": 150,
+      "unitCost": 12666.67,
+      "createdAt": "2026-08-10T13:55:08.581Z",
+      "entryDate": "2026-08-10",
+      "updatedAt": "2026-08-17T08:44:50.091Z",
+      "warehouse": "WH1-AGRI-EXP",
+      "wh1Entries": [
+        {
+          "notes": "Test entry via script",
+          "entryId": "WH1E-1786732875169",
+          "unitPrice": 13000,
+          "dateIssued": "",
+          "dateReceived": "2026-08-14",
+          "quantityReceived": 50,
+          "quantityRemaining": 50
+        },
+        {
+          "entryId": "WH1E-1786956290091",
+          "entryDate": "2026-08-17",
+          "unitPrice": 12500,
+          "quantityReceived": 100,
+          "quantityRemaining": 100
+        }
+      ],
+      "createdDate": "2026-08-10T13:55:08.581Z",
+      "description": "Sesame Seed",
+      "quantitySold": 0,
+      "sellingPrice": 12666.67,
+      "supplierName": "",
+      "totalQuantity": 150,
+      "warehouseName": "WH1 - Ethiopia Agricultural Export Hub",
+      "approvalStatus": "Approved",
+      "openingBalance": 100,
+      "stockBreakdown": [
+        {
+          "qty": 150,
+          "warehouse": "WH1-AGRI-EXP"
+        }
+      ],
+      "totalStockValue": 1900000.5,
+      "itemRegistrationStatus": "Active"
+    },
+    "created_at": "2026-08-10T13:55:09.583Z",
+    "updated_at": "2026-08-31T16:05:18.639Z"
+  },
+  {
+    "id": "P-1786432578482",
+    "payload": {
+      "sku": "LAM-251032",
+      "name": "Lamgo",
+      "unit": "Bottle",
+      "batch": "251032",
+      "expiry": "2028-10-11",
+      "origin": "",
+      "status": "In Stock",
+      "batches": [
+        {
+          "qty": 7280,
+          "expiry": "2028-10-11",
+          "status": "Released",
+          "batchNo": "251032"
+        }
+      ],
+      "category": "",
+      "itemType": "",
+      "quantity": 7280,
+      "unitCost": 550,
+      "createdAt": "2026-08-11T07:16:18.482Z",
+      "updatedAt": "2026-08-11T07:16:18.482Z",
+      "warehouse": "WH3-VET-CHN",
+      "createdDate": "2026-08-11T07:16:18.482Z",
+      "description": "Lamgo",
+      "quantitySold": 0,
+      "sellingPrice": 550,
+      "supplierName": "",
+      "totalQuantity": 7280,
+      "warehouseName": "WH3 - Veterinary Import Hub (China)",
+      "approvalStatus": "Approved",
+      "openingBalance": 7280,
+      "stockBreakdown": [
+        {
+          "qty": 7280,
+          "warehouse": "WH3-VET-CHN"
+        }
+      ],
+      "numberOfCartons": 91,
+      "quantityPerPack": 80,
+      "shelfLifeMonths": 36,
+      "totalStockValue": 4004000,
+      "manufacturingDate": "2025-10-11",
+      "itemRegistrationStatus": "Active"
+    },
+    "created_at": "2026-08-11T07:16:21.860Z",
+    "updated_at": "2026-08-31T16:05:18.639Z"
+  },
+  {
+    "id": "P-1786707086060",
+    "payload": {
+      "sku": "YAD-56788",
+      "name": "yadeal adnew",
+      "unit": "Box",
+      "batch": "56788",
+      "expiry": "2027-08-14",
+      "origin": "",
+      "status": "In Stock",
+      "batches": [
+        {
+          "qty": 1407,
+          "expiry": "2027-08-14",
+          "status": "Released",
+          "batchNo": "56788"
+        }
+      ],
+      "category": "",
+      "itemType": "",
+      "quantity": 1407,
+      "unitCost": 450,
+      "createdAt": "2026-08-14T11:31:26.060Z",
+      "updatedAt": "2026-08-14T11:36:38.561Z",
+      "warehouse": "WH2-VET-IND",
+      "createdDate": "2026-08-14T11:31:26.060Z",
+      "description": "yadeal adnew",
+      "quantitySold": 343,
+      "sellingPrice": 450,
+      "supplierName": "",
+      "totalQuantity": 1750,
+      "warehouseName": "WH2 - Veterinary Import Hub (India)",
+      "approvalStatus": "Approved",
+      "openingBalance": 1750,
+      "stockBreakdown": [
+        {
+          "qty": 1407,
+          "warehouse": "WH2-VET-IND"
+        }
+      ],
+      "numberOfCartons": 28,
+      "quantityPerPack": 50,
+      "shelfLifeMonths": 12,
+      "totalStockValue": 633150,
+      "manufacturingDate": "2026-08-14",
+      "itemRegistrationStatus": "Active"
+    },
+    "created_at": "2026-08-14T11:31:27.227Z",
+    "updated_at": "2026-08-31T16:05:18.639Z"
+  }
+]

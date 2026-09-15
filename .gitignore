@@ -8,6 +8,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+dist
 dist-ssr
 *.local
 .env
@@ -24,9 +25,9 @@ dist-ssr
 *.sln
 *.sw?
 .bolt/config.json
+.env.example
 
 kiro_ession.md
 TEST_CASES_AND_E2E_WORKFLOWS.md
 graphify-out/
 .graphify*
-uploads/

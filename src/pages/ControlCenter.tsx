@@ -2552,17 +2552,10 @@ export default function ControlCenter() {
                       variant: "secondary",
                     },
                   ]}
-                >
-                  <button
-                    type="button"
-                    onClick={fetchAuditLogsData}
-                    disabled={logsLoading}
-                    className="flex items-center justify-center size-[38px] sm:size-[40px] rounded-2xl border border-black/5 bg-black/[0.04] hover:bg-black/[0.08] transition-all shrink-0 disabled:opacity-50 cursor-pointer shadow-2xs"
-                    title="Refresh log registry"
-                  >
-                    <RefreshCw className={cn("size-4 text-zinc-700", logsLoading && "animate-spin")} />
-                  </button>
-                </FinanceTableToolbar>
+                  onReload={fetchAuditLogsData}
+                  isReloading={logsLoading}
+                  reloadTooltip="Refresh log registry"
+                />
               </div>
 
               <TableScrollWrapper>

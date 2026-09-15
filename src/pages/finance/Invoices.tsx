@@ -11,7 +11,8 @@ import {
   FileText,
   Receipt,
   CheckCircle2,
-  ArrowRight
+  ArrowRight,
+  RefreshCw
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -770,7 +771,23 @@ export default function Invoices() {
           {/* RIGHT COLUMN: Master Invoices List (4 cols / 33%) */}
           <GlassCard className="lg:col-span-4 p-5 border border-black/5 shadow-sm flex flex-col space-y-3 sticky top-24 max-h-[calc(100vh-120px)]">
             <div className="flex items-center justify-between flex-wrap gap-2 flex-shrink-0">
-              <h3 className="font-bold text-base text-black">Invoices & Bills</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-base text-black">Invoices & Bills</h3>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await store.reloadFromApi()
+                  }}
+                  disabled={isLoading}
+                  title="Reload invoices from server"
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm shadow-emerald-700/20 hover:shadow-md hover:shadow-emerald-700/30 transition-all cursor-pointer shrink-0 disabled:opacity-50 active:scale-95"
+                >
+                  <RefreshCw className={`size-3 text-white shrink-0 ${isLoading ? "animate-spin" : ""}`} />
+                  <span className="text-[10px] font-bold text-white tracking-tight">
+                    {isLoading ? "Reloading..." : "Reload"}
+                  </span>
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowCreateDrawer(true)}

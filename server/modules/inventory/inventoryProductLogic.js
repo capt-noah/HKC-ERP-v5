@@ -49,21 +49,78 @@ export async function listProducts(query = {}) {
   return { status: 200, body: items }
 }
 
+function hydrateExportProduct(productRow, movements = []) {
+  const unwrapped = unwrapRow(productRow, "relational")
+  const grvMovements = movements.filter((m) => {
+    const mType = (m.movement_type || m.movementType || m.type || "").toUpperCase()
+    return mType === "GRV_ENTRY" || mType === "ENTRY"
+  })
+
+  unwrapped.wh1Entries = grvMovements.map((m) => {
+    const r = unwrapRow(m, "relational")
+    return {
+      ...r,
+      id: r.id,
+      entryId: r.id,
+      voucherNo: r.voucherNo || r.voucher_no || undefined,
+      entryDate: r.movementDate || r.movement_date || getLocalDateString(),
+      customer: r.partyName || r.party_name || undefined,
+      plateNumber: r.plateNumber || r.plate_number || undefined,
+      quantity: Number(r.grossQuantity ?? r.gross_quantity ?? 0),
+      quantityReceived: Number(r.grossQuantity ?? r.gross_quantity ?? 0),
+      rejectQuantity: Number(r.rejectQuantity ?? r.reject_quantity ?? 0),
+      quantityRemaining: Number(r.netQuantity ?? r.net_quantity ?? 0),
+      unitPrice: Number(r.unitPrice ?? r.unit_price ?? 0),
+      notes: r.reason || undefined,
+    }
+  })
+
+  unwrapped.binCardEntries = movements.map((m) => {
+    const r = unwrapRow(m, "relational")
+    const mType = (r.movementType || r.movement_type || r.type || "").toUpperCase()
+    const isReject = mType === "REJECT_DEDUCTION" || mType === "REJECT" || (r.reason && /reject|loss|cleaning/i.test(r.reason))
+    const isEntry = !isReject && (mType === "GRV_ENTRY" || mType === "ENTRY")
+    const isLeave = !isReject && !isEntry
+
+    const qtyReceived = isEntry ? Number(r.grossQuantity || r.netQuantity || 0) : 0
+    const qtyIssued = isReject ? Number(r.rejectQuantity || r.grossQuantity || 0) : isEntry ? 0 : Math.abs(Number(r.netQuantity || r.grossQuantity || 0))
+
+    return {
+      id: r.id,
+      type: isReject ? "reject" : isEntry ? "entry" : "leave",
+      date: r.movementDate || r.movement_date || getLocalDateString(),
+      batchNo: r.batchNo || (r.voucherNo ? `GRV-${r.voucherNo}` : "COMMODITY-WH1"),
+      voucherNo: r.voucherNo || r.voucher_no || undefined,
+      plateNumber: r.plateNumber || r.plate_number || undefined,
+      qtyReceived,
+      qtyIssued,
+      balance: Number(unwrapped.quantity || 0),
+      expiryDate: "",
+      party: r.partyName || (isReject ? "Cleaning Loss Deduction" : isEntry ? "Supplier Arrival" : "Customer Dispatch"),
+      unitPrice: Number(r.unitPrice || r.unit_cost || 0),
+      sellingPrice: !isReject && !isEntry && (r.sellingPrice != null || r.selling_price != null) ? Number(r.sellingPrice ?? r.selling_price) : undefined,
+      remark: r.reason || (isReject ? "Reject / Cleaning Loss" : isEntry ? "Goods Receipt Voucher" : "Customer Dispatch"),
+      reason: r.reason || undefined,
+      createdAt: r.createdAt,
+    }
+  })
+
+  unwrapped.isExport = true
+  unwrapped.warehouseType = "EXPORT_WH"
+  return unwrapped
+}
+
 export async function getProduct(id) {
   const cleanId = String(id).trim()
   
   // 1. Try export_products
   const [expRows] = await pool.query("SELECT * FROM `export_products` WHERE id = ?", [cleanId])
   if (expRows.length > 0) {
-    const prod = unwrapRow(expRows[0], "relational")
     const [movements] = await pool.query(
       "SELECT * FROM `export_warehouse_movements` WHERE product_id = ? ORDER BY created_at ASC",
       [cleanId]
     )
-    prod.wh1Entries = movements.map((m) => unwrapRow(m, "relational"))
-    prod.isExport = true
-    prod.warehouseType = "EXPORT_WH"
-    return { status: 200, body: prod }
+    return { status: 200, body: hydrateExportProduct(expRows[0], movements) }
   }
 
   // 2. Try pharma_products
@@ -246,26 +303,10 @@ export async function createProduct(body = {}) {
         "SELECT * FROM `export_warehouse_movements` WHERE product_id = ? ORDER BY created_at ASC",
         [prodId]
       )
-      unwrapped.wh1Entries = movements.map((m) => unwrapRow(m, "relational"))
-      unwrapped.binCardEntries = movements.map((m) => {
-        const r = unwrapRow(m, "relational")
-        return {
-          id: r.id,
-          type: "entry",
-          date: r.movementDate || todayStr,
-          batchNo: r.batchNo || "COMMODITY-WH1",
-          voucherNo: r.voucherNo,
-          plateNumber: r.plateNumber,
-          qtyReceived: Number(r.netQuantity || r.grossQuantity || 0),
-          qtyIssued: 0,
-          balance: Number(r.netQuantity || r.grossQuantity || 0),
-          expiryDate: "",
-          party: r.partyName || "Supplier Arrival",
-          unitPrice: Number(r.unitPrice || 0),
-          remark: r.reason || "Initial Stock Registration",
-          createdAt: r.createdAt,
-        }
-      })
+      return {
+        status: 201,
+        body: hydrateExportProduct(createdRows[0], movements),
+      }
     } else {
       const [batches] = await conn.query(
         "SELECT * FROM `pharma_product_batches` WHERE product_id = ? ORDER BY created_at ASC",
@@ -335,7 +376,12 @@ export async function updateProduct(id, updates = {}) {
 
     const newUnitCost = incomingCost !== undefined ? Number(incomingCost) : Number(current.unit_cost || 0)
     const newQuantity = normalized.quantity !== undefined ? Number(normalized.quantity) : Number(current.quantity || 0)
-    const newStockValue = Math.round(newQuantity * newUnitCost * 100) / 100
+    const newStockValue =
+      updates.total_stock_value !== undefined
+        ? Number(updates.total_stock_value)
+        : updates.totalStockValue !== undefined
+        ? Number(updates.totalStockValue)
+        : Math.round(newQuantity * newUnitCost * 100) / 100
 
     normalized.unit_cost = newUnitCost
     normalized.total_stock_value = newStockValue
@@ -355,103 +401,83 @@ export async function updateProduct(id, updates = {}) {
       await conn.query(`UPDATE \`${targetTable}\` SET ${setClauses}, updated_at = NOW(3) WHERE id = ?`, setValues)
     }
 
-    // 4. CASCADE ATOMIC SYNCHRONIZATION TO DEPENDENT CHILD RECORDS
+    // 4. CASCADE ATOMIC SYNCHRONIZATION TO DEPENDENT CHILD RECORDS (Single batch only)
     if (!isExport) {
-      // Synchronize pharma_product_batches and stock_movements!
-      const syncBatchClauses = []
-      const syncBatchVals = []
+      const [existingBatches] = await conn.query(
+        "SELECT id FROM `pharma_product_batches` WHERE product_id = ?",
+        [cleanId]
+      )
 
-      if (incomingCost !== undefined) {
-        syncBatchClauses.push("unit_cost = ?")
-        syncBatchVals.push(newUnitCost)
-      }
-      if (normalized.batch_no !== undefined) {
-        syncBatchClauses.push("batch_no = ?")
-        syncBatchVals.push(normalized.batch_no)
-      }
-      if (normalized.mfg_date !== undefined) {
-        syncBatchClauses.push("mfg_date = ?")
-        syncBatchVals.push(normalized.mfg_date)
-      }
-      if (normalized.expiry_date !== undefined) {
-        syncBatchClauses.push("expiry_date = ?")
-        syncBatchVals.push(normalized.expiry_date)
-      }
+      if (existingBatches.length <= 1) {
+        const syncBatchClauses = []
+        const syncBatchVals = []
 
-      if (syncBatchClauses.length > 0) {
-        syncBatchVals.push(cleanId)
-        await conn.query(
-          `UPDATE pharma_product_batches SET ${syncBatchClauses.join(", ")}, updated_at = NOW(3) WHERE product_id = ?`,
-          syncBatchVals
-        )
-      }
+        if (incomingCost !== undefined && incomingCost !== null) {
+          syncBatchClauses.push("unit_cost = ?")
+          syncBatchVals.push(newUnitCost)
+        }
+        if (normalized.batch_no && String(normalized.batch_no).trim() !== "") {
+          syncBatchClauses.push("batch_no = ?")
+          syncBatchVals.push(normalized.batch_no)
+        }
+        if (normalized.mfg_date && String(normalized.mfg_date).trim() !== "") {
+          syncBatchClauses.push("mfg_date = ?")
+          syncBatchVals.push(normalized.mfg_date)
+        }
+        if (normalized.expiry_date && String(normalized.expiry_date).trim() !== "") {
+          syncBatchClauses.push("expiry_date = ?")
+          syncBatchVals.push(normalized.expiry_date)
+        }
 
-      // Synchronize initial RECEIPT movements in stock_movements
-      const syncSmClauses = []
-      const syncSmVals = []
+        if (syncBatchClauses.length > 0) {
+          syncBatchVals.push(cleanId)
+          await conn.query(
+            `UPDATE pharma_product_batches SET ${syncBatchClauses.join(", ")}, updated_at = NOW(3) WHERE product_id = ?`,
+            syncBatchVals
+          )
+        }
 
-      if (incomingCost !== undefined) {
-        syncSmClauses.push("unit_price = ?", "unit_cost = ?")
-        syncSmVals.push(newUnitCost, newUnitCost)
-      }
-      if (normalized.batch_no !== undefined) {
-        syncSmClauses.push("batch_no = ?")
-        syncSmVals.push(normalized.batch_no)
-      }
-      if (normalized.expiry_date !== undefined) {
-        syncSmClauses.push("expiry_date = ?")
-        syncSmVals.push(normalized.expiry_date)
-      }
+        // Synchronize initial RECEIPT movements in stock_movements
+        const syncSmClauses = []
+        const syncSmVals = []
 
-      if (syncSmClauses.length > 0) {
-        syncSmVals.push(cleanId)
-        await conn.query(
-          `UPDATE stock_movements SET ${syncSmClauses.join(", ")}, updated_at = NOW(3) WHERE product_id = ? AND (movement_type = 'RECEIPT' OR reference_type = 'STOCK_RECEIPT')`,
-          syncSmVals
-        )
-      }
-    } else {
-      // Synchronize export_warehouse_movements for WH1
-      const syncEwmClauses = []
-      const syncEwmVals = []
+        if (incomingCost !== undefined && incomingCost !== null) {
+          syncSmClauses.push("unit_price = ?", "unit_cost = ?")
+          syncSmVals.push(newUnitCost, newUnitCost)
+        }
+        if (normalized.batch_no && String(normalized.batch_no).trim() !== "") {
+          syncSmClauses.push("batch_no = ?")
+          syncSmVals.push(normalized.batch_no)
+        }
+        if (normalized.expiry_date && String(normalized.expiry_date).trim() !== "") {
+          syncSmClauses.push("expiry_date = ?")
+          syncSmVals.push(normalized.expiry_date)
+        }
 
-      if (incomingCost !== undefined) {
-        syncEwmClauses.push("unit_price = ?")
-        syncEwmVals.push(newUnitCost)
-      }
-      if (normalized.voucher_no !== undefined) {
-        syncEwmClauses.push("voucher_no = ?")
-        syncEwmVals.push(normalized.voucher_no)
-      }
-      if (normalized.plate_number !== undefined) {
-        syncEwmClauses.push("plate_number = ?")
-        syncEwmVals.push(normalized.plate_number)
-      }
-      if (updates.customer || updates.supplierName) {
-        syncEwmClauses.push("party_name = ?")
-        syncEwmVals.push(updates.customer || updates.supplierName)
-      }
-
-      if (syncEwmClauses.length > 0) {
-        syncEwmVals.push(cleanId)
-        await conn.query(
-          `UPDATE export_warehouse_movements SET ${syncEwmClauses.join(", ")}, updated_at = NOW(3) WHERE product_id = ? AND (movement_type = 'GRV_ENTRY' OR movement_type = 'entry')`,
-          syncEwmVals
-        )
+        if (syncSmClauses.length > 0) {
+          syncSmVals.push(cleanId)
+          await conn.query(
+            `UPDATE stock_movements SET ${syncSmClauses.join(", ")}, updated_at = NOW(3) WHERE product_id = ? AND (movement_type = 'RECEIPT' OR reference_type = 'STOCK_RECEIPT')`,
+            syncSmVals
+          )
+        }
       }
     }
 
     // 5. Return the fresh updated product with hydrated child arrays
     const [updatedRows] = await conn.query(`SELECT * FROM \`${targetTable}\` WHERE id = ?`, [cleanId])
-    const unwrapped = unwrapRow(updatedRows[0], "relational")
-
+    
     if (isExport) {
       const [movements] = await conn.query(
         "SELECT * FROM `export_warehouse_movements` WHERE product_id = ? ORDER BY created_at ASC",
         [cleanId]
       )
-      unwrapped.wh1Entries = movements.map((m) => unwrapRow(m, "relational"))
+      return {
+        status: 200,
+        body: hydrateExportProduct(updatedRows[0], movements),
+      }
     } else {
+      const unwrapped = unwrapRow(updatedRows[0], "relational")
       const [batches] = await conn.query(
         "SELECT * FROM `pharma_product_batches` WHERE product_id = ? ORDER BY created_at ASC",
         [cleanId]
@@ -462,15 +488,14 @@ export async function updateProduct(id, updates = {}) {
       )
       unwrapped.batches = batches.map((b) => unwrapRow(b, "relational"))
       unwrapped.binCardEntries = movements.map((m) => unwrapRow(m, "relational"))
-    }
-
-    return {
-      status: 200,
-      body: {
-        ...unwrapped,
-        isExport,
-        warehouseType: isExport ? "EXPORT_WH" : "PHARMA_WH",
-      },
+      return {
+        status: 200,
+        body: {
+          ...unwrapped,
+          isExport: false,
+          warehouseType: "PHARMA_WH",
+        },
+      }
     }
   })
 }

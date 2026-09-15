@@ -858,6 +858,11 @@ export default function Ledger() {
                       },
                       { label: "Post Entry", onClick: () => setShowPostModal(true) },
                     ]}
+                    onReload={async () => {
+                      await store.reloadFromApi()
+                    }}
+                    isReloading={isLoading}
+                    reloadTooltip="Reload journal entries from server"
                   />
                 </div>
                 <TableScrollWrapper>

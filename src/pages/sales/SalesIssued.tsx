@@ -988,6 +988,9 @@ export default function SalesIssued() {
                   variant: "primary",
                 },
               ]}
+              onReload={load}
+              isReloading={loading}
+              reloadTooltip="Reload sales issue register from server"
             />
           </div>
 

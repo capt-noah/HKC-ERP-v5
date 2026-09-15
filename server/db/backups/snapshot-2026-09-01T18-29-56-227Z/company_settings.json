@@ -1,0 +1,77 @@
+[
+  {
+    "id": "default",
+    "payload": {
+      "id": "default",
+      "address": "KIRKOS, Woreda 03, Addis Ababa, Ethiopia",
+      "tin_number": "0012345678",
+      "company_name": "HKC Trading PLC",
+      "base_currency": "ETB",
+      "contact_email": "info@hkctrading.com",
+      "contact_phone": "+251 11 662 4580",
+      "exchange_rates": {},
+      "fiscal_year_start": "July",
+      "storage_free_days": 30,
+      "auto_delivery_notes": true,
+      "tax_brackets_config": [
+        {
+          "max": 2000,
+          "min": 0,
+          "deductible": 0,
+          "ratePercent": 0
+        },
+        {
+          "max": 4000,
+          "min": 2001,
+          "deductible": 200,
+          "ratePercent": 10
+        },
+        {
+          "max": 7000,
+          "min": 4001,
+          "deductible": 400,
+          "ratePercent": 15
+        },
+        {
+          "max": 10000,
+          "min": 7001,
+          "deductible": 750,
+          "ratePercent": 20
+        },
+        {
+          "max": 14000,
+          "min": 10001,
+          "deductible": 1250,
+          "ratePercent": 25
+        },
+        {
+          "max": null,
+          "min": 14001,
+          "deductible": 2650,
+          "ratePercent": 35
+        }
+      ],
+      "pension_expat_exempt": true,
+      "default_payment_terms": "Net 30 Days",
+      "default_reorder_level": 50,
+      "max_storage_month_cap": 4,
+      "pension_employee_rate": 7,
+      "pension_employer_rate": 11,
+      "prevent_negative_stock": true,
+      "tax_payable_account_id": "",
+      "default_cash_account_id": "1000-01-01",
+      "default_cogs_account_id": "6000",
+      "default_damage_account_id": "6000-22",
+      "default_revenue_account_id": "4000-01-01",
+      "payroll_expense_account_id": "",
+      "payroll_payable_account_id": "",
+      "processing_rate_per_quintal": 150,
+      "storage_increment_per_month": 0.25,
+      "default_inventory_account_id": "1410-01",
+      "base_storage_rate_per_quintal_day": 1,
+      "unrealized_exchange_gain_loss_account_id": ""
+    },
+    "created_at": "2026-07-25T10:58:11.315Z",
+    "updated_at": "2026-09-01T18:14:07.323Z"
+  }
+]

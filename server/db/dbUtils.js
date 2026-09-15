@@ -333,10 +333,30 @@ export function unwrapRow(row, storage) {
     if (out.expiryDate === undefined) out.expiryDate = out.expiry_date
   }
 
-  // Normalization for stock_movements
+  // Normalization for stock_movements & export_warehouse_movements
   if (out.product_id !== undefined && out.productId === undefined) out.productId = out.product_id
-  if (out.movement_type !== undefined && out.type === undefined) out.type = out.movement_type
+  if (out.movement_type !== undefined) {
+    if (out.movementType === undefined) out.movementType = out.movement_type
+    if (out.type === undefined) out.type = out.movement_type
+  }
+  if (out.movementType !== undefined) {
+    if (out.movement_type === undefined) out.movement_type = out.movementType
+    if (out.type === undefined) out.type = out.movementType
+  }
+  if (out.type !== undefined) {
+    if (out.movement_type === undefined) out.movement_type = out.type
+    if (out.movementType === undefined) out.movementType = out.type
+  }
   if (out.movement_date !== undefined && out.date === undefined) out.date = out.movement_date
+  if (out.movementDate !== undefined && out.date === undefined) out.date = out.movementDate
+  if (out.selling_price !== undefined && out.selling_price !== null) {
+    out.selling_price = Number(out.selling_price)
+    if (out.sellingPrice === undefined) out.sellingPrice = Number(out.selling_price)
+  }
+  if (out.sellingPrice !== undefined && out.sellingPrice !== null && out.selling_price === undefined) {
+    out.sellingPrice = Number(out.sellingPrice)
+    out.selling_price = Number(out.sellingPrice)
+  }
   if (out.warehouse_id !== undefined) {
     if (out.warehouseId === undefined) out.warehouseId = out.warehouse_id
     if (out.fromWarehouse === undefined) out.fromWarehouse = out.warehouse_id

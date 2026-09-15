@@ -66,9 +66,17 @@ export function evaluateRoleScoping(resourceName: string, userRoles: Role[]): "A
   if (mod === "admin" && userRoles.includes("superadmin")) return "AUTHORIZED"
 
   // Special cross-module allowances:
-  // inventory_admin can read suppliers for GRN
-  if (userRoles.includes("inventory_admin") && (resourceName === "suppliers" || resourceName === "purchase_orders")) {
-    return "AUTHORIZED"
+  const isOperationalStaff = userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager", "inventory_admin"].includes(r))
+  if (isOperationalStaff) {
+    if (["company_settings", "tax_rules", "chart_of_accounts", "accounts", "invoices", "payments"].includes(resourceName)) {
+      return "AUTHORIZED"
+    }
+    if (["warehouses", "inventory_products", "export_products", "pharma_products", "pharma_product_batches", "stock_movements", "export_warehouse_movements", "store_transfers", "store_transfer_items", "quarantine_records"].includes(resourceName)) {
+      return "AUTHORIZED"
+    }
+    if (["customers", "suppliers", "purchase_orders", "sales_orders", "sales_issues", "processing_services", "shipment_documents"].includes(resourceName)) {
+      return "AUTHORIZED"
+    }
   }
 
   return "UNAUTHORIZED_FOR_ROLE"

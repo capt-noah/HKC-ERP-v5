@@ -15,7 +15,7 @@ try {
 }
 
 // ── Hardcoded Default MySQL Configuration Fallbacks ───────────────────────────
-const DEFAULT_MYSQL_HOST = "10.180.50.142"
+const DEFAULT_MYSQL_HOST = "127.0.0.1"
 const DEFAULT_MYSQL_PORT = 3306
 const DEFAULT_MYSQL_USER = "habtom"
 const DEFAULT_MYSQL_PASSWORD = "DMka6&jn0*Wsdfo0"
@@ -30,11 +30,11 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL || DEFAULT_DATABASE_URL,
 
   // Discrete MySQL connection parameters (with hardcoded fallbacks)
-  dbHost: process.env.DB_HOST || DEFAULT_MYSQL_HOST,
-  dbPort: Number(process.env.DB_PORT || DEFAULT_MYSQL_PORT),
-  dbUser: process.env.DB_USER || DEFAULT_MYSQL_USER,
-  dbPassword: process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : DEFAULT_MYSQL_PASSWORD,
-  dbName: process.env.DB_NAME || DEFAULT_MYSQL_DATABASE,
+  dbHost: process.env.DB_HOST || process.env.MYSQL_HOST || DEFAULT_MYSQL_HOST,
+  dbPort: Number(process.env.DB_PORT || process.env.MYSQL_PORT || DEFAULT_MYSQL_PORT),
+  dbUser: process.env.DB_USER || process.env.MYSQL_USER || DEFAULT_MYSQL_USER,
+  dbPassword: process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : (process.env.MYSQL_PASSWORD !== undefined ? process.env.MYSQL_PASSWORD : DEFAULT_MYSQL_PASSWORD),
+  dbName: process.env.DB_NAME || process.env.MYSQL_DATABASE || DEFAULT_MYSQL_DATABASE,
 
   // Authentication & Security
   jwtSecret: process.env.JWT_SECRET || "hkc_erp_v5_fallback_jwt_secret_key_2026",

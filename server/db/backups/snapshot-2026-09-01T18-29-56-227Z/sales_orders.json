@@ -1,0 +1,394 @@
+[
+  {
+    "id": "SO-0947",
+    "payload": {
+      "date": "2026-08-21",
+      "desc": "Sales Order contract for Mekelle Agro-Vet Supplies Union",
+      "items": [
+        {
+          "qty": 7,
+          "name": "fasinash sheep",
+          "unit": "Box",
+          "total": 249452,
+          "productId": "P-1786176590673",
+          "unitPrice": 35636
+        }
+      ],
+      "label": "Abreha Kahsay",
+      "stage": "Shipped",
+      "amount": 249452,
+      "urgent": false,
+      "avatarBg": "bg-emerald-100 text-emerald-800",
+      "currency": "ETB",
+      "customer": "Mekelle Agro-Vet Supplies Union",
+      "initials": "ME",
+      "warehouse": "WH3-VET-CHN",
+      "approvedAt": "2026-08-30T02:10:30.809Z",
+      "approvedBy": "Habtom",
+      "attachment": true,
+      "customerId": "CUST-005",
+      "paymentType": "Credit",
+      "billedAmount": 249452,
+      "paymentTerms": "",
+      "billingStatus": "Fully Billed",
+      "customerGroup": "Domestic Customer (Veterinary)",
+      "customerPhone": "0983904174",
+      "warehouseName": "WH3-VET-CHN - WH3 - Veterinary Import Hub (China)",
+      "approvalStatus": "Approved",
+      "deliveryStatus": "Fully Delivered",
+      "deliveredAmount": 249452
+    },
+    "created_at": "2026-08-21T07:31:11.967Z",
+    "updated_at": "2026-08-31T16:05:18.631Z"
+  },
+  {
+    "id": "SO-1898",
+    "payload": {
+      "date": "2026-08-12",
+      "desc": "Added by Noah",
+      "items": [
+        {
+          "qty": 2500,
+          "name": "LiverFluke 1",
+          "unit": "Box",
+          "total": 1875000,
+          "productId": "P-1786299783215",
+          "unitPrice": 750
+        }
+      ],
+      "label": "Dr Abdella",
+      "stage": "Shipped",
+      "amount": 1875000,
+      "urgent": false,
+      "avatarBg": "bg-emerald-100 text-emerald-800",
+      "currency": "ETB",
+      "customer": "Dr Abdella",
+      "initials": "DR",
+      "warehouse": "WH3-VET-CHN",
+      "attachment": true,
+      "customerId": "CUST-1896",
+      "paymentType": "Cash",
+      "billedAmount": 1875000,
+      "paymentTerms": "",
+      "billingStatus": "Fully Billed",
+      "customerGroup": "Commercial Union",
+      "customerPhone": "0946483763",
+      "warehouseName": "WH3-VET-CHN - WH3 - Veterinary Import Hub (China)",
+      "deliveryStatus": "Fully Delivered",
+      "deliveredAmount": 1875000
+    },
+    "created_at": "2026-08-12T16:10:54.486Z",
+    "updated_at": "2026-08-31T16:05:18.631Z"
+  },
+  {
+    "id": "SO-2975",
+    "payload": {
+      "date": "2026-08-13",
+      "desc": "Sales Order contract for Mekelle Agro-Vet Supplies Union",
+      "items": [
+        {
+          "qty": 330,
+          "name": "fasinash sheep",
+          "unit": "Box",
+          "total": 181500,
+          "productId": "P-1786176590673",
+          "unitPrice": 550
+        }
+      ],
+      "label": "Abreha Kahsay",
+      "stage": "Quote",
+      "amount": 181500,
+      "urgent": false,
+      "avatarBg": "bg-emerald-100 text-emerald-800",
+      "currency": "ETB",
+      "customer": "Mekelle Agro-Vet Supplies Union",
+      "initials": "ME",
+      "warehouse": "WH3-VET-CHN",
+      "attachment": true,
+      "customerId": "CUST-005",
+      "billedAmount": 181500,
+      "paymentTerms": "",
+      "billingStatus": "Fully Billed",
+      "customerGroup": "Domestic Customer (Veterinary)",
+      "customerPhone": "0983904174",
+      "warehouseName": "WH3-VET-CHN - WH3 - Veterinary Import Hub (China)",
+      "deliveryStatus": "Not Delivered",
+      "deliveredAmount": 0
+    },
+    "created_at": "2026-08-13T09:25:33.300Z",
+    "updated_at": "2026-08-31T16:05:18.631Z"
+  },
+  {
+    "id": "SO-3717",
+    "payload": {
+      "date": "2026-08-13",
+      "desc": "Sales Order contract for Mekelle Agro-Vet Supplies Union",
+      "items": [
+        {
+          "qty": 330,
+          "name": "fasinash sheep",
+          "unit": "Box",
+          "total": 181500,
+          "productId": "P-1786176590673",
+          "unitPrice": 550
+        }
+      ],
+      "label": "Abreha Kahsay",
+      "stage": "Quote",
+      "amount": 181500,
+      "urgent": false,
+      "avatarBg": "bg-emerald-100 text-emerald-800",
+      "currency": "ETB",
+      "customer": "Mekelle Agro-Vet Supplies Union",
+      "initials": "ME",
+      "warehouse": "WH3-VET-CHN",
+      "attachment": true,
+      "customerId": "CUST-005",
+      "billedAmount": 181500,
+      "paymentTerms": "",
+      "billingStatus": "Fully Billed",
+      "customerGroup": "Domestic Customer (Veterinary)",
+      "customerPhone": "0983904174",
+      "warehouseName": "WH3-VET-CHN - WH3 - Veterinary Import Hub (China)",
+      "deliveryStatus": "Not Delivered",
+      "deliveredAmount": 0
+    },
+    "created_at": "2026-08-13T09:25:28.310Z",
+    "updated_at": "2026-08-31T16:05:18.631Z"
+  },
+  {
+    "id": "SO-4263",
+    "payload": {
+      "id": "SO-4263",
+      "date": "2026-08-11",
+      "desc": "Noah",
+      "items": [
+        {
+          "qty": 200,
+          "name": "Lamgo",
+          "unit": "Bottle",
+          "total": 110000,
+          "productId": "P-1786432578482",
+          "unitPrice": 550
+        }
+      ],
+      "label": "Hagos",
+      "stage": "Quote",
+      "amount": 110000,
+      "urgent": false,
+      "avatarBg": "bg-emerald-100 text-emerald-800",
+      "currency": "ETB",
+      "customer": "Hagos",
+      "initials": "HA",
+      "warehouse": "WH3-VET-CHN",
+      "approvedAt": "2026-08-31T16:05:17.901Z",
+      "approvedBy": "Habtom",
+      "attachment": true,
+      "customerId": "CUST-4260",
+      "billedAmount": 110000,
+      "paymentTerms": "",
+      "billingStatus": "Fully Billed",
+      "customerGroup": "Commercial Union",
+      "customerPhone": "0945441060",
+      "warehouseName": "WH3-VET-CHN - WH3 - Veterinary Import Hub (China)",
+      "approvalStatus": "Approved",
+      "deliveryStatus": "Not Delivered",
+      "deliveredAmount": 0
+    },
+    "created_at": "2026-08-11T07:26:29.843Z",
+    "updated_at": "2026-08-31T16:05:19.312Z"
+  },
+  {
+    "id": "SO-4296",
+    "payload": {
+      "date": "2026-08-08",
+      "desc": "Sales Order contract for Hamburg Coffee Importers GmbH",
+      "items": [
+        {
+          "qty": 100,
+          "name": "fasinash sheep",
+          "unit": "Box",
+          "total": 15000,
+          "productId": "P-1786176590673",
+          "unitPrice": 150
+        }
+      ],
+      "label": "Lars Weber",
+      "stage": "Shipped",
+      "amount": 15000,
+      "urgent": false,
+      "avatarBg": "bg-emerald-100 text-emerald-800",
+      "currency": "ETB",
+      "customer": "Hamburg Coffee Importers GmbH",
+      "initials": "HA",
+      "warehouse": "WH3-VET-CHN",
+      "attachment": true,
+      "customerId": "CUST-001",
+      "billedAmount": 15000,
+      "paymentTerms": "",
+      "billingStatus": "Fully Billed",
+      "customerGroup": "International Buyer (Export)",
+      "customerPhone": "0983904174",
+      "warehouseName": "WH3-VET-CHN - WH3 - Veterinary Import Hub (China)",
+      "deliveryStatus": "Fully Delivered",
+      "deliveredAmount": 15000
+    },
+    "created_at": "2026-08-08T08:31:26.800Z",
+    "updated_at": "2026-08-31T16:05:18.631Z"
+  },
+  {
+    "id": "SO-4789",
+    "payload": {
+      "date": "2026-08-07",
+      "desc": "Sales Order contract for Bishoftu Commercial Poultry Farms",
+      "items": [
+        {
+          "qty": 200,
+          "name": "Ciprofloxacin 500mg",
+          "unit": "Box",
+          "total": 240000,
+          "productId": "P-1786117484549",
+          "unitPrice": 1200
+        }
+      ],
+      "label": "Dr. Girma Tadesse",
+      "stage": "Quote",
+      "amount": 240000,
+      "urgent": false,
+      "avatarBg": "bg-emerald-100 text-emerald-800",
+      "currency": "ETB",
+      "customer": "Bishoftu Commercial Poultry Farms",
+      "initials": "BI",
+      "warehouse": "WH2-VET-IND",
+      "attachment": true,
+      "customerId": "CUST-004",
+      "billedAmount": 240000,
+      "paymentTerms": "",
+      "billingStatus": "Fully Billed",
+      "customerGroup": "Domestic Customer (Veterinary)",
+      "warehouseName": "WH2-VET-IND - WH2 - Veterinary Import Hub (India)",
+      "deliveryStatus": "Not Delivered",
+      "deliveredAmount": 0
+    },
+    "created_at": "2026-08-07T16:14:45.726Z",
+    "updated_at": "2026-08-31T16:05:18.631Z"
+  },
+  {
+    "id": "SO-6301",
+    "payload": {
+      "date": "2026-08-14",
+      "desc": "Sales Order contract for Dr Abdella",
+      "items": [
+        {
+          "qty": 343,
+          "name": "yadeal adnew",
+          "unit": "Box",
+          "total": 154350,
+          "productId": "P-1786707086060",
+          "unitPrice": 450
+        }
+      ],
+      "label": "Dr Abdella",
+      "stage": "Shipped",
+      "amount": 154350,
+      "urgent": false,
+      "avatarBg": "bg-emerald-100 text-emerald-800",
+      "currency": "ETB",
+      "customer": "Dr Abdella",
+      "initials": "DR",
+      "warehouse": "WH2-VET-IND",
+      "attachment": true,
+      "customerId": "CUST-1896",
+      "billedAmount": 154350,
+      "paymentTerms": "",
+      "billingStatus": "Fully Billed",
+      "customerGroup": "Commercial Union",
+      "customerPhone": "0946483763",
+      "warehouseName": "WH2-VET-IND - WH2 - Veterinary Import Hub (India)",
+      "deliveryStatus": "Fully Delivered",
+      "deliveredAmount": 154350
+    },
+    "created_at": "2026-08-14T11:35:08.632Z",
+    "updated_at": "2026-08-31T16:05:18.631Z"
+  },
+  {
+    "id": "SO-8984",
+    "payload": {
+      "date": "2026-08-13",
+      "desc": "Sales Order contract for Mekelle Agro-Vet Supplies Union",
+      "items": [
+        {
+          "qty": 330,
+          "name": "fasinash sheep",
+          "unit": "Box",
+          "total": 181500,
+          "productId": "P-1786176590673",
+          "unitPrice": 550
+        }
+      ],
+      "label": "Abreha Kahsay",
+      "stage": "Quote",
+      "amount": 181500,
+      "urgent": false,
+      "avatarBg": "bg-emerald-100 text-emerald-800",
+      "currency": "ETB",
+      "customer": "Mekelle Agro-Vet Supplies Union",
+      "initials": "ME",
+      "warehouse": "WH3-VET-CHN",
+      "attachment": true,
+      "customerId": "CUST-005",
+      "billedAmount": 181500,
+      "paymentTerms": "",
+      "billingStatus": "Fully Billed",
+      "customerGroup": "Domestic Customer (Veterinary)",
+      "customerPhone": "0983904174",
+      "warehouseName": "WH3-VET-CHN - WH3 - Veterinary Import Hub (China)",
+      "deliveryStatus": "Not Delivered",
+      "deliveredAmount": 0
+    },
+    "created_at": "2026-08-13T09:25:32.473Z",
+    "updated_at": "2026-08-31T16:05:18.631Z"
+  },
+  {
+    "id": "SO-9818",
+    "payload": {
+      "date": "2026-08-26",
+      "desc": "Sales Order contract for Mekelle Agro-Vet Supplies Union",
+      "items": [
+        {
+          "qty": 7,
+          "name": "yadeal adnew",
+          "unit": "Box",
+          "total": 11130,
+          "productId": "P-1786342889792",
+          "unitPrice": 1590
+        }
+      ],
+      "label": "Abreha Kahsay",
+      "stage": "Shipped",
+      "amount": 11130,
+      "urgent": false,
+      "avatarBg": "bg-emerald-100 text-emerald-800",
+      "currency": "ETB",
+      "customer": "Mekelle Agro-Vet Supplies Union",
+      "initials": "ME",
+      "warehouse": "WH3-VET-CHN",
+      "approvedAt": "2026-08-28T04:05:36.806Z",
+      "approvedBy": "Habtom",
+      "attachment": true,
+      "customerId": "CUST-005",
+      "paymentType": "Cash",
+      "billedAmount": 159000,
+      "paymentTerms": "",
+      "billingStatus": "Fully Billed",
+      "customerGroup": "Domestic Customer (Veterinary)",
+      "customerPhone": "0983904174",
+      "warehouseName": "WH3-VET-CHN - WH3 - Veterinary Import Hub (China)",
+      "approvalStatus": "Approved",
+      "deliveryStatus": "Fully Delivered",
+      "deliveredAmount": 11130
+    },
+    "created_at": "2026-08-26T06:00:08.996Z",
+    "updated_at": "2026-08-31T16:05:18.631Z"
+  }
+]

@@ -1,0 +1,224 @@
+{
+  "timestamp": "2026-09-01T04:47:06.283Z",
+  "backupDir": "/Users/menelikalemayehu/Documents/HKC-ERP-V4/server/db/backups/snapshot-2026-09-01T04-47-06-277Z",
+  "tables": {
+    "warehouses": {
+      "resource": "warehouses",
+      "storage": "jsonb_document",
+      "module": "inventory",
+      "recordCount": 3,
+      "file": "warehouses.json"
+    },
+    "inventory_products": {
+      "resource": "inventory_products",
+      "storage": "jsonb_document",
+      "module": "inventory",
+      "recordCount": 8,
+      "file": "inventory_products.json"
+    },
+    "stock_movements": {
+      "resource": "stock_movements",
+      "storage": "jsonb_document",
+      "module": "inventory",
+      "recordCount": 3,
+      "file": "stock_movements.json"
+    },
+    "store_transfers": {
+      "resource": "store_transfers",
+      "storage": "jsonb_document",
+      "module": "inventory",
+      "recordCount": 2,
+      "file": "store_transfers.json"
+    },
+    "sales_orders": {
+      "resource": "sales_orders",
+      "storage": "jsonb_document",
+      "module": "sales",
+      "recordCount": 10,
+      "file": "sales_orders.json"
+    },
+    "purchase_orders": {
+      "resource": "purchase_orders",
+      "storage": "jsonb_document",
+      "module": "sales",
+      "recordCount": 1,
+      "file": "purchase_orders.json"
+    },
+    "sales_issues": {
+      "resource": "sales_issues",
+      "storage": "relational",
+      "module": "sales",
+      "recordCount": 11,
+      "file": "sales_issues.json"
+    },
+    "sales_issue_items": {
+      "resource": "sales_issue_items",
+      "storage": "relational",
+      "module": "sales",
+      "recordCount": 11,
+      "file": "sales_issue_items.json"
+    },
+    "customers": {
+      "resource": "customers",
+      "storage": "jsonb_document",
+      "module": "sales",
+      "recordCount": 10,
+      "file": "customers.json"
+    },
+    "suppliers": {
+      "resource": "suppliers",
+      "storage": "jsonb_document",
+      "module": "sales",
+      "recordCount": 6,
+      "file": "suppliers.json"
+    },
+    "processing_services": {
+      "resource": "processing_services",
+      "storage": "relational",
+      "module": "sales",
+      "recordCount": 1,
+      "file": "processing_services.json"
+    },
+    "shipment_documents": {
+      "resource": "shipment_documents",
+      "storage": "relational",
+      "module": "sales",
+      "recordCount": 0,
+      "file": "shipment_documents.json"
+    },
+    "hkc_doc_records": {
+      "resource": "hkc_doc_records",
+      "storage": "jsonb_document",
+      "module": "sales",
+      "recordCount": 0,
+      "file": "hkc_doc_records.json"
+    },
+    "chart_of_accounts": {
+      "resource": "chart_of_accounts",
+      "storage": "jsonb_document",
+      "module": "finance",
+      "recordCount": 105,
+      "file": "chart_of_accounts.json"
+    },
+    "journal_entries": {
+      "resource": "journal_entries",
+      "storage": "jsonb_document",
+      "module": "finance",
+      "recordCount": 32,
+      "file": "journal_entries.json"
+    },
+    "journal_entry_lines": {
+      "resource": "journal_entry_lines",
+      "storage": "jsonb_document",
+      "module": "finance",
+      "recordCount": 64,
+      "file": "journal_entry_lines.json"
+    },
+    "invoices": {
+      "resource": "invoices",
+      "storage": "jsonb_document",
+      "module": "finance",
+      "recordCount": 26,
+      "file": "invoices.json"
+    },
+    "payments": {
+      "resource": "payments",
+      "storage": "jsonb_document",
+      "module": "finance",
+      "recordCount": 0,
+      "file": "payments.json"
+    },
+    "expenses": {
+      "resource": "expenses",
+      "storage": "jsonb_document",
+      "module": "finance",
+      "recordCount": 0,
+      "file": "expenses.json"
+    },
+    "recurring_expense_schedules": {
+      "resource": "recurring_expense_schedules",
+      "storage": "jsonb_document",
+      "module": "finance",
+      "recordCount": 0,
+      "file": "recurring_expense_schedules.json"
+    },
+    "vehicles": {
+      "resource": "vehicles",
+      "storage": "jsonb_document",
+      "module": "finance",
+      "recordCount": 0,
+      "file": "vehicles.json"
+    },
+    "company_settings": {
+      "resource": "company_settings",
+      "storage": "jsonb_document",
+      "module": "finance",
+      "recordCount": 1,
+      "file": "company_settings.json"
+    },
+    "tax_rules": {
+      "resource": "tax_rules",
+      "storage": "jsonb_document",
+      "module": "finance",
+      "recordCount": 8,
+      "file": "tax_rules.json"
+    },
+    "employees": {
+      "resource": "employees",
+      "storage": "jsonb_document",
+      "module": "hr",
+      "recordCount": 8,
+      "file": "employees.json"
+    },
+    "attendance_records": {
+      "resource": "attendance_records",
+      "storage": "jsonb_document",
+      "module": "hr",
+      "recordCount": 1,
+      "file": "attendance_records.json"
+    },
+    "payroll_periods": {
+      "resource": "payroll_periods",
+      "storage": "jsonb_document",
+      "module": "hr",
+      "recordCount": 2,
+      "file": "payroll_periods.json"
+    },
+    "payroll_records": {
+      "resource": "payroll_records",
+      "storage": "jsonb_document",
+      "module": "hr",
+      "recordCount": 12,
+      "file": "payroll_records.json"
+    },
+    "leave_types": {
+      "resource": "leave_types",
+      "storage": "jsonb_document",
+      "module": "hr",
+      "recordCount": 5,
+      "file": "leave_types.json"
+    },
+    "leave_requests": {
+      "resource": "leave_requests",
+      "storage": "jsonb_document",
+      "module": "hr",
+      "recordCount": 4,
+      "file": "leave_requests.json"
+    },
+    "users": {
+      "resource": "users",
+      "storage": "relational",
+      "module": "admin",
+      "recordCount": 4,
+      "file": "users.json"
+    },
+    "user_activity_logs": {
+      "resource": "user_activity_logs",
+      "storage": "relational",
+      "module": "admin",
+      "recordCount": 1000,
+      "file": "user_activity_logs.json"
+    }
+  },
+  "totalRecords": 1338
+}

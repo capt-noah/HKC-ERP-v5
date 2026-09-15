@@ -8,86 +8,13 @@ import {
   drizzleDeleteRow,
   drizzleReplaceRows,
 } from "../../db/drizzleCrud.js"
+import { inventoryService } from "../inventory/inventoryService.js"
 import { pool } from "../../db/client.js"
-import crypto from "node:crypto"
+import { unwrapRow } from "../../db/dbUtils.js"
 import { getLocalDateString } from "../../utils/dateUtils.js"
-import { getDefaultWarehouseForType } from "../../utils/warehouseUtils.js"
+import crypto from "node:crypto"
 
 // ── Service Logic ─────────────────────────────────────────────────────────────
-
-function matchPaymentsForIssue(allPayments, issueId, fsNo, refNo) {
-  if (!Array.isArray(allPayments) || allPayments.length === 0) return []
-  const cleanId = String(issueId || "").trim()
-  const cleanFs = String(fsNo || "").trim()
-  const cleanRef = String(refNo || "").trim()
-
-  return allPayments.filter((raw) => {
-    const p = raw?.payload ? { ...raw.payload, ...raw } : raw
-    const pIssueId = String(p.sales_issue_id || p.salesIssueId || "").trim()
-    const pInvId = String(p.linked_invoice_id || p.linkedInvoiceId || "").trim()
-    const pRef = String(p.reference || "").trim()
-    const pOrderId = String(p.sales_order_id || p.salesOrderId || "").trim()
-
-    // 1. Match on sales_issue_id
-    if (cleanId && pIssueId && (pIssueId === cleanId || pIssueId.toLowerCase() === cleanId.toLowerCase())) return true
-    if (cleanFs && pIssueId && (pIssueId === cleanFs || pIssueId.toLowerCase() === cleanFs.toLowerCase())) return true
-
-    // 2. Match on linked_invoice_id (e.g. INV-SI-FS-2026-9560 or INV-SI-4122)
-    if (cleanId && pInvId && (pInvId === cleanId || pInvId === `INV-SI-${cleanId}` || pInvId === `INV-${cleanId}` || pInvId.toLowerCase().includes(cleanId.toLowerCase()))) return true
-    if (cleanFs && pInvId && (pInvId === `INV-SI-${cleanFs}` || pInvId === `INV-${cleanFs}` || pInvId.toLowerCase().includes(cleanFs.toLowerCase()))) return true
-
-    // 3. Match on reference string if it contains cleanId or cleanFs
-    if (cleanId && pRef && pRef.toLowerCase().includes(cleanId.toLowerCase())) return true
-    if (cleanFs && pRef && pRef.toLowerCase().includes(cleanFs.toLowerCase())) return true
-
-    // 4. Fallback for unlinked payments having order ID
-    if (!pIssueId && (!pInvId || pInvId === "INV-GENERAL")) {
-      if (cleanRef && pOrderId && (pOrderId === cleanRef || pOrderId.toLowerCase() === cleanRef.toLowerCase())) return true
-    }
-
-    return false
-  })
-}
-
-async function getAllWarehouses() {
-  const whRes = await drizzleListRows({ resource: getResource("warehouses") }).catch(() => ({ body: [] }))
-  return Array.isArray(whRes?.body) ? whRes.body.map(w => w?.payload ? { ...w.payload, ...w } : w) : []
-}
-
-function isExportWarehouseType(warehouseIdOrObj, allWarehouses = []) {
-  if (!warehouseIdOrObj) return false
-  const targetId = typeof warehouseIdOrObj === "object" ? (warehouseIdOrObj.id || warehouseIdOrObj.warehouse_id || "") : String(warehouseIdOrObj)
-  const cleanId = String(targetId).trim().toUpperCase()
-
-  const matched = allWarehouses.find(w => 
-    String(w.id || "").toUpperCase() === cleanId || 
-    String(w.code || "").toUpperCase() === cleanId ||
-    String(w.name || "").toUpperCase() === cleanId
-  )
-
-  if (matched) {
-    const whType = String(matched.warehouse_type || matched.warehouseType || matched.type || "").toUpperCase()
-    if (whType === "EXPORT_WH" || whType.includes("EXPORT") || whType.includes("AGRI") || whType.includes("COMMODITY")) {
-      return true
-    }
-    if (whType === "PHARMA_WH" || whType.includes("PHARMA") || whType.includes("VET") || whType.includes("CENTRAL") || whType.includes("DEPOT")) {
-      return false
-    }
-  }
-
-  // Heuristic fallback
-  return cleanId.includes("EXP") || cleanId.includes("AGRI") || cleanId.startsWith("WH1") || cleanId.includes("WH-01")
-}
-
-async function getAllProductsForSales() {
-  const [expRes, pharmaRes] = await Promise.all([
-    drizzleListRows({ resource: getResource("export_products") }).catch(() => ({ body: [] })),
-    drizzleListRows({ resource: getResource("pharma_products") }).catch(() => ({ body: [] })),
-  ])
-  const exp = Array.isArray(expRes?.body) ? expRes.body : []
-  const pharma = Array.isArray(pharmaRes?.body) ? pharmaRes.body : []
-  return [...exp, ...pharma]
-}
 
 export async function listSalesIssues(query = {}) {
   try {
@@ -101,13 +28,11 @@ export async function listSalesIssues(query = {}) {
     })
 
     const issues = Array.isArray(issuesRes.body) ? issuesRes.body : []
-    const [itemsRes, customersRes, ordersRes, allProducts, paymentsRes, allWarehouses] = await Promise.all([
+    const [itemsRes, customersRes, ordersRes, productsRes] = await Promise.all([
       drizzleListRows({ resource: getResource("sales_issue_items") }),
       drizzleListRows({ resource: getResource("customers") }).catch(() => ({ body: [] })),
       drizzleListRows({ resource: getResource("sales_orders") }).catch(() => ({ body: [] })),
-      getAllProductsForSales(),
-      drizzleListRows({ resource: getResource("payments") }).catch(() => ({ body: [] })),
-      getAllWarehouses(),
+      inventoryService.listProducts().catch(() => ({ body: [] })),
     ])
 
     const allCustomers = Array.isArray(customersRes.body) ? customersRes.body : []
@@ -116,9 +41,8 @@ export async function listSalesIssues(query = {}) {
     const allOrders = Array.isArray(ordersRes.body) ? ordersRes.body : []
     const orderMap = new Map(allOrders.map((o) => [o.id, o.payload ? { ...o.payload, ...o } : o]))
 
+    const allProducts = Array.isArray(productsRes.body) ? productsRes.body : []
     const productMap = new Map(allProducts.map((p) => [p.id, p.payload ? { ...p.payload, ...p } : p]))
-
-    const allPayments = Array.isArray(paymentsRes.body) ? paymentsRes.body : []
 
     const allItems = Array.isArray(itemsRes.body) ? itemsRes.body : []
     const itemsByIssueId = new Map()
@@ -156,7 +80,7 @@ export async function listSalesIssues(query = {}) {
       let rawDate = issue.sale_date || issue.issueDate || issue.issue_date || issue.created_at || new Date()
       let sale_date = typeof rawDate === "string" 
         ? (rawDate.includes("T") ? rawDate.split("T")[0] : rawDate)
-        : getLocalDateString(rawDate)
+        : (rawDate instanceof Date ? rawDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
 
       const matchedCust = customerMap.get(issue.customer_id)
       const matchedOrder = orderMap.get(issue.sales_order_id) || orderMap.get(reference_no)
@@ -165,44 +89,19 @@ export async function listSalesIssues(query = {}) {
 
       const customer_name = issue.customer_name || matchedCust?.name || matchedOrder?.customer || issue.customer || issue.customerName || issue.customer_id || "Customer"
       const customer_id = issue.customer_id || matchedCust?.id || matchedOrder?.customerId || customer_name
-      const defaultExpWh = allWarehouses.find(w => isExportWarehouseType(w, allWarehouses))?.id || allWarehouses[0]?.id || "WH1"
-      const warehouse_id = issue.warehouse_id || matchedOrder?.warehouse || matchedProd?.warehouse || issue.warehouseId || issue.warehouse || defaultExpWh
-      const isExport = isExportWarehouseType(warehouse_id, allWarehouses)
+      const warehouse_id = issue.warehouse_id || matchedOrder?.warehouse || matchedProd?.warehouse || issue.warehouseId || issue.warehouse || "WH1"
+      const isWh1 = (warehouse_id || "").toUpperCase().startsWith("WH1") || (warehouse_id || "").toUpperCase().includes("EXP")
 
       const payment_type = issue.payment_type || issue.paymentType || issue.payment_method || issue.paymentMethod || "Cash"
       const status = issue.status || "Draft"
 
       const subtotal = Number(issue.subtotal_amount || issue.subtotal || issueItems.reduce((s, i) => s + (i.amount || 0), 0) || 0)
       const vat_amount = Number(issue.tax_amount || issue.vat_amount || 0)
-      const vat_rate = Number(issue.vat_rate !== undefined ? issue.vat_rate : (vat_amount > 0 && subtotal > 0 ? Math.round((vat_amount / subtotal) * 100) : (isExport ? 0 : 15)))
+      const vat_rate = Number(issue.vat_rate !== undefined ? issue.vat_rate : (vat_amount > 0 && subtotal > 0 ? Math.round((vat_amount / subtotal) * 100) : (isWh1 ? 0 : 15)))
       const total_amount = Number(issue.total_amount || issue.totalAmount || (subtotal + vat_amount) || 0)
       const total_quantity = Number(issue.total_quantity || issue.totalQuantity || issueItems.reduce((s, i) => s + (i.quantity || 0), 0) || 0)
-
-      // Aggregate payments recorded for this sales issue
-      const matchedPayments = matchPaymentsForIssue(allPayments, primaryId, fs_no, reference_no)
-      const paidFromPayments = matchedPayments.reduce((sum, p) => {
-        const pObj = p?.payload ? { ...p.payload, ...p } : p
-        return sum + Number(pObj.amount || 0)
-      }, 0)
-
-      const isCredit = (payment_type || "").toLowerCase().includes("credit")
-      const isCash = !isCredit
-
-      const amount_paid = isCash
-        ? total_amount
-        : Math.max(paidFromPayments, Number(issue.amount_paid || issue.amountPaid || 0))
-
-      const balance_due = isCash
-        ? 0
-        : Number(Math.max(0, total_amount - amount_paid).toFixed(2))
-
-      const settlement_status = isCash || (total_amount > 0 && balance_due <= 0.01 && amount_paid > 0)
-        ? "Fully Settled"
-        : (amount_paid > 0 ? "Ongoing" : "Unpaid")
-
-      const payment_status = settlement_status === "Fully Settled"
-        ? "Paid"
-        : (amount_paid > 0 ? "Ongoing" : (issue.payment_status || "Unpaid"))
+      const amount_paid = Number(issue.amount_paid || issue.amountPaid || 0)
+      const balance_due = Number(issue.balance_due || issue.balanceDue || Math.max(0, total_amount - amount_paid))
 
       return {
         ...issue,
@@ -238,13 +137,8 @@ export async function listSalesIssues(query = {}) {
         total_quantity,
         totalQuantity: total_quantity,
         amount_paid,
-        amountPaid: amount_paid,
         balance_due,
-        balanceDue: balance_due,
-        settlement_status,
-        settlementStatus: settlement_status,
-        payment_status,
-        paymentStatus: payment_status,
+        settlement_status: issue.settlement_status || (payment_type === "Cash" ? "Fully Settled" : (total_amount > 0 && amount_paid >= total_amount ? "Fully Settled" : amount_paid > 0 ? "Ongoing" : "Unpaid")),
         created_by: issue.created_by || issue.createdBy || "System",
         items: issueItems,
         savedToDb: true,
@@ -281,6 +175,15 @@ export async function listSalesIssues(query = {}) {
     console.error("[listSalesIssues exception]:", err)
     return { status: 500, body: { error: "Failed to list sales issues", message: err.message } }
   }
+}
+
+export async function normalizeId(id) {
+  return typeof id === "object" && id !== null ? id.id || id.fs_no || String(id) : String(id)
+}
+
+function isExportWarehouse(wh) {
+  const s = String(wh || "").toUpperCase()
+  return s.startsWith("WH1") || s.includes("EXP") || s.includes("EXPORT")
 }
 
 export async function getSalesIssue(id) {
@@ -320,13 +223,11 @@ export async function getSalesIssue(id) {
     }
 
     const rawIssue = issueRes.body
-    const [itemsRes, customersRes, ordersRes, allProducts, paymentsRes, allWarehouses] = await Promise.all([
+    const [itemsRes, customersRes, ordersRes, productsRes] = await Promise.all([
       drizzleListRows({ resource: getResource("sales_issue_items") }),
       drizzleListRows({ resource: getResource("customers") }).catch(() => ({ body: [] })),
       drizzleListRows({ resource: getResource("sales_orders") }).catch(() => ({ body: [] })),
-      getAllProductsForSales(),
-      drizzleListRows({ resource: getResource("payments") }).catch(() => ({ body: [] })),
-      getAllWarehouses(),
+      inventoryService.listProducts().catch(() => ({ body: [] })),
     ])
 
     const allCustomers = Array.isArray(customersRes.body) ? customersRes.body : []
@@ -335,120 +236,75 @@ export async function getSalesIssue(id) {
     const allOrders = Array.isArray(ordersRes.body) ? ordersRes.body : []
     const orderMap = new Map(allOrders.map((o) => [o.id, o.payload ? { ...o.payload, ...o } : o]))
 
+    const allProducts = Array.isArray(productsRes.body) ? productsRes.body : []
     const productMap = new Map(allProducts.map((p) => [p.id, p.payload ? { ...p.payload, ...p } : p]))
-
-    const allPayments = Array.isArray(paymentsRes.body) ? paymentsRes.body : []
 
     const issue = rawIssue?.payload ? { ...rawIssue.payload, ...rawIssue } : rawIssue
     const fs_no = issue.fs_no || issue.fsNo || issue.issue_number || issue.issueNumber || String(issue.id)
     const primaryId = fs_no || String(issue.id)
 
-    const reference_no = issue.reference_no || issue.referenceNo || issue.sales_order_id || issue.salesOrderId || ""
-    const matchedCust = customerMap.get(issue.customer_id)
-    const matchedOrder = orderMap.get(issue.sales_order_id) || orderMap.get(reference_no)
-
     const allItems = Array.isArray(itemsRes.body) ? itemsRes.body : []
-    let matchedRawItems = allItems.filter((i) => {
-      const item = i?.payload ? { ...i.payload, ...i } : i
-      const parentId = item.sales_issue_id || item.salesIssueId || item.sales_order_id
-      return (
-        parentId === id ||
-        parentId === cleanId ||
-        parentId === issue.id ||
-        parentId === issue.fs_no ||
-        parentId === issue.fsNo ||
-        parentId === issue.issue_number ||
-        parentId === issue.issueNumber ||
-        (issue.reference_no && parentId === issue.reference_no) ||
-        (issue.sales_order_id && parentId === issue.sales_order_id)
-      )
-    })
-
-    if (matchedRawItems.length === 0 && Array.isArray(issue.items) && issue.items.length > 0) {
-      matchedRawItems = issue.items
-    }
-
-    const items = matchedRawItems.map((rawItem) => {
-      const item = rawItem?.payload ? { ...rawItem.payload, ...rawItem } : rawItem
-      const prodId = item.item_id || item.product_id || item.productId || item.id
-      const matchedProd = productMap.get(prodId) || productMap.get(item.product_id) || productMap.get(item.item_id)
-      
-      let uPrice = Number(item.unit_price || item.unitPrice || item.price || 0)
-      if (uPrice <= 0 && matchedOrder && Array.isArray(matchedOrder.items)) {
-        const soItem = matchedOrder.items.find((si) => (si.productId === prodId || si.product_id === prodId || si.item_id === prodId || si.id === prodId))
-        if (soItem && Number(soItem.unitPrice || soItem.unit_price || 0) > 0) {
-          uPrice = Number(soItem.unitPrice || soItem.unit_price)
+    const items = allItems
+      .filter((i) => {
+        const item = i?.payload ? { ...i.payload, ...i } : i
+        const parentId = item.sales_issue_id || item.salesIssueId || item.sales_order_id
+        return (
+          parentId === id ||
+          parentId === cleanId ||
+          parentId === issue.id ||
+          parentId === issue.fs_no ||
+          parentId === issue.fsNo ||
+          parentId === issue.issue_number ||
+          parentId === issue.issueNumber ||
+          (issue.reference_no && parentId === issue.reference_no) ||
+          (issue.sales_order_id && parentId === issue.sales_order_id)
+        )
+      })
+      .map((rawItem) => {
+        const item = rawItem?.payload ? { ...rawItem.payload, ...rawItem } : rawItem
+        const matchedProd = productMap.get(item.product_id) || productMap.get(item.item_id)
+        return {
+          id: item.id,
+          sales_issue_id: primaryId,
+          item_id: item.item_id || item.product_id || item.id,
+          product_id: item.product_id || item.item_id || item.id,
+          item_name: item.item_name || item.product_name || matchedProd?.name || item.name || "Item",
+          batch_id: item.batch_id || item.batch_no || item.batch_number || item.batch || "BATCH-MAIN",
+          batch_no: item.batch_no || item.batch_id || item.batch_number || item.batch || "BATCH-MAIN",
+          packaging_unit: item.packaging_unit || item.packagingUnit || item.unit || matchedProd?.unit || "Box",
+          available_quantity: Number(item.available_quantity || item.availableQuantity || matchedProd?.quantity || 1000),
+          quantity: Number(item.quantity || item.qty || 0),
+          unit_price: Number(item.unit_price || item.unitPrice || item.price || 0),
+          amount: Number(item.amount || item.total_price || item.totalPrice || (Number(item.quantity || 0) * Number(item.unit_price || 0))),
         }
-      }
-      if (uPrice <= 0 && matchedProd) {
-        uPrice = Number(matchedProd.selling_price || matchedProd.sellingPrice || 0)
-      }
+      })
 
-      const q = Number(item.quantity || item.qty || 0)
-      return {
-        id: item.id,
-        sales_issue_id: primaryId,
-        item_id: prodId,
-        product_id: prodId,
-        item_name: item.item_name || item.product_name || matchedProd?.name || item.name || "Item",
-        batch_id: item.batch_id || item.batch_no || item.batch_number || item.batch || "BATCH-MAIN",
-        batch_no: item.batch_no || item.batch_id || item.batch_number || item.batch || "BATCH-MAIN",
-        packaging_unit: item.packaging_unit || item.packagingUnit || item.unit || matchedProd?.unit || "Box",
-        available_quantity: Number(item.available_quantity || item.availableQuantity || matchedProd?.quantity || 1000),
-        quantity: q,
-        unit_price: uPrice,
-        unitPrice: uPrice,
-        amount: Number(item.amount || item.total_price || item.totalPrice || (q * uPrice)),
-      }
-    })
+    const reference_no = issue.reference_no || issue.referenceNo || issue.sales_order_id || issue.salesOrderId || ""
     let rawDate = issue.sale_date || issue.issueDate || issue.issue_date || issue.created_at || new Date()
     let sale_date = typeof rawDate === "string" 
       ? (rawDate.includes("T") ? rawDate.split("T")[0] : rawDate)
-      : getLocalDateString(rawDate)
+      : (rawDate instanceof Date ? rawDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
 
+    const matchedCust = customerMap.get(issue.customer_id)
+    const matchedOrder = orderMap.get(issue.sales_order_id) || orderMap.get(reference_no)
     const firstItem = items[0]
     const matchedProd = firstItem ? (productMap.get(firstItem.product_id) || productMap.get(firstItem.item_id)) : null
 
     const customer_name = issue.customer_name || matchedCust?.name || matchedOrder?.customer || issue.customer || issue.customerName || issue.customer_id || "Customer"
     const customer_id = issue.customer_id || matchedCust?.id || matchedOrder?.customerId || customer_name
-    const defaultExpWh = allWarehouses.find(w => isExportWarehouseType(w, allWarehouses))?.id || allWarehouses[0]?.id || "WH1"
-    const warehouse_id = issue.warehouse_id || matchedOrder?.warehouse || matchedProd?.warehouse || issue.warehouseId || issue.warehouse || defaultExpWh
-    const isExport = isExportWarehouseType(warehouse_id, allWarehouses)
+    const warehouse_id = issue.warehouse_id || matchedOrder?.warehouse || matchedProd?.warehouse || issue.warehouseId || issue.warehouse || "WH1"
+    const isWh1 = isExportWarehouse(warehouse_id)
 
     const payment_type = issue.payment_type || issue.paymentType || issue.payment_method || issue.paymentMethod || "Cash"
     const status = issue.status || "Draft"
 
     const subtotal = Number(issue.subtotal_amount || issue.subtotal || items.reduce((s, i) => s + (i.amount || 0), 0) || 0)
     const vat_amount = Number(issue.tax_amount || issue.vat_amount || 0)
-    const vat_rate = Number(issue.vat_rate !== undefined ? issue.vat_rate : (vat_amount > 0 && subtotal > 0 ? Math.round((vat_amount / subtotal) * 100) : (isExport ? 0 : 15)))
+    const vat_rate = Number(issue.vat_rate !== undefined ? issue.vat_rate : (vat_amount > 0 && subtotal > 0 ? Math.round((vat_amount / subtotal) * 100) : (isWh1 ? 0 : 15)))
     const total_amount = Number(issue.total_amount || issue.totalAmount || (subtotal + vat_amount) || 0)
     const total_quantity = Number(issue.total_quantity || issue.totalQuantity || items.reduce((s, i) => s + (i.quantity || 0), 0) || 0)
-
-    // Aggregate payments recorded for this sales issue
-    const matchedPayments = matchPaymentsForIssue(allPayments, primaryId, fs_no, reference_no)
-    const paidFromPayments = matchedPayments.reduce((sum, p) => {
-      const pObj = p?.payload ? { ...p.payload, ...p } : p
-      return sum + Number(pObj.amount || 0)
-    }, 0)
-
-    const isCredit = (payment_type || "").toLowerCase().includes("credit")
-    const isCash = !isCredit
-
-    const amount_paid = isCash
-      ? total_amount
-      : Math.max(paidFromPayments, Number(issue.amount_paid || issue.amountPaid || 0))
-
-    const balance_due = isCash
-      ? 0
-      : Number(Math.max(0, total_amount - amount_paid).toFixed(2))
-
-    const settlement_status = isCash || (total_amount > 0 && balance_due <= 0.01 && amount_paid > 0)
-      ? "Fully Settled"
-      : (amount_paid > 0 ? "Ongoing" : "Unpaid")
-
-    const payment_status = settlement_status === "Fully Settled"
-      ? "Paid"
-      : (amount_paid > 0 ? "Ongoing" : (issue.payment_status || "Unpaid"))
+    const amount_paid = Number(issue.amount_paid || issue.amountPaid || 0)
+    const balance_due = Number(issue.balance_due || issue.balanceDue || Math.max(0, total_amount - amount_paid))
 
     return {
       status: 200,
@@ -486,13 +342,8 @@ export async function getSalesIssue(id) {
         total_quantity,
         totalQuantity: total_quantity,
         amount_paid,
-        amountPaid: amount_paid,
         balance_due,
-        balanceDue: balance_due,
-        settlement_status,
-        settlementStatus: settlement_status,
-        payment_status,
-        paymentStatus: payment_status,
+        settlement_status: issue.settlement_status || (payment_type === "Cash" ? "Fully Settled" : (total_amount > 0 && amount_paid >= total_amount ? "Fully Settled" : amount_paid > 0 ? "Ongoing" : "Unpaid")),
         created_by: issue.created_by || issue.createdBy || "System",
         items,
         savedToDb: true,
@@ -505,30 +356,22 @@ export async function getSalesIssue(id) {
 }
 
 export async function createSalesIssue(input, existingId = null) {
-  const allWarehouses = await getAllWarehouses()
   const fs_no = input?.fs_no || input?.fsNo || input?.issue_number || input?.issueNumber || `FS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
   const id = existingId || input?.id || fs_no
   const reference_no = input?.reference_no || input?.referenceNo || `REF-${fs_no}`
-  const sale_date = input?.sale_date || input?.issueDate || getLocalDateString()
+  const sale_date = input?.sale_date || input?.issueDate || new Date().toISOString().split("T")[0]
   const customer_name = input?.customer_name || input?.customer || input?.customer_id || "Walk-in Customer"
   const customer_id = input?.customer_id || input?.customerId || customer_name
-  const warehouse_id = input?.warehouse_id || input?.warehouse || allWarehouses[0]?.id || "WH-MAIN"
+  const warehouse_id = input?.warehouse_id || input?.warehouse || "WH-MAIN"
   const payment_type = input?.payment_type || input?.paymentType || "Cash"
-  const isExport = isExportWarehouseType(warehouse_id, allWarehouses)
-  const rawItems = Array.isArray(input?.items) ? input.items : []
-  const items = rawItems.map((it) => {
-    if (!it.batch_id && !it.batch_no) {
-      const fallbackBatch = isExport ? "COMMODITY-MAIN" : "BATCH-MAIN"
-      return { ...it, batch_id: fallbackBatch, batch_no: fallbackBatch }
-    }
-    return it
-  })
+  const items = Array.isArray(input?.items) ? input.items : []
 
   const total_quantity = items.reduce((sum, item) => sum + Number(item.quantity || item.qty || 0), 0)
   const itemTotal = items.reduce((sum, item) => sum + Number(item.amount || (item.quantity * item.unit_price) || 0), 0)
 
+  const isWh1 = isExportWarehouse(warehouse_id)
   const subtotal = input?.subtotal !== undefined ? Number(input.subtotal) : itemTotal
-  const vat_rate = input?.vat_rate !== undefined ? Number(input.vat_rate) : (isExport ? 0 : 15)
+  const vat_rate = input?.vat_rate !== undefined ? Number(input.vat_rate) : (isWh1 ? 0 : 15)
   const vat_amount = input?.vat_amount !== undefined ? Number(input.vat_amount) : (vat_rate > 0 ? Math.round(subtotal * (vat_rate / 100)) : 0)
   const finalTotalAmount = input?.total_amount !== undefined ? Number(input.total_amount) : (subtotal + vat_amount)
 
@@ -565,29 +408,7 @@ export async function createSalesIssue(input, existingId = null) {
     return { status: 400, body: { error: "Validation failed", details: errors } }
   }
 
-  // Enforce business rule: Referenced Sales Order must be Approved by Superadmin before issuing stock
-  const linkedSoId = String(input?.sales_order_id || input?.salesOrderId || input?.reference_no || input?.referenceNo || input?.order_id || "").trim()
-  if (linkedSoId && !linkedSoId.startsWith("REF-FS-") && linkedSoId !== "Walk-in") {
-    try {
-      const soRes = await drizzleGetRow({ resource: getResource("sales_orders"), id: linkedSoId }).catch(() => null)
-      const soData = soRes?.body?.payload ? { ...soRes.body.payload, ...soRes.body } : soRes?.body
-      if (soData && soData.id) {
-        const approval = String(soData.approvalStatus || soData.approval_status || "Pending")
-        if (approval !== "Approved") {
-          return {
-            status: 400,
-            body: {
-              error: `Sales Order '${linkedSoId}' has approval status '${approval}'. It must be approved by a Superadmin before a Sales Issue can be created.`
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Could not check sales order approval status:", e)
-    }
-  }
-
-  // 1. Save Header
+  // 1. Save Header with exact MySQL relational schema columns (including all possible naming variants)
   const headerRow = {
     id,
     fs_no: fs_no,
@@ -637,16 +458,15 @@ export async function createSalesIssue(input, existingId = null) {
     body: headerRow,
   })
 
-  // 2. Save Items
+  // 2. Save Items with exact MySQL relational schema columns
   if (items.length > 0) {
     const itemRows = items.map((item, idx) => {
       const prodId = String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`)
       const prodName = String(item.item_name || item.product_name || item.name || "Item")
-      const batchCode = String(item.batch_no || item.batch_number || item.batch || "BATCH-MAIN")
-      const batchId = String(item.batch_id || batchCode)
+      const batchCode = String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN")
       const packUnit = String(item.packaging_unit || item.unit || "Box")
       const q = Number(item.quantity || item.qty || 0)
-      const p = Number(item.unit_price || item.unitPrice || item.price || 0)
+      const p = Number(item.unit_price || item.price || 0)
       const tot = Number(item.amount || item.total_price || (q * p) || 0)
 
       return {
@@ -661,8 +481,8 @@ export async function createSalesIssue(input, existingId = null) {
         productName: prodName,
         item_name: prodName,
         itemName: prodName,
-        batch_id: batchId,
-        batchId: batchId,
+        batch_id: batchCode,
+        batchId: batchCode,
         batch_number: batchCode,
         batchNumber: batchCode,
         batch_no: batchCode,
@@ -692,7 +512,6 @@ export async function createSalesIssue(input, existingId = null) {
 }
 
 export async function updateSalesIssue(input, id) {
-  const allWarehouses = await getAllWarehouses()
   const cleanId = String(id).trim()
   const getRes = await getSalesIssue(cleanId)
   if (getRes.status >= 400 || !getRes.body) {
@@ -705,9 +524,9 @@ export async function updateSalesIssue(input, id) {
   const itemTotal = items.reduce((sum, item) => sum + Number(item.amount || (item.quantity * item.unit_price) || 0), 0)
 
   const warehouse_id = input?.warehouse_id || existing.warehouse_id
-  const isExport = isExportWarehouseType(warehouse_id, allWarehouses)
+  const isWh1 = isExportWarehouse(warehouse_id)
   const subtotal = input?.subtotal !== undefined ? Number(input.subtotal) : itemTotal
-  const vat_rate = input?.vat_rate !== undefined ? Number(input.vat_rate) : (isExport ? 0 : 15)
+  const vat_rate = input?.vat_rate !== undefined ? Number(input.vat_rate) : (isWh1 ? 0 : 15)
   const vat_amount = input?.vat_amount !== undefined ? Number(input.vat_amount) : (vat_rate > 0 ? Math.round(subtotal * (vat_rate / 100)) : 0)
   const finalTotalAmount = input?.total_amount !== undefined ? Number(input.total_amount) : (subtotal + vat_amount)
 
@@ -727,9 +546,9 @@ export async function updateSalesIssue(input, id) {
     warehouse_id: warehouse_id || null,
     warehouseId: warehouse_id || null,
     warehouse: warehouse_id || null,
-    sale_date: input?.sale_date || existing.sale_date || getLocalDateString(),
-    issue_date: input?.sale_date || existing.sale_date || getLocalDateString(),
-    issueDate: input?.sale_date || existing.sale_date || getLocalDateString(),
+    sale_date: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
+    issue_date: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
+    issueDate: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
     status: input?.status || existing.status || "Draft",
     total_quantity: total_quantity,
     totalQuantity: total_quantity,
@@ -775,11 +594,10 @@ export async function updateSalesIssue(input, id) {
     for (const [idx, item] of items.entries()) {
       const prodId = String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`)
       const prodName = String(item.item_name || item.product_name || item.name || "Item")
-      const batchCode = String(item.batch_no || item.batch_number || item.batch || "BATCH-MAIN")
-      const batchId = String(item.batch_id || batchCode)
+      const batchCode = String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN")
       const packUnit = String(item.packaging_unit || item.unit || "Box")
       const q = Number(item.quantity || item.qty || 0)
-      const p = Number(item.unit_price || item.unitPrice || item.price || 0)
+      const p = Number(item.unit_price || item.price || 0)
       const tot = Number(item.amount || item.total_price || (q * p) || 0)
 
       const itemRow = {
@@ -794,8 +612,8 @@ export async function updateSalesIssue(input, id) {
         productName: prodName,
         item_name: prodName,
         itemName: prodName,
-        batch_id: batchId,
-        batchId: batchId,
+        batch_id: batchCode,
+        batchId: batchCode,
         batch_number: batchCode,
         batchNumber: batchCode,
         batch_no: batchCode,
@@ -822,6 +640,8 @@ export async function updateSalesIssue(input, id) {
 
   return { status: 200, body: { ...existing, ...input, total_quantity, total_amount: finalTotalAmount, items, savedToDb: true } }
 }
+
+
 
 export async function deleteSalesIssue(id) {
   try {
@@ -858,12 +678,10 @@ export async function postSalesIssue(arg1, arg2) {
   let totalAmount = 0
   let totalQty = 0
 
-  const allWarehouses = await getAllWarehouses()
-
-  // 1. Deduct Stock from dedicated export_products / pharma_products
+  // 1. Deduct Stock from inventory
   try {
-    const rawAllProducts = await getAllProductsForSales()
-    const allProducts = Array.isArray(rawAllProducts) ? rawAllProducts.map(p => p?.payload ? { ...p.payload, ...p } : p) : []
+    const allProdRes = await inventoryService.listProducts().catch(() => ({ body: [] }))
+    const allProducts = Array.isArray(allProdRes.body) ? allProdRes.body : []
 
     for (const item of (existing.items || [])) {
       const prodId = item.item_id || item.productId || item.product_id
@@ -878,335 +696,261 @@ export async function postSalesIssue(arg1, arg2) {
         const prod = matchedProd
         const realProdId = prod.id || prodId
         const issueQty = Number(item.quantity || item.qty || 0)
-        
-        let sellingUnitPrice = Number(item.unit_price || item.unitPrice || item.price || 0)
-        if (sellingUnitPrice <= 0 && existing.reference_no) {
-          const soRes = await drizzleListRows({ resource: getResource("sales_orders"), query: { id: existing.reference_no } }).catch(() => ({ body: [] }))
-          const soList = Array.isArray(soRes.body) ? soRes.body : [soRes.body]
-          const so = soList[0]?.payload ? { ...soList[0].payload, ...soList[0] } : soList[0]
-          if (so && Array.isArray(so.items)) {
-            const soItem = so.items.find((si) => (si.productId === realProdId || si.product_id === realProdId || si.item_id === realProdId || si.id === realProdId))
-            if (soItem && Number(soItem.unitPrice || soItem.unit_price || 0) > 0) {
-              sellingUnitPrice = Number(soItem.unitPrice || soItem.unit_price)
-            }
-          }
-        }
-        if (sellingUnitPrice <= 0) {
-          sellingUnitPrice = Number(prod.selling_price || prod.sellingPrice || 0)
-        }
-        const unitPrice = sellingUnitPrice
+        const itemSellingPrice = Number(item.unit_price || item.unitPrice || 0)
         const unitCost = Number(prod.unitCost || prod.unit_cost || 0)
 
         totalQty += issueQty
-        totalAmount += issueQty * unitPrice
+        totalAmount += issueQty * itemSellingPrice
 
-        const targetWh = existing.warehouse_id || existing.warehouse || prod.warehouse_id || prod.warehouse
-        const isExportWh = isExportWarehouseType(prod.warehouse_id || prod.warehouse, allWarehouses) || isExportWarehouseType(targetWh, allWarehouses)
+        const isWH1 =
+          prod.isExport ||
+          prod.warehouseType === "EXPORT_WH" ||
+          (prod.warehouse_id || prod.warehouse || existing.warehouse_id || "").toUpperCase().startsWith("WH1")
 
-        let itemActualCost = 0
-        let newQty = Math.max(0, Number(prod.quantity || 0) - issueQty)
-        let finalUnitCost = unitCost
-        let finalStockValue = 0
+        if (isWH1) {
+          // ── WH1 EXPORT COMMODITY PRODUCT LIFECYCLE ──────────────────────
+          let remainingToDeduct = issueQty
+          let totalDeductedCost = 0
 
-        const childId = item.batch_id || item.batchId
-        const childBatchNo = item.batch_no || item.batchNo || item.batch_number || item.batch || "BATCH-MAIN"
+          // If a specific inbound batch/parcel is selected (e.g. item.batch_id), prioritize it
+          let grvRows = []
+          if (item.batch_id) {
+            const [selectedRows] = await pool.query(
+              "SELECT * FROM `export_warehouse_movements` WHERE id = ? AND net_quantity > 0",
+              [item.batch_id]
+            )
+            grvRows = selectedRows
+          }
+          if (grvRows.length === 0) {
+            const [allActiveGrvs] = await pool.query(
+              "SELECT * FROM `export_warehouse_movements` WHERE product_id = ? AND (movement_type = 'GRV_ENTRY' OR movement_type = 'entry') AND net_quantity > 0 ORDER BY movement_date ASC, created_at ASC",
+              [realProdId]
+            )
+            grvRows = allActiveGrvs
+          }
 
-        if (isExportWh) {
-          // 1. Fetch export inbound parcels from relational table export_warehouse_movements
-          const [dbMovements] = await pool.query(
-            `SELECT * FROM export_warehouse_movements WHERE product_id = ? ORDER BY created_at ASC`,
-            [realProdId]
-          ).catch(() => [[]])
+          for (const grv of grvRows) {
+            if (remainingToDeduct <= 0) break
+            const currentNet = Number(grv.net_quantity || 0)
+            const deduct = Math.min(currentNet, remainingToDeduct)
+            remainingToDeduct -= deduct
+            const newNet = Math.max(0, currentNet - deduct)
+            const unitAcqCost = Number(grv.unit_price || 0)
+            totalDeductedCost += deduct * unitAcqCost
 
-          const allEwMovements = Array.isArray(dbMovements) ? dbMovements : []
-          const inboundMovements = allEwMovements.filter((m) => m.movement_type === "entry" || m.movement_type === "GRV_ENTRY")
-          const priorDeductions = allEwMovements.filter((m) =>
-            ["reject", "REJECT_DEDUCTION", "leave", "OUTBOUND_DISPATCH", "issue", "SALE_OUTBOUND", "sale", "dispatch"].includes(m.movement_type)
+            await pool.query(
+              "UPDATE `export_warehouse_movements` SET net_quantity = ?, updated_at = NOW(3) WHERE id = ?",
+              [newNet, grv.id]
+            )
+          }
+
+          if (remainingToDeduct > 0) {
+            const [moreGrvs] = await pool.query(
+              "SELECT * FROM `export_warehouse_movements` WHERE product_id = ? AND (movement_type = 'GRV_ENTRY' OR movement_type = 'entry') AND net_quantity > 0 ORDER BY movement_date ASC, created_at ASC",
+              [realProdId]
+            )
+            for (const grv of moreGrvs) {
+              if (remainingToDeduct <= 0) break
+              const currentNet = Number(grv.net_quantity || 0)
+              const deduct = Math.min(currentNet, remainingToDeduct)
+              remainingToDeduct -= deduct
+              const newNet = Math.max(0, currentNet - deduct)
+              const unitAcqCost = Number(grv.unit_price || 0)
+              totalDeductedCost += deduct * unitAcqCost
+
+              await pool.query(
+                "UPDATE `export_warehouse_movements` SET net_quantity = ?, updated_at = NOW(3) WHERE id = ?",
+                [newNet, grv.id]
+              )
+            }
+          }
+
+          const leaveCOGSUnitCost = issueQty > 0 && totalDeductedCost > 0 ? Math.round((totalDeductedCost / issueQty) * 100) / 100 : unitCost
+          totalCost += totalDeductedCost > 0 ? totalDeductedCost : issueQty * unitCost
+
+          const commercialSellingPrice = itemSellingPrice > 0 ? itemSellingPrice : Number(prod.sellingPrice || prod.selling_price || 0)
+          const dispatchMovId = `EWM-DISP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+
+          // 2. Insert the OUTBOUND_DISPATCH movement into export_warehouse_movements
+          await pool.query(
+            `INSERT INTO \`export_warehouse_movements\` (
+              id, warehouse_id, product_id, movement_type, voucher_no, batch_no,
+              party_name, plate_number, gross_quantity, reject_quantity, net_quantity,
+              uom, unit_price, selling_price, movement_date, reason, created_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              dispatchMovId,
+              prod.warehouse_id || prod.warehouse || "WH1",
+              realProdId,
+              "OUTBOUND_DISPATCH",
+              existing.fs_no || id,
+              item.batch_no || item.batch || "COMMODITY-WH1",
+              existing.customer_name || existing.customer || "Customer Dispatch",
+              existing.plate_number || existing.plateNumber || item.plate_number || item.plateNumber || "—",
+              issueQty,
+              0,
+              -issueQty,
+              prod.unit || "Quintal",
+              leaveCOGSUnitCost,
+              commercialSellingPrice > 0 ? commercialSellingPrice : null,
+              existing.sale_date || getLocalDateString(),
+              `Sales Issue FS-${existing.fs_no || id} (Customer Dispatch)`,
+              "Sales Officer",
+            ]
           )
 
-          let parcels = inboundMovements.map((m) => ({
-            id: m.id,
-            voucherNo: m.voucher_no,
-            grossQuantity: Number(m.gross_quantity || m.net_quantity || 0),
-            quantityReceived: Number(m.gross_quantity || m.net_quantity || 0),
-            quantityRemaining: Number(m.gross_quantity || m.net_quantity || 0),
-            unitPrice: Number(m.unit_price || unitCost || 0),
-            createdAt: m.created_at,
-          }))
+          // 3. Compute new total inventory and asset valuation
+          const [allGrvs] = await pool.query(
+            "SELECT * FROM `export_warehouse_movements` WHERE product_id = ? AND (movement_type = 'GRV_ENTRY' OR movement_type = 'entry')",
+            [realProdId]
+          )
+          const newQty = allGrvs.reduce((sum, g) => sum + Number(g.net_quantity || 0), 0)
+          const finalStockValue = allGrvs.reduce((sum, g) => sum + (Number(g.net_quantity || 0) * Number(g.unit_price || 0)), 0)
+          const weightedCost = newQty > 0 ? Math.round((finalStockValue / newQty) * 100) / 100 : unitCost
 
-          // Apply prior deductions with safe numeric conversion
-          for (const ded of priorDeductions) {
-            const rej = Number(ded.reject_quantity || 0)
-            const gross = Number(ded.gross_quantity || 0)
-            const net = Math.abs(Number(ded.net_quantity || 0))
-            let dRem = rej > 0 ? rej : gross > 0 ? gross : net
-            const target = (ded.batch_no || ded.voucher_no || ded.id || "").trim()
-            let matched = false
-            for (const p of parcels) {
-              if (target && (p.id === target || p.voucherNo === target || (p.voucherNo && target.includes(p.voucherNo)))) {
-                matched = true
-                const d = Math.min(p.quantityRemaining, dRem)
-                p.quantityRemaining -= d
-                dRem -= d
-              }
-            }
-            if (!matched && dRem > 0) {
-              for (const p of parcels) {
-                if (dRem <= 0) break
-                const d = Math.min(p.quantityRemaining, dRem)
-                p.quantityRemaining -= d
-                dRem -= d
-              }
-            }
-          }
-
-          if (parcels.length > 0) {
-            let remaining = issueQty
-            // Deduct from matched target parcel first
-            if (childId || childBatchNo) {
-              for (const p of parcels) {
-                if (remaining <= 0) break
-                if (
-                  (childId && (p.id === childId || p.voucherNo === childId)) ||
-                  (childBatchNo && childBatchNo !== "N/A" && childBatchNo !== "COMMODITY-WH1" && p.voucherNo === childBatchNo)
-                ) {
-                  const deduct = Math.min(p.quantityRemaining, remaining)
-                  if (deduct > 0) {
-                    p.quantityRemaining -= deduct
-                    remaining -= deduct
-                    itemActualCost += deduct * p.unitPrice
-                  }
-                }
-              }
-            }
-
-            // FIFO fallback
-            if (remaining > 0) {
-              for (const p of parcels) {
-                if (remaining <= 0) break
-                if (p.quantityRemaining > 0) {
-                  const deduct = Math.min(p.quantityRemaining, remaining)
-                  p.quantityRemaining -= deduct
-                  remaining -= deduct
-                  itemActualCost += deduct * p.unitPrice
-                }
-              }
-            }
-
-            if (remaining > 0) {
-              itemActualCost += remaining * unitCost
-            }
-
-            newQty = parcels.reduce((sum, p) => sum + Math.max(0, p.quantityRemaining), 0)
-          } else {
-            itemActualCost = issueQty * unitCost
-          }
-
-          totalCost += itemActualCost
-          const effectiveOutboundCostRate = itemActualCost > 0 && issueQty > 0 ? Math.round((itemActualCost / issueQty) * 100) / 100 : (parcels[0]?.unitPrice || unitCost)
-          const thisDispatchPrice = unitPrice > 0 ? unitPrice : effectiveOutboundCostRate
-
-          // Calculate finalStockValue reflecting all child movements including this dispatch
-          let ewmVal = 0
-          for (const m of allEwMovements) {
-            const mType = (m.movement_type || "").toUpperCase()
-            const isEntry = ["ENTRY", "GRV_ENTRY"].includes(mType)
-            const isRej = ["REJECT", "REJECT_DEDUCTION"].includes(mType)
-            const q = isRej
-              ? Number(m.reject_quantity || m.gross_quantity || Math.abs(Number(m.net_quantity || 0)))
-              : isEntry
-              ? Number(m.gross_quantity || m.net_quantity || 0)
-              : Number(m.gross_quantity || Math.abs(Number(m.net_quantity || 0)))
-            const p = Number(m.unit_price || unitCost || 0)
-            if (isEntry) {
-              ewmVal += q * p
-            } else {
-              ewmVal -= q * p
-            }
-          }
-          if (parcels.length > 0) {
-            finalStockValue = newQty <= 0 ? 0 : Math.max(0, Math.round(parcels.reduce((sum, p) => sum + (Math.max(0, p.quantityRemaining) * p.unitPrice), 0) * 100) / 100)
-          } else {
-            const initialVal = Number(prod.total_stock_value || (Number(prod.quantity || 0) * unitCost))
-            finalStockValue = newQty <= 0 ? 0 : Math.max(0, Math.round((initialVal - itemActualCost) * 100) / 100)
-          }
-          finalUnitCost = newQty > 0 ? Math.round((finalStockValue / newQty) * 100) / 100 : unitCost
-
-          // Export warehouse movement row
-          const defaultExpWh = targetWh || (await getDefaultWarehouseForType("EXPORT_WH"))
-          const ewmId = `EWM-ISS-${id}-${Math.random().toString(36).slice(2, 7)}`
-          await drizzleCreateRow({
-            resource: getResource("export_warehouse_movements"),
-            body: {
-              id: ewmId,
-              warehouse_id: defaultExpWh,
-              product_id: realProdId,
-              movement_type: "OUTBOUND_DISPATCH",
-              voucher_no: existing.fs_no || id,
-              batch_no: childBatchNo || `COMMODITY-${defaultExpWh}`,
-              party_name: existing.customer_name || existing.customer || "Customer Dispatch",
-              plate_number: existing.plate_number || existing.plateNumber || item.plate_number || "—",
-              gross_quantity: issueQty,
-              reject_quantity: 0,
-              net_quantity: -issueQty,
-              uom: prod.unit || "Quintal",
-              unit_price: unitPrice > 0 ? unitPrice : effectiveOutboundCostRate,
-              movement_date: existing.sale_date || getLocalDateString(),
-              reason: `Sales Issue Dispatch (${existing.fs_no || id})`,
-              created_by: existing.created_by || "Sales Officer",
-            },
-          }).catch((ewmErr) => console.warn("Export movement creation error:", ewmErr.message))
-
-          // Update export_products (strictly preserving total inbound received Y and updating remaining stock value)
-          const newSold = Number(prod.quantitySold || prod.quantity_sold || 0) + issueQty
-          const currentExpSellingPrice = Number(prod.selling_price || prod.sellingPrice || finalUnitCost)
-          const finalTotalInboundQty = parcels.reduce((sum, p) => sum + Math.max(0, p.grossQuantity || p.quantityReceived || 0), 0) || Number(prod.total_quantity || prod.totalQuantity || (newQty + newSold))
-
+          // 4. Update export_products in MySQL
           await pool.query(
-            `UPDATE export_products 
-             SET quantity = ?, total_quantity = ?, total_stock_value = ?, unit_cost = ?, selling_price = ?, quantity_sold = ?, updated_at = NOW() 
+            `UPDATE \`export_products\` SET
+              quantity = ?,
+              quantity_sold = quantity_sold + ?,
+              total_quantity = ?,
+              unit_cost = ?,
+              total_stock_value = ?,
+              status = ?,
+              updated_at = NOW(3)
              WHERE id = ?`,
-            [newQty, finalTotalInboundQty, finalStockValue, finalUnitCost, currentExpSellingPrice, newSold, realProdId]
-          ).catch((upErr) => console.warn("Export product update error:", upErr.message))
-
+            [
+              newQty,
+              issueQty,
+              newQty + (Number(prod.quantitySold || prod.quantity_sold || 0) + issueQty),
+              weightedCost,
+              finalStockValue,
+              newQty === 0 ? "Out of Stock" : newQty < 20 ? "Low Stock" : "In Stock",
+              realProdId,
+            ]
+          )
         } else {
-          // Pharma warehouse lot deduction
-          // 1. Fetch current batches from relational table
-          const [dbBatches] = await pool.query(
-            `SELECT * FROM pharma_product_batches WHERE product_id = ?`,
-            [realProdId]
-          ).catch(() => [[]])
+          // ── PHARMA PRODUCT LIFECYCLE (WH2 / WH3) ───────────────────────
+          let targetBatchId = item.batch_id
+          let targetBatchNo = item.batch_no || item.batch || item.batch_number
+          let deductedBatchCost = unitCost
+          let remainingPharmaDeduct = issueQty
 
-          const batchesList = Array.isArray(dbBatches) ? dbBatches : []
-          let remaining = issueQty
-
-          // Match by internal unique ID first, then by batch_no
-          let matchedBatch = null
-          if (childId && childId !== "N/A" && childId !== "BATCH-MAIN") {
-            matchedBatch = batchesList.find((b) => b.id === childId)
-          }
-          if (!matchedBatch && childBatchNo && childBatchNo !== "N/A") {
-            matchedBatch = batchesList.find((b) => b.batch_no === childBatchNo && Number(b.quantity || 0) > 0)
-          }
-
-          if (matchedBatch && Number(matchedBatch.quantity || 0) > 0) {
-            const deduct = Math.min(Number(matchedBatch.quantity || 0), remaining)
-            remaining -= deduct
-            const bCost = Number(matchedBatch.unit_cost || unitCost || 0)
-            itemActualCost += deduct * bCost
-            await pool.query(
-              `UPDATE pharma_product_batches 
-               SET quantity = GREATEST(0, quantity - ?), updated_at = NOW() 
-               WHERE id = ?`,
-              [deduct, matchedBatch.id]
-            ).catch(() => {})
-          }
-
-          // Fallback FIFO across remaining batches if needed
-          if (remaining > 0) {
-            const sortedBatches = [...batchesList].sort((a, b) =>
-              new Date(a.expiry_date || a.mfg_date || 0).getTime() - new Date(b.expiry_date || b.mfg_date || 0).getTime()
+          // 1. Deduct from specific batch in pharma_product_batches if specified
+          if (targetBatchId) {
+            const [bRows] = await pool.query(
+              "SELECT * FROM `pharma_product_batches` WHERE id = ?",
+              [targetBatchId]
             )
-            for (const b of sortedBatches) {
-              if (remaining <= 0) break
-              if (matchedBatch && b.id === matchedBatch.id) continue
-              const bQty = Number(b.quantity || 0)
-              if (bQty > 0) {
-                const deduct = Math.min(bQty, remaining)
-                remaining -= deduct
-                const bCost = Number(b.unit_cost || unitCost || 0)
-                itemActualCost += deduct * bCost
-                await pool.query(
-                  `UPDATE pharma_product_batches 
-                   SET quantity = GREATEST(0, quantity - ?), updated_at = NOW() 
-                   WHERE id = ?`,
-                  [deduct, b.id]
-                ).catch(() => {})
-              }
+            if (bRows.length > 0) {
+              const b = bRows[0]
+              const curQty = Number(b.quantity || 0)
+              const deduct = Math.min(curQty, remainingPharmaDeduct)
+              remainingPharmaDeduct -= deduct
+              deductedBatchCost = Number(b.unit_cost || unitCost)
+              targetBatchNo = b.batch_no || targetBatchNo
+              await pool.query(
+                "UPDATE `pharma_product_batches` SET quantity = GREATEST(0, quantity - ?), updated_at = NOW(3) WHERE id = ?",
+                [deduct, b.id]
+              )
             }
           }
 
-          if (remaining > 0) {
-            itemActualCost += remaining * unitCost
-          }
-
-          totalCost += itemActualCost
-
-          // Re-query updated batches from DB to calculate exact remaining quantity
-          const [updatedDbBatches] = await pool.query(
-            `SELECT * FROM pharma_product_batches WHERE product_id = ?`,
-            [realProdId]
-          ).catch(() => [[]])
-
-          const activeBatches = Array.isArray(updatedDbBatches) ? updatedDbBatches : []
-          newQty = activeBatches.reduce((sum, b) => sum + Number(b.quantity || 0), 0)
-
-          const thisIssuePrice = unitPrice > 0 ? unitPrice : Number(prod.selling_price || prod.sellingPrice || 0)
-
-          // Calculate finalStockValue reflecting all stock movements including this issue
-          const [existingSmRows] = await pool.query(
-            `SELECT movement_type, quantity, unit_cost, unit_price FROM stock_movements WHERE product_id = ?`,
-            [realProdId]
-          ).catch(() => [[]])
-
-          let smVal = 0
-          for (const sm of (existingSmRows || [])) {
-            const q = Number(sm.quantity || 0)
-            const isReceipt = ["RECEIPT", "ENTRY", "PURCHASE", "INBOUND", "ADJUSTMENT_IN"].includes((sm.movement_type || "").toUpperCase())
-            const p = isReceipt
-              ? Number(sm.unit_cost || sm.unit_price || unitCost || 0)
-              : Number(sm.unit_price || sm.unit_cost || prod.selling_price || prod.sellingPrice || unitCost || 0)
-            if (isReceipt) {
-              smVal += q * p
-            } else {
-              smVal -= q * p
+          // 2. If not found by batch_id or if remaining qty > 0, match by batch_no
+          if (remainingPharmaDeduct > 0 && targetBatchNo) {
+            const [bRows] = await pool.query(
+              "SELECT * FROM `pharma_product_batches` WHERE product_id = ? AND batch_no = ? AND quantity > 0 ORDER BY expiry_date ASC, created_at ASC",
+              [realProdId, targetBatchNo]
+            )
+            for (const b of bRows) {
+              if (remainingPharmaDeduct <= 0) break
+              const curQty = Number(b.quantity || 0)
+              const deduct = Math.min(curQty, remainingPharmaDeduct)
+              remainingPharmaDeduct -= deduct
+              deductedBatchCost = Number(b.unit_cost || unitCost)
+              await pool.query(
+                "UPDATE `pharma_product_batches` SET quantity = GREATEST(0, quantity - ?), updated_at = NOW(3) WHERE id = ?",
+                [deduct, b.id]
+              )
             }
           }
-          if (activeBatches.length > 0) {
-            finalStockValue = newQty <= 0 ? 0 : Math.max(0, Math.round(activeBatches.reduce((sum, b) => sum + (Math.max(0, Number(b.quantity || 0)) * Number(b.unit_cost || 0)), 0) * 100) / 100)
-          } else {
-            const initialVal = Number(prod.total_stock_value || (Number(prod.quantity || 0) * unitCost))
-            finalStockValue = newQty <= 0 ? 0 : Math.max(0, Math.round((initialVal - itemActualCost) * 100) / 100)
+
+          // 3. If still remaining (or no batch was specified), deduct in FIFO order
+          if (remainingPharmaDeduct > 0) {
+            const [bRows] = await pool.query(
+              "SELECT * FROM `pharma_product_batches` WHERE product_id = ? AND quantity > 0 ORDER BY expiry_date ASC, created_at ASC",
+              [realProdId]
+            )
+            for (const b of bRows) {
+              if (remainingPharmaDeduct <= 0) break
+              const curQty = Number(b.quantity || 0)
+              const deduct = Math.min(curQty, remainingPharmaDeduct)
+              remainingPharmaDeduct -= deduct
+              deductedBatchCost = Number(b.unit_cost || unitCost)
+              targetBatchNo = targetBatchNo || b.batch_no
+              await pool.query(
+                "UPDATE `pharma_product_batches` SET quantity = GREATEST(0, quantity - ?), updated_at = NOW(3) WHERE id = ?",
+                [deduct, b.id]
+              )
+            }
           }
-          finalUnitCost = newQty > 0 ? Math.round((finalStockValue / newQty) * 100) / 100 : unitCost
 
-          // Write stock movement
-          const defaultPharmaWh = targetWh || (await getDefaultWarehouseForType("PHARMA_WH"))
-          const smId = `SM-ISS-${id}-${Math.random().toString(36).slice(2, 7)}`
-          await drizzleCreateRow({
-            resource: getResource("stock_movements"),
-            body: {
-              id: smId,
-              product_id: realProdId,
-              warehouse_id: defaultPharmaWh,
-              movement_type: "ISSUE",
-              quantity: issueQty,
-              unit_cost: itemActualCost > 0 && issueQty > 0 ? Math.round((itemActualCost / issueQty) * 100) / 100 : unitCost,
-              unit_price: unitPrice > 0 ? unitPrice : Number(prod.selling_price || prod.sellingPrice || 0),
-              balance_after: newQty,
-              batch_no: childBatchNo || "BATCH-MAIN",
-              expiry_date: item.expiryDate || item.expiry || null,
-              reference_type: "SALES_ISSUE",
-              reference_id: id,
-              notes: `Sales Issue ${existing.fs_no || id} - Customer: ${existing.customer_name || existing.customer || "Customer Dispatch"}`,
-              performed_by: existing.created_by || "Sales Officer",
-              movement_date: existing.sale_date || getLocalDateString(),
-            },
-          }).catch((smErr) => console.warn("Stock movement creation error:", smErr.message))
+          totalCost += issueQty * deductedBatchCost
 
-          // Update pharma_products
-          const newSold = Number(prod.quantitySold || prod.quantity_sold || 0) + issueQty
-          const packSize = Number(prod.quantityPerPack || prod.quantity_per_pack || 1)
-          const newCartons = packSize > 0 ? Math.max(0, Math.floor(newQty / packSize)) : 0
-          const updatedStatus = newQty === 0 ? "Out of Stock" : newQty < 20 ? "Low Stock" : "In Stock"
-          const currentPharmaSellingPrice = Number(prod.selling_price || prod.sellingPrice || finalUnitCost)
+          // 4. Compute aggregate stock across all batches
+          const [allBatches] = await pool.query(
+            "SELECT * FROM `pharma_product_batches` WHERE product_id = ?",
+            [realProdId]
+          )
+          const newQty = allBatches.reduce((s, b) => s + Number(b.quantity || 0), 0)
+          const totalStockVal = allBatches.reduce((s, b) => s + (Number(b.quantity || 0) * Number(b.unit_cost || 0)), 0)
+          const newWeightedCost = newQty > 0 ? Math.round((totalStockVal / newQty) * 100) / 100 : unitCost
 
+          // 5. Insert stock_movements record in MySQL
+          const smId = `SM-ISSUE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
           await pool.query(
-            `UPDATE pharma_products 
-             SET quantity = ?, total_stock_value = ?, unit_cost = ?, selling_price = ?, quantity_sold = ?, number_of_cartons = ?, status = ?, updated_at = NOW() 
+            `INSERT INTO stock_movements (
+              id, product_id, warehouse_id, movement_type, quantity, unit_cost, unit_price,
+              balance_after, batch_no, expiry_date, reference_type, reference_id, notes, performed_by, movement_date
+            ) VALUES (?, ?, ?, 'ISSUE', ?, ?, ?, ?, ?, ?, 'SALES_ISSUE', ?, ?, ?, ?)`,
+            [
+              smId,
+              realProdId,
+              prod.warehouse_id || prod.warehouse || existing.warehouse_id || "WH2",
+              issueQty,
+              deductedBatchCost,
+              itemSellingPrice,
+              newQty,
+              targetBatchNo || "BATCH-ISSUE",
+              item.expiry_date || item.expiryDate || null,
+              existing.fs_no || id,
+              `Sales Issue FS-${existing.fs_no || id} (${existing.customer_name || 'Customer Dispatch'})`,
+              "Sales Officer",
+              existing.sale_date || getLocalDateString(),
+            ]
+          )
+
+          // 6. Update parent pharma_products in MySQL
+          await pool.query(
+            `UPDATE pharma_products SET
+              quantity = ?,
+              total_quantity = ?,
+              quantity_sold = quantity_sold + ?,
+              unit_cost = ?,
+              total_stock_value = ?,
+              status = ?,
+              updated_at = NOW(3)
              WHERE id = ?`,
-            [newQty, finalStockValue, finalUnitCost, currentPharmaSellingPrice, newSold, newCartons, updatedStatus, realProdId]
-          ).catch((upErr) => console.warn("Pharma product update error:", upErr.message))
+            [
+              newQty,
+              newQty + (Number(prod.quantity_sold || prod.quantitySold || 0) + issueQty),
+              issueQty,
+              newWeightedCost,
+              totalStockVal,
+              newQty === 0 ? "Out of Stock" : newQty < 20 ? "Low Stock" : "In Stock",
+              realProdId,
+            ]
+          )
         }
       }
     }
@@ -1215,9 +959,9 @@ export async function postSalesIssue(arg1, arg2) {
   }
 
   // 2. Update status in sales_issues while strictly preserving payment integrity
-  const isWhExport = isExportWarehouseType(existing.warehouse_id, allWarehouses)
+  const isWh1 = isExportWarehouse(existing.warehouse_id)
   const issueSubtotal = totalAmount || Number(existing.subtotal || existing.total_amount || 0)
-  const issueVatRate = isWhExport ? 0 : Number(existing.vat_rate !== undefined ? existing.vat_rate : 15)
+  const issueVatRate = isWh1 ? 0 : Number(existing.vat_rate !== undefined ? existing.vat_rate : 15)
   const issueVatAmount = issueVatRate > 0 ? Number(existing.vat_amount || Math.round(issueSubtotal * (issueVatRate / 100))) : 0
   const grandTotal = issueSubtotal + issueVatAmount
 
@@ -1229,12 +973,12 @@ export async function postSalesIssue(arg1, arg2) {
   const paymentStatus = isFullySettled ? "Paid" : (existingPaid > 0 ? "Partially Paid" : "Unpaid")
   const settlementStatus = isFullySettled ? "Fully Settled" : (existingPaid > 0 ? "Ongoing" : "Unpaid")
 
-  const updateIssueRes = await drizzleUpdateRow({
+  await drizzleUpdateRow({
     resource: getResource("sales_issues"),
     id,
     body: {
       status: "Posted",
-      posted_at: new Date(),
+      posted_at: new Date().toISOString(),
       posted_by: "Sales Officer",
       total_quantity: totalQty || existing.total_quantity,
       totalQuantity: totalQty || existing.total_quantity,
@@ -1259,11 +1003,6 @@ export async function postSalesIssue(arg1, arg2) {
     },
   })
 
-  if (updateIssueRes.status >= 400) {
-    console.error(`[postSalesIssue] Failed to update sales_issues status:`, updateIssueRes.body)
-    return { status: updateIssueRes.status || 500, body: { error: updateIssueRes.body?.error || "Failed to update sales issue status." } }
-  }
-
   // 3. Post Double-Entry Journal Entries
   try {
     const coaRes = await drizzleListRows({ resource: getResource("chart_of_accounts") }).catch(() => ({ body: [] }))
@@ -1272,42 +1011,22 @@ export async function postSalesIssue(arg1, arg2) {
 
     const isCredit = existing.payment_type === "Credit"
     const debitAccId = isCredit
-      ? (isWhExport ? (findAcc("1200") || findAcc("1200-03") || "ACC-1200") : (findAcc("1300-03") || findAcc("1200") || "ACC-1200"))
+      ? (findAcc("1300-03") || findAcc("1200-03") || findAcc("1100-03") || "ACC-1200")
       : (findAcc("1000-02-26") || findAcc("1000-01-01") || findAcc("1000") || "ACC-1000")
-
-    const revenueAccId = isWhExport
-      ? (findAcc("4010") || findAcc("4000") || "ACC-4010")
-      : (findAcc("4000-01-01") || findAcc("4000") || "ACC-4000")
-
+    const revenueAccId = findAcc("4000-01-01") || findAcc("4000-03-02") || findAcc("4000") || "ACC-4000"
     const vatAccId = findAcc("2000-05") || "ACC-2200"
-    const cogsAccId = findAcc("5001") || findAcc("6000") || "ACC-5001"
-
-    // Map inventory account to specific commodity stock account if available
-    let inventoryAccId = null
-    const firstItemName = ((existing.items?.[0]?.item_name || existing.items?.[0]?.product_name || "")).toLowerCase()
-    if (firstItemName.includes("sesame")) {
-      inventoryAccId = findAcc("1410-03") || findAcc("1410") || "ACC-1410"
-    } else if (firstItemName.includes("mung")) {
-      inventoryAccId = findAcc("1410-01") || findAcc("1410") || "ACC-1410"
-    } else {
-      inventoryAccId = isWhExport ? (findAcc("1410-03") || findAcc("1410") || "ACC-1410") : (findAcc("1410") || "ACC-1410")
-    }
+    const cogsAccId = findAcc("6000-04") || findAcc("6000") || "ACC-5000"
+    const inventoryAccId = findAcc("1410-01") || findAcc("1410-03") || findAcc("1410") || "ACC-1010"
 
     const saleJeId = `JE-SALE-${id}`
     const cogsJeId = `JE-COGS-${id}`
-
-    // Idempotently clean up prior journal entries for this issue before inserting
-    try {
-      await pool.query("DELETE FROM `journal_entries` WHERE `id` IN (?, ?)", [saleJeId, cogsJeId]).catch(() => {})
-      await pool.query("DELETE FROM `journal_entry_lines` WHERE `id` LIKE CONCAT(?, '%') OR `id` LIKE CONCAT(?, '%')", [saleJeId, cogsJeId]).catch(() => {})
-    } catch {}
 
     // A. Sales Journal Entry
     await drizzleCreateRow({
       resource: getResource("journal_entries"),
       body: {
         id: saleJeId,
-        entry_date: existing.sale_date || getLocalDateString(),
+        entry_date: new Date().toISOString().split("T")[0],
         description: `Sales issue ${existing.fs_no || id}`,
         source_type: "Sales Issue",
         source_id: id,
@@ -1381,7 +1100,7 @@ export async function postSalesIssue(arg1, arg2) {
         resource: getResource("journal_entries"),
         body: {
           id: cogsJeId,
-          entry_date: existing.sale_date || getLocalDateString(),
+          entry_date: new Date().toISOString().split("T")[0],
           description: `Inventory cost for sales issue ${existing.fs_no || id}`,
           source_type: "Sales Issue",
           source_id: id,
@@ -1468,35 +1187,92 @@ export async function cancelSalesIssue(id) {
 export async function getAvailableBatches(query = {}) {
   const itemId = query.item_id || query.itemId || query.productId || null
   const warehouseId = query.warehouse_id || query.warehouseId || query.warehouse || null
-  const defaultPharmaWh = await getDefaultWarehouseForType("PHARMA_WH")
 
   try {
-    const [batchesRes, pharmaRes] = await Promise.all([
-      drizzleListRows({ resource: getResource("pharma_product_batches") }).catch(() => ({ body: [] })),
-      drizzleListRows({ resource: getResource("pharma_products") }).catch(() => ({ body: [] })),
-    ])
-    const batches = Array.isArray(batchesRes.body) ? batchesRes.body : []
-    const pharmaProducts = Array.isArray(pharmaRes.body) ? pharmaRes.body : []
     const available = []
 
-    for (const b of batches) {
-      if (itemId && (b.product_id !== itemId && b.productId !== itemId)) continue
-      const parentProd = pharmaProducts.find((p) => p.id === (b.product_id || b.productId))
-      const batchNo = b.batch_no || b.batchNo || "BATCH"
-      available.push({
-        batch_id: b.id || batchNo,
-        batch_no: batchNo,
-        item_id: b.product_id || b.productId || itemId,
-        item_name: parentProd?.name || "Product",
-        warehouse_id: b.warehouse_id || b.warehouseId || warehouseId || parentProd?.warehouse_id || defaultPharmaWh,
-        available_quantity: Number(b.quantity || b.qty || 0),
-        manufacturing_date: b.mfg_date || b.mfgDate || "",
-        expiry: b.expiry_date || b.expiryDate || "",
-        expiry_date: b.expiry_date || b.expiryDate || "",
-        packaging_unit: parentProd?.unit || "Box",
-        unit_price: Number(parentProd?.selling_price || parentProd?.sellingPrice || b.unit_cost || b.unitCost || 0),
-        unit_cost: Number(b.unit_cost || b.unitCost || parentProd?.unit_cost || 0),
-      })
+    if (itemId) {
+      // 1. Try relational pharma_product_batches
+      const [batchRows] = await pool.query(
+        "SELECT b.*, p.name as product_name, p.unit, p.selling_price as prod_selling_price, p.unit_cost as prod_unit_cost, p.warehouse_id as prod_wh FROM `pharma_product_batches` b JOIN `pharma_products` p ON b.product_id = p.id WHERE b.product_id = ? ORDER BY b.expiry_date ASC, b.created_at ASC",
+        [itemId]
+      )
+      if (batchRows.length > 0) {
+        for (const b of batchRows) {
+          const r = unwrapRow(b, "relational")
+          available.push({
+            id: r.id,
+            batch_id: r.id,
+            batch_no: r.batchNo || r.batch_no || "BATCH-MAIN",
+            item_id: r.productId || itemId,
+            item_name: r.productName || r.product_name,
+            warehouse_id: warehouseId || r.warehouseId || r.warehouse_id || r.prodWh,
+            available_quantity: Number(r.quantity ?? 0),
+            manufacturing_date: r.mfgDate || r.mfg_date || "",
+            expiry: r.expiryDate || r.expiry_date || "",
+            expiry_date: r.expiryDate || r.expiry_date || "",
+            packaging_unit: r.unit || "Box",
+            unit_price: Number(r.prodSellingPrice || r.sellingPrice || r.unitCost || r.unit_cost || 0),
+            unit_cost: Number(r.unitCost || r.unit_cost || r.prodUnitCost || 0),
+          })
+        }
+        return { status: 200, body: available }
+      }
+
+      // 2. Try export commodity child entries (wh1 entries)
+      const [grvRows] = await pool.query(
+        "SELECT m.*, p.name as product_name, p.unit, p.selling_price as prod_selling_price, p.unit_cost as prod_unit_cost, p.warehouse_id as prod_wh FROM `export_warehouse_movements` m JOIN `export_products` p ON m.product_id = p.id WHERE m.product_id = ? AND (m.movement_type = 'GRV_ENTRY' OR m.movement_type = 'entry') AND m.net_quantity > 0 ORDER BY m.movement_date ASC, m.created_at ASC",
+        [itemId]
+      )
+      if (grvRows.length > 0) {
+        for (const g of grvRows) {
+          const r = unwrapRow(g, "relational")
+          available.push({
+            id: r.id,
+            batch_id: r.id,
+            batch_no: r.voucherNo || r.voucher_no || r.batchNo || r.batch_no || "GRV-ENTRY",
+            item_id: r.productId || itemId,
+            item_name: r.productName || r.product_name,
+            warehouse_id: warehouseId || r.warehouseId || r.warehouse_id || r.prodWh,
+            available_quantity: Number(r.netQuantity ?? r.net_quantity ?? 0),
+            manufacturing_date: r.movementDate || r.movement_date || "",
+            expiry: "",
+            expiry_date: "",
+            packaging_unit: r.unit || "Quintal",
+            unit_price: Number(r.prodSellingPrice || r.sellingPrice || r.unitCost || r.unit_cost || 0),
+            unit_cost: Number(r.unitPrice || r.unit_price || r.prodUnitCost || 0),
+          })
+        }
+        return { status: 200, body: available }
+      }
+    }
+
+    const res = await inventoryService.listProducts()
+    const products = Array.isArray(res.body) ? res.body : []
+
+    for (const prod of products) {
+      if (itemId && prod.id !== itemId) continue
+      const prodBatches = Array.isArray(prod.batches) && prod.batches.length > 0
+        ? prod.batches
+        : [{ batchNo: prod.batch || prod.batch_no || "BATCH-MAIN", qty: prod.quantity || 1000, expiry: prod.expiry || prod.expiry_date }]
+
+      for (const b of prodBatches) {
+        const batchNo = b.batchNo || b.batch_no || prod.batch || prod.batch_no || "BATCH-MAIN"
+        available.push({
+          batch_id: b.id || b.batchId || batchNo,
+          batch_no: batchNo,
+          item_id: prod.id,
+          item_name: prod.name,
+          warehouse_id: warehouseId || prod.warehouse_id || prod.warehouse,
+          available_quantity: Number(b.qty ?? b.quantity ?? prod.quantity ?? 1000),
+          manufacturing_date: b.manufacturingDate || b.mfg_date || prod.manufacturingDate || prod.mfg_date || "",
+          expiry: b.expiry || b.expiry_date || prod.expiry || prod.expiry_date || "",
+          expiry_date: b.expiry || b.expiry_date || prod.expiry || prod.expiry_date || "",
+          packaging_unit: prod.unit || "Box",
+          unit_price: Number(prod.sellingPrice || prod.selling_price || prod.unitCost || prod.unit_cost || 0),
+          unit_cost: Number(b.unit_cost || prod.unitCost || prod.unit_cost || 0),
+        })
+      }
     }
 
     if (available.length > 0) {
@@ -1512,7 +1288,7 @@ export async function getAvailableBatches(query = {}) {
       batch_no: "BATCH-MAIN",
       item_id: itemId || "ITEM-1",
       item_name: "Product",
-      warehouse_id: warehouseId || defaultPharmaWh,
+      warehouse_id: warehouseId || "WH1",
       available_quantity: 1000,
       packaging_unit: "Box",
       unit_price: 1000,

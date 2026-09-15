@@ -366,7 +366,7 @@ export default function FinanceOverview() {
 
                         <div className="text-right">
                           <span className="text-xs font-black font-mono block text-rose-700">
-                            ETB {inv.balance_due.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            ETB {Number(inv.balance_due || (inv as any).balanceDue || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                           </span>
                         </div>
                       </div>

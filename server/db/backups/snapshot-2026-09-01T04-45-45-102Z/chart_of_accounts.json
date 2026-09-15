@@ -1,0 +1,1472 @@
+[
+  {
+    "id": "ACC-5400",
+    "payload": {
+      "id": "ACC-5400",
+      "code": "5400",
+      "name": "Vehicle Fleet Repairs & Maintenance",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "parent_account_id": "ACC-5000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-5400",
+    "payload": {
+      "id": "acc-5400",
+      "code": "5400",
+      "name": "Vehicle Fleet Repairs & Maintenance",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "parent_account_id": "ACC-5000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-1510",
+    "payload": {
+      "id": "ACC-1510",
+      "code": "1510",
+      "name": "Assets Group",
+      "is_group": true,
+      "is_active": true,
+      "account_type": "Asset",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-19T18:02:15.112968+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "1000-02-21",
+    "payload": {
+      "code": "1000-02-21",
+      "name": "BOA_FIB_40467351/104878358",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Cash",
+      "parent_account_id": "1000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1000-02-26",
+    "payload": {
+      "code": "1000-02-26",
+      "name": "CBE_ECB_AC_1000465135224",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Cash",
+      "parent_account_id": "1000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "ACC-5300",
+    "payload": {
+      "id": "ACC-5300",
+      "code": "5300",
+      "name": "Research & Development",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "parent_account_id": "ACC-5000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-5300",
+    "payload": {
+      "id": "acc-5300",
+      "code": "5300",
+      "name": "Research & Development",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "parent_account_id": "ACC-5000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-3000",
+    "payload": {
+      "id": "ACC-3000",
+      "code": "3000",
+      "name": "Equity",
+      "is_group": true,
+      "is_active": true,
+      "account_type": "Equity",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-3000",
+    "payload": {
+      "id": "acc-3000",
+      "code": "3000",
+      "name": "Equity",
+      "is_group": true,
+      "is_active": true,
+      "account_type": "Equity",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-3100",
+    "payload": {
+      "id": "ACC-3100",
+      "code": "3100",
+      "name": "Share Capital",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Equity",
+      "parent_account_id": "ACC-3000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-3100",
+    "payload": {
+      "id": "acc-3100",
+      "code": "3100",
+      "name": "Share Capital",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Equity",
+      "parent_account_id": "ACC-3000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-3200",
+    "payload": {
+      "id": "ACC-3200",
+      "code": "3200",
+      "name": "Retained Earnings",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Equity",
+      "parent_account_id": "ACC-3000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "1000-02-29",
+    "payload": {
+      "code": "1000-02-29",
+      "name": "UNB_RDB_ECX_1737116287486015",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Cash",
+      "parent_account_id": "1000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "acc-3200",
+    "payload": {
+      "id": "acc-3200",
+      "code": "3200",
+      "name": "Retained Earnings",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Equity",
+      "parent_account_id": "ACC-3000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-2000",
+    "payload": {
+      "id": "ACC-2000",
+      "code": "2000",
+      "name": "Liabilities",
+      "is_group": true,
+      "is_active": true,
+      "account_type": "Liability",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-2000",
+    "payload": {
+      "id": "acc-2000",
+      "code": "2000",
+      "name": "Liabilities",
+      "is_group": true,
+      "is_active": true,
+      "account_type": "Liability",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-2100",
+    "payload": {
+      "id": "ACC-2100",
+      "code": "2100",
+      "name": "Accounts Payable (AP)",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Liability",
+      "parent_account_id": "ACC-2000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "1000-02-31",
+    "payload": {
+      "code": "1000-02-31",
+      "name": "UNB_RDB_ECX_1737116287486015 (Sec)",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Cash",
+      "parent_account_id": "1000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1000-02-33",
+    "payload": {
+      "code": "1000-02-33",
+      "name": "CBO_CATB_AC_1059900010301",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Cash",
+      "parent_account_id": "1000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1000-02-41",
+    "payload": {
+      "code": "1000-02-41",
+      "name": "AHADU",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Cash",
+      "parent_account_id": "1000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1101-04",
+    "payload": {
+      "code": "1101-04",
+      "name": "LIYEW MENGISTE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Accounts Receivable",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1200-03",
+    "payload": {
+      "code": "1200-03",
+      "name": "PRE-PAIED INSURANCE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Accounts Receivable",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1200-06",
+    "payload": {
+      "code": "1200-06",
+      "name": "ESL CONTAINER DEPOSIT",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Accounts Receivable",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1300-08",
+    "payload": {
+      "code": "1300-08",
+      "name": "SUNDARY RECEIVABLE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Accounts Receivable",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1310",
+    "payload": {
+      "code": "1310",
+      "name": "OWNER RECEIVABLE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Accounts Receivable",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "acc-1010",
+    "payload": {
+      "id": "acc-1010",
+      "code": "1010",
+      "name": "Cash & Bank Accounts",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "parent_account_id": "ACC-1000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-1200",
+    "payload": {
+      "id": "ACC-1200",
+      "code": "1200",
+      "name": "Accounts Receivable (AR)",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "parent_account_id": "ACC-1000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-1200",
+    "payload": {
+      "id": "acc-1200",
+      "code": "1200",
+      "name": "Accounts Receivable (AR)",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "parent_account_id": "ACC-1000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-1410",
+    "payload": {
+      "id": "ACC-1410",
+      "code": "1410",
+      "name": "Stock in Hand / Inventory Asset",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "parent_account_id": "ACC-1000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-1410",
+    "payload": {
+      "id": "acc-1410",
+      "code": "1410",
+      "name": "Stock in Hand / Inventory Asset",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "parent_account_id": "ACC-1000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-1500",
+    "payload": {
+      "id": "ACC-1500",
+      "code": "1500",
+      "name": "Fixed Capital Assets",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "parent_account_id": "ACC-1000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-1500",
+    "payload": {
+      "id": "acc-1500",
+      "code": "1500",
+      "name": "Fixed Capital Assets",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "parent_account_id": "ACC-1000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "1320-06-01",
+    "payload": {
+      "code": "1320-06-01",
+      "name": "WITHOLD TAX RECIVABLE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Accounts Receivable",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "ACC-1000",
+    "payload": {
+      "id": "ACC-1000",
+      "code": "1000",
+      "name": "Assets",
+      "is_group": true,
+      "is_active": true,
+      "account_type": "Asset",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-1000",
+    "payload": {
+      "id": "acc-1000",
+      "code": "1000",
+      "name": "Assets",
+      "is_group": true,
+      "is_active": true,
+      "account_type": "Asset",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-1010",
+    "payload": {
+      "id": "ACC-1010",
+      "code": "1010",
+      "name": "Cash & Bank Accounts",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "parent_account_id": "ACC-1000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "1320-06-02",
+    "payload": {
+      "code": "1320-06-02",
+      "name": "VAT RECIVABLE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Accounts Receivable",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "8000-01",
+    "payload": {
+      "code": "8000-01",
+      "name": "SALARY AND WAGE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Expenses",
+      "parent_account_id": "8000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1100-03",
+    "payload": {
+      "code": "1100-03",
+      "name": "PURCHASE ADVANCE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Accounts Receivable",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1101-03",
+    "payload": {
+      "code": "1101-03",
+      "name": "NIGUSE ABERA",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Accounts Receivable",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "ACC-1511",
+    "payload": {
+      "id": "ACC-1511",
+      "code": "1511",
+      "name": "Abyssinia Account",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "parent_account_id": "ACC-1510"
+    },
+    "created_at": "2026-08-19T18:03:32.981321+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-2100",
+    "payload": {
+      "id": "acc-2100",
+      "code": "2100",
+      "name": "Accounts Payable (AP)",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Liability",
+      "parent_account_id": "ACC-2000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-2120",
+    "payload": {
+      "id": "ACC-2120",
+      "code": "2120",
+      "name": "Stock Received Not Billed (Clearing)",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Liability",
+      "parent_account_id": "ACC-2000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-2120",
+    "payload": {
+      "id": "acc-2120",
+      "code": "2120",
+      "name": "Stock Received Not Billed (Clearing)",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Liability",
+      "parent_account_id": "ACC-2000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-2210",
+    "payload": {
+      "id": "ACC-2210",
+      "code": "2210",
+      "name": "VAT & Tax Payable",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Liability",
+      "parent_account_id": "ACC-2000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-2210",
+    "payload": {
+      "id": "acc-2210",
+      "code": "2210",
+      "name": "VAT & Tax Payable",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Liability",
+      "parent_account_id": "ACC-2000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-2300",
+    "payload": {
+      "id": "ACC-2300",
+      "code": "2300",
+      "name": "Payroll Payable",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Liability",
+      "parent_account_id": "ACC-2000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-2300",
+    "payload": {
+      "id": "acc-2300",
+      "code": "2300",
+      "name": "Payroll Payable",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Liability",
+      "parent_account_id": "ACC-2000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-5010",
+    "payload": {
+      "id": "ACC-5010",
+      "code": "5010",
+      "name": "Salaries & Employee Wages",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "parent_account_id": "ACC-5000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-5010",
+    "payload": {
+      "id": "acc-5010",
+      "code": "5010",
+      "name": "Salaries & Employee Wages",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "parent_account_id": "ACC-5000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-5200",
+    "payload": {
+      "id": "ACC-5200",
+      "code": "5200",
+      "name": "Software & SaaS Expenses",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "parent_account_id": "ACC-5000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "1300-03",
+    "payload": {
+      "code": "1300-03",
+      "name": "VET MEDICEN SALES RECIVABLE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Accounts Receivable",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "8000-08",
+    "payload": {
+      "code": "8000-08",
+      "name": "OFFICE RENT",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Expenses",
+      "parent_account_id": "8000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "8000-09",
+    "payload": {
+      "code": "8000-09",
+      "name": "TELEPHONE AND INTERNET",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Expenses",
+      "parent_account_id": "8000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "8000-18",
+    "payload": {
+      "code": "8000-18",
+      "name": "AUDIT FEE & PROFFESSIONAL FEE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Expenses",
+      "parent_account_id": "8000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "8000-25",
+    "payload": {
+      "code": "8000-25",
+      "name": "BANK SERVICE CHARGE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Expenses",
+      "parent_account_id": "8000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "8000-28",
+    "payload": {
+      "code": "8000-28",
+      "name": "PENALITY",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Expenses",
+      "parent_account_id": "8000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "8000-30",
+    "payload": {
+      "code": "8000-30",
+      "name": "MICELLANOUS",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Expenses",
+      "parent_account_id": "8000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "acc-5200",
+    "payload": {
+      "id": "acc-5200",
+      "code": "5200",
+      "name": "Software & SaaS Expenses",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "parent_account_id": "ACC-5000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-4000",
+    "payload": {
+      "id": "ACC-4000",
+      "code": "4000",
+      "name": "Income / Revenue",
+      "is_group": true,
+      "is_active": true,
+      "account_type": "Revenue",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-4000",
+    "payload": {
+      "id": "acc-4000",
+      "code": "4000",
+      "name": "Income / Revenue",
+      "is_group": true,
+      "is_active": true,
+      "account_type": "Revenue",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "8000-02",
+    "payload": {
+      "code": "8000-02",
+      "name": "TRANSPORT ALLOWANCE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Expenses",
+      "parent_account_id": "8000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "8000-06",
+    "payload": {
+      "code": "8000-06",
+      "name": "PENSION CONTRIBUTION",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Expenses",
+      "parent_account_id": "8000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "8000-07",
+    "payload": {
+      "code": "8000-07",
+      "name": "STATIONERY, PRINTING & OFF SUP",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Expenses",
+      "parent_account_id": "8000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "8000-16",
+    "payload": {
+      "code": "8000-16",
+      "name": "INSURANCE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Expenses",
+      "parent_account_id": "8000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "4000-01-01",
+    "payload": {
+      "code": "4000-01-01",
+      "name": "SALES OF VETERINARY DRUG",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Revenue",
+      "peachtree_type": "Income",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "4000-03-02",
+    "payload": {
+      "code": "4000-03-02",
+      "name": "CLEANING SERVICE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Revenue",
+      "peachtree_type": "Income",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "4000-03-03",
+    "payload": {
+      "code": "4000-03-03",
+      "name": "STORAGE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Revenue",
+      "peachtree_type": "Income",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "4200",
+    "payload": {
+      "code": "4200",
+      "name": "OTHER INCOME",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Revenue",
+      "peachtree_type": "Income",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "6000",
+    "payload": {
+      "code": "6000",
+      "name": "SELLING AND DISTRIBUTION",
+      "is_group": true,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Cost of Sales",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "6000-01",
+    "payload": {
+      "code": "6000-01",
+      "name": "SALARY AND BENEFIT",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Cost of Sales",
+      "parent_account_id": "6000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "6000-02",
+    "payload": {
+      "code": "6000-02",
+      "name": "OVER TIME",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Cost of Sales",
+      "parent_account_id": "6000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "ACC-4010",
+    "payload": {
+      "id": "ACC-4010",
+      "code": "4010",
+      "name": "Sales Revenue",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Revenue",
+      "parent_account_id": "ACC-4000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-4010",
+    "payload": {
+      "id": "acc-4010",
+      "code": "4010",
+      "name": "Sales Revenue",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Revenue",
+      "parent_account_id": "ACC-4000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-4020",
+    "payload": {
+      "id": "ACC-4020",
+      "code": "4020",
+      "name": "Other Operating Income",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Revenue",
+      "parent_account_id": "ACC-4000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-4020",
+    "payload": {
+      "id": "acc-4020",
+      "code": "4020",
+      "name": "Other Operating Income",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Revenue",
+      "parent_account_id": "ACC-4000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-4002",
+    "payload": {
+      "id": "ACC-4002",
+      "code": "4002",
+      "name": "Service Processing Revenue",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Revenue",
+      "parent_account_id": "ACC-4000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-4002",
+    "payload": {
+      "id": "acc-4002",
+      "code": "4002",
+      "name": "Service Processing Revenue",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Revenue",
+      "parent_account_id": "ACC-4000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-5000",
+    "payload": {
+      "id": "ACC-5000",
+      "code": "5000",
+      "name": "Expenses",
+      "is_group": true,
+      "is_active": true,
+      "account_type": "Expense",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-5000",
+    "payload": {
+      "id": "acc-5000",
+      "code": "5000",
+      "name": "Expenses",
+      "is_group": true,
+      "is_active": true,
+      "account_type": "Expense",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "ACC-5001",
+    "payload": {
+      "id": "ACC-5001",
+      "code": "5001",
+      "name": "Cost of Goods Sold (COGS)",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "parent_account_id": "ACC-5000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "acc-5001",
+    "payload": {
+      "id": "acc-5001",
+      "code": "5001",
+      "name": "Cost of Goods Sold (COGS)",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "parent_account_id": "ACC-5000"
+    },
+    "created_at": "2026-08-12T16:32:45.011816+00:00",
+    "updated_at": "2026-08-29T16:07:47.794581+00:00"
+  },
+  {
+    "id": "3200",
+    "payload": {
+      "code": "3200",
+      "name": "RETAINED EARNINGS",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Equity",
+      "peachtree_type": "Equity",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1000",
+    "payload": {
+      "code": "1000",
+      "name": "CASH",
+      "is_group": true,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Cash",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1000-01-01",
+    "payload": {
+      "code": "1000-01-01",
+      "name": "PETTY CASH-HEAD OFFICE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Cash",
+      "parent_account_id": "1000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1410-01",
+    "payload": {
+      "code": "1410-01",
+      "name": "STOCK OF GREEN MUNG",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Inventory",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1410-03",
+    "payload": {
+      "code": "1410-03",
+      "name": "STOCK OF REDISH SESAME SEED",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Inventory",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1500-09",
+    "payload": {
+      "code": "1500-09",
+      "name": "GIT LC- TF260852143701 $171600",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Inventory",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1500-10",
+    "payload": {
+      "code": "1500-10",
+      "name": "GIT LC101ILSN260920003 $299999",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Inventory",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1800-01",
+    "payload": {
+      "code": "1800-01",
+      "name": "CIP (FARM LAND PREPARATION )",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Other Assets",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "2000-02",
+    "payload": {
+      "code": "2000-02",
+      "name": "INCOME TAX PAYABLE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Liability",
+      "peachtree_type": "Other Current Liabilities",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "2000-03",
+    "payload": {
+      "code": "2000-03",
+      "name": "PENSION TAX PAYABLE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Liability",
+      "peachtree_type": "Other Current Liabilities",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "2000-04",
+    "payload": {
+      "code": "2000-04",
+      "name": "WHT PAYABLE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Liability",
+      "peachtree_type": "Other Current Liabilities",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1000-02-10",
+    "payload": {
+      "code": "1000-02-10",
+      "name": "ABAY_TAB_AC_1722015651591011",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Cash",
+      "parent_account_id": "1000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1000-02-13",
+    "payload": {
+      "code": "1000-02-13",
+      "name": "AIB_GFB_AC_01304807538500",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Cash",
+      "parent_account_id": "1000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1000-02-17",
+    "payload": {
+      "code": "1000-02-17",
+      "name": "BOA_RDB_35292853",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Cash",
+      "parent_account_id": "1000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "1000-02-20",
+    "payload": {
+      "code": "1000-02-20",
+      "name": "OIB_DRB_1074/3834909/001/3001/",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Asset",
+      "peachtree_type": "Cash",
+      "parent_account_id": "1000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "2000-05",
+    "payload": {
+      "code": "2000-05",
+      "name": "VAT PAYABLE",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Liability",
+      "peachtree_type": "Other Current Liabilities",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "2100-06",
+    "payload": {
+      "code": "2100-06",
+      "name": "OTHER ACCRUALS",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Liability",
+      "peachtree_type": "Other Current Liabilities",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "3000",
+    "payload": {
+      "code": "3000",
+      "name": "SHARE CAPITAL",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Equity",
+      "peachtree_type": "Equity",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "6000-04",
+    "payload": {
+      "code": "6000-04",
+      "name": "PACKING AND BAGING",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Cost of Sales",
+      "parent_account_id": "6000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "6000-08",
+    "payload": {
+      "code": "6000-08",
+      "name": "TRANSPORT COST",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Cost of Sales",
+      "parent_account_id": "6000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "6000-10",
+    "payload": {
+      "code": "6000-10",
+      "name": "LOADING UNLOADING",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Cost of Sales",
+      "parent_account_id": "6000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "6000-22",
+    "payload": {
+      "code": "6000-22",
+      "name": "OTHER",
+      "is_group": false,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Cost of Sales",
+      "parent_account_id": "6000"
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  },
+  {
+    "id": "8000",
+    "payload": {
+      "code": "8000",
+      "name": "ADMINISTRATIVE & GENERAL EXPENSES",
+      "is_group": true,
+      "is_active": true,
+      "account_type": "Expense",
+      "peachtree_type": "Expenses",
+      "parent_account_id": null
+    },
+    "created_at": "2026-08-29T05:49:31.205798+00:00",
+    "updated_at": "2026-08-31T16:37:53.764411+00:00"
+  }
+]

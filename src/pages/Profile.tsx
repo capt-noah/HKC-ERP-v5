@@ -299,7 +299,10 @@ export default function Profile() {
 
   const formatRelativeTime = (dateStr: string) => {
     try {
-      const diffMs = Date.now() - new Date(dateStr).getTime()
+      if (!dateStr) return "Recent"
+      const time = new Date(dateStr).getTime()
+      if (isNaN(time)) return "Recent"
+      const diffMs = Date.now() - time
       const diffMins = Math.floor(diffMs / 60000)
       if (diffMins < 2) return "Active now"
       if (diffMins < 60) return `${diffMins}m ago`
@@ -757,9 +760,9 @@ export default function Profile() {
                       onClick={fetchSessions}
                       disabled={loadingSessions}
                       title="Refresh session list"
-                      className="size-7 rounded-lg bg-zinc-50 hover:bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-600 hover:text-zinc-900 transition-all cursor-pointer disabled:opacity-50"
+                      className="size-7 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/90 flex items-center justify-center text-emerald-700 hover:text-emerald-900 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
                     >
-                      <RefreshCw className={cn("size-3.5", loadingSessions && "animate-spin text-emerald-600")} />
+                      <RefreshCw className={cn("size-3.5 text-emerald-600", loadingSessions && "animate-spin")} />
                     </button>
                   </div>
 
@@ -830,7 +833,11 @@ export default function Profile() {
                           </div>
 
                           <div className="flex items-center justify-between text-[10px] text-zinc-400 pt-1 border-t border-zinc-100 dark:border-zinc-800">
-                            <span>Signed in: {new Date(s.createdAt).toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                            <span>
+                              Signed in: {s.createdAt && !isNaN(new Date(s.createdAt).getTime())
+                                ? new Date(s.createdAt).toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                                : "Recently"}
+                            </span>
                             <span className={cn(s.isCurrent && "font-semibold text-emerald-700")}>
                               {s.isCurrent ? "Active now" : formatRelativeTime(s.lastActiveAt)}
                             </span>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Bottom"/>
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#000000"/>
+  </Style>
+  <Style ss:ID="TitleStyle">
+   <Font ss:FontName="Calibri" ss:Size="15" ss:Bold="1" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="HeaderStyle">
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#0F172A" ss:Pattern="Solid"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+  </Style>
+  <Style ss:ID="DataCell">
+   <Font ss:FontName="Calibri" ss:Size="10"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="NumCell">
+   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1"/>
+   <Alignment ss:Horizontal="Right"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/>
+   </Borders>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="PayrollJournal">
+  <Table>
+   <Row ss:Height="24">
+    <Cell ss:StyleID="TitleStyle"><Data ss:Type="String">HKC Trading - Payroll Journal</Data></Cell>
+   </Row>
+   <Row ss:Height="8"><Cell><Data ss:Type="String"></Data></Cell></Row>
+   <Row ss:Height="20">
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Payroll Run ID</Data></Cell><Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Period Label</Data></Cell><Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Period End Date</Data></Cell><Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Employee ID</Data></Cell><Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Employee Name</Data></Cell><Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Gross Salary</Data></Cell><Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Income Tax Withheld</Data></Cell><Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Pension Employee (7%)</Data></Cell><Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Pension Employer (11%)</Data></Cell><Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Total Deductions</Data></Cell><Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Net Pay Disbursed</Data></Cell><Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Cash Account</Data></Cell><Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Salary Expense Account</Data></Cell>
+   </Row>
+  </Table>
+ </Worksheet>
+</Workbook>

@@ -1,39 +1,39 @@
 import bcrypt from "bcryptjs"
-import { drizzleCreateRow } from "./server/db/drizzleCrud.js"
-import crypto from "node:crypto"
+import { drizzleCreateRow, drizzleUpdateRow, drizzleListRows } from "./server/db/drizzleCrud.js"
+import { getResource } from "./server/db/resourceRegistry.js"
 
 async function seedSuperAdmin() {
-  console.log("Seeding initial superadmin user into MySQL...")
+  console.log("Seeding / updating initial superadmin user...")
   const username = "admin"
-  const password = "SuperadminPassword1!" // Standard initial password
+  const password = "adminPassword123!"
 
   try {
     const password_hash = await bcrypt.hash(password, 10)
+    const resource = getResource("users")
     
-    const response = await drizzleCreateRow({
-      resource: { table: "users", storage: "direct" },
-      body: { 
-        id: "USR-SUPERADMIN-01",
-        username, 
-        password_hash, 
-        role: "superadmin",
-        roles: ["superadmin"],
-        first_name: "Super",
-        last_name: "Admin",
-        fullname: "Super Administrator",
-        is_active: true,
-        status: "active",
-      },
-    })
-    
-    if (response.status >= 400) {
-      if (JSON.stringify(response.body).includes("duplicate") || JSON.stringify(response.body).includes("ER_DUP_ENTRY")) {
-        console.log("Superadmin already exists.")
-      } else {
-        console.error("Failed to seed superadmin:", response.body)
-      }
+    const existing = await drizzleListRows({ resource, query: { username: `eq.${username}` } })
+    const user = Array.isArray(existing.body) && existing.body.length > 0 ? existing.body[0] : null
+
+    if (user) {
+      await drizzleUpdateRow({
+        resource,
+        id: user.id,
+        body: { password_hash, status: "active" }
+      })
+      console.log(`✓ Superadmin password updated! Username: admin | Password: ${password}`)
     } else {
-      console.log("Superadmin seeded successfully! Username: admin | Password: SuperadminPassword1!")
+      await drizzleCreateRow({
+        resource,
+        body: { 
+          username, 
+          password_hash, 
+          roles: ["superadmin"],
+          role: "superadmin",
+          status: "active",
+          fullname: "Administrator"
+        },
+      })
+      console.log(`✓ Superadmin created! Username: admin | Password: ${password}`)
     }
   } catch (err) {
     console.error("Error seeding auth:", err)
