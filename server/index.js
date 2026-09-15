@@ -109,12 +109,22 @@ app.get("/api/db-test", async (req, res) => {
       ping: ping[0],
       database: config.dbName,
       host: config.dbHost,
+      user: config.dbUser,
       totalTables: tables.length,
       users: usersList,
       tables,
     })
   } catch (err) {
-    res.status(500).json({ status: "error", message: err.message })
+    res.status(500).json({
+      status: "error",
+      message: err.message,
+      code: err.code,
+      host: config.dbHost,
+      user: config.dbUser,
+      database: config.dbName,
+      port: config.dbPort,
+      hasPassword: Boolean(config.dbPassword),
+    })
   }
 })
 
