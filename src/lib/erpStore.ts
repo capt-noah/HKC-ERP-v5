@@ -17,6 +17,10 @@ export interface Warehouse {
   location: string
   warehouse_type?: WarehouseType
   type?: string
+  manager?: string
+  status?: string
+  specialization?: string
+  targetMarkets?: string
 }
 
 export interface StockBreakdown {

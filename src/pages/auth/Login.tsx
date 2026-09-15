@@ -79,7 +79,7 @@ export default function Login() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || "Invalid username or password")
+        throw new Error(data.error || data.details || data.message || "Invalid username or password")
       }
 
       login(data.user, data.token, data.session?.expiresAt || data.expiresAt)

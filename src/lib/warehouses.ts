@@ -9,7 +9,11 @@ export const OPERATING_WAREHOUSES: Warehouse[] = [
     name: "WH1 - Ethiopia Agricultural Export Hub",
     warehouse_type: "EXPORT_WH",
     type: "Export Hub",
+    status: "Active",
+    manager: "Abebe Kasahun",
     location: "Modjo Export Terminal, Ethiopia",
+    targetMarkets: "Europe, Asia, USA",
+    specialization: "Agricultural Commodities",
   },
   {
     id: "WH2",
@@ -17,7 +21,11 @@ export const OPERATING_WAREHOUSES: Warehouse[] = [
     name: "WH2 - Central Veterinary Hub",
     warehouse_type: "PHARMA_WH",
     type: "Central Warehouse",
+    status: "Active",
+    manager: "Dr. Alemayehu Worku",
     location: "Addis Ababa Central, Ethiopia",
+    targetMarkets: "Domestic & Regional Dist.",
+    specialization: "Veterinary Drugs & Biologicals",
   },
   {
     id: "WH3",
@@ -25,7 +33,11 @@ export const OPERATING_WAREHOUSES: Warehouse[] = [
     name: "WH3 - Regional Veterinary Depot",
     warehouse_type: "PHARMA_WH",
     type: "Regional Depot",
+    status: "Active",
+    manager: "Tigist Haile",
     location: "Bishoftu Regional Hub, Ethiopia",
+    targetMarkets: "Oromia & Southern Regions",
+    specialization: "Veterinary Supplies & Consumables",
   },
 ]
 

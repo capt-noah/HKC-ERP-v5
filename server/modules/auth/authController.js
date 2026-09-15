@@ -17,39 +17,25 @@ import {
 
 const JWT_SECRET = config.jwtSecret
 
+import { pool } from "../../db/client.js"
+
 export async function ensureSuperAdmin() {
   try {
-    const resource = getResource("users")
-    const listRes = await drizzleListRows({ resource })
-    const allUsers = Array.isArray(listRes.body) ? listRes.body : []
-    const adminExists = allUsers.some((u) => (u.username || "").toLowerCase() === "admin")
-    if (!adminExists) {
+    const [rows] = await pool.query(
+      "SELECT id, username, password_hash FROM users WHERE LOWER(TRIM(username)) = 'admin' LIMIT 1"
+    )
+    if (!Array.isArray(rows) || rows.length === 0) {
       const password_hash = await bcrypt.hash("SuperadminPassword1!", 10)
-      await drizzleCreateRow({
-        resource,
-        body: {
-          id: "USR-SUPERADMIN-01",
-          username: "admin",
-          password_hash,
-          role: "superadmin",
-          roles: ["superadmin"],
-          first_name: "Super",
-          last_name: "Admin",
-          fullname: "Super Administrator",
-          is_active: true,
-          status: "active",
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      })
+      await pool.query(
+        "INSERT INTO users (id, username, password_hash, role, roles, fullname, first_name, last_name, is_active, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'active', NOW(), NOW())",
+        ["USR-SUPERADMIN-01", "admin", password_hash, "superadmin", JSON.stringify(["superadmin"]), "Super Administrator", "Super", "Admin"]
+      )
       console.log("[AUTH AUTO-BOOTSTRAP] Superadmin account seeded: admin / SuperadminPassword1!")
     }
   } catch (err) {
     console.warn("[AUTH AUTO-BOOTSTRAP WARNING]:", err.message)
   }
 }
-
-import { pool } from "../../db/client.js"
 
 export async function login(req, res) {
   const { username, password } = req.body
@@ -71,12 +57,25 @@ export async function login(req, res) {
 
     // 2. Fallback search by employee_id or ID if username wasn't an exact match
     if (!user) {
-      const [altRows] = await pool.query(
-        "SELECT * FROM users WHERE LOWER(TRIM(id)) = LOWER(?) OR LOWER(TRIM(employee_id)) = LOWER(?) LIMIT 1",
-        [cleanUsername, cleanUsername]
-      )
-      if (Array.isArray(altRows) && altRows.length > 0) {
-        user = altRows[0]
+      try {
+        const [altRows] = await pool.query(
+          "SELECT * FROM users WHERE LOWER(TRIM(id)) = LOWER(?) OR LOWER(TRIM(employee_id)) = LOWER(?) LIMIT 1",
+          [cleanUsername, cleanUsername]
+        )
+        if (Array.isArray(altRows) && altRows.length > 0) {
+          user = altRows[0]
+        }
+      } catch {
+        // Fallback if employee_id column does not exist
+        try {
+          const [idRows] = await pool.query(
+            "SELECT * FROM users WHERE LOWER(TRIM(id)) = LOWER(?) LIMIT 1",
+            [cleanUsername]
+          )
+          if (Array.isArray(idRows) && idRows.length > 0) {
+            user = idRows[0]
+          }
+        } catch {}
       }
     }
 
@@ -234,7 +233,7 @@ export async function login(req, res) {
     })
   } catch (error) {
     console.error("Auth login controller error:", error)
-    res.status(500).json({ error: "Internal server error", details: error.message })
+    res.status(500).json({ error: error.message || "Internal server error", details: error.message })
   }
 }
 

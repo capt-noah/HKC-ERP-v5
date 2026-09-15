@@ -1,4 +1,4 @@
-import { pool } from "/Users/Noah/Documents/React/HKC-ERP-v5/server/db/client.js"
+import { pool } from "../db/client.js"
 
 function assert(condition, msg) {
   if (!condition) {

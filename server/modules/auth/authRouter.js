@@ -25,7 +25,9 @@ authRouter.post("/change-password", authenticateToken, changePassword)
 
 // Session Management & Heartbeat Extension Endpoints
 authRouter.get("/session-status", authenticateToken, checkSessionStatus)
+authRouter.get("/session/status", authenticateToken, checkSessionStatus)
 authRouter.post("/refresh-session", authenticateToken, refreshUserSession)
+authRouter.post("/session/refresh", authenticateToken, refreshUserSession)
 authRouter.get("/sessions", authenticateToken, listUserSessions)
 authRouter.delete("/sessions/:id", authenticateToken, revokeUserSession)
 authRouter.post("/sessions/revoke-others", authenticateToken, revokeOtherUserSessions)

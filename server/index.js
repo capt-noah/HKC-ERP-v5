@@ -51,9 +51,23 @@ app.set("etag", false)
 
 import { pool } from "./db/client.js"
 import { ensureSuperAdmin } from "./modules/auth/authController.js"
+import { migrateUserSessions } from "./scripts/migrateUserSessions.js"
 
-// Auto-bootstrap superadmin account in background if missing
-void ensureSuperAdmin()
+// Auto-bootstrap database sessions table and superadmin account on server startup
+async function initDatabase() {
+  try {
+    await migrateUserSessions()
+  } catch (err) {
+    console.warn("[DB INIT] user_sessions bootstrap notice:", err.message)
+  }
+  try {
+    await ensureSuperAdmin()
+  } catch (err) {
+    console.warn("[DB INIT] ensureSuperAdmin notice:", err.message)
+  }
+}
+
+void initDatabase()
 
 // 4. API Diagnostics & Health Endpoints (Matching Plesk architecture)
 app.get("/hello", (req, res) => {
@@ -95,12 +109,22 @@ app.get("/api/db-test", async (req, res) => {
       ping: ping[0],
       database: config.dbName,
       host: config.dbHost,
+      user: config.dbUser,
       totalTables: tables.length,
       users: usersList,
       tables,
     })
   } catch (err) {
-    res.status(500).json({ status: "error", message: err.message })
+    res.status(500).json({
+      status: "error",
+      message: err.message,
+      code: err.code,
+      host: config.dbHost,
+      user: config.dbUser,
+      database: config.dbName,
+      port: config.dbPort,
+      hasPassword: Boolean(config.dbPassword),
+    })
   }
 })
 
@@ -174,14 +198,33 @@ app.use("/uploads", (req, res, next) => {
 
 // 7. Serve static assets from pre-compiled dist/ directory (for Plesk / standalone hosting)
 if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath, { maxAge: "1d", index: false }))
+  app.use(
+    express.static(distPath, {
+      maxAge: "1d",
+      index: false,
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith(".js") || filePath.endsWith(".mjs")) {
+          res.setHeader("Content-Type", "application/javascript; charset=utf-8")
+        } else if (filePath.endsWith(".css")) {
+          res.setHeader("Content-Type", "text/css; charset=utf-8")
+        }
+      },
+    })
+  )
 }
 
 // 8. SPA Client-Side Catch-All Fallback (eliminates page refresh trap on Plesk across all Express versions)
 app.use((req, res, next) => {
   if (req.method !== "GET") return next()
+
+  // Guard against returning HTML for missing static assets or API endpoints
+  if (req.path.startsWith("/assets/") || req.path.startsWith("/api/") || req.path.startsWith("/uploads/")) {
+    return res.status(404).json({ error: `Asset or endpoint '${req.path}' not found.` })
+  }
+
   const indexPath = path.join(distPath, "index.html")
   if (fs.existsSync(indexPath)) {
+    res.setHeader("Content-Type", "text/html; charset=utf-8")
     res.sendFile(indexPath)
   } else {
     res.status(200).send("HKC ERP API is running. Run 'npm run build' to generate frontend assets.")
