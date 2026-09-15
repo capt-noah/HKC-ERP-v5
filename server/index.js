@@ -124,6 +124,11 @@ app.get("/api/db-test", async (req, res) => {
       database: config.dbName,
       port: config.dbPort,
       hasPassword: Boolean(config.dbPassword),
+      solution: {
+        instructions: "To grant access, either update your root .env file with your actual MySQL credentials OR run the SQL command below in your MySQL console.",
+        fixSql: `CREATE DATABASE IF NOT EXISTS \`${config.dbName}\`; CREATE USER IF NOT EXISTS '${config.dbUser}'@'localhost' IDENTIFIED BY '${config.dbPassword || "DMka6&jn0*Wsdfo0"}'; CREATE USER IF NOT EXISTS '${config.dbUser}'@'127.0.0.1' IDENTIFIED BY '${config.dbPassword || "DMka6&jn0*Wsdfo0"}'; CREATE USER IF NOT EXISTS '${config.dbUser}'@'%' IDENTIFIED BY '${config.dbPassword || "DMka6&jn0*Wsdfo0"}'; GRANT ALL PRIVILEGES ON \`${config.dbName}\`.* TO '${config.dbUser}'@'localhost'; GRANT ALL PRIVILEGES ON \`${config.dbName}\`.* TO '${config.dbUser}'@'127.0.0.1'; GRANT ALL PRIVILEGES ON \`${config.dbName}\`.* TO '${config.dbUser}'@'%'; FLUSH PRIVILEGES;`,
+        fixEnvExample: `MYSQL_HOST=127.0.0.1\nMYSQL_PORT=3306\nMYSQL_USER=your_username\nMYSQL_PASSWORD=your_password\nMYSQL_DATABASE=hkc_trading`,
+      },
     })
   }
 })
