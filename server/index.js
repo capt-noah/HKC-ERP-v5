@@ -51,9 +51,23 @@ app.set("etag", false)
 
 import { pool } from "./db/client.js"
 import { ensureSuperAdmin } from "./modules/auth/authController.js"
+import { migrateUserSessions } from "./scripts/migrateUserSessions.js"
 
-// Auto-bootstrap superadmin account in background if missing
-void ensureSuperAdmin()
+// Auto-bootstrap database sessions table and superadmin account on server startup
+async function initDatabase() {
+  try {
+    await migrateUserSessions()
+  } catch (err) {
+    console.warn("[DB INIT] user_sessions bootstrap notice:", err.message)
+  }
+  try {
+    await ensureSuperAdmin()
+  } catch (err) {
+    console.warn("[DB INIT] ensureSuperAdmin notice:", err.message)
+  }
+}
+
+void initDatabase()
 
 // 4. API Diagnostics & Health Endpoints (Matching Plesk architecture)
 app.get("/hello", (req, res) => {

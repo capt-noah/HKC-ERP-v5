@@ -79,12 +79,33 @@ export async function createSession({ userId, req, durationHours = 6 }) {
 
   const expiresAt = new Date(Date.now() + durationHours * 60 * 60 * 1000)
 
-  await pool.query(
-    `INSERT INTO user_sessions 
-      (id, user_id, ip_address, user_agent, device_type, os_name, browser_name, is_revoked, last_active_at, expires_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0, NOW(), ?, NOW(), NOW())`,
-    [sessionId, userId, ipAddress, userAgent, deviceType, osName, browserName, expiresAt]
-  )
+  try {
+    await pool.query(
+      `INSERT INTO user_sessions 
+        (id, user_id, ip_address, user_agent, device_type, os_name, browser_name, is_revoked, last_active_at, expires_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, NOW(), ?, NOW(), NOW())`,
+      [sessionId, userId, ipAddress, userAgent, deviceType, osName, browserName, expiresAt]
+    )
+  } catch (dbErr) {
+    if (dbErr.code === "ER_NO_SUCH_TABLE" || dbErr.errno === 1146) {
+      console.log("[SESSION SERVICE] `user_sessions` table missing, creating table now...")
+      try {
+        const { migrateUserSessions } = await import("../../scripts/migrateUserSessions.js")
+        await migrateUserSessions()
+        // Retry insert after table creation
+        await pool.query(
+          `INSERT INTO user_sessions 
+            (id, user_id, ip_address, user_agent, device_type, os_name, browser_name, is_revoked, last_active_at, expires_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 0, NOW(), ?, NOW(), NOW())`,
+          [sessionId, userId, ipAddress, userAgent, deviceType, osName, browserName, expiresAt]
+        )
+      } catch (retryErr) {
+        console.warn("[SESSION SERVICE INSERT RETRY FAILED]:", retryErr.message)
+      }
+    } else {
+      console.warn("[SESSION SERVICE INSERT ERROR]:", dbErr.message)
+    }
+  }
 
   return {
     id: sessionId,

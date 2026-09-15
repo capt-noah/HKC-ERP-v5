@@ -71,12 +71,25 @@ export async function login(req, res) {
 
     // 2. Fallback search by employee_id or ID if username wasn't an exact match
     if (!user) {
-      const [altRows] = await pool.query(
-        "SELECT * FROM users WHERE LOWER(TRIM(id)) = LOWER(?) OR LOWER(TRIM(employee_id)) = LOWER(?) LIMIT 1",
-        [cleanUsername, cleanUsername]
-      )
-      if (Array.isArray(altRows) && altRows.length > 0) {
-        user = altRows[0]
+      try {
+        const [altRows] = await pool.query(
+          "SELECT * FROM users WHERE LOWER(TRIM(id)) = LOWER(?) OR LOWER(TRIM(employee_id)) = LOWER(?) LIMIT 1",
+          [cleanUsername, cleanUsername]
+        )
+        if (Array.isArray(altRows) && altRows.length > 0) {
+          user = altRows[0]
+        }
+      } catch {
+        // Fallback if employee_id column does not exist
+        try {
+          const [idRows] = await pool.query(
+            "SELECT * FROM users WHERE LOWER(TRIM(id)) = LOWER(?) LIMIT 1",
+            [cleanUsername]
+          )
+          if (Array.isArray(idRows) && idRows.length > 0) {
+            user = idRows[0]
+          }
+        } catch {}
       }
     }
 
