@@ -4,15 +4,37 @@ import { fileURLToPath } from "node:url"
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootEnvPath = path.resolve(__dirname, "../.env")
 
-try {
-  process.loadEnvFile?.(rootEnvPath)
-} catch {
+import fs from "node:fs"
+
+// Zero-dependency cross-version .env loader (compatible with Node 18, 20, 22+)
+function loadEnvFileSafe(filePath) {
   try {
-    process.loadEnvFile?.()
-  } catch {
-    // Environment files are optional; hardcoded fallback credentials will be used.
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, "utf8")
+      for (const line of content.split("\n")) {
+        const trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith("#")) continue
+        const eqIdx = trimmed.indexOf("=")
+        if (eqIdx !== -1) {
+          const key = trimmed.slice(0, eqIdx).trim()
+          let val = trimmed.slice(eqIdx + 1).trim()
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1)
+          }
+          if (process.env[key] === undefined || process.env[key] === "") {
+            process.env[key] = val
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[CONFIG] Notice reading env file:", err.message)
   }
 }
+
+// Attempt loading from root .env and cwd .env
+loadEnvFileSafe(rootEnvPath)
+loadEnvFileSafe(path.resolve(process.cwd(), ".env"))
 
 // ── Hardcoded Default MySQL Configuration Fallbacks ───────────────────────────
 const DEFAULT_MYSQL_HOST = "127.0.0.1"
