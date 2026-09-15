@@ -5,8 +5,12 @@ import { config } from "../config.js"
 
 function getPoolConfig() {
   if (process.env.DATABASE_URL) {
+    let uri = String(process.env.DATABASE_URL)
+    if (uri.includes("@localhost")) {
+      uri = uri.replace("@localhost", "@127.0.0.1")
+    }
     return {
-      uri: process.env.DATABASE_URL,
+      uri,
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
@@ -16,8 +20,10 @@ function getPoolConfig() {
     }
   }
 
+  const host = config.dbHost === "localhost" ? "127.0.0.1" : (config.dbHost || "127.0.0.1")
+
   return {
-    host: config.dbHost,
+    host,
     port: config.dbPort,
     user: config.dbUser,
     password: config.dbPassword,

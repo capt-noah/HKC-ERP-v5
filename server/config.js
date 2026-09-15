@@ -55,15 +55,23 @@ const DEFAULT_MYSQL_PASSWORD = "DMka6&jn0*Wsdfo0"
 const DEFAULT_MYSQL_DATABASE = "hkc_trading"
 const DEFAULT_DATABASE_URL = `mysql://${DEFAULT_MYSQL_USER}:${DEFAULT_MYSQL_PASSWORD}@${DEFAULT_MYSQL_HOST}:${DEFAULT_MYSQL_PORT}/${DEFAULT_MYSQL_DATABASE}`
 
+const rawDbHost = String(process.env.DB_HOST || process.env.MYSQL_HOST || DEFAULT_MYSQL_HOST).trim()
+const normalizedDbHost = rawDbHost === "localhost" ? "127.0.0.1" : rawDbHost
+
+let rawDbUrl = String(process.env.DATABASE_URL || DEFAULT_DATABASE_URL).trim()
+if (rawDbUrl.includes("@localhost")) {
+  rawDbUrl = rawDbUrl.replace("@localhost", "@127.0.0.1")
+}
+
 export const config = {
   port: Number(process.env.PORT || process.env.SERVER_PORT || 1000),
   host: process.env.SERVER_HOST || "0.0.0.0",
 
   // Direct Database URL (with hardcoded fallback)
-  databaseUrl: process.env.DATABASE_URL || DEFAULT_DATABASE_URL,
+  databaseUrl: rawDbUrl,
 
-  // Discrete MySQL connection parameters (with hardcoded fallbacks)
-  dbHost: process.env.DB_HOST || process.env.MYSQL_HOST || DEFAULT_MYSQL_HOST,
+  // Discrete MySQL connection parameters (with hardcoded fallbacks and localhost -> 127.0.0.1 normalization)
+  dbHost: normalizedDbHost,
   dbPort: Number(process.env.DB_PORT || process.env.MYSQL_PORT || DEFAULT_MYSQL_PORT),
   dbUser: process.env.DB_USER || process.env.MYSQL_USER || DEFAULT_MYSQL_USER,
   dbPassword: process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : (process.env.MYSQL_PASSWORD !== undefined ? process.env.MYSQL_PASSWORD : DEFAULT_MYSQL_PASSWORD),
