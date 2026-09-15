@@ -33,7 +33,7 @@ app.use(
       "Pragma",
       "If-None-Match",
     ],
-    exposedHeaders: ["Content-Length", "Content-Range", "Content-Type", "Authorization"],
+    exposedHeaders: ["Content-Length", "Content-Range", "Content-Type", "Authorization", "X-Session-Expires-At"],
     credentials: true,
     maxAge: 86400, // Cache preflight for 24 hours
     optionsSuccessStatus: 204,
@@ -46,10 +46,13 @@ app.use(logger.requestLogger)
 // 3. Parse JSON request bodies before any route handler runs.
 app.use(express.json({ limit: "10mb" }))
 
+// Disable ETags on API responses so clients/browsers always receive live fresh database states
+app.set("etag", false)
+
 import { pool } from "./db/client.js"
 import { ensureSuperAdmin } from "./modules/auth/authController.js"
 
-// Auto-bootstrap superadmin account in background on startup
+// Auto-bootstrap superadmin account in background if missing
 void ensureSuperAdmin()
 
 // 4. API Diagnostics & Health Endpoints (Matching Plesk architecture)

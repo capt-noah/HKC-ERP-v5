@@ -1,0 +1,1208 @@
+[
+  {
+    "id": "JE-COGS-SI-00955-1",
+    "payload": {
+      "id": "JE-COGS-SI-00955-1",
+      "currency": "ETB",
+      "account_id": "ACC-5000",
+      "debit_amount": 4200,
+      "warehouse_id": "WH2",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-COGS-SI-00955",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.396Z"
+  },
+  {
+    "id": "JE-COGS-SI-00955-2",
+    "payload": {
+      "id": "JE-COGS-SI-00955-2",
+      "currency": "ETB",
+      "account_id": "ACC-1010",
+      "debit_amount": 0,
+      "warehouse_id": "WH2",
+      "credit_amount": 4200,
+      "journal_entry_id": "JE-COGS-SI-00955",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.395Z"
+  },
+  {
+    "id": "JE-COGS-SI-08032-CR",
+    "payload": {
+      "id": "JE-COGS-SI-08032-CR",
+      "currency": "ETB",
+      "account_id": "ACC-1010",
+      "debit_amount": 0,
+      "warehouse_id": "WH3",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-COGS-SI-08032",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-21T07:32:22.294Z",
+    "updated_at": "2026-09-01T12:56:25.382Z"
+  },
+  {
+    "id": "JE-COGS-SI-08032-DR",
+    "payload": {
+      "id": "JE-COGS-SI-08032-DR",
+      "currency": "ETB",
+      "account_id": "ACC-5000",
+      "debit_amount": 0,
+      "warehouse_id": "WH3",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-COGS-SI-08032",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-21T07:32:22.294Z",
+    "updated_at": "2026-09-01T12:56:25.382Z"
+  },
+  {
+    "id": "JE-COGS-SI-35413-1",
+    "payload": {
+      "id": "JE-COGS-SI-35413-1",
+      "currency": "ETB",
+      "account_id": "ACC-5000",
+      "debit_amount": 1312500,
+      "warehouse_id": "WH3",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-COGS-SI-35413",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.387Z"
+  },
+  {
+    "id": "JE-COGS-SI-35413-2",
+    "payload": {
+      "id": "JE-COGS-SI-35413-2",
+      "currency": "ETB",
+      "account_id": "ACC-1010",
+      "debit_amount": 0,
+      "warehouse_id": "WH3",
+      "credit_amount": 1312500,
+      "journal_entry_id": "JE-COGS-SI-35413",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.395Z"
+  },
+  {
+    "id": "JE-COGS-SI-37748-CR",
+    "payload": {
+      "id": "JE-COGS-SI-37748-CR",
+      "currency": "ETB",
+      "account_id": "ACC-1010",
+      "debit_amount": 0,
+      "warehouse_id": "WH2",
+      "credit_amount": 154350,
+      "journal_entry_id": "JE-COGS-SI-37748",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-14T11:36:40.464Z",
+    "updated_at": "2026-09-01T12:56:25.386Z"
+  },
+  {
+    "id": "JE-COGS-SI-37748-DR",
+    "payload": {
+      "id": "JE-COGS-SI-37748-DR",
+      "currency": "ETB",
+      "account_id": "ACC-5000",
+      "debit_amount": 154350,
+      "warehouse_id": "WH2",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-COGS-SI-37748",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-14T11:36:40.464Z",
+    "updated_at": "2026-09-01T12:56:25.386Z"
+  },
+  {
+    "id": "JE-COGS-SI-59099-CR",
+    "payload": {
+      "id": "JE-COGS-SI-59099-CR",
+      "currency": "ETB",
+      "account_id": "ACC-1010",
+      "debit_amount": 0,
+      "warehouse_id": "WH3",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-COGS-SI-59099",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T12:23:21.726Z",
+    "updated_at": "2026-09-01T12:56:25.376Z"
+  },
+  {
+    "id": "JE-COGS-SI-59099-DR",
+    "payload": {
+      "id": "JE-COGS-SI-59099-DR",
+      "currency": "ETB",
+      "account_id": "ACC-5000",
+      "debit_amount": 0,
+      "warehouse_id": "WH3",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-COGS-SI-59099",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T12:23:21.726Z",
+    "updated_at": "2026-09-01T12:56:25.375Z"
+  },
+  {
+    "id": "JE-COGS-SI-67712-1",
+    "payload": {
+      "id": "JE-COGS-SI-67712-1",
+      "currency": "ETB",
+      "account_id": "ACC-5000",
+      "debit_amount": 10500,
+      "warehouse_id": "WH3",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-COGS-SI-67712",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.395Z"
+  },
+  {
+    "id": "JE-COGS-SI-67712-2",
+    "payload": {
+      "id": "JE-COGS-SI-67712-2",
+      "currency": "ETB",
+      "account_id": "ACC-1010",
+      "debit_amount": 0,
+      "warehouse_id": "WH3",
+      "credit_amount": 10500,
+      "journal_entry_id": "JE-COGS-SI-67712",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.393Z"
+  },
+  {
+    "id": "JE-COGS-SI-72341-1",
+    "payload": {
+      "id": "JE-COGS-SI-72341-1",
+      "currency": "ETB",
+      "account_id": "ACC-5000",
+      "debit_amount": 168000,
+      "warehouse_id": "WH2",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-COGS-SI-72341",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.392Z"
+  },
+  {
+    "id": "JE-COGS-SI-72341-2",
+    "payload": {
+      "id": "JE-COGS-SI-72341-2",
+      "currency": "ETB",
+      "account_id": "ACC-1010",
+      "debit_amount": 0,
+      "warehouse_id": "WH2",
+      "credit_amount": 168000,
+      "journal_entry_id": "JE-COGS-SI-72341",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.391Z"
+  },
+  {
+    "id": "JE-COGS-SI-97841-1",
+    "payload": {
+      "id": "JE-COGS-SI-97841-1",
+      "currency": "ETB",
+      "account_id": "ACC-5000",
+      "debit_amount": 168000,
+      "warehouse_id": "WH2",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-COGS-SI-97841",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.390Z"
+  },
+  {
+    "id": "JE-COGS-SI-97841-2",
+    "payload": {
+      "id": "JE-COGS-SI-97841-2",
+      "currency": "ETB",
+      "account_id": "ACC-1010",
+      "debit_amount": 0,
+      "warehouse_id": "WH2",
+      "credit_amount": 168000,
+      "journal_entry_id": "JE-COGS-SI-97841",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.389Z"
+  },
+  {
+    "id": "JE-PAY-PAY-5e1faa78-63ad-4a1c-b6d9-e775da3cf787-1",
+    "payload": {
+      "id": "JE-PAY-PAY-5e1faa78-63ad-4a1c-b6d9-e775da3cf787-1",
+      "currency": "ETB",
+      "account_id": "ACC-5010",
+      "debit_amount": 45574,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PAY-PAY-5e1faa78-63ad-4a1c-b6d9-e775da3cf787",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T18:39:25.095Z",
+    "updated_at": "2026-09-01T12:56:25.330Z"
+  },
+  {
+    "id": "JE-PAY-PAY-5e1faa78-63ad-4a1c-b6d9-e775da3cf787-2",
+    "payload": {
+      "id": "JE-PAY-PAY-5e1faa78-63ad-4a1c-b6d9-e775da3cf787-2",
+      "currency": "ETB",
+      "party_id": "EMP-007",
+      "account_id": "acc-1010",
+      "party_name": null,
+      "party_type": "Employee",
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 45574,
+      "journal_entry_id": "JE-PAY-PAY-5e1faa78-63ad-4a1c-b6d9-e775da3cf787",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T18:39:25.095Z",
+    "updated_at": "2026-09-01T12:56:25.356Z"
+  },
+  {
+    "id": "JE-PAY-PAY-6be77ec6-d765-4f01-8d55-0794cecc6d63-1",
+    "payload": {
+      "id": "JE-PAY-PAY-6be77ec6-d765-4f01-8d55-0794cecc6d63-1",
+      "currency": "ETB",
+      "account_id": "ACC-5010",
+      "debit_amount": 74590,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PAY-PAY-6be77ec6-d765-4f01-8d55-0794cecc6d63",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T18:39:25.095Z",
+    "updated_at": "2026-09-01T12:56:25.354Z"
+  },
+  {
+    "id": "JE-PAY-PAY-6be77ec6-d765-4f01-8d55-0794cecc6d63-2",
+    "payload": {
+      "id": "JE-PAY-PAY-6be77ec6-d765-4f01-8d55-0794cecc6d63-2",
+      "currency": "ETB",
+      "party_id": "EMP-003",
+      "account_id": "acc-1010",
+      "party_name": null,
+      "party_type": "Employee",
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 74590,
+      "journal_entry_id": "JE-PAY-PAY-6be77ec6-d765-4f01-8d55-0794cecc6d63",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T18:39:25.095Z",
+    "updated_at": "2026-09-01T12:56:25.353Z"
+  },
+  {
+    "id": "JE-PAY-PAY-7273abde-f088-4262-a136-602bb34e67f4-1",
+    "payload": {
+      "id": "JE-PAY-PAY-7273abde-f088-4262-a136-602bb34e67f4-1",
+      "currency": "ETB",
+      "account_id": "ACC-5010",
+      "debit_amount": 120000,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PAY-PAY-7273abde-f088-4262-a136-602bb34e67f4",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T17:37:59.542Z",
+    "updated_at": "2026-09-01T12:56:25.362Z"
+  },
+  {
+    "id": "JE-PAY-PAY-7273abde-f088-4262-a136-602bb34e67f4-2",
+    "payload": {
+      "id": "JE-PAY-PAY-7273abde-f088-4262-a136-602bb34e67f4-2",
+      "currency": "ETB",
+      "party_id": "EMP-003",
+      "account_id": "acc-1010",
+      "party_name": null,
+      "party_type": "Employee",
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 120000,
+      "journal_entry_id": "JE-PAY-PAY-7273abde-f088-4262-a136-602bb34e67f4",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T17:37:59.542Z",
+    "updated_at": "2026-09-01T12:56:25.374Z"
+  },
+  {
+    "id": "JE-PAY-PAY-7a5e7c6a-3d66-4fcb-bd09-b3d210d09b54-1",
+    "payload": {
+      "id": "JE-PAY-PAY-7a5e7c6a-3d66-4fcb-bd09-b3d210d09b54-1",
+      "currency": "ETB",
+      "account_id": "ACC-5010",
+      "debit_amount": 53432.5,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PAY-PAY-7a5e7c6a-3d66-4fcb-bd09-b3d210d09b54",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T18:39:25.095Z",
+    "updated_at": "2026-09-01T12:56:25.347Z"
+  },
+  {
+    "id": "JE-PAY-PAY-7a5e7c6a-3d66-4fcb-bd09-b3d210d09b54-2",
+    "payload": {
+      "id": "JE-PAY-PAY-7a5e7c6a-3d66-4fcb-bd09-b3d210d09b54-2",
+      "currency": "ETB",
+      "party_id": "EMP-001",
+      "account_id": "acc-1010",
+      "party_name": null,
+      "party_type": "Employee",
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 53432.5,
+      "journal_entry_id": "JE-PAY-PAY-7a5e7c6a-3d66-4fcb-bd09-b3d210d09b54",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T18:39:25.095Z",
+    "updated_at": "2026-09-01T12:56:25.341Z"
+  },
+  {
+    "id": "JE-PAY-PAY-886c4063-2d30-4e95-a6b6-b5b460fe35e2-1",
+    "payload": {
+      "id": "JE-PAY-PAY-886c4063-2d30-4e95-a6b6-b5b460fe35e2-1",
+      "currency": "ETB",
+      "account_id": "ACC-5010",
+      "debit_amount": 90000,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PAY-PAY-886c4063-2d30-4e95-a6b6-b5b460fe35e2",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T17:37:59.542Z",
+    "updated_at": "2026-09-01T12:56:25.363Z"
+  },
+  {
+    "id": "JE-PAY-PAY-886c4063-2d30-4e95-a6b6-b5b460fe35e2-2",
+    "payload": {
+      "id": "JE-PAY-PAY-886c4063-2d30-4e95-a6b6-b5b460fe35e2-2",
+      "currency": "ETB",
+      "party_id": "EMP-006",
+      "account_id": "acc-1010",
+      "party_name": null,
+      "party_type": "Employee",
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 90000,
+      "journal_entry_id": "JE-PAY-PAY-886c4063-2d30-4e95-a6b6-b5b460fe35e2",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T17:37:59.542Z",
+    "updated_at": "2026-09-01T12:56:25.363Z"
+  },
+  {
+    "id": "JE-PAY-PAY-91f75ac5-5b38-4ffe-b271-c98a29db9a2c-1",
+    "payload": {
+      "id": "JE-PAY-PAY-91f75ac5-5b38-4ffe-b271-c98a29db9a2c-1",
+      "currency": "ETB",
+      "account_id": "ACC-5010",
+      "debit_amount": 1000,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PAY-PAY-91f75ac5-5b38-4ffe-b271-c98a29db9a2c",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.388Z"
+  },
+  {
+    "id": "JE-PAY-PAY-91f75ac5-5b38-4ffe-b271-c98a29db9a2c-2",
+    "payload": {
+      "id": "JE-PAY-PAY-91f75ac5-5b38-4ffe-b271-c98a29db9a2c-2",
+      "currency": "ETB",
+      "party_id": "1",
+      "account_id": "ACC-1000",
+      "party_name": "Employee",
+      "party_type": "Employee",
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 1000,
+      "journal_entry_id": "JE-PAY-PAY-91f75ac5-5b38-4ffe-b271-c98a29db9a2c",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.388Z"
+  },
+  {
+    "id": "JE-PAY-PAY-94cad493-4c81-457c-a869-29a398e7df85-1",
+    "payload": {
+      "id": "JE-PAY-PAY-94cad493-4c81-457c-a869-29a398e7df85-1",
+      "currency": "ETB",
+      "account_id": "ACC-5010",
+      "debit_amount": 95000,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PAY-PAY-94cad493-4c81-457c-a869-29a398e7df85",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T17:37:59.542Z",
+    "updated_at": "2026-09-01T12:56:25.364Z"
+  },
+  {
+    "id": "JE-PAY-PAY-94cad493-4c81-457c-a869-29a398e7df85-2",
+    "payload": {
+      "id": "JE-PAY-PAY-94cad493-4c81-457c-a869-29a398e7df85-2",
+      "currency": "ETB",
+      "party_id": "EMP-002",
+      "account_id": "acc-1010",
+      "party_name": null,
+      "party_type": "Employee",
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 95000,
+      "journal_entry_id": "JE-PAY-PAY-94cad493-4c81-457c-a869-29a398e7df85",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T17:37:59.542Z",
+    "updated_at": "2026-09-01T12:56:25.368Z"
+  },
+  {
+    "id": "JE-PAY-PAY-98a67ff6-e5c7-4ba4-ad94-2ff1931344ab-1",
+    "payload": {
+      "id": "JE-PAY-PAY-98a67ff6-e5c7-4ba4-ad94-2ff1931344ab-1",
+      "currency": "ETB",
+      "account_id": "ACC-5010",
+      "debit_amount": 72000,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PAY-PAY-98a67ff6-e5c7-4ba4-ad94-2ff1931344ab",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T17:37:59.542Z",
+    "updated_at": "2026-09-01T12:56:25.370Z"
+  },
+  {
+    "id": "JE-PAY-PAY-98a67ff6-e5c7-4ba4-ad94-2ff1931344ab-2",
+    "payload": {
+      "id": "JE-PAY-PAY-98a67ff6-e5c7-4ba4-ad94-2ff1931344ab-2",
+      "currency": "ETB",
+      "party_id": "EMP-007",
+      "account_id": "acc-1010",
+      "party_name": null,
+      "party_type": "Employee",
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 72000,
+      "journal_entry_id": "JE-PAY-PAY-98a67ff6-e5c7-4ba4-ad94-2ff1931344ab",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T17:37:59.542Z",
+    "updated_at": "2026-09-01T12:56:25.371Z"
+  },
+  {
+    "id": "JE-PAY-PAY-ac8f53d7-85fe-4fa6-bab5-ae7e5d6c47ba-1",
+    "payload": {
+      "id": "JE-PAY-PAY-ac8f53d7-85fe-4fa6-bab5-ae7e5d6c47ba-1",
+      "currency": "ETB",
+      "account_id": "ACC-5010",
+      "debit_amount": 56455,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PAY-PAY-ac8f53d7-85fe-4fa6-bab5-ae7e5d6c47ba",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T18:39:25.095Z",
+    "updated_at": "2026-09-01T12:56:25.335Z"
+  },
+  {
+    "id": "JE-PAY-PAY-ac8f53d7-85fe-4fa6-bab5-ae7e5d6c47ba-2",
+    "payload": {
+      "id": "JE-PAY-PAY-ac8f53d7-85fe-4fa6-bab5-ae7e5d6c47ba-2",
+      "currency": "ETB",
+      "party_id": "EMP-006",
+      "account_id": "acc-1010",
+      "party_name": null,
+      "party_type": "Employee",
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 56455,
+      "journal_entry_id": "JE-PAY-PAY-ac8f53d7-85fe-4fa6-bab5-ae7e5d6c47ba",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T18:39:25.095Z",
+    "updated_at": "2026-09-01T12:56:25.332Z"
+  },
+  {
+    "id": "JE-PAY-PAY-b82c3b58-ef48-4e3c-8fb4-fcc5bcd2654e-1",
+    "payload": {
+      "id": "JE-PAY-PAY-b82c3b58-ef48-4e3c-8fb4-fcc5bcd2654e-1",
+      "currency": "ETB",
+      "account_id": "8000-01",
+      "debit_amount": 86680,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PAY-PAY-b82c3b58-ef48-4e3c-8fb4-fcc5bcd2654e",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-09-01T06:11:57.729Z",
+    "updated_at": "2026-09-01T12:56:25.321Z"
+  },
+  {
+    "id": "JE-PAY-PAY-b82c3b58-ef48-4e3c-8fb4-fcc5bcd2654e-2",
+    "payload": {
+      "id": "JE-PAY-PAY-b82c3b58-ef48-4e3c-8fb4-fcc5bcd2654e-2",
+      "currency": "ETB",
+      "party_id": "EMP-f1c6c9f1-6687-4862-bde4-a01df9cfb6aa",
+      "account_id": "1000-02-26",
+      "party_name": null,
+      "party_type": "Employee",
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 86680,
+      "journal_entry_id": "JE-PAY-PAY-b82c3b58-ef48-4e3c-8fb4-fcc5bcd2654e",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-09-01T06:11:57.730Z",
+    "updated_at": "2026-09-01T12:56:25.318Z"
+  },
+  {
+    "id": "JE-PAY-PAY-c09e94ac-ec4c-4601-807e-aa240720878f-1",
+    "payload": {
+      "id": "JE-PAY-PAY-c09e94ac-ec4c-4601-807e-aa240720878f-1",
+      "currency": "ETB",
+      "account_id": "ACC-5010",
+      "debit_amount": 1000,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PAY-PAY-c09e94ac-ec4c-4601-807e-aa240720878f",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T18:02:42.824Z",
+    "updated_at": "2026-09-01T12:56:25.359Z"
+  },
+  {
+    "id": "JE-PAY-PAY-c09e94ac-ec4c-4601-807e-aa240720878f-2",
+    "payload": {
+      "id": "JE-PAY-PAY-c09e94ac-ec4c-4601-807e-aa240720878f-2",
+      "currency": "ETB",
+      "party_id": "1",
+      "account_id": "acc-1010",
+      "party_name": null,
+      "party_type": "Employee",
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 1000,
+      "journal_entry_id": "JE-PAY-PAY-c09e94ac-ec4c-4601-807e-aa240720878f",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T18:02:42.824Z",
+    "updated_at": "2026-09-01T12:56:25.357Z"
+  },
+  {
+    "id": "JE-PAY-PAY-c9d7c5e9-cd42-4976-a109-6ccbcd10c9f5-1",
+    "payload": {
+      "id": "JE-PAY-PAY-c9d7c5e9-cd42-4976-a109-6ccbcd10c9f5-1",
+      "currency": "ETB",
+      "account_id": "ACC-5010",
+      "debit_amount": 59477.5,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PAY-PAY-c9d7c5e9-cd42-4976-a109-6ccbcd10c9f5",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T18:39:25.095Z",
+    "updated_at": "2026-09-01T12:56:25.350Z"
+  },
+  {
+    "id": "JE-PAY-PAY-c9d7c5e9-cd42-4976-a109-6ccbcd10c9f5-2",
+    "payload": {
+      "id": "JE-PAY-PAY-c9d7c5e9-cd42-4976-a109-6ccbcd10c9f5-2",
+      "currency": "ETB",
+      "party_id": "EMP-002",
+      "account_id": "acc-1010",
+      "party_name": null,
+      "party_type": "Employee",
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 59477.5,
+      "journal_entry_id": "JE-PAY-PAY-c9d7c5e9-cd42-4976-a109-6ccbcd10c9f5",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T18:39:25.095Z",
+    "updated_at": "2026-09-01T12:56:25.355Z"
+  },
+  {
+    "id": "JE-PAY-PAY-e8098378-dd53-407d-92be-e9589cdf0ae1-1",
+    "payload": {
+      "id": "JE-PAY-PAY-e8098378-dd53-407d-92be-e9589cdf0ae1-1",
+      "currency": "ETB",
+      "account_id": "ACC-5010",
+      "debit_amount": 85000,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PAY-PAY-e8098378-dd53-407d-92be-e9589cdf0ae1",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T17:37:59.542Z",
+    "updated_at": "2026-09-01T12:56:25.360Z"
+  },
+  {
+    "id": "JE-PAY-PAY-e8098378-dd53-407d-92be-e9589cdf0ae1-2",
+    "payload": {
+      "id": "JE-PAY-PAY-e8098378-dd53-407d-92be-e9589cdf0ae1-2",
+      "currency": "ETB",
+      "party_id": "EMP-001",
+      "account_id": "acc-1010",
+      "party_name": null,
+      "party_type": "Employee",
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 85000,
+      "journal_entry_id": "JE-PAY-PAY-e8098378-dd53-407d-92be-e9589cdf0ae1",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T17:37:59.542Z",
+    "updated_at": "2026-09-01T12:56:25.373Z"
+  },
+  {
+    "id": "JE-PO-PO-6418-1",
+    "payload": {
+      "id": "JE-PO-PO-6418-1",
+      "currency": "ETB",
+      "account_id": "ACC-1010",
+      "debit_amount": 1875000,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PO-PO-6418",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.387Z"
+  },
+  {
+    "id": "JE-PO-PO-6418-2",
+    "payload": {
+      "id": "JE-PO-PO-6418-2",
+      "currency": "ETB",
+      "party_id": "SUPP-007",
+      "account_id": "ACC-2000",
+      "party_name": "Hebei Vet Chem Ltd",
+      "party_type": "Supplier",
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 1875000,
+      "journal_entry_id": "JE-PO-PO-6418",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.387Z"
+  },
+  {
+    "id": "JE-PS-PS-AUDIT-1788287211598-1",
+    "payload": {
+      "id": "JE-PS-PS-AUDIT-1788287211598-1",
+      "currency": "ETB",
+      "party_id": null,
+      "account_id": "ACC-1200",
+      "party_name": "Oromia Coffee Cooperative Union",
+      "party_type": "Customer",
+      "debit_amount": 10500,
+      "warehouse_id": "WH1",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PS-PS-AUDIT-1788287211598",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-09-01T18:26:51.602Z",
+    "updated_at": "2026-09-01T18:26:51.602Z"
+  },
+  {
+    "id": "JE-PS-PS-AUDIT-1788287211598-2",
+    "payload": {
+      "id": "JE-PS-PS-AUDIT-1788287211598-2",
+      "currency": "ETB",
+      "party_id": null,
+      "account_id": "ACC-4002",
+      "party_name": "Oromia Coffee Cooperative Union",
+      "party_type": null,
+      "debit_amount": 0,
+      "warehouse_id": "WH1",
+      "credit_amount": 10500,
+      "journal_entry_id": "JE-PS-PS-AUDIT-1788287211598",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-09-01T18:26:51.602Z",
+    "updated_at": "2026-09-01T18:26:51.602Z"
+  },
+  {
+    "id": "JE-PS-PS2026001-1",
+    "payload": {
+      "id": "JE-PS-PS2026001-1",
+      "currency": "ETB",
+      "party_id": "CUST-LIMMU",
+      "account_id": "ACC-1200",
+      "party_name": "Limmu Coffee Growers Union",
+      "party_type": "Customer",
+      "debit_amount": 75000,
+      "warehouse_id": "WH1",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PS-PS2026001",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-14T12:16:21.794Z",
+    "updated_at": "2026-09-01T12:56:25.385Z"
+  },
+  {
+    "id": "JE-PS-PS2026001-2",
+    "payload": {
+      "id": "JE-PS-PS2026001-2",
+      "currency": "ETB",
+      "party_id": "CUST-LIMMU",
+      "account_id": "ACC-4002",
+      "party_name": "Limmu Coffee Growers Union",
+      "party_type": null,
+      "debit_amount": 0,
+      "warehouse_id": "WH1",
+      "credit_amount": 75000,
+      "journal_entry_id": "JE-PS-PS2026001",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-14T12:16:21.794Z",
+    "updated_at": "2026-09-01T12:56:25.385Z"
+  },
+  {
+    "id": "JE-PS-PSAUDIT1788287068340-1",
+    "payload": {
+      "id": "JE-PS-PSAUDIT1788287068340-1",
+      "currency": "ETB",
+      "party_id": null,
+      "account_id": "ACC-1200",
+      "party_name": "Oromia Coffee Cooperative Union",
+      "party_type": "Customer",
+      "debit_amount": 10500,
+      "warehouse_id": "WH1",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PS-PSAUDIT1788287068340",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-09-01T18:24:28.344Z",
+    "updated_at": "2026-09-01T18:24:28.344Z"
+  },
+  {
+    "id": "JE-PS-PSAUDIT1788287068340-2",
+    "payload": {
+      "id": "JE-PS-PSAUDIT1788287068340-2",
+      "currency": "ETB",
+      "party_id": null,
+      "account_id": "ACC-4002",
+      "party_name": "Oromia Coffee Cooperative Union",
+      "party_type": null,
+      "debit_amount": 0,
+      "warehouse_id": "WH1",
+      "credit_amount": 10500,
+      "journal_entry_id": "JE-PS-PSAUDIT1788287068340",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-09-01T18:24:28.344Z",
+    "updated_at": "2026-09-01T18:24:28.344Z"
+  },
+  {
+    "id": "JE-PS-PSTESTPERSISTENCE01-1",
+    "payload": {
+      "id": "JE-PS-PSTESTPERSISTENCE01-1",
+      "currency": "ETB",
+      "party_id": null,
+      "account_id": "ACC-1200",
+      "party_name": "Limmu Union Co.",
+      "party_type": "Customer",
+      "debit_amount": 32500,
+      "warehouse_id": "WH1",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-PS-PSTESTPERSISTENCE01",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-30T16:17:02.170Z",
+    "updated_at": "2026-09-01T12:56:25.325Z"
+  },
+  {
+    "id": "JE-PS-PSTESTPERSISTENCE01-2",
+    "payload": {
+      "id": "JE-PS-PSTESTPERSISTENCE01-2",
+      "currency": "ETB",
+      "party_id": null,
+      "account_id": "ACC-4002",
+      "party_name": "Limmu Union Co.",
+      "party_type": null,
+      "debit_amount": 0,
+      "warehouse_id": "WH1",
+      "credit_amount": 32500,
+      "journal_entry_id": "JE-PS-PSTESTPERSISTENCE01",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-30T16:17:02.170Z",
+    "updated_at": "2026-09-01T12:56:25.328Z"
+  },
+  {
+    "id": "JE-SALE-SI-00955-1",
+    "payload": {
+      "id": "JE-SALE-SI-00955-1",
+      "currency": "ETB",
+      "party_id": "CUST-001",
+      "account_id": "ACC-1000",
+      "party_name": "Test Customer",
+      "party_type": "Customer",
+      "debit_amount": 6000,
+      "warehouse_id": "WH2",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-SALE-SI-00955",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.388Z"
+  },
+  {
+    "id": "JE-SALE-SI-00955-2",
+    "payload": {
+      "id": "JE-SALE-SI-00955-2",
+      "currency": "ETB",
+      "party_id": "CUST-001",
+      "account_id": "ACC-4000",
+      "party_name": "Test Customer",
+      "party_type": "Customer",
+      "debit_amount": 0,
+      "warehouse_id": "WH2",
+      "credit_amount": 6000,
+      "journal_entry_id": "JE-SALE-SI-00955",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.388Z"
+  },
+  {
+    "id": "JE-SALE-SI-08032-CR",
+    "payload": {
+      "id": "JE-SALE-SI-08032-CR",
+      "currency": "ETB",
+      "party_id": "Mekelle Agro-Vet Supplies Union",
+      "account_id": "ACC-4000",
+      "party_name": "Mekelle Agro-Vet Supplies Union",
+      "party_type": "Customer",
+      "debit_amount": 0,
+      "warehouse_id": "WH3",
+      "credit_amount": 249452,
+      "journal_entry_id": "JE-SALE-SI-08032",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-21T07:32:21.873Z",
+    "updated_at": "2026-09-01T12:56:25.383Z"
+  },
+  {
+    "id": "JE-SALE-SI-08032-DR",
+    "payload": {
+      "id": "JE-SALE-SI-08032-DR",
+      "currency": "ETB",
+      "party_id": "Mekelle Agro-Vet Supplies Union",
+      "account_id": "ACC-1200",
+      "party_name": "Mekelle Agro-Vet Supplies Union",
+      "party_type": "Customer",
+      "debit_amount": 249452,
+      "warehouse_id": "WH3",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-SALE-SI-08032",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-21T07:32:21.873Z",
+    "updated_at": "2026-09-01T12:56:25.383Z"
+  },
+  {
+    "id": "JE-SALE-SI-35413-1",
+    "payload": {
+      "id": "JE-SALE-SI-35413-1",
+      "currency": "ETB",
+      "party_id": "Dr Abdella",
+      "account_id": "ACC-1000",
+      "party_name": "Dr Abdella",
+      "party_type": "Customer",
+      "debit_amount": 1875000,
+      "warehouse_id": "WH3",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-SALE-SI-35413",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.389Z"
+  },
+  {
+    "id": "JE-SALE-SI-35413-2",
+    "payload": {
+      "id": "JE-SALE-SI-35413-2",
+      "currency": "ETB",
+      "party_id": "Dr Abdella",
+      "account_id": "ACC-4000",
+      "party_name": "Dr Abdella",
+      "party_type": "Customer",
+      "debit_amount": 0,
+      "warehouse_id": "WH3",
+      "credit_amount": 1875000,
+      "journal_entry_id": "JE-SALE-SI-35413",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.390Z"
+  },
+  {
+    "id": "JE-SALE-SI-37748-CR",
+    "payload": {
+      "id": "JE-SALE-SI-37748-CR",
+      "currency": "ETB",
+      "party_id": "Dr Abdella",
+      "account_id": "ACC-4000",
+      "party_name": "Dr Abdella",
+      "party_type": "Customer",
+      "debit_amount": 0,
+      "warehouse_id": "WH2",
+      "credit_amount": 154350,
+      "journal_entry_id": "JE-SALE-SI-37748",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-14T11:36:39.800Z",
+    "updated_at": "2026-09-01T12:56:25.386Z"
+  },
+  {
+    "id": "JE-SALE-SI-37748-DR",
+    "payload": {
+      "id": "JE-SALE-SI-37748-DR",
+      "currency": "ETB",
+      "party_id": "Dr Abdella",
+      "account_id": "ACC-1000",
+      "party_name": "Dr Abdella",
+      "party_type": "Customer",
+      "debit_amount": 154350,
+      "warehouse_id": "WH2",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-SALE-SI-37748",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-14T11:36:39.800Z",
+    "updated_at": "2026-09-01T12:56:25.387Z"
+  },
+  {
+    "id": "JE-SALE-SI-59099-CR",
+    "payload": {
+      "id": "JE-SALE-SI-59099-CR",
+      "currency": "ETB",
+      "party_id": "Mekelle Agro-Vet Supplies Union",
+      "account_id": "ACC-4000",
+      "party_name": "Mekelle Agro-Vet Supplies Union",
+      "party_type": "Customer",
+      "debit_amount": 0,
+      "warehouse_id": "WH3",
+      "credit_amount": 11130,
+      "journal_entry_id": "JE-SALE-SI-59099",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T12:23:21.191Z",
+    "updated_at": "2026-09-01T12:56:25.378Z"
+  },
+  {
+    "id": "JE-SALE-SI-59099-DR",
+    "payload": {
+      "id": "JE-SALE-SI-59099-DR",
+      "currency": "ETB",
+      "party_id": "Mekelle Agro-Vet Supplies Union",
+      "account_id": "ACC-1000",
+      "party_name": "Mekelle Agro-Vet Supplies Union",
+      "party_type": "Customer",
+      "debit_amount": 11130,
+      "warehouse_id": "WH3",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-SALE-SI-59099",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-26T12:23:21.191Z",
+    "updated_at": "2026-09-01T12:56:25.380Z"
+  },
+  {
+    "id": "JE-SALE-SI-67712-1",
+    "payload": {
+      "id": "JE-SALE-SI-67712-1",
+      "currency": "ETB",
+      "party_id": "Hamburg Coffee Importers GmbH",
+      "account_id": "ACC-1000",
+      "party_name": "Hamburg Coffee Importers GmbH",
+      "party_type": "Customer",
+      "debit_amount": 15000,
+      "warehouse_id": "WH3",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-SALE-SI-67712",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.393Z"
+  },
+  {
+    "id": "JE-SALE-SI-67712-2",
+    "payload": {
+      "id": "JE-SALE-SI-67712-2",
+      "currency": "ETB",
+      "party_id": "Hamburg Coffee Importers GmbH",
+      "account_id": "ACC-4000",
+      "party_name": "Hamburg Coffee Importers GmbH",
+      "party_type": "Customer",
+      "debit_amount": 0,
+      "warehouse_id": "WH3",
+      "credit_amount": 15000,
+      "journal_entry_id": "JE-SALE-SI-67712",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.393Z"
+  },
+  {
+    "id": "JE-SALE-SI-72341-1",
+    "payload": {
+      "id": "JE-SALE-SI-72341-1",
+      "currency": "ETB",
+      "party_id": "Bishoftu Commercial Poultry Farms",
+      "account_id": "ACC-1000",
+      "party_name": "Bishoftu Commercial Poultry Farms",
+      "party_type": "Customer",
+      "debit_amount": 240000,
+      "warehouse_id": "WH2",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-SALE-SI-72341",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.394Z"
+  },
+  {
+    "id": "JE-SALE-SI-72341-2",
+    "payload": {
+      "id": "JE-SALE-SI-72341-2",
+      "currency": "ETB",
+      "party_id": "Bishoftu Commercial Poultry Farms",
+      "account_id": "ACC-4000",
+      "party_name": "Bishoftu Commercial Poultry Farms",
+      "party_type": "Customer",
+      "debit_amount": 0,
+      "warehouse_id": "WH2",
+      "credit_amount": 240000,
+      "journal_entry_id": "JE-SALE-SI-72341",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.394Z"
+  },
+  {
+    "id": "JE-SALE-SI-97841-1",
+    "payload": {
+      "id": "JE-SALE-SI-97841-1",
+      "currency": "ETB",
+      "party_id": "Bishoftu Commercial Poultry Farms",
+      "account_id": "ACC-1000",
+      "party_name": "Bishoftu Commercial Poultry Farms",
+      "party_type": "Customer",
+      "debit_amount": 240000,
+      "warehouse_id": "WH2",
+      "credit_amount": 0,
+      "journal_entry_id": "JE-SALE-SI-97841",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.394Z"
+  },
+  {
+    "id": "JE-SALE-SI-97841-2",
+    "payload": {
+      "id": "JE-SALE-SI-97841-2",
+      "currency": "ETB",
+      "party_id": "Bishoftu Commercial Poultry Farms",
+      "account_id": "ACC-4000",
+      "party_name": "Bishoftu Commercial Poultry Farms",
+      "party_type": "Customer",
+      "debit_amount": 0,
+      "warehouse_id": "WH2",
+      "credit_amount": 240000,
+      "journal_entry_id": "JE-SALE-SI-97841",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-12T16:44:29.690Z",
+    "updated_at": "2026-09-01T12:56:25.394Z"
+  },
+  {
+    "id": "JEL-1787166210426-0",
+    "payload": {
+      "id": "JEL-1787166210426-0",
+      "currency": "ETB",
+      "party_id": "SUPP-007",
+      "account_id": "ACC-1410",
+      "party_name": "Hebei Vet Chem Ltd",
+      "party_type": "Supplier",
+      "debit_amount": 1875000,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-2026-2026002",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-19T19:03:31.004Z",
+    "updated_at": "2026-09-01T12:56:25.384Z"
+  },
+  {
+    "id": "JEL-1787166210426-1",
+    "payload": {
+      "id": "JEL-1787166210426-1",
+      "currency": "ETB",
+      "party_id": null,
+      "account_id": "acc-1010",
+      "party_name": null,
+      "party_type": null,
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 1875000,
+      "journal_entry_id": "JE-2026-2026002",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-08-19T19:03:31.004Z",
+    "updated_at": "2026-09-01T12:56:25.385Z"
+  },
+  {
+    "id": "JEL-1788267135964-0",
+    "payload": {
+      "id": "JEL-1788267135964-0",
+      "currency": "ETB",
+      "party_id": null,
+      "account_id": "1000-02-26",
+      "party_name": null,
+      "party_type": null,
+      "debit_amount": 150000,
+      "warehouse_id": null,
+      "credit_amount": 0,
+      "journal_entry_id": "JE-2026-2026003",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-09-01T12:52:15.975Z",
+    "updated_at": "2026-09-01T12:56:25.312Z"
+  },
+  {
+    "id": "JEL-1788267135964-1",
+    "payload": {
+      "id": "JEL-1788267135964-1",
+      "currency": "ETB",
+      "party_id": "CUST-MEKELLEAGRO-VETSUPPLIESUNION",
+      "account_id": "1300-03",
+      "party_name": "Mekelle Agro-Vet Supplies Union",
+      "party_type": "Customer",
+      "debit_amount": 0,
+      "warehouse_id": null,
+      "credit_amount": 150000,
+      "journal_entry_id": "JE-2026-2026003",
+      "exchange_rate_at_time": 1
+    },
+    "created_at": "2026-09-01T12:52:15.980Z",
+    "updated_at": "2026-09-01T12:56:25.309Z"
+  }
+]

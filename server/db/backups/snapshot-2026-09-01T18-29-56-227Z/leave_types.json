@@ -1,0 +1,62 @@
+[
+  {
+    "id": "LT-ANNUAL",
+    "payload": {
+      "id": "LT-ANNUAL",
+      "name": "Annual Paid Leave",
+      "isUnpaid": false,
+      "carriesForward": true,
+      "maxDaysPerYear": 24
+    },
+    "created_at": "2026-07-25T10:58:25.852Z",
+    "updated_at": "2026-08-04T07:08:02.553Z"
+  },
+  {
+    "id": "LT-COMPASSIONATE",
+    "payload": {
+      "id": "LT-COMPASSIONATE",
+      "name": "Compassionate Leave",
+      "isUnpaid": false,
+      "carriesForward": false,
+      "maxDaysPerYear": 5
+    },
+    "created_at": "2026-07-25T10:58:28.534Z",
+    "updated_at": "2026-08-04T07:08:01.998Z"
+  },
+  {
+    "id": "LT-MATERNITY",
+    "payload": {
+      "id": "LT-MATERNITY",
+      "name": "Maternity / Paternity Leave",
+      "isUnpaid": false,
+      "carriesForward": false,
+      "maxDaysPerYear": 90
+    },
+    "created_at": "2026-07-25T10:58:27.367Z",
+    "updated_at": "2026-08-04T07:08:00.796Z"
+  },
+  {
+    "id": "LT-SICK",
+    "payload": {
+      "id": "LT-SICK",
+      "name": "Medical / Sick Leave",
+      "isUnpaid": false,
+      "carriesForward": false,
+      "maxDaysPerYear": 12
+    },
+    "created_at": "2026-07-25T10:58:26.659Z",
+    "updated_at": "2026-08-04T07:08:03.028Z"
+  },
+  {
+    "id": "LT-UNPAID",
+    "payload": {
+      "id": "LT-UNPAID",
+      "name": "Unpaid Special Leave",
+      "isUnpaid": true,
+      "carriesForward": false,
+      "maxDaysPerYear": 30
+    },
+    "created_at": "2026-07-25T10:58:27.987Z",
+    "updated_at": "2026-08-04T07:08:01.351Z"
+  }
+]

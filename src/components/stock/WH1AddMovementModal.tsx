@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { X, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2 } from "lucide-react"
+import { X, ArrowDownLeft, ArrowUpRight, MinusCircle, CheckCircle2, ChevronDown } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { loadResource } from "@/lib/apiPersistence"
-import type { Product, WH1Entry } from "@/lib/erpStore"
+import { useErpStore, type Product, type WH1Entry } from "@/lib/erpStore"
 
 interface WH1AddMovementModalProps {
   isOpen: boolean
@@ -19,6 +19,16 @@ interface WH1AddMovementModalProps {
     remark?: string
     unitPrice?: number
   }) => Promise<void>
+  onSaveReject: (productId: string, rejectData: {
+    entryId?: string
+    date: string
+    voucherNo?: string
+    party?: string
+    plateNumber?: string
+    rejectQuantity: number
+    reason?: string
+    notes?: string
+  }) => Promise<void>
 }
 
 const TON_TO_QUINTAL = 10
@@ -29,14 +39,18 @@ export default function WH1AddMovementModal({
   onClose,
   onSaveEntry,
   onSaveLeave,
+  onSaveReject,
 }: WH1AddMovementModalProps) {
+  const erp = useErpStore()
   const { showToast } = useFeedback()
-  const [activeTab, setActiveTab] = useState<"entry" | "leave">("entry")
+  const [activeTab, setActiveTab] = useState<"entry" | "leave" | "reject">("entry")
   const [isSaving, setIsSaving] = useState(false)
 
   // Inbound Entry Form State
   const [voucherNo, setVoucherNo] = useState("")
   const [customer, setCustomer] = useState("")
+  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
+  const [saveSupplierToRegistry, setSaveSupplierToRegistry] = useState(false)
   const [plateNumber, setPlateNumber] = useState("")
   const [packagingUnit, setPackagingUnit] = useState("Quintal")
   const [quantity, setQuantity] = useState("")
@@ -50,15 +64,35 @@ export default function WH1AddMovementModal({
   const [leaveCustomer, setLeaveCustomer] = useState("")
   const [leavePlateNumber, setLeavePlateNumber] = useState("")
   const [leaveQuantity, setLeaveQuantity] = useState("")
-  const [leaveRemarks, setLeaveRemarks] = useState("")
+  const [leaveUnitPrice, setLeaveUnitPrice] = useState("")
   const [existingSalesIssues, setExistingSalesIssues] = useState<any[]>([])
   const [selectedIssueId, setSelectedIssueId] = useState("")
 
+  // Reject Loss Form State
+  const [rejectDate, setRejectDate] = useState("")
+  const [rejectQuantity, setRejectQuantity] = useState("")
+  const [selectedRejectEntryId, setSelectedRejectEntryId] = useState("")
+  const [rejectParty, setRejectParty] = useState("")
+  const [showRejectSupplierDropdown, setShowRejectSupplierDropdown] = useState(false)
+  const [rejectReason, setRejectReason] = useState("Cleaning & Impurities")
+  const [rejectNotes, setRejectNotes] = useState("")
+
   useEffect(() => {
     if (isOpen && product) {
+      const parentSupplier =
+        product.customer ||
+        product.supplierName ||
+        (product.wh1Entries && product.wh1Entries.length > 0
+          ? product.wh1Entries.find((e) => Boolean(e.customer))?.customer || (product.wh1Entries[0] as any)?.customer
+          : "") ||
+        (erp.getSuppliers().length === 1 ? erp.getSuppliers()[0].name : "") ||
+        ""
+
       setActiveTab("entry")
       setVoucherNo("")
-      setCustomer(product.customer || "")
+      setCustomer(parentSupplier)
+      setShowSupplierDropdown(false)
+      setSaveSupplierToRegistry(false)
       setPlateNumber(product.plateNumber || "")
       setPackagingUnit(product.unit || "Quintal")
       setQuantity("")
@@ -72,8 +106,36 @@ export default function WH1AddMovementModal({
       setLeaveCustomer("")
       setLeavePlateNumber("")
       setLeaveQuantity("")
-      setLeaveRemarks("")
       setSelectedIssueId("")
+
+      // Associated suppliers for this product
+      const itemSuppliers = Array.from(
+        new Set(
+          [
+            product.customer,
+            product.supplierName,
+            ...(product.wh1Entries || []).map((e: any) => e.party || e.customer),
+          ]
+            .filter((s): s is string => Boolean(s && s.trim()))
+            .map((s) => s.trim())
+        )
+      )
+      const defaultSupplier =
+        parentSupplier ||
+        (itemSuppliers.length === 1
+          ? itemSuppliers[0]
+          : itemSuppliers.length === 0 && erp.getSuppliers().length === 1
+          ? erp.getSuppliers()[0].name
+          : "")
+
+      // Reset Reject fields
+      setRejectDate(new Date().toISOString().slice(0, 10))
+      setRejectQuantity("")
+      setSelectedRejectEntryId("")
+      setRejectParty(defaultSupplier)
+      setShowRejectSupplierDropdown(false)
+      setRejectReason("Cleaning & Impurities")
+      setRejectNotes("")
 
       // Load matching sales issues for fallback reconciliation
       loadResource<any>("sales_issues")
@@ -133,7 +195,7 @@ export default function WH1AddMovementModal({
       setLeavePlateNumber(found.plate_number || found.plateNumber || "")
       if (found.sale_date) setLeaveDate(found.sale_date)
 
-      // Find matching quantity for this product
+      // Find matching quantity and selling price for this product
       const item = (found.items || found.line_items || []).find(
         (it: any) =>
           it.item_id === product?.id ||
@@ -142,6 +204,14 @@ export default function WH1AddMovementModal({
       )
       if (item) {
         setLeaveQuantity(String(item.quantity || item.qty || ""))
+        const uPrice = Number(item.unit_price || item.unitPrice || 0)
+        if (uPrice > 0) {
+          setLeaveUnitPrice(String(uPrice))
+        } else if (product?.sellingPrice) {
+          setLeaveUnitPrice(String(product.sellingPrice))
+        }
+      } else if (product?.sellingPrice) {
+        setLeaveUnitPrice(String(product.sellingPrice))
       }
     }
   }
@@ -160,6 +230,19 @@ export default function WH1AddMovementModal({
 
     setIsSaving(true)
     try {
+      if (saveSupplierToRegistry && customer.trim()) {
+        const suppName = customer.trim()
+        const existingSupp = erp.getSuppliers().find((s) => s.name.toLowerCase() === suppName.toLowerCase())
+        if (!existingSupp) {
+          erp.addSupplier({
+            id: `SUP-${Date.now()}`,
+            name: suppName,
+            country: "Ethiopia",
+            status: "Active",
+          })
+        }
+      }
+
       await onSaveEntry(product.id, {
         voucherNo: voucherNo.trim(),
         customer: customer.trim(),
@@ -209,12 +292,78 @@ export default function WH1AddMovementModal({
         party: leaveCustomer.trim() || "Customer Dispatch",
         plateNumber: leavePlateNumber.trim() || "—",
         quantityIssued: rawQty,
-        remark: leaveRemarks.trim() || (leaveVoucherNo ? `Sales Issue FS-${leaveVoucherNo}` : "Outbound Dispatch"),
+        unitPrice: Number(leaveUnitPrice) > 0 ? Number(leaveUnitPrice) : undefined,
+        remark: leaveVoucherNo ? `Sales Issue FS-${leaveVoucherNo}` : "Outbound Dispatch",
       })
       showToast("Success", "success", `Outbound leave of ${rawQty.toLocaleString()} Quintals reconciled.`)
       onClose()
     } catch (err: any) {
       showToast("Save Error", "warning", err.message || "Failed to reconcile leave.")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleSelectRejectEntry = (entryId: string) => {
+    setSelectedRejectEntryId(entryId)
+    if (entryId && product?.wh1Entries) {
+      const found = product.wh1Entries.find((e) => (e.entryId || e.id) === entryId)
+      if (found && (found.customer || (found as any).party)) {
+        setRejectParty(found.customer || (found as any).party || "")
+      }
+    }
+  }
+
+  const selectedRejectEntry = product?.wh1Entries?.find(
+    (e) => (e.entryId || e.id) === selectedRejectEntryId
+  )
+  const availableRejectStock = selectedRejectEntry
+    ? selectedRejectEntry.quantityRemaining
+    : product?.quantity || 0
+  const effectiveRejectUnitCost = selectedRejectEntry
+    ? Number(selectedRejectEntry.unitPrice || 0)
+    : Number(product?.unitCost || 0)
+  const computedRejectLossValue = (Number(rejectQuantity) || 0) * effectiveRejectUnitCost
+
+  const handleSaveRejectSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const rawQty = Number(rejectQuantity)
+    if (!rejectDate || !Number.isFinite(rawQty) || rawQty <= 0) {
+      showToast("Validation Error", "warning", "Please provide a valid rejection date and positive quantity.")
+      return
+    }
+
+    if (rawQty > availableRejectStock) {
+      showToast(
+        "Stock Error",
+        "warning",
+        selectedRejectEntry
+          ? `Cannot reject ${rawQty} Qtl from Entry No. ${selectedRejectEntry.voucherNo || selectedRejectEntry.entryId}. Available in this child entry is only ${selectedRejectEntry.quantityRemaining} Qtl.`
+          : `Cannot reject ${rawQty} Qtl. Total warehouse balance is only ${product.quantity} Qtl.`
+      )
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      await onSaveReject(product.id, {
+        entryId: selectedRejectEntryId || undefined,
+        date: rejectDate,
+        voucherNo: selectedRejectEntry?.voucherNo || undefined,
+        party: rejectParty.trim() || selectedRejectEntry?.customer || product.customer || product.supplierName || "Direct Supplier",
+        plateNumber: selectedRejectEntry?.plateNumber || undefined,
+        rejectQuantity: rawQty,
+        reason: rejectReason.trim() || "Cleaning & Impurities",
+        notes: rejectNotes.trim() || undefined,
+      })
+      showToast(
+        "Success",
+        "success",
+        `Reject loss deduction of ${rawQty.toLocaleString()} Quintals recorded (Loss Value: ETB ${computedRejectLossValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`
+      )
+      onClose()
+    } catch (err: any) {
+      showToast("Save Error", "warning", err.message || "Failed to record rejection deduction.")
     } finally {
       setIsSaving(false)
     }
@@ -246,31 +395,43 @@ export default function WH1AddMovementModal({
             </button>
           </div>
 
-          {/* Segmented Mode Selector */}
-          <div className="flex rounded-xl bg-zinc-100 p-1 mb-5 border border-zinc-200/80">
+          {/* Segmented Mode Selector with 3 options */}
+          <div className="flex rounded-xl bg-zinc-100 p-1 mb-5 border border-zinc-200/80 gap-1">
             <button
               type="button"
               onClick={() => setActiveTab("entry")}
-              className={`flex-1 py-2 px-3 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                 activeTab === "entry"
                   ? "bg-white text-emerald-800 shadow-xs border border-zinc-200/60"
                   : "text-zinc-500 hover:text-zinc-800"
               }`}
             >
               <ArrowDownLeft className="size-3.5 text-emerald-600" />
-              Inbound Entry (GRV Receipt)
+              Inbound Entry (GRV)
             </button>
             <button
               type="button"
               onClick={() => setActiveTab("leave")}
-              className={`flex-1 py-2 px-3 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+              className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                 activeTab === "leave"
                   ? "bg-white text-amber-800 shadow-xs border border-zinc-200/60"
                   : "text-zinc-500 hover:text-zinc-800"
               }`}
             >
               <ArrowUpRight className="size-3.5 text-amber-600" />
-              Reconcile Sales Issue (Outbound)
+              Outbound Dispatch
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("reject")}
+              className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                activeTab === "reject"
+                  ? "bg-white text-rose-800 shadow-xs border border-zinc-200/60"
+                  : "text-zinc-500 hover:text-zinc-800"
+              }`}
+            >
+              <MinusCircle className="size-3.5 text-rose-600" />
+              Reject Loss (-)
             </button>
           </div>
 
@@ -289,16 +450,77 @@ export default function WH1AddMovementModal({
                   />
                 </label>
 
-                <label className="space-y-1 block">
+                <div className="space-y-1 block relative">
                   <span className="text-zinc-500 uppercase text-[10px] font-black">Supplier / Source</span>
-                  <input
-                    type="text"
-                    placeholder="e.g. Adola Farmers Union"
-                    value={customer}
-                    onChange={(e) => setCustomer(e.target.value)}
-                    className="h-10 w-full border border-zinc-200 rounded-xl px-3"
-                  />
-                </label>
+                  <div className="relative flex items-center">
+                    <input
+                      type="text"
+                      placeholder="Search or select supplier..."
+                      value={customer}
+                      onFocus={() => setShowSupplierDropdown(true)}
+                      onChange={(e) => {
+                        setCustomer(e.target.value)
+                        setShowSupplierDropdown(true)
+                      }}
+                      className="h-10 w-full border border-zinc-200 rounded-xl pl-3 pr-9"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSupplierDropdown((prev) => !prev)}
+                      className="absolute right-2 p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+                      title="Choose supplier from registry"
+                    >
+                      <ChevronDown className={`size-4 transition-transform ${showSupplierDropdown ? "rotate-180" : ""}`} />
+                    </button>
+                  </div>
+                  {showSupplierDropdown && (
+                    <div className="absolute top-full left-0 right-0 z-30 mt-1 max-h-52 overflow-y-auto rounded-xl bg-white border border-zinc-200 shadow-xl py-1 divide-y divide-zinc-50">
+                      {(() => {
+                        const allSuppliers = Array.from(
+                          new Set([
+                            ...erp.getSuppliers().map((s) => s.name),
+                            product.customer,
+                            product.supplierName,
+                            ...(product.wh1Entries || []).map((e: any) => e.party || e.customer),
+                          ].filter((s): s is string => Boolean(s && s.trim())))
+                        )
+                        const filtered = customer.trim()
+                          ? allSuppliers.filter((s) => s.toLowerCase().includes(customer.toLowerCase()))
+                          : allSuppliers
+                        if (filtered.length === 0) {
+                          return (
+                            <div className="px-3 py-2.5 text-xs text-zinc-400 font-medium text-center">
+                              {allSuppliers.length === 0 ? "No suppliers registered yet" : `No matches for "${customer}"`}
+                            </div>
+                          )
+                        }
+                        return filtered.map((suppName) => {
+                          const regSupp = erp.getSuppliers().find((s) => s.name.toLowerCase() === suppName.toLowerCase())
+                          return (
+                            <button
+                              key={suppName}
+                              type="button"
+                              onClick={() => {
+                                setCustomer(suppName)
+                                setShowSupplierDropdown(false)
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-emerald-50 text-xs flex items-center justify-between transition-colors cursor-pointer"
+                            >
+                              <div>
+                                <span className="font-bold text-zinc-900 block">{suppName}</span>
+                                {regSupp && (
+                                  <span className="text-[10px] text-zinc-500 font-medium">
+                                    {regSupp.phone ? `📞 ${regSupp.phone} • ` : ""}{regSupp.city || "Ethiopia"}
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          )
+                        })
+                      })()}
+                    </div>
+                  )}
+                </div>
 
                 <label className="space-y-1 block">
                   <span className="text-zinc-500 uppercase text-[10px] font-black">Truck Plate Number</span>
@@ -310,6 +532,21 @@ export default function WH1AddMovementModal({
                     className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
                   />
                 </label>
+
+                {!erp.getSuppliers().some((s) => s.name.toLowerCase() === customer.trim().toLowerCase()) && customer.trim() !== "" && (
+                  <div className="p-2.5 bg-emerald-50/80 border border-emerald-200/80 rounded-xl flex items-center gap-2 md:col-span-2">
+                    <input
+                      type="checkbox"
+                      id="saveSupplierCheckModal"
+                      checked={saveSupplierToRegistry}
+                      onChange={(e) => setSaveSupplierToRegistry(e.target.checked)}
+                      className="size-4 rounded text-emerald-700 focus:ring-emerald-600 cursor-pointer"
+                    />
+                    <label htmlFor="saveSupplierCheckModal" className="text-xs font-bold text-emerald-950 cursor-pointer">
+                      Save new supplier details to registry for future arrivals
+                    </label>
+                  </div>
+                )}
 
                 <label className="space-y-1 block">
                   <span className="text-zinc-500 uppercase text-[10px] font-black">UOM</span>
@@ -397,16 +634,9 @@ export default function WH1AddMovementModal({
             </form>
           )}
 
-          {/* TAB 2: RECONCILE SALES ISSUE */}
+          {/* TAB 2: RECONCILE SALES ISSUE (OUTBOUND) */}
           {activeTab === "leave" && (
             <form onSubmit={handleSaveLeaveSubmit} className="space-y-4 text-xs font-semibold">
-              <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200/80 flex items-start gap-2 text-amber-900 text-[11px]">
-                <Info className="size-4 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-black">Fallback Reconciliation:</span> When a Sales Issue is posted in <span className="font-bold">Sales Issued</span>, the outbound leave record is automatically created and stock is deducted. Use this form only if an existing sales issue is missing its leave record. Sales issues that have already been deducted are locked to prevent duplicate deduction.
-                </div>
-              </div>
-
               {isCurrentVoucherAlreadyReconciled && (
                 <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-2 text-emerald-900 text-[11px] font-bold">
                   <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
@@ -482,7 +712,7 @@ export default function WH1AddMovementModal({
                   />
                 </label>
 
-                <label className="space-y-1 block">
+                <label className="space-y-1 block md:col-span-1">
                   <span className="text-zinc-500 uppercase text-[10px] font-black">Quantity Dispatched (Quintal)</span>
                   <input
                     type="number"
@@ -495,14 +725,15 @@ export default function WH1AddMovementModal({
                   />
                 </label>
 
-                <label className="space-y-1 block">
-                  <span className="text-zinc-500 uppercase text-[10px] font-black">Dispatch Remarks / Reference</span>
+                <label className="space-y-1 block md:col-span-1">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Selling Unit Price (ETB)</span>
                   <input
-                    type="text"
-                    placeholder="e.g. Contract No. EXP-2026"
-                    value={leaveRemarks}
-                    onChange={(e) => setLeaveRemarks(e.target.value)}
-                    className="h-10 w-full border border-zinc-200 rounded-xl px-3"
+                    type="number"
+                    step="0.01"
+                    placeholder={`e.g. ${product.sellingPrice || 280}`}
+                    value={leaveUnitPrice}
+                    onChange={(e) => setLeaveUnitPrice(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono font-bold text-emerald-900"
                   />
                 </label>
               </div>
@@ -530,6 +761,218 @@ export default function WH1AddMovementModal({
                     : isCurrentVoucherAlreadyReconciled
                     ? "Already Deducted"
                     : "Reconcile Outbound Leave"}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* TAB 3: REJECT LOSS (CLEANING DEDUCTION) */}
+          {activeTab === "reject" && (
+            <form onSubmit={handleSaveRejectSubmit} className="space-y-4 text-xs font-semibold">
+              {/* Child Entry Source Selector */}
+              <label className="space-y-1 block">
+                <span className="text-zinc-500 uppercase text-[10px] font-black">
+                  Source Inbound Entry / Specific Truckload
+                </span>
+                <select
+                  value={selectedRejectEntryId}
+                  onChange={(e) => handleSelectRejectEntry(e.target.value)}
+                  className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono cursor-pointer bg-zinc-50/50 text-xs"
+                >
+                  <option value="">
+                    -- Auto FIFO / All Warehouse Balance (Avg: ETB {(product.unitCost || 0).toLocaleString()}/Qtl) --
+                  </option>
+                  {(product.wh1Entries || []).map((entry, idx) => {
+                    const eId = entry.entryId || entry.id || String(idx)
+                    return (
+                      <option key={eId} value={eId}>
+                        Entry #{idx + 1} {entry.voucherNo ? `(GRV-${entry.voucherNo})` : ""} &bull; {entry.customer || "Direct"} &bull; {entry.plateNumber || "—"} &bull; Avail: {entry.quantityRemaining} {product.unit} @ ETB {entry.unitPrice}/Qtl
+                      </option>
+                    )
+                  })}
+                </select>
+              </label>
+
+              {/* Dynamic Live Loss Card */}
+              <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200/80 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-rose-900 font-extrabold flex items-center gap-1.5">
+                    <MinusCircle className="size-3.5 text-rose-600" />
+                    {selectedRejectEntry
+                      ? `Deducting from Inbound Entry No. ${selectedRejectEntry.voucherNo || selectedRejectEntry.entryId}`
+                      : "Deducting from Total Warehouse Balance (FIFO)"}
+                  </span>
+                  <span className="font-mono text-zinc-500 text-[11px]">
+                    Available: <strong className="text-zinc-900">{availableRejectStock.toLocaleString()} {product.unit}</strong>
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 border-t border-rose-200/50 text-[11px]">
+                  <div className="bg-white/80 p-2 rounded-xl border border-rose-100">
+                    <span className="text-zinc-400 block text-[9px] uppercase font-bold">Acquisition Unit Cost</span>
+                    <span className="font-mono font-black text-zinc-900">
+                      ETB {effectiveRejectUnitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="bg-white/80 p-2 rounded-xl border border-rose-100">
+                    <span className="text-zinc-400 block text-[9px] uppercase font-bold">Deducted Quantity</span>
+                    <span className="font-mono font-black text-rose-700">
+                      {Number(rejectQuantity) > 0 ? Number(rejectQuantity).toLocaleString() : "0"} {product.unit}
+                    </span>
+                  </div>
+                  <div className="bg-white/80 p-2 rounded-xl border border-rose-100 col-span-2 sm:col-span-1">
+                    <span className="text-zinc-400 block text-[9px] uppercase font-bold">Total Loss Valuation</span>
+                    <span className="font-mono font-black text-rose-700">
+                      ETB {computedRejectLossValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-rose-800/80 italic pt-0.5">
+                  💡 Zero-Homogenization: Stock asset value will decrease exactly by ETB {computedRejectLossValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} at this entry's exact unit acquisition cost.
+                </p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-1 block">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Rejection Date</span>
+                  <input
+                    type="date"
+                    value={rejectDate}
+                    onChange={(e) => setRejectDate(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                    required
+                  />
+                </label>
+
+                <label className="space-y-1 block">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Rejection Reason / Category</span>
+                  <select
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 cursor-pointer bg-white"
+                  >
+                    <option value="Cleaning & Impurities">Cleaning & Impurities</option>
+                    <option value="Moisture Loss / Drying">Moisture Loss / Drying</option>
+                    <option value="Foreign Matter / Stones">Foreign Matter / Stones</option>
+                    <option value="Broken / Damaged Kernels">Broken / Damaged Kernels</option>
+                    <option value="Grading Degradation">Grading Degradation</option>
+                    <option value="Other Rejection">Other Rejection</option>
+                  </select>
+                </label>
+
+                <div className="space-y-1 relative md:col-span-1">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Supplier / Source</span>
+                  <div className="relative flex items-center">
+                    <input
+                      type="text"
+                      placeholder="e.g. Adola Farmers Union"
+                      value={rejectParty}
+                      onFocus={() => setShowRejectSupplierDropdown(true)}
+                      onChange={(e) => {
+                        setRejectParty(e.target.value)
+                        setShowRejectSupplierDropdown(true)
+                      }}
+                      className="h-10 w-full border border-zinc-200 rounded-xl pl-3 pr-9 font-semibold text-xs outline-none focus:border-rose-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowRejectSupplierDropdown((prev) => !prev)}
+                      className="absolute right-2 p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+                      title="Choose supplier from registry"
+                    >
+                      <ChevronDown className={`size-4 transition-transform ${showRejectSupplierDropdown ? "rotate-180" : ""}`} />
+                    </button>
+                  </div>
+                  {showRejectSupplierDropdown && (
+                    <div className="absolute top-full left-0 right-0 z-30 mt-1 max-h-52 overflow-y-auto rounded-xl bg-white border border-zinc-200 shadow-xl py-1 divide-y divide-zinc-50">
+                      {(() => {
+                        const allSuppliers = Array.from(
+                          new Set([
+                            ...erp.getSuppliers().map((s) => s.name),
+                            ...((product?.wh1Entries || []).map((e: any) => e.party || e.customer).filter(Boolean)),
+                            product?.customer,
+                            product?.supplierName,
+                          ].filter((s): s is string => Boolean(s && s.trim())))
+                        )
+                        const filtered = rejectParty.trim()
+                          ? allSuppliers.filter((s) => s.toLowerCase().includes(rejectParty.toLowerCase()))
+                          : allSuppliers
+                        if (filtered.length === 0) {
+                          return (
+                            <div className="px-3 py-2.5 text-xs text-zinc-400 font-medium text-center">
+                              {allSuppliers.length === 0 ? "No suppliers found" : `No matches for "${rejectParty}"`}
+                            </div>
+                          )
+                        }
+                        return filtered.map((suppName) => {
+                          const regSupp = erp.getSuppliers().find((s) => s.name.toLowerCase() === suppName.toLowerCase())
+                          return (
+                            <button
+                              key={suppName}
+                              type="button"
+                              onClick={() => {
+                                setRejectParty(suppName)
+                                setShowRejectSupplierDropdown(false)
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-rose-50 text-xs flex items-center justify-between transition-colors cursor-pointer"
+                            >
+                              <div>
+                                <span className="font-bold text-zinc-900 block">{suppName}</span>
+                                {regSupp && (
+                                  <span className="text-[10px] text-zinc-500 font-medium">
+                                    {regSupp.phone ? `📞 ${regSupp.phone} • ` : ""}{regSupp.city || "Ethiopia"}
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          )
+                        })
+                      })()}
+                    </div>
+                  )}
+                </div>
+
+                <label className="space-y-1 block md:col-span-1">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">
+                    Deducted Reject Quantity ({product.unit})
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="e.g. 15.5"
+                    value={rejectQuantity}
+                    onChange={(e) => setRejectQuantity(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono font-bold text-rose-900"
+                    required
+                  />
+                </label>
+
+                <label className="space-y-1 block md:col-span-2">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Quality / QC Notes (Optional)</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. Broken seeds removed during optical sorting"
+                    value={rejectNotes}
+                    onChange={(e) => setRejectNotes(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3"
+                  />
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 border-t border-zinc-150 pt-4 mt-6">
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={onClose}
+                  className="px-4 py-2 rounded-xl border border-zinc-200 text-zinc-700 font-bold text-xs hover:bg-zinc-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-sm transition-all cursor-pointer"
+                >
+                  {isSaving ? "Recording Rejection..." : "Record Rejection Loss"}
                 </button>
               </div>
             </form>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { motion } from "framer-motion"
 import {
   User,
@@ -19,13 +19,18 @@ import {
   EyeOff,
   KeyRound,
   X,
+  Laptop,
+  Smartphone,
+  Tablet,
+  RefreshCw,
 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { GlassCard } from "@/components/GlassCard"
 import { useAuthStore, type Role } from "@/lib/authStore"
-import { useErpStore, type Warehouse as WarehouseType } from "@/lib/erpStore"
+import { type Warehouse as WarehouseType } from "@/lib/erpStore"
 import { useFeedback } from "@/context/FeedbackContext"
 import { loadResource, API_BASE } from "@/lib/apiPersistence"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 import { cn } from "@/lib/utils"
 
 interface PasswordStrength {
@@ -84,6 +89,18 @@ interface LinkedEmployee {
   date_of_joining?: string
   employment_type?: string
   status?: string
+}
+
+interface ActiveSession {
+  id: string
+  ipAddress: string
+  deviceType: "desktop" | "mobile" | "tablet" | string
+  osName: string
+  browserName: string
+  lastActiveAt: string
+  expiresAt: string
+  createdAt: string
+  isCurrent: boolean
 }
 
 const roleDescriptions: Record<Role, { title: string; desc: string; color: string; capabilities: string[] }> = {
@@ -162,8 +179,9 @@ const roleDescriptions: Record<Role, { title: string; desc: string; color: strin
 
 export default function Profile() {
   const navigate = useNavigate()
-  const erp = useErpStore()
-  const { user: authUser, logout, token } = useAuthStore()
+  const authUser = useAuthStore((s) => s.user)
+  const token = useAuthStore((s) => s.token)
+  const logout = useAuthStore((s) => s.logout)
   const { showToast, confirm } = useFeedback()
 
   const [loading, setLoading] = useState(true)
@@ -185,60 +203,190 @@ export default function Profile() {
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [savingPassword, setSavingPassword] = useState(false)
 
+  // Active Sessions State
+  const [sessions, setSessions] = useState<ActiveSession[]>([])
+  const [loadingSessions, setLoadingSessions] = useState(false)
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null)
+  const [revokingAllOthers, setRevokingAllOthers] = useState(false)
+
+  const fetchSessions = useCallback(async () => {
+    const currentToken = token || useAuthStore.getState().token
+    if (!currentToken) return
+    setLoadingSessions(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/sessions`, {
+        headers: { Authorization: `Bearer ${currentToken}` },
+      })
+      const data = await res.json()
+      if (res.ok && Array.isArray(data.sessions)) {
+        setSessions(data.sessions)
+      }
+    } catch (err) {
+      console.warn("Could not load active sessions:", err)
+    } finally {
+      setLoadingSessions(false)
+    }
+  }, [token])
+
+  const handleRevokeSession = async (sessionId: string) => {
+    const currentToken = token || useAuthStore.getState().token
+    if (!currentToken) return
+
+    confirm({
+      title: "Sign Out Device",
+      message: "Are you sure you want to sign out this device? The session on that device will be terminated immediately.",
+      confirmLabel: "Sign Out Device",
+      cancelLabel: "Cancel",
+      isDestructive: true,
+      onConfirm: async () => {
+        setRevokingSessionId(sessionId)
+        try {
+          const res = await fetch(`${API_BASE}/api/auth/sessions/${sessionId}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${currentToken}` },
+          })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error || "Failed to sign out device.")
+          showToast("Device signed out successfully.", "success")
+          fetchSessions()
+        } catch (err: any) {
+          showToast(err?.message || "Failed to sign out device.", "warning")
+        } finally {
+          setRevokingSessionId(null)
+        }
+      },
+    })
+  }
+
+  const handleRevokeAllOthers = async () => {
+    const currentToken = token || useAuthStore.getState().token
+    if (!currentToken) return
+
+    confirm({
+      title: "Sign Out All Other Devices",
+      message: "This will terminate all active sessions across all your other computers, phones, and tablets. Only your current browser session will remain active.",
+      confirmLabel: "Sign Out All Others",
+      cancelLabel: "Cancel",
+      isDestructive: true,
+      onConfirm: async () => {
+        setRevokingAllOthers(true)
+        try {
+          const res = await fetch(`${API_BASE}/api/auth/sessions/revoke-others`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${currentToken}` },
+          })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error || "Failed to sign out other devices.")
+          showToast(data.message || "All other devices signed out.", "success")
+          fetchSessions()
+        } catch (err: any) {
+          showToast(err?.message || "Failed to sign out other devices.", "warning")
+        } finally {
+          setRevokingAllOthers(false)
+        }
+      },
+    })
+  }
+
+  const getDeviceIcon = (deviceType: string, osName: string) => {
+    if (deviceType === "mobile" || /iOS|Android/i.test(osName)) {
+      return <Smartphone className="size-4 text-amber-600" />
+    }
+    if (deviceType === "tablet" || /iPad/i.test(osName)) {
+      return <Tablet className="size-4 text-blue-600" />
+    }
+    return <Laptop className="size-4 text-emerald-600" />
+  }
+
+  const formatRelativeTime = (dateStr: string) => {
+    try {
+      if (!dateStr) return "Recent"
+      const time = new Date(dateStr).getTime()
+      if (isNaN(time)) return "Recent"
+      const diffMs = Date.now() - time
+      const diffMins = Math.floor(diffMs / 60000)
+      if (diffMins < 2) return "Active now"
+      if (diffMins < 60) return `${diffMins}m ago`
+      const diffHours = Math.floor(diffMins / 60)
+      if (diffHours < 24) return `${diffHours}h ago`
+      return new Date(dateStr).toLocaleDateString()
+    } catch {
+      return "Recent"
+    }
+  }
+
   useEffect(() => {
+    let isMounted = true
+
     async function loadProfile() {
+      const effectiveUser = authUser || useAuthStore.getState().user
+      const effectiveToken = token || useAuthStore.getState().token
+
+      if (!effectiveUser?.id && !effectiveToken) return
+
       setLoading(true)
       try {
-        if (!authUser?.id) return
-
         // 1. Fetch user's own profile safely via /api/auth/me
-        let current: any = authUser
-        try {
-          const res = await fetch(`${API_BASE}/api/auth/me`, {
-            headers: {
-              Authorization: `Bearer ${token || useAuthStore.getState().token}`,
-            },
-          })
-          if (res.ok) {
-            const data = await res.json()
-            if (data?.id) current = data
+        let current: any = effectiveUser
+        if (effectiveToken) {
+          try {
+            const res = await fetch(`${API_BASE}/api/auth/me`, {
+              headers: { Authorization: `Bearer ${effectiveToken}` },
+            })
+            if (res.ok) {
+              const data = await res.json()
+              if (data?.id) current = data
+            }
+          } catch (err) {
+            console.warn("Could not load /api/auth/me, using stored auth state:", err)
           }
-        } catch (err) {
-          console.warn("Could not load /api/auth/me, using stored auth state:", err)
         }
 
+        if (!isMounted) return
         setProfileData(current)
-        setNewName(current.fullname || authUser.fullname || "")
+        setNewName(current.fullname || effectiveUser?.fullname || "")
 
         // 2. Fetch linked employee details if employee_id is set
         if (current.employee_id) {
           try {
             const employees = await loadResource<LinkedEmployee>("employees")
             const emp = employees.find((e) => e.id === current.employee_id)
-            if (emp) setLinkedEmployee(emp)
+            if (emp && isMounted) setLinkedEmployee(emp)
           } catch {}
         }
 
         // 3. Fetch warehouses from API for warehouse-operating roles
         try {
           const whData = await loadResource<WarehouseType>("warehouses")
-          if (Array.isArray(whData) && whData.length > 0) {
+          if (Array.isArray(whData) && whData.length > 0 && isMounted) {
             setWarehouses(whData)
-          } else {
-            setWarehouses(erp.getWarehouses())
           }
-        } catch {
-          setWarehouses(erp.getWarehouses())
-        }
+        } catch {}
       } catch (err) {
         console.error("Failed to load profile:", err)
       } finally {
-        setTimeout(() => setLoading(false), 200)
+        if (isMounted) {
+          setLoading(false)
+        }
       }
     }
 
     loadProfile()
-  }, [authUser, token, erp])
+    fetchSessions()
+
+    return () => {
+      isMounted = false
+    }
+  }, [authUser, token, fetchSessions])
+
+  // Also ensure sessions are re-fetched whenever window regains focus
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchSessions()
+    }
+    window.addEventListener("focus", handleFocus)
+    return () => window.removeEventListener("focus", handleFocus)
+  }, [fetchSessions])
 
   const userRoles: Role[] = profileData?.roles || authUser?.roles || []
   const isSuperAdmin = userRoles.includes("superadmin")
@@ -255,9 +403,9 @@ export default function Profile() {
   // Filter the operational warehouses specifically relevant for this user
   const userAssignedWarehouses = useMemo(() => {
     const fallbackWarehouses: WarehouseType[] = [
-      { id: "WH1", code: "WH1-AGRI-EXP", name: "WH1 - Ethiopia Agricultural Export Hub", type: "Export Hub", status: "Active", manager: "Abebe Kasahun", location: "Modjo Export Terminal, Ethiopia", targetMarkets: "Europe, Asia, USA", specialization: "Agricultural Commodities" },
-      { id: "WH2", code: "WH2-VET-IND", name: "WH2 - Veterinary Import Hub (India)", type: "Import & Distribution Hub", status: "Active", manager: "Sintayehu Kebede", location: "Kaliti Industrial Zone, Addis Ababa, Ethiopia", targetMarkets: "Ethiopian Dairy Farms, Pastoralist Cooperatives", specialization: "Veterinary Pharmaceuticals & Livestock Injectables" },
-      { id: "WH3", code: "WH3-VET-CHN", name: "WH3 - Veterinary Import Hub (China)", type: "Import & Distribution Hub", status: "Active", manager: "Tigist Haile", location: "Bishoftu Vet Park, Oromia, Ethiopia", targetMarkets: "Poultry Farms, Veterinary Clinics", specialization: "Veterinary Soluble Powders & Vaccines" }
+      { id: "WH1", code: "WH1-AGRI-EXP", name: "WH1 - Ethiopia Agricultural Export Hub", warehouse_type: "EXPORT_WH", type: "Export Hub", location: "Modjo Export Terminal, Ethiopia" },
+      { id: "WH2", code: "WH2-VET-IND", name: "WH2 - Veterinary Import Hub (India)", warehouse_type: "PHARMA_WH", type: "Pharmaceutical Warehouse", location: "Kaliti Industrial Zone, Addis Ababa, Ethiopia" },
+      { id: "WH3", code: "WH3-VET-CHN", name: "WH3 - Veterinary Import Hub (China)", warehouse_type: "PHARMA_WH", type: "Pharmaceutical Warehouse", location: "Bishoftu Vet Park, Oromia, Ethiopia" }
     ]
 
     const sourceWarehouses = warehouses && warehouses.length > 0 ? warehouses : fallbackWarehouses
@@ -597,6 +745,126 @@ export default function Profile() {
                   </div>
                 </GlassCard>
 
+                {/* Active Sessions & Device Control Card */}
+                <GlassCard className="p-6 rounded-3xl border border-white/80 shadow-md bg-white/75">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-black text-zinc-950 uppercase tracking-wider flex items-center gap-2">
+                        <Laptop className="size-4 text-emerald-700" />
+                        <span>Active Sessions</span>
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        {sessions.length} {sessions.length === 1 ? "Device" : "Devices"}
+                      </span>
+                    </div>
+                    <button
+                      onClick={fetchSessions}
+                      disabled={loadingSessions}
+                      title="Refresh session list"
+                      className="size-7 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/90 flex items-center justify-center text-emerald-700 hover:text-emerald-900 transition-all cursor-pointer disabled:opacity-50 shadow-2xs"
+                    >
+                      <RefreshCw className={cn("size-3.5 text-emerald-600", loadingSessions && "animate-spin")} />
+                    </button>
+                  </div>
+
+                  <p className="text-[11px] text-zinc-500 mb-4 leading-relaxed">
+                    Authenticated devices with automatic 6-hour security session enforcement.
+                  </p>
+
+                  {loadingSessions && sessions.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-6 text-zinc-400 gap-2.5 text-xs">
+                      <LoadingDots color="bg-emerald-600 dark:bg-emerald-400" size="sm" />
+                      <span className="text-[11px] font-medium text-zinc-500">Checking active sessions...</span>
+                    </div>
+                  ) : sessions.length === 0 ? (
+                    <div className="p-3 text-center text-xs text-zinc-400 bg-zinc-50 rounded-2xl border border-dashed border-zinc-200">
+                      No active sessions recorded.
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {sessions.map((s) => (
+                        <div
+                          key={s.id}
+                          className={cn(
+                            "p-3 rounded-2xl border transition-all text-xs flex flex-col gap-1.5",
+                            s.isCurrent
+                              ? "bg-emerald-50/50 border-emerald-200/90 shadow-xs"
+                              : "bg-zinc-50/80 border-zinc-200/70 hover:border-zinc-300"
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className={cn(
+                                "size-7 rounded-xl flex items-center justify-center shrink-0 border",
+                                s.isCurrent 
+                                  ? "bg-emerald-100/70 border-emerald-300 text-emerald-800" 
+                                  : "bg-white border-zinc-200 text-zinc-600"
+                              )}>
+                                {getDeviceIcon(s.deviceType, s.osName)}
+                              </div>
+                              <div className="truncate">
+                                <span className="font-bold text-zinc-900 block truncate text-[11px]">
+                                  {s.browserName} on {s.osName}
+                                </span>
+                                <span className="text-[10px] text-zinc-400 font-mono">
+                                  {s.ipAddress}
+                                </span>
+                              </div>
+                            </div>
+
+                            {s.isCurrent ? (
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100/80 text-emerald-800 border border-emerald-300 shrink-0">
+                                <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                This Device
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => handleRevokeSession(s.id)}
+                                disabled={revokingSessionId === s.id}
+                                className="px-2 py-1 rounded-lg text-[10px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200/70 transition-all cursor-pointer flex items-center gap-1 shrink-0 disabled:opacity-50"
+                              >
+                                {revokingSessionId === s.id ? (
+                                  <LoadingDots color="bg-rose-600" size="xs" />
+                                ) : (
+                                  <LogOut className="size-3" />
+                                )}
+                                <span>Sign Out</span>
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] text-zinc-400 pt-1 border-t border-zinc-100 dark:border-zinc-800">
+                            <span>
+                              Signed in: {s.createdAt && !isNaN(new Date(s.createdAt).getTime())
+                                ? new Date(s.createdAt).toLocaleDateString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                                : "Recently"}
+                            </span>
+                            <span className={cn(s.isCurrent && "font-semibold text-emerald-700")}>
+                              {s.isCurrent ? "Active now" : formatRelativeTime(s.lastActiveAt)}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Bulk remote revocation if multiple devices active */}
+                      {sessions.filter((s) => !s.isCurrent).length > 0 && (
+                        <button
+                          onClick={handleRevokeAllOthers}
+                          disabled={revokingAllOthers}
+                          className="w-full mt-2 h-8 px-3 rounded-xl bg-zinc-100 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 border border-zinc-200 text-zinc-700 font-bold text-[10px] flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          {revokingAllOthers ? (
+                            <LoadingDots color="bg-rose-600" size="xs" />
+                          ) : (
+                            <LogOut className="size-3.5" />
+                          )}
+                          <span>Sign out of all other devices ({sessions.filter((s) => !s.isCurrent).length})</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </GlassCard>
+
                 {/* Linked Employee Information (if available) */}
                 {linkedEmployee && (
                   <GlassCard className="p-6 rounded-3xl border border-white/80 shadow-md bg-white/75">
@@ -753,7 +1021,7 @@ export default function Profile() {
                                 </div>
                               </div>
                               <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 shrink-0">
-                                {wh.status || "Active"}
+                                {wh.warehouse_type === "EXPORT_WH" ? "Export WH" : "Pharma WH"}
                               </span>
                             </div>
 
@@ -767,7 +1035,7 @@ export default function Profile() {
                                     <span className="font-bold text-zinc-900">{wh.manager}</span>
                                   </p>
                                 )}
-                                {wh.specialization && <p className="truncate text-zinc-400">🏷️ {wh.specialization}</p>}
+                                {(wh.specialization || wh.type) && <p className="truncate text-zinc-400">🏷️ {wh.specialization || wh.type}</p>}
                               </div>
                             )}
                           </div>

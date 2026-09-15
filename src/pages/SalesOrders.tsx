@@ -19,9 +19,10 @@ import {
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
+import { useAuthStore } from "@/lib/authStore"
 import { useErpStore, getTradeLicenseStatus, type SalesOrder, type Quotation, type SalesOrderItem, type Product } from "@/lib/erpStore"
 import { useFinanceStore, calculateMultiTax, resolveAutoTaxScheduleId } from "@/lib/financeStore"
-import { withOperatingWarehouses } from "@/lib/warehouses"
+import { withOperatingWarehouses, isWH1 } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { type TableColumn } from "@/components/ResizableTable"
 import { EditModalHeader } from "@/components/EditModalHeader"
@@ -38,12 +39,7 @@ import {
   fetchAllShipmentDocs,
 } from "@/lib/tradeDocumentService"
 import { uploadFile } from "@/lib/fileUpload"
-
-const isWH1 = (w?: string) => {
-  if (!w) return false
-  const upper = w.toUpperCase()
-  return upper.includes("WH1") || upper.includes("WH-01") || upper.includes("WH 1") || upper.includes("AGRI")
-}
+import { getLocalDateString } from "@/lib/dateUtils"
 
 const COMMODITY_UNITS = ["Quintal", "Ton"]
 const CONTAINER_UNITS = ["Box", "Bottle", "Vial", "Sachet", "Pack", "Carton"]
@@ -95,8 +91,10 @@ const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, trans
 
 export default function SalesOrders() {
   const { showToast } = useFeedback()
+  const { user } = useAuthStore()
+  const isSuperadmin = user?.roles?.includes("superadmin") ?? false
   const erp = useErpStore()
-  const isLoading = erp.isLoading()
+  const isLoading = erp.isLoading() && !erp.isSalesLoaded()
   
   const salesOrders = erp.getSalesOrders()
   const customers = erp.getCustomers()
@@ -783,7 +781,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       customerGroup: selectedCust.category,
       warehouse: targetWh,
       warehouseName: wh ? `${wh.code} - ${wh.name}` : targetWh,
-      date: new Date().toISOString().split("T")[0],
+      date: getLocalDateString(),
       amount: totalAmt,
       currency: "ETB",
       stage: "Quote",
@@ -800,6 +798,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       billingStatus: "Not Billed",
       paymentTerms,
       paymentType: newPaymentType,
+      approvalStatus: "Pending",
     }
 
     // Persist Trade License / Bank Permit and Payment Advice via unified tradeDocumentService
@@ -890,8 +889,8 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       customerGroup: selectedCust.category,
       warehouse: quoteWarehouse,
       warehouseName: wh ? `${wh.code} - ${wh.name}` : quoteWarehouse,
-      date: new Date().toISOString().split("T")[0],
-      validTill: validTillDate.toISOString().split("T")[0],
+      date: getLocalDateString(),
+      validTill: getLocalDateString(validTillDate),
       amount: totalAmt,
       currency: "ETB",
       status: "Draft",
@@ -990,6 +989,11 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               variant: "primary",
             },
           ]}
+          onReload={async () => {
+            await erp.reloadFromApi()
+          }}
+          isReloading={isLoading}
+          reloadTooltip="Reload sales orders from server"
           defaultWidths={{
             id: 110,
             customer: 220,
@@ -998,7 +1002,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
             approvalStatus: 140,
             docsStatus: 170,
             amount: 140,
-            _actions: 110,
+            _actions: 190,
           }}
           keyExtractor={(so) => so.id}
           renderRow={(so, colWidths) => (
@@ -1092,7 +1096,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     )
                   }
                   return (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200" title="Pending Superadmin Approval before stock fulfillment">
                       <Clock className="size-3 text-amber-600" /> Pending Approval
                     </span>
                   )
@@ -1139,7 +1143,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                       </span>
                     )
                   }
-                  if (!hasAdvice) {
+                  if (hasTrade && !hasAdvice) {
                     return (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
                         <AlertTriangle className="size-3 text-amber-600" /> Payment Advice Missing
@@ -1155,12 +1159,25 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               </td>
 
               <td style={{ width: `${colWidths.amount}px` }} className="py-4 px-4 text-right font-mono text-xs overflow-hidden">
-                <div className="font-black text-zinc-950">ETB {so.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}</div>
+                <div className="font-black text-zinc-950">ETB {Number(so.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}</div>
                 <div className="mt-0.5 text-[9px] font-bold uppercase text-zinc-400">{so.items?.length || 0} items</div>
               </td>
 
               <td style={{ width: `${colWidths._actions}px` }} className="py-4 px-4 text-center whitespace-nowrap overflow-hidden">
                 <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  {isSuperadmin && so.approvalStatus !== "Approved" && (
+                    <button 
+                      onClick={async () => {
+                        const approver = user?.fullname || user?.username || "Super Admin"
+                        await erp.approveSalesOrder(so.id, approver)
+                        showToast("Order Approved", "success", `Sales Order ${so.id} approved and unlocked for stock issue.`)
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] tracking-tight transition-all active:scale-95 shadow-xs cursor-pointer"
+                      title="Superadmin: Approve Order & Unlock for Fulfillment"
+                    >
+                      <CheckCircle2 className="size-3 text-white" /> Approve
+                    </button>
+                  )}
                   <button 
                     onClick={() => handleOpenEditModal(so)}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs"
@@ -2428,6 +2445,20 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         )}
 
         <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
+          {isSuperadmin && editingOrder.approvalStatus !== "Approved" && (
+            <button 
+              type="button"
+              onClick={async () => {
+                const approver = user?.fullname || user?.username || "Super Admin"
+                await erp.approveSalesOrder(editingOrder.id, approver)
+                showToast("Order Approved", "success", `Sales Order ${editingOrder.id} approved and unlocked for stock issue.`)
+                setIsEditOrderOpen(false)
+              }}
+              className="px-4 py-2 rounded-full bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 shadow-sm transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <CheckCircle2 className="size-3.5 text-white" /> Approve Order
+            </button>
+          )}
           <button 
             type="button" 
             disabled={isSavingEditOrder}
@@ -2541,7 +2572,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         isOpen={!!deletingOrder}
         title="Delete Sales Order Contract?"
         recordId={deletingOrder?.id}
-        recordName={deletingOrder ? `${deletingOrder.customer} — ETB ${deletingOrder.amount.toLocaleString()}` : ""}
+        recordName={deletingOrder ? `${deletingOrder.customer} — ETB ${Number(deletingOrder.amount || 0).toLocaleString()}` : ""}
         description="This will permanently delete this Sales Order contract from system registry."
         onClose={() => setDeletingOrder(null)}
         onConfirmDelete={() => {

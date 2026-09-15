@@ -1,0 +1,47 @@
+[
+  {
+    "id": "WH1",
+    "payload": {
+      "code": "WH1-AGRI-EXP",
+      "name": "WH1 - Ethiopia Agricultural Export Hub",
+      "type": "Export Hub",
+      "status": "Active",
+      "manager": "dres",
+      "location": "kalitiy Export Terminal, Ethiopia",
+      "targetMarkets": "Europe (Germany, Netherlands), Asia (Japan, China, UAE), USA",
+      "specialization": "Ethiopian Agricultural Commodities (Coffee, Sesame, Teff, Pulses, Spices)"
+    },
+    "created_at": "2026-07-25T10:58:16.207741+00:00",
+    "updated_at": "2026-08-31T16:05:18.631653+00:00"
+  },
+  {
+    "id": "WH2",
+    "payload": {
+      "code": "WH2-VET-IND",
+      "name": "WH2 - Veterinary Import Hub (India)",
+      "type": "Import & Distribution Hub",
+      "status": "Active",
+      "manager": "Sintayehu Kebede",
+      "location": "Kaliti Industrial Zone, Addis Ababa, Ethiopia",
+      "targetMarkets": "Ethiopian Dairy Farms, Pastoralist Cooperatives, Clinics & Bureaus",
+      "specialization": "Veterinary Pharmaceuticals & Livestock Injectables (India Origin)"
+    },
+    "created_at": "2026-07-25T10:58:16.796503+00:00",
+    "updated_at": "2026-08-31T16:05:18.631653+00:00"
+  },
+  {
+    "id": "WH3",
+    "payload": {
+      "code": "WH3-VET-CHN",
+      "name": "WH3 - Veterinary Import Hub (China)",
+      "type": "Import & Distribution Hub",
+      "status": "Active",
+      "manager": "Tigist Haile",
+      "location": "Bishoftu Vet Park, Oromia, Ethiopia",
+      "targetMarkets": "Poultry Farms (Bishoftu), Regional Veterinary Clinics, Farm Cooperatives",
+      "specialization": "Veterinary Soluble Powders, Biologics & Poultry Vaccines (China Origin)"
+    },
+    "created_at": "2026-07-25T10:58:17.428399+00:00",
+    "updated_at": "2026-08-31T16:05:18.631653+00:00"
+  }
+]

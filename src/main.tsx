@@ -9,6 +9,19 @@ import { FeedbackProvider } from "@/context/FeedbackContext.tsx"
 import { useAuthStore, isTokenExpired, handleAuthExpiry } from "@/lib/authStore"
 import { requestMonitor, evaluateRoleScoping } from "@/lib/requestMonitor"
 
+// Suppress known non-fatal browser/DevTools internal extension errors (e.g. Chrome Soft Navigation DevTools script 'startTime' error)
+if (typeof window !== "undefined") {
+  window.addEventListener("error", (event) => {
+    if (
+      event.message?.includes("reading 'startTime'") ||
+      (event.message?.includes("startTime") && (event.filename?.includes("anonymous") || event.filename?.includes("VM") || !event.filename))
+    ) {
+      event.preventDefault()
+      event.stopPropagation()
+    }
+  })
+}
+
 // Intercept all fetch requests globally to inject the JWT auth header & handle 401/expired tokens
 const originalFetch = window.fetch
 window.fetch = async (input, init) => {
@@ -21,6 +34,7 @@ window.fetch = async (input, init) => {
 
   const isApiRequest = url.includes("/api/")
   const isAuthLogin = url.includes("/api/auth/login")
+  const isAuthRefresh = url.includes("/api/auth/refresh-session")
   const method = init?.method || "GET"
 
   // Extract clean resource identifier (e.g. "inventory_products" from "/api/inventory_products?query=...")
@@ -37,8 +51,8 @@ window.fetch = async (input, init) => {
     if (!isAuthLogin) {
       const token = useAuthStore.getState().token
       if (token) {
-        // Proactively check if token is expired before dispatching request
-        if (isTokenExpired(token)) {
+        // Proactively check if token is expired before dispatching request (except when extending session)
+        if (!isAuthRefresh && isTokenExpired(token)) {
           handleAuthExpiry()
           return new Response(JSON.stringify({ error: "Token expired", code: "TOKEN_EXPIRED" }), {
             status: 401,
@@ -66,6 +80,14 @@ window.fetch = async (input, init) => {
   const response = await originalFetch(input, init)
   const durationMs = performance.now() - startTime
 
+  // Extract server-side session expiry header if present to keep client in sync with DB
+  if (isApiRequest) {
+    const serverSessionExpiry = response.headers.get("x-session-expires-at")
+    if (serverSessionExpiry) {
+      useAuthStore.getState().setSessionExpiresAt(serverSessionExpiry)
+    }
+  }
+
   // Record telemetry for all API calls
   if (isApiRequest) {
     const user = useAuthStore.getState().user
@@ -85,14 +107,18 @@ window.fetch = async (input, init) => {
     })
   }
 
-  // React to 401 Unauthorized or Token Expiry responses by verifying token status before logging out
+  // React to 401 Unauthorized or Session Revocation / Expiry responses by triggering immediate logout
   if (isApiRequest && !isAuthLogin && (response.status === 401 || response.status === 403)) {
     try {
       const cloned = response.clone()
       const body = await cloned.json()
       const isTokenIssue =
         body?.code === "TOKEN_EXPIRED" ||
-        (body?.error && /token|expired|invalid.*token|token missing/i.test(String(body.error)))
+        body?.code === "SESSION_REVOKED" ||
+        body?.code === "SESSION_EXPIRED" ||
+        body?.code === "ACCOUNT_SUSPENDED" ||
+        body?.code === "ACCOUNT_DELETED" ||
+        (body?.error && /token|session|revoked|expired|invalid.*token|token missing|deactivated/i.test(String(body.error)))
 
       if (isTokenIssue) {
         handleAuthExpiry()

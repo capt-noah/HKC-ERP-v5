@@ -4,6 +4,7 @@ import { File, Paperclip, X, Download, Camera, Image as ImageIcon, Eye, Trash2 }
 import type { HkcDocAttachment } from "@/lib/erpStore"
 import CameraCaptureModal from "./CameraCaptureModal"
 import { useFeedback } from "@/context/FeedbackContext"
+import { uploadFile, resolveFileUrl } from "@/lib/fileUpload"
 
 interface HkcDocAttachmentPanelProps {
   attachments: HkcDocAttachment[]
@@ -17,9 +18,10 @@ export default function HkcDocAttachmentPanel({
   onAddAttachments,
   onRemoveAttachment,
 }: HkcDocAttachmentPanelProps) {
-  const { confirm } = useFeedback()
+  const { confirm, showToast } = useFeedback()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isCameraOpen, setIsCameraOpen] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const [previewImage, setPreviewImage] = useState<{ fileName: string; fileUrl: string } | null>(null)
 
   const handleDeleteAttachment = (file: HkcDocAttachment) => {
@@ -35,26 +37,34 @@ export default function HkcDocAttachmentPanel({
     })
   }
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return
     const files = Array.from(e.target.files)
-    const promises = files.map((file) => {
-      return new Promise<{ fileName: string; fileUrl: string }>((resolve) => {
-        const reader = new FileReader()
-        reader.onloadend = () => {
-          resolve({
-            fileName: file.name,
-            fileUrl: reader.result as string,
-          })
-        }
-        reader.readAsDataURL(file)
-      })
-    })
+    setIsUploading(true)
 
-    Promise.all(promises).then((results) => {
-      onAddAttachments(results)
+    try {
+      const results: { fileName: string; fileUrl: string }[] = []
+      for (const file of files) {
+        try {
+          const res = await uploadFile(file, "hkc_docs")
+          results.push({
+            fileName: res.originalName || file.name,
+            fileUrl: res.url,
+          })
+        } catch (err) {
+          console.warn("File upload failed for", file.name, err)
+        }
+      }
+
+      if (results.length > 0) {
+        onAddAttachments(results)
+      }
+    } catch (err) {
+      showToast("Upload Error", "warning", "Failed to upload attachments.")
+    } finally {
+      setIsUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ""
-    })
+    }
   }
 
   const handleCameraCapture = (captured: { fileName: string; fileUrl: string }) => {
@@ -67,15 +77,16 @@ export default function HkcDocAttachmentPanel({
 
   const downloadAttachment = (fileName: string, fileUrl: string) => {
     const link = document.createElement("a")
-    link.href = fileUrl
+    link.href = resolveFileUrl(fileUrl)
     link.download = fileName
+    link.target = "_blank"
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
   }
 
   const isImageFile = (fileName: string, fileUrl: string) => {
-    return fileUrl.startsWith("data:image/") || /\.(jpg|jpeg|png|webp|gif|bmp|heic|svg)$/i.test(fileName)
+    return fileUrl.startsWith("data:image/") || /\.(jpg|jpeg|png|webp|gif|bmp|heic|svg)$/i.test(fileName) || fileUrl.includes("/hkc_docs/")
   }
 
   return (
@@ -101,11 +112,12 @@ export default function HkcDocAttachmentPanel({
           <button
             type="button"
             onClick={triggerFileSelect}
-            className="px-3 py-1.5 rounded-xl border border-zinc-200 hover:bg-zinc-100 text-xs font-black inline-flex items-center gap-1.5 hover:border-zinc-300 active:scale-95 transition-all text-zinc-800 dark:text-zinc-200 cursor-pointer"
+            disabled={isUploading}
+            className="px-3 py-1.5 rounded-xl border border-zinc-200 hover:bg-zinc-100 disabled:opacity-50 text-xs font-black inline-flex items-center gap-1.5 hover:border-zinc-300 active:scale-95 transition-all text-zinc-800 dark:text-zinc-200 cursor-pointer"
             title="Upload file or document"
           >
             <Paperclip className="size-3.5 text-zinc-500" />
-            <span>Attach File</span>
+            <span>{isUploading ? "Uploading..." : "Attach File"}</span>
           </button>
         </div>
 
@@ -143,8 +155,8 @@ export default function HkcDocAttachmentPanel({
                       className="size-7 rounded-lg overflow-hidden border border-zinc-200 bg-zinc-100 flex items-center justify-center shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
                       title="Click to preview image"
                     >
-                      {file.fileUrl.startsWith("data:") ? (
-                        <img src={file.fileUrl} alt={file.fileName} className="size-full object-cover" />
+                      {file.fileUrl ? (
+                        <img src={resolveFileUrl(file.fileUrl)} alt={file.fileName} className="size-full object-cover" />
                       ) : (
                         <ImageIcon className="size-4 text-blue-500" />
                       )}
@@ -172,7 +184,7 @@ export default function HkcDocAttachmentPanel({
                       <Eye className="size-3.5" />
                     </button>
                   )}
-                  {file.fileUrl.startsWith("data:") && (
+                  {file.fileUrl && (
                     <button
                       type="button"
                       onClick={() => downloadAttachment(file.fileName, file.fileUrl)}
@@ -221,7 +233,7 @@ export default function HkcDocAttachmentPanel({
             </div>
             <div className="p-3 bg-zinc-950 flex items-center justify-center overflow-auto max-h-[70vh]">
               <img 
-                src={previewImage.fileUrl} 
+                src={resolveFileUrl(previewImage.fileUrl)} 
                 alt={previewImage.fileName} 
                 className="max-h-[65vh] w-auto object-contain rounded-lg"
               />

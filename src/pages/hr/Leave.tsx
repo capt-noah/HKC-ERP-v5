@@ -11,6 +11,7 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { LEAVE_STATUSES, LEAVE_TYPES, hrApi, leaveDays, loadHRData, makeId, type Employee, type LeaveRequest } from "@/lib/hrApi"
+import { uploadFile } from "@/lib/fileUpload"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -20,7 +21,7 @@ const documentMimeTypes = ["application/pdf", "application/vnd.openxmlformats-of
 
 function isAllowedDocumentName(value: string) {
   const name = value.trim().toLowerCase()
-  return !name || documentExtensions.some((extension) => name.endsWith(extension))
+  return !name || documentExtensions.some((extension) => name.endsWith(extension)) || name.startsWith("/uploads/")
 }
 const blankLeave = (employee?: Employee): Omit<LeaveRequest, "id"> => ({
   employee_id: employee?.id || "",
@@ -293,7 +294,7 @@ function Cell({ width, align = "left", children }: { width: number; align?: "lef
 
 function LeaveForm({ form, setForm, employees, onClose, onSubmit }: { form: Omit<LeaveRequest, "id">; setForm: (form: Omit<LeaveRequest, "id">) => void; employees: Employee[]; onClose: () => void; onSubmit: (event: React.FormEvent) => void }) {
   const set = (key: keyof Omit<LeaveRequest, "id">, value: string | number) => setForm({ ...form, [key]: value, number_of_days: key === "start_date" || key === "end_date" ? leaveDays(key === "start_date" ? String(value) : form.start_date, key === "end_date" ? String(value) : form.end_date) : form.number_of_days })
-  const handleDocument = (file: File | undefined) => {
+  const handleDocument = async (file: File | undefined) => {
     if (!file) return
     const name = file.name.trim()
     const lowerName = name.toLowerCase()
@@ -303,7 +304,12 @@ function LeaveForm({ form, setForm, employees, onClose, onSubmit }: { form: Omit
       window.alert("Supporting document must be a PDF, DOCX, or PNG file.")
       return
     }
-    set("document_path", name)
+    try {
+      const res = await uploadFile(file, "leave")
+      set("document_path", res.url)
+    } catch {
+      set("document_path", name)
+    }
   }
   return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"><motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-3xl bg-white rounded-3xl p-6 shadow-2xl border border-black/10"><div className="flex items-center justify-between mb-5"><h3 className="text-lg font-black">Leave Request</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div><form onSubmit={onSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
     <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Employee<select required value={form.employee_id} onChange={(event) => set("employee_id", event.target.value)} className="mt-1 w-full rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 text-xs font-bold outline-none"><option value="">Select employee</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.full_name} ({employee.employee_number})</option>)}</select></label>

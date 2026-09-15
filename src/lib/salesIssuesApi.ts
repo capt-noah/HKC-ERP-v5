@@ -43,6 +43,7 @@ export interface SalesIssue {
 }
 
 export interface AvailableBatch {
+  id?: string
   batch_id: string
   batch_no: string
   item_id: string

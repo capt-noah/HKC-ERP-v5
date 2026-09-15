@@ -13,6 +13,7 @@ import {
   X,
   ArrowDownLeft,
   ArrowUpRight,
+  FileSpreadsheet,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -28,6 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { fetchTradeAndAdviceDocs, type ShipmentDocAttachment } from "@/lib/tradeDocumentService"
+import { PeachtreeBankReconciliationModal } from "@/components/finance/PeachtreeBankReconciliationModal"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -68,6 +70,7 @@ export default function Banking() {
   const [isLoadingDocs, setIsLoadingDocs] = useState(false)
   const [previewDocUrl, setPreviewDocUrl] = useState("")
   const [previewDocName, setPreviewDocName] = useState("")
+  const [showReconModal, setShowReconModal] = useState(false)
 
   const [bankSearch, setBankSearch] = useState("")
   const [bankDateFilter, setBankDateFilter] = useState("ALL")
@@ -432,6 +435,12 @@ export default function Banking() {
                   ]}
                   actions={[
                     {
+                      label: "Account Reconciliation",
+                      onClick: () => setShowReconModal(true),
+                      icon: <FileSpreadsheet className="size-3.5" />,
+                      variant: "emerald",
+                    },
+                    {
                       label: `Export (${filteredBankLines.length})`,
                       onClick: () => {
                         exportToExcel({
@@ -454,6 +463,11 @@ export default function Banking() {
                       variant: "emeraldLight",
                     },
                   ]}
+                  onReload={async () => {
+                    await store.reloadFromApi()
+                  }}
+                  isReloading={isLoading}
+                  reloadTooltip="Reload bank statement lines from server"
                 />
                 <TableScrollWrapper>
                   <table className="w-full text-left border-collapse table-fixed">
@@ -1032,6 +1046,12 @@ export default function Banking() {
           setPreviewDocUrl("")
           setPreviewDocName("")
         }}
+      />
+
+      {/* Peachtree / Sage 50 Account Reconciliation Worksheet Modal */}
+      <PeachtreeBankReconciliationModal
+        isOpen={showReconModal}
+        onClose={() => setShowReconModal(false)}
       />
     </div>
   )

@@ -585,3 +585,199 @@ export function exportPeachtreeFixedAssets(
     triggerDownload(`${baseName}.xls`, xmlContent, "application/vnd.ms-excel")
   }
 }
+
+// ------------------------------------------------------------------------------
+// 7. BEGINNING BALANCES / TRIAL BALANCE CUTOVER TEMPLATE & PARSER
+// ------------------------------------------------------------------------------
+
+export function generatePeachtreeBeginningBalanceTemplateCsv(
+  accounts: AccountItem[],
+  currentBalances?: Record<string, { debit: number; credit: number }>
+): string {
+  const headers = ["Account ID", "Account Description", "Type", "Debit", "Credit"]
+  const rows: string[][] = []
+
+  // Sort by account code
+  const sortedAccounts = [...accounts]
+    .filter((a) => !a.is_group && a.is_active !== false)
+    .sort((a, b) => a.code.localeCompare(b.code))
+
+  for (const acc of sortedAccounts) {
+    const bal = currentBalances?.[acc.id] || currentBalances?.[acc.code] || { debit: 0, credit: 0 }
+    rows.push([
+      acc.code,
+      acc.name,
+      acc.peachtree_type || acc.account_type,
+      bal.debit > 0 ? bal.debit.toFixed(2) : "0.00",
+      bal.credit > 0 ? bal.credit.toFixed(2) : "0.00",
+    ])
+  }
+
+  return [headers.map(escapeCSV).join(","), ...rows.map((r) => r.map(escapeCSV).join(","))].join("\r\n")
+}
+
+export function downloadPeachtreeBeginningBalanceTemplate(
+  accounts: AccountItem[],
+  currentBalances?: Record<string, { debit: number; credit: number }>
+) {
+  const csvContent = generatePeachtreeBeginningBalanceTemplateCsv(accounts, currentBalances)
+  triggerDownload("HKC_Peachtree_Beginning_Balances_Template.csv", csvContent, "text/csv;charset=utf-8;")
+}
+
+export interface ParsedBeginningBalanceRow {
+  account_id: string
+  code: string
+  name: string
+  account_type: string
+  debit_amount: number
+  credit_amount: number
+}
+
+export interface ParseBeginningBalanceResult {
+  balances: ParsedBeginningBalanceRow[]
+  errors: string[]
+  totalDebit: number
+  totalCredit: number
+  outOfBalance: number
+}
+
+export function parsePeachtreeBeginningBalanceCsv(
+  csvText: string,
+  accounts: AccountItem[]
+): ParseBeginningBalanceResult {
+  const errors: string[] = []
+  const balances: ParsedBeginningBalanceRow[] = []
+
+  if (!csvText || !csvText.trim()) {
+    return {
+      balances: [],
+      errors: ["CSV file is empty."],
+      totalDebit: 0,
+      totalCredit: 0,
+      outOfBalance: 0,
+    }
+  }
+
+  // Split lines accounting for \r\n and \n
+  const rawLines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0)
+  if (rawLines.length < 2) {
+    return {
+      balances: [],
+      errors: ["CSV must contain a header row and at least one account data row."],
+      totalDebit: 0,
+      totalCredit: 0,
+      outOfBalance: 0,
+    }
+  }
+
+  // Parse CSV line helper handling quotes
+  const parseLine = (line: string): string[] => {
+    const values: string[] = []
+    let current = ""
+    let inQuotes = false
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i]
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"'
+          i++
+        } else {
+          inQuotes = !inQuotes
+        }
+      } else if (char === "," && !inQuotes) {
+        values.push(current.trim())
+        current = ""
+      } else {
+        current += char
+      }
+    }
+    values.push(current.trim())
+    return values
+  }
+
+  const headerCells = parseLine(rawLines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ""))
+
+  // Locate column indices
+  let codeIdx = headerCells.findIndex((h) => h.includes("accountid") || h.includes("accountcode") || h.includes("accountno") || h.includes("accountnum") || h === "id" || h === "code" || h === "account")
+  let nameIdx = headerCells.findIndex((h) => h.includes("description") || h.includes("accountname") || h.includes("name") || h === "title")
+  let debitIdx = headerCells.findIndex((h) => h.includes("debit"))
+  let creditIdx = headerCells.findIndex((h) => h.includes("credit"))
+
+  // Fallback defaults if simple standard template
+  if (codeIdx === -1) codeIdx = 0
+  if (nameIdx === -1) nameIdx = 1
+  if (debitIdx === -1) debitIdx = headerCells.length >= 4 ? headerCells.length - 2 : 2
+  if (creditIdx === -1) creditIdx = headerCells.length >= 4 ? headerCells.length - 1 : 3
+
+  // Map of accounts for fast lookup
+  const accountByCode = new Map<string, AccountItem>()
+  const accountById = new Map<string, AccountItem>()
+  for (const acc of accounts) {
+    accountByCode.set(acc.code.trim().toLowerCase(), acc)
+    accountById.set(acc.id.trim().toLowerCase(), acc)
+  }
+
+  let totalDebit = 0
+  let totalCredit = 0
+
+  for (let rowIdx = 1; rowIdx < rawLines.length; rowIdx++) {
+    const row = parseLine(rawLines[rowIdx])
+    if (row.length === 0 || row.every((c) => !c)) continue
+
+    const rawCode = (row[codeIdx] || "").trim()
+    const rawName = (row[nameIdx] || "").trim()
+    const rawDebit = (row[debitIdx] || "0").replace(/[^0-9.-]/g, "")
+    const rawCredit = (row[creditIdx] || "0").replace(/[^0-9.-]/g, "")
+
+    if (!rawCode && !rawName) continue
+
+    const matchedAcc =
+      accountByCode.get(rawCode.toLowerCase()) ||
+      accountById.get(rawCode.toLowerCase()) ||
+      accounts.find((a) => a.name.toLowerCase() === rawName.toLowerCase())
+
+    if (!matchedAcc) {
+      errors.push(`Row ${rowIdx + 1}: Account "${rawCode || rawName}" not found in HKC Chart of Accounts.`)
+      continue
+    }
+
+    if (matchedAcc.is_group) {
+      // Group accounts cannot have direct journal balances
+      continue
+    }
+
+    const debitNum = Math.abs(parseFloat(rawDebit) || 0)
+    const creditNum = Math.abs(parseFloat(rawCredit) || 0)
+
+    if (debitNum > 0 && creditNum > 0) {
+      errors.push(`Row ${rowIdx + 1} (${matchedAcc.code}): Account has both Debit (${debitNum}) and Credit (${creditNum}). Taking net balance.`)
+    }
+
+    const netDebit = debitNum > creditNum ? Math.round((debitNum - creditNum) * 100) / 100 : 0
+    const netCredit = creditNum > debitNum ? Math.round((creditNum - debitNum) * 100) / 100 : 0
+
+    totalDebit += netDebit
+    totalCredit += netCredit
+
+    balances.push({
+      account_id: matchedAcc.id,
+      code: matchedAcc.code,
+      name: matchedAcc.name,
+      account_type: matchedAcc.account_type,
+      debit_amount: netDebit,
+      credit_amount: netCredit,
+    })
+  }
+
+  totalDebit = Math.round(totalDebit * 100) / 100
+  totalCredit = Math.round(totalCredit * 100) / 100
+  const outOfBalance = Math.round(Math.abs(totalDebit - totalCredit) * 100) / 100
+
+  return {
+    balances,
+    errors,
+    totalDebit,
+    totalCredit,
+    outOfBalance,
+  }
+}

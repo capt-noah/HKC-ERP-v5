@@ -1,0 +1,38 @@
+[
+  {
+    "id": "ATT-cdd91066-1485-4792-b63d-97f52b6c142a",
+    "payload": {
+      "id": "ATT-cdd91066-1485-4792-b63d-97f52b6c142a",
+      "notes": "",
+      "status": "Present",
+      "employee_id": "EMP-f1c6c9f1-6687-4862-bde4-a01df9cfb6aa",
+      "hours_worked": 8,
+      "warehouse_id": "Warehouse 1",
+      "check_in_time": "",
+      "check_out_time": "",
+      "overtime_hours": 0,
+      "attendance_date": "2026-09-01",
+      "locked_by_payroll": false
+    },
+    "created_at": "2026-09-01T06:11:45.571Z",
+    "updated_at": "2026-09-01T06:11:53.808Z"
+  },
+  {
+    "id": "ATT-fe7349c0-78e2-445b-8d55-170a765db8bf",
+    "payload": {
+      "id": "ATT-fe7349c0-78e2-445b-8d55-170a765db8bf",
+      "notes": "",
+      "status": "Present",
+      "employee_id": "1",
+      "hours_worked": 2,
+      "warehouse_id": "Head Office",
+      "check_in_time": "15:01",
+      "check_out_time": "17:01",
+      "overtime_hours": 0,
+      "attendance_date": "2026-08-04",
+      "locked_by_payroll": false
+    },
+    "created_at": "2026-08-04T12:01:49.555Z",
+    "updated_at": "2026-08-04T12:01:49.555Z"
+  }
+]

@@ -1182,3 +1182,230 @@ export function exportWH1ReceivingVoucherExcel(v: PrintWH1ReceivingVoucherOption
   })
 }
 
+export interface PrintStoreTransferOptions {
+  referenceNumber: string
+  date: string
+  fromWarehouse: string
+  toWarehouse: string
+  status: string
+  issuedBy?: string
+  issuedAt?: string
+  issuedSignature?: string
+  receivedBy?: string
+  receivedAt?: string
+  receivedSignature?: string
+  discrepancyRemark?: string
+  lineItems: Array<{
+    line_no: number
+    productId?: string
+    item: string
+    UOM: string
+    batch_no?: string
+    expiry?: string
+    quantity: number
+    unit_price?: number
+    remark?: string
+  }>
+  totalQuantity: number
+}
+
+/**
+ * Open clean, dedicated print document window for Store-to-Store Transfers
+ * Generates an official Material Transfer Note with complete two-party sign-offs.
+ */
+export function printStoreTransferDocument(transfer: PrintStoreTransferOptions): void {
+  const printWindow = window.open("", "_blank", "width=980,height=1000")
+  if (!printWindow) {
+    window.print()
+    return
+  }
+
+  const logoUrl = typeof window !== "undefined" && window.location?.origin ? `${window.location.origin}/hkc_logo.png` : "/hkc_logo.png"
+
+  const rowsHtml = (!transfer.lineItems || transfer.lineItems.length === 0)
+    ? `<tr><td colspan="6" style="padding:20px; text-align:center; color:#71717a; font-style:italic;">No items listed on this transfer note.</td></tr>`
+    : transfer.lineItems.map((line) => `
+        <tr style="border-bottom:1px solid #d4d4d8;">
+          <td style="padding:10px 12px; font-weight:bold; font-family:monospace; color:#71717a; border-right:1px solid #d4d4d8; text-align:center;">${line.line_no}</td>
+          <td style="padding:10px 12px; font-weight:900; color:#09090b; border-right:1px solid #d4d4d8;">${line.item}</td>
+          <td style="padding:10px 12px; font-family:monospace; font-weight:bold; color:#09090b; border-right:1px solid #d4d4d8; text-align:center;">${line.batch_no || "Standard Lot"}</td>
+          <td style="padding:10px 12px; text-align:center; font-weight:bold; color:#52525b; border-right:1px solid #d4d4d8;">${line.UOM || "Pieces"}</td>
+          <td style="padding:10px 12px; text-align:right; font-weight:900; font-family:monospace; color:#09090b; background:#f4f4f5; border-right:1px solid #d4d4d8;">${Number(line.quantity || 0).toLocaleString()}</td>
+          <td style="padding:10px 12px; color:#52525b; font-size:11px;">${line.remark || line.expiry ? `${line.expiry ? `Exp: ${line.expiry}` : ""}${line.remark ? ` - ${line.remark}` : ""}` : "—"}</td>
+        </tr>
+      `).join("")
+
+  const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>TRANSFER NOTE - ${transfer.referenceNumber}</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #09090b; margin: 0; padding: 20px; background: #ffffff; }
+    .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2.5px solid #09090b; padding-bottom: 14px; margin-bottom: 16px; }
+    .logo-container { display: flex; align-items: center; gap: 14px; }
+    .logo { height: 60px; width: auto; object-fit: contain; }
+    .company-name { font-size: 18px; font-weight: 900; text-transform: uppercase; margin: 0; letter-spacing: -0.3px; color: #09090b; }
+    .contact-info { font-size: 11px; color: #475569; margin-top: 3px; font-weight: 600; }
+    .doc-badge { text-align: right; }
+    .doc-title { font-size: 13px; font-weight: 900; text-transform: uppercase; color: #047857; letter-spacing: 0.5px; }
+    .ref-no { font-size: 14px; font-family: monospace; font-weight: 900; color: #09090b; margin-top: 2px; }
+    
+    .meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; font-size: 11px; }
+    .meta-label { font-size: 9px; text-transform: uppercase; font-weight: 800; color: #64748b; margin-bottom: 2px; }
+    .meta-val { font-size: 12px; font-weight: 800; color: #0f172a; }
+    .status-badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 9px; font-weight: 900; text-transform: uppercase; border: 1px solid #cbd5e1; background: #ffffff; }
+    
+    table.transfer-table { width: 100%; border-collapse: collapse; font-size: 11px; border: 1px solid #d4d4d8; border-radius: 8px; overflow: hidden; table-layout: fixed; margin-bottom: 18px; }
+    table.transfer-table th { background: #f4f4f5; font-size: 10px; text-transform: uppercase; font-weight: 900; color: #09090b; padding: 10px 12px; border-right: 1px solid #d4d4d8; border-bottom: 1px solid #d4d4d8; text-align: left; }
+    table.transfer-table tfoot tr { background: #09090b; color: #ffffff; font-weight: 900; font-size: 12px; }
+    table.transfer-table tfoot td { padding: 10px 12px; }
+
+    .signoff-container { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
+    .signoff-box { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; font-size: 11px; }
+    .signoff-title { font-size: 10px; font-weight: 900; text-transform: uppercase; color: #475569; margin-bottom: 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+    .signoff-row { margin-bottom: 6px; }
+    .signoff-label { color: #64748b; font-weight: 600; font-size: 10px; }
+    .signoff-val { color: #0f172a; font-weight: 800; }
+    .signature-badge { display: inline-block; font-family: serif; font-style: italic; font-size: 13px; font-weight: bold; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 3px 12px; border-radius: 4px; margin-top: 4px; }
+    
+    .footer-notice { text-align: center; font-size: 9px; color: #94a3b8; font-weight: 600; margin-top: 20px; text-transform: uppercase; letter-spacing: 0.5px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-container">
+      <img src="${logoUrl}" class="logo" alt="HKC Logo" />
+      <div>
+        <h1 class="company-name">Habtom Kebede Veterinary Drug Import</h1>
+        <div class="contact-info">Addis Ababa, Ethiopia &nbsp;|&nbsp; Phone: +251 911 12 21 02 / +251 944 73 92 22</div>
+      </div>
+    </div>
+    <div class="doc-badge">
+      <div class="doc-title">Material Transfer Note</div>
+      <div class="ref-no">Ref: ${transfer.referenceNumber}</div>
+    </div>
+  </div>
+
+  <div class="meta-grid">
+    <div>
+      <div class="meta-label">Origin Facility (Sender)</div>
+      <div class="meta-val">${transfer.fromWarehouse}</div>
+    </div>
+    <div>
+      <div class="meta-label">Destination Facility (Receiver)</div>
+      <div class="meta-val">${transfer.toWarehouse}</div>
+    </div>
+    <div>
+      <div class="meta-label">Transfer Date / Status</div>
+      <div class="meta-val">${transfer.date} &nbsp;<span class="status-badge">${transfer.status}</span></div>
+    </div>
+  </div>
+
+  <table class="transfer-table">
+    <thead>
+      <tr>
+        <th style="width: 8%; text-align:center;">No.</th>
+        <th style="width: 34%;">Item Description</th>
+        <th style="width: 18%; text-align:center;">Batch / Lot No.</th>
+        <th style="width: 12%; text-align:center;">UOM</th>
+        <th style="width: 14%; text-align:right;">Quantity</th>
+        <th style="width: 14%;">Remarks</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="4" style="text-align:right; text-transform:uppercase; font-size:10px; font-weight:900; letter-spacing:0.5px;">Total Validated Volume:</td>
+        <td style="text-align:right; font-family:monospace; font-size:13px; font-weight:900;">${transfer.totalQuantity.toLocaleString()} Units</td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="signoff-container">
+    <div class="signoff-box">
+      <div class="signoff-title">1. Origin Facility Issuance Sign-off</div>
+      <div class="signoff-row"><span class="signoff-label">Issuing Officer:</span> <span class="signoff-val">${transfer.issuedBy || "Store Manager"}</span></div>
+      <div class="signoff-row"><span class="signoff-label">Date & Time:</span> <span class="signoff-val">${transfer.issuedAt || transfer.date}</span></div>
+      <div>
+        <span class="signature-badge">${transfer.issuedSignature || transfer.issuedBy || "Authorized"}</span>
+      </div>
+    </div>
+
+    <div class="signoff-box">
+      <div class="signoff-title">2. Destination Facility Receiver Sign-off</div>
+      ${transfer.status === "Received" ? `
+        <div class="signoff-row"><span class="signoff-label">Receiving Officer:</span> <span class="signoff-val">${transfer.receivedBy || "Store Manager"}</span></div>
+        <div class="signoff-row"><span class="signoff-label">Date & Time:</span> <span class="signoff-val">${transfer.receivedAt || transfer.date}</span></div>
+        <div>
+          <span class="signature-badge">${transfer.receivedSignature || transfer.receivedBy || "Verified"}</span>
+        </div>
+      ` : transfer.status === "Discrepancy" ? `
+        <div class="signoff-row" style="color:#b45309; font-weight:bold;">Status: Discrepancy Flagged</div>
+        <div class="signoff-row"><span class="signoff-label">Details:</span> <span class="signoff-val">${transfer.discrepancyRemark || "Discrepancy noted during receipt"}</span></div>
+      ` : `
+        <div style="color:#64748b; font-style:italic; padding-top:8px;">
+          Pending arrival & physical verification at destination facility.
+        </div>
+      `}
+    </div>
+  </div>
+
+  <div class="footer-notice">
+    Official Store-to-Store Stock Transfer Manifest &bull; Generated by HKC ERP System
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.focus();
+        window.print();
+      }, 250);
+    };
+  </script>
+</body>
+</html>`
+
+  printWindow.document.open()
+  printWindow.document.write(htmlContent)
+  printWindow.document.close()
+}
+
+/**
+ * Export Store-to-Store Transfer to Excel
+ */
+export function exportStoreTransferExcel(transfer: PrintStoreTransferOptions): void {
+  const headers = ["#", "Item Description", "Batch / Lot No", "UOM", "Quantity", "Remarks"]
+  const rows = (transfer.lineItems || []).map((line, idx) => [
+    line.line_no || idx + 1,
+    line.item,
+    line.batch_no || "Standard Lot",
+    line.UOM || "Pieces",
+    Number(line.quantity || 0),
+    line.remark || line.expiry ? `${line.expiry ? `Exp: ${line.expiry}` : ""}${line.remark ? ` - ${line.remark}` : ""}` : "—"
+  ])
+
+  exportToExcel({
+    fileName: `Store_Transfer_${transfer.referenceNumber.replace(/[^\w-]/g, "_")}_${transfer.fromWarehouse}_to_${transfer.toWarehouse}.xls`,
+    title: "Habtom Kebede Veterinary Drug Import",
+    subtitle: `MATERIAL TRANSFER NOTE - ${transfer.referenceNumber}`,
+    metadata: [
+      { label: "Transfer Ref / TIN", value: transfer.referenceNumber },
+      { label: "Origin Store (Sender)", value: transfer.fromWarehouse },
+      { label: "Destination Store (Receiver)", value: transfer.toWarehouse },
+      { label: "Transfer Date", value: transfer.date },
+      { label: "Transfer Status", value: transfer.status },
+      { label: "Total Quantity", value: `${transfer.totalQuantity.toLocaleString()} Units` },
+      { label: "Issuing Officer", value: transfer.issuedBy || "Store Manager" },
+      { label: "Receiving Officer", value: transfer.receivedBy || "—" }
+    ],
+    headers,
+    rows
+  })
+}
+

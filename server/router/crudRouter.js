@@ -51,8 +51,14 @@ crudRouter.use("/:resource", (req, res, next) => {
   if (req.method === "GET") {
     const resName = req.params.resource
 
-    // Company settings, Chart of Accounts, and tax rules readable by all logged-in staff
-    if (resName === "company_settings" || resName === "tax_rules" || resName === "accounts" || resName === "chart_of_accounts") {
+    // Company settings, Chart of Accounts, tax rules, and GL mappings readable by all logged-in staff
+    if (
+      resName === "company_settings" ||
+      resName === "tax_rules" ||
+      resName === "accounts" ||
+      resName === "chart_of_accounts" ||
+      resName === "gl_account_mappings"
+    ) {
       isAllowed = true
     }
 
@@ -63,8 +69,18 @@ crudRouter.use("/:resource", (req, res, next) => {
       }
     }
 
-    // Warehouses, inventory products, and stock movements readable by sales, finance, and inventory admins
-    if (resName === "warehouses" || resName === "inventory_products" || resName === "stock_movements") {
+    // Warehouses, products, movements, and transfers readable by sales, finance, and inventory admins
+    if (
+      resName === "warehouses" ||
+      resName === "export_products" ||
+      resName === "pharma_products" ||
+      resName === "pharma_product_batches" ||
+      resName === "export_warehouse_movements" ||
+      resName === "stock_movements" ||
+      resName === "store_transfers" ||
+      resName === "store_transfer_items" ||
+      resName === "quarantine_records"
+    ) {
       if (userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager", "inventory_admin"].includes(r))) {
         isAllowed = true
       }
@@ -78,7 +94,12 @@ crudRouter.use("/:resource", (req, res, next) => {
     }
 
     // Sales orders, sales issues, and processing services readable by finance manager for invoicing & AR
-    if (resName === "sales_orders" || resName === "sales_issues" || resName === "processing_services") {
+    if (
+      resName === "sales_orders" ||
+      resName === "sales_issues" ||
+      resName === "sales_issue_items" ||
+      resName === "processing_services"
+    ) {
       if (userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager", "inventory_admin"].includes(r))) {
         isAllowed = true
       }
@@ -182,37 +203,53 @@ crudRouter.get("/:resource/:id", async (req, res, next) => {
   }
 })
 
-crudRouter.patch("/:resource/:id", async (req, res, next) => {
-  try {
-    const resource = getResource(req.params.resource)
-    if (!resource) {
-      res.status(404).json({ error: `Unknown resource '${req.params.resource}'.` })
-      return
-    }
+crudRouter.route("/:resource/:id")
+  .patch(async (req, res, next) => {
+    try {
+      const resource = getResource(req.params.resource)
+      if (!resource) {
+        res.status(404).json({ error: `Unknown resource '${req.params.resource}'.` })
+        return
+      }
 
-    let body = req.body
-    if (req.params.resource === "users") {
-      if (body && body.password) {
-        const passCheck = validateStrongPassword(body.password)
-        if (!passCheck.valid) {
-          return res.status(400).json({ error: passCheck.error })
+      let body = req.body
+      if (req.params.resource === "users") {
+        if (body && body.password) {
+          const passCheck = validateStrongPassword(body.password)
+          if (!passCheck.valid) {
+            return res.status(400).json({ error: passCheck.error })
+          }
+          const password_hash = await bcrypt.hash(body.password, 10)
+          body = { ...body, password_hash }
+          delete body.password
         }
-        const password_hash = await bcrypt.hash(body.password, 10)
-        body = { ...body, password_hash }
-        delete body.password
+        if (body && Array.isArray(body.roles) && body.roles.length > 0) {
+          body.role = body.roles[0]
+        }
       }
-      if (body && Array.isArray(body.roles) && body.roles.length > 0) {
-        body.role = body.roles[0]
-      }
-    }
 
-    const result = await crudService.update({ resource, id: req.params.id, body, headers: req.headers })
-    const responseBody = req.params.resource === "users" ? sanitizeUser(result.body) : result.body
-    res.status(result.status).json(responseBody)
-  } catch (err) {
-    next(err)
-  }
-})
+      const result = await crudService.update({ resource, id: req.params.id, body, headers: req.headers })
+      const responseBody = req.params.resource === "users" ? sanitizeUser(result.body) : result.body
+      res.status(result.status).json(responseBody)
+    } catch (err) {
+      next(err)
+    }
+  })
+  .put(async (req, res, next) => {
+    try {
+      const resource = getResource(req.params.resource)
+      if (!resource) {
+        res.status(404).json({ error: `Unknown resource '${req.params.resource}'.` })
+        return
+      }
+
+      const result = await crudService.update({ resource, id: req.params.id, body: req.body, headers: req.headers })
+      const responseBody = req.params.resource === "users" ? sanitizeUser(result.body) : result.body
+      res.status(result.status).json(responseBody)
+    } catch (err) {
+      next(err)
+    }
+  })
 
 crudRouter.delete("/:resource/:id", async (req, res, next) => {
   try {

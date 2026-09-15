@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
+import { ChevronDown } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
-import type { BinCardMovementEntry, Product } from "@/lib/erpStore"
+import { useErpStore, type BinCardMovementEntry, type Product } from "@/lib/erpStore"
 
 interface StockBinEntryModalProps {
   isOpen: boolean
@@ -23,6 +24,7 @@ export default function StockBinEntryModal({
   onSave,
   onDelete
 }: StockBinEntryModalProps) {
+  const erp = useErpStore()
   const { showToast } = useFeedback()
   const isEditing = Boolean(entry)
 
@@ -33,6 +35,7 @@ export default function StockBinEntryModal({
   const [mfgDate, setMfgDate] = useState("")
   const [expiryDate, setExpiryDate] = useState("")
   const [party, setParty] = useState("")
+  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
   const [unitPrice, setUnitPrice] = useState("")
   const [remark, setRemark] = useState("")
   const [isSaving, setIsSaving] = useState(false)
@@ -48,6 +51,7 @@ export default function StockBinEntryModal({
       setMfgDate(entry.mfgDate || "")
       setExpiryDate(entry.expiryDate || "")
       setParty(entry.party || "")
+      setShowSupplierDropdown(false)
       setUnitPrice(entry.unitPrice !== undefined ? String(entry.unitPrice) : "")
       setRemark(entry.remark || "")
     } else {
@@ -57,7 +61,40 @@ export default function StockBinEntryModal({
       setQuantity("")
       setMfgDate("")
       setExpiryDate(product?.expiry || "")
-      setParty("")
+
+      // Associated suppliers for this product
+      const itemSuppliers = Array.from(
+        new Set(
+          [
+            product?.supplierName,
+            product?.customer,
+            ...(product?.binCardEntries || [])
+              .filter((e) => Number(e.qtyReceived || 0) > 0 && e.party)
+              .map((e) => e.party),
+          ]
+            .filter((s): s is string => Boolean(s && s.trim()))
+            .map((s) => s.trim())
+        )
+      )
+      const suppliers = erp.getSuppliers()
+      const parentSupplier =
+        product?.supplierName ||
+        product?.customer ||
+        (product?.binCardEntries && product.binCardEntries.length > 0
+          ? product.binCardEntries.find((e) => Number(e.qtyReceived || 0) > 0 && e.party)?.party
+          : "") ||
+        ""
+
+      const defaultSupplier =
+        parentSupplier ||
+        (itemSuppliers.length === 1
+          ? itemSuppliers[0]
+          : itemSuppliers.length === 0 && suppliers.length === 1
+          ? suppliers[0].name
+          : "")
+
+      setParty(defaultSupplier)
+      setShowSupplierDropdown(false)
       setUnitPrice(product?.unitCost !== undefined ? String(product.unitCost) : "")
       setRemark("")
     }
@@ -259,18 +296,96 @@ export default function StockBinEntryModal({
             </div>
 
             {/* Received From / Issued To */}
-            <div className="space-y-1">
-              <label className="block text-[10px] font-black uppercase text-zinc-500">
-                {movementType === "received" ? "Received From (Supplier)" : "Issued To (Client / Dept)"}
-              </label>
-              <input
-                type="text"
-                placeholder={movementType === "received" ? "Supplier name" : "Client / Bureau name"}
-                value={party}
-                onChange={(e) => setParty(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-zinc-900 outline-none"
-              />
-            </div>
+            {movementType === "received" ? (
+              <div className="space-y-1 relative">
+                <label className="block text-[10px] font-black uppercase text-zinc-500">
+                  Received From (Supplier)
+                </label>
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    placeholder="Search or enter supplier name..."
+                    value={party}
+                    onFocus={() => setShowSupplierDropdown(true)}
+                    onChange={(e) => {
+                      setParty(e.target.value)
+                      setShowSupplierDropdown(true)
+                    }}
+                    className="w-full pl-3.5 pr-9 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-zinc-900 outline-none font-semibold text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSupplierDropdown((prev) => !prev)}
+                    className="absolute right-2 p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+                    title="Choose supplier from registry"
+                  >
+                    <ChevronDown className={`size-4 transition-transform ${showSupplierDropdown ? "rotate-180" : ""}`} />
+                  </button>
+                </div>
+                {showSupplierDropdown && (
+                  <div className="absolute top-full left-0 right-0 z-30 mt-1 max-h-52 overflow-y-auto rounded-xl bg-white border border-zinc-200 shadow-xl py-1 divide-y divide-zinc-50">
+                    {(() => {
+                      const allSuppliers = Array.from(
+                        new Set([
+                          ...erp.getSuppliers().map((s) => s.name),
+                          product?.supplierName,
+                          product?.customer,
+                          ...((product?.binCardEntries || [])
+                            .filter((e) => Number(e.qtyReceived || 0) > 0 && e.party)
+                            .map((e) => e.party)),
+                        ].filter((s): s is string => Boolean(s && s.trim())))
+                      )
+                      const filtered = party.trim()
+                        ? allSuppliers.filter((s) => s.toLowerCase().includes(party.toLowerCase()))
+                        : allSuppliers
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="px-3 py-2.5 text-xs text-zinc-400 font-medium text-center">
+                            {allSuppliers.length === 0 ? "No suppliers registered yet" : `No matches for "${party}"`}
+                          </div>
+                        )
+                      }
+                      return filtered.map((suppName) => {
+                        const regSupp = erp.getSuppliers().find((s) => s.name.toLowerCase() === suppName.toLowerCase())
+                        return (
+                          <button
+                            key={suppName}
+                            type="button"
+                            onClick={() => {
+                              setParty(suppName)
+                              setShowSupplierDropdown(false)
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-emerald-50 text-xs flex items-center justify-between transition-colors cursor-pointer"
+                          >
+                            <div>
+                              <span className="font-bold text-zinc-900 block">{suppName}</span>
+                              {regSupp && (
+                                <span className="text-[10px] text-zinc-500 font-medium">
+                                  {regSupp.phone ? `📞 ${regSupp.phone} • ` : ""}{regSupp.city || "Ethiopia"}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        )
+                      })
+                    })()}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <label className="block text-[10px] font-black uppercase text-zinc-500">
+                  Issued To (Client / Dept)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Client / Department name"
+                  value={party}
+                  onChange={(e) => setParty(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-zinc-900 outline-none"
+                />
+              </div>
+            )}
 
             {/* Remark */}
             <div className="space-y-1">

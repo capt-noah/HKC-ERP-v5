@@ -11,11 +11,15 @@ import {
   AlertTriangle, 
   Download, 
   Clock, 
-  Edit3
+  Edit3,
+  Eye,
+  Printer
 } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useErpStore, type Transfer, type TransferLineItem, type TransferStatus, type Product } from "@/lib/erpStore"
-import { withOperatingWarehouses, isWH1, resolveWarehouseScope } from "@/lib/warehouses"
+import { withOperatingWarehouses, isPharmaWarehouse } from "@/lib/warehouses"
+import { printStoreTransferDocument, exportStoreTransferExcel } from "@/lib/exportUtils"
+import StoreTransferPrintModal from "@/components/stock/StoreTransferPrintModal"
 import { type TableColumn } from "@/components/ResizableTable"
 import { DataTable } from "@/components/DataTable"
 import { useAuthStore } from "@/lib/authStore"
@@ -45,106 +49,70 @@ export default function StoreTransfersTab() {
     return (user?.warehouse_ids || ((user as any)?.warehouse_id ? [(user as any).warehouse_id] : [])).map((id: string) => String(id).toUpperCase())
   }, [user])
 
-  // Dynamic user warehouse privileges for WH2 and WH3
-  const hasWH2Privilege = useMemo(() => {
+  // Store-to-store transfers exist between all pharmaceutical depots
+  const transferWarehouses = useMemo(() => {
+    const rawWhs = withOperatingWarehouses(erp.getWarehouses())
+    return rawWhs.filter((w) => isPharmaWarehouse(w, rawWhs))
+  }, [erp])
+
+  // Transfers & Products data
+  const transfers: Transfer[] = erp.getTransfers()
+  const products: Product[] = erp.getProducts()
+
+  // Dynamic user warehouse privileges
+  const hasWarehousePrivilege = (whIdOrCode?: string): boolean => {
     if (isSuperAdmin) return true
-    if (userWarehouseIds.length === 0) return false
-    const resolved = resolveWarehouseScope(userWarehouseIds, erp.getWarehouses())
-    return (
-      resolved.some((id) => {
-        const upper = id.toUpperCase()
-        return upper === "WH2" || upper.includes("WH2") || upper.includes("WH-02") || upper.includes("WH 2")
-      }) ||
-      userWarehouseIds.some((id) => {
-        const upper = id.toUpperCase()
-        return upper === "WH2" || upper.includes("WH2") || upper.includes("WH-02")
-      })
-    )
-  }, [isSuperAdmin, userWarehouseIds, erp])
+    if (!whIdOrCode || userWarehouseIds.length === 0) return false
+    const target = String(whIdOrCode).trim().toUpperCase()
+    const pool = withOperatingWarehouses(erp.getWarehouses())
+    
+    const allowed = new Set<string>()
+    for (const uid of userWarehouseIds) {
+      allowed.add(uid)
+      const match = pool.find(w => w.id?.toUpperCase() === uid || w.code?.toUpperCase() === uid)
+      if (match) {
+        if (match.id) allowed.add(match.id.toUpperCase())
+        if (match.code) allowed.add(match.code.toUpperCase())
+      }
+    }
 
-  const hasWH3Privilege = useMemo(() => {
-    if (isSuperAdmin) return true
-    if (userWarehouseIds.length === 0) return false
-    const resolved = resolveWarehouseScope(userWarehouseIds, erp.getWarehouses())
-    return (
-      resolved.some((id) => {
-        const upper = id.toUpperCase()
-        return upper === "WH3" || upper.includes("WH3") || upper.includes("WH-03") || upper.includes("WH 3")
-      }) ||
-      userWarehouseIds.some((id) => {
-        const upper = id.toUpperCase()
-        return upper === "WH3" || upper.includes("WH3") || upper.includes("WH-03")
-      })
-    )
-  }, [isSuperAdmin, userWarehouseIds, erp])
-
-  // Warehouse classification helpers
-  const isWH2Warehouse = (whNameOrCode?: string): boolean => {
-    if (!whNameOrCode) return false
-    const upper = whNameOrCode.toUpperCase()
-    return upper.includes("WH2") || upper.includes("WH-02") || upper.includes("WH 2") || upper.includes("INDIA") || upper.includes("IND")
-  }
-
-  const isWH3Warehouse = (whNameOrCode?: string): boolean => {
-    if (!whNameOrCode) return false
-    const upper = whNameOrCode.toUpperCase()
-    return upper.includes("WH3") || upper.includes("WH-03") || upper.includes("WH 3") || upper.includes("CHINA") || upper.includes("CHN")
+    if (allowed.has(target)) return true
+    const targetMatch = pool.find(w => w.id?.toUpperCase() === target || w.code?.toUpperCase() === target)
+    if (targetMatch) {
+      if (targetMatch.id && allowed.has(targetMatch.id.toUpperCase())) return true
+      if (targetMatch.code && allowed.has(targetMatch.code.toUpperCase())) return true
+    }
+    return false
   }
 
   // Strict permission guards:
   // A user can ONLY send/dispatch from a warehouse they have privilege for
   const canSendFrom = (warehouse?: string): boolean => {
     if (isSuperAdmin) return true
-    if (isWH2Warehouse(warehouse)) return hasWH2Privilege
-    if (isWH3Warehouse(warehouse)) return hasWH3Privilege
-    return false
+    return hasWarehousePrivilege(warehouse)
   }
 
   // A user can ONLY approve/receive for a warehouse they have privilege for
   const canApproveReceiptFor = (warehouse?: string): boolean => {
     if (isSuperAdmin) return true
-    if (isWH2Warehouse(warehouse)) return hasWH2Privilege
-    if (isWH3Warehouse(warehouse)) return hasWH3Privilege
-    return false
+    return hasWarehousePrivilege(warehouse)
   }
 
-  // --- TRANSFERS & PRODUCTS DATA ---
-  const transfers = erp.getTransfers()
-  const products = erp.getProducts()
-  
-  // Store-to-store transfers exist strictly between WH2 and WH3 since they share commercial products
-  const transferWarehouses = useMemo(() => {
-    const rawWhs = withOperatingWarehouses(erp.getWarehouses())
-    return rawWhs.filter((w) => {
-      const code = (w.code || w.id || w.name || "").toUpperCase()
-      if (isWH1(code)) return false
-      return (
-        code.includes("WH2") ||
-        code.includes("WH3") ||
-        code.includes("WH-02") ||
-        code.includes("WH-03") ||
-        code.includes("WAREHOUSE 2") ||
-        code.includes("WAREHOUSE 3") ||
-        code.includes("VET")
-      )
-    })
-  }, [erp])
+  // User's assigned pharmaceutical warehouses
+  const userAssignedWarehouses = useMemo(() => {
+    if (isSuperAdmin) return transferWarehouses
+    return transferWarehouses.filter(w => hasWarehousePrivilege(w.id) || hasWarehousePrivilege(w.code))
+  }, [isSuperAdmin, transferWarehouses, userWarehouseIds])
 
-  const warehouseOptions = useMemo(
-    () => transferWarehouses.map((warehouse) => warehouse.code || warehouse.id).filter(Boolean),
-    [transferWarehouses]
-  )
+  const isAssignedStrictlyToOne = !isSuperAdmin && userAssignedWarehouses.length === 1
+  const singleAssignedWarehouse = isAssignedStrictlyToOne ? userAssignedWarehouses[0] : null
 
-  // Identify user's locked origin if assigned strictly to a single warehouse
-  const isAssignedOnlyToWH2 = hasWH2Privilege && !hasWH3Privilege && !isSuperAdmin
-  const isAssignedOnlyToWH3 = hasWH3Privilege && !hasWH2Privilege && !isSuperAdmin
-
-  const defaultOrigin = isAssignedOnlyToWH3 
-    ? (warehouseOptions.find(w => w.toUpperCase().includes("WH3")) || "WH3-VET-CHN") 
-    : (warehouseOptions.find(w => w.toUpperCase().includes("WH2")) || "WH2-VET-IND")
-  const defaultDestination = isAssignedOnlyToWH3 
-    ? (warehouseOptions.find(w => w.toUpperCase().includes("WH2")) || "WH2-VET-IND") 
-    : (warehouseOptions.find(w => w.toUpperCase().includes("WH3")) || "WH3-VET-CHN")
+  const defaultOrigin = singleAssignedWarehouse
+    ? (singleAssignedWarehouse.code || singleAssignedWarehouse.id)
+    : (userAssignedWarehouses[0]?.code || userAssignedWarehouses[0]?.id || transferWarehouses[0]?.code || "WH2")
+  const defaultDestination = (transferWarehouses.find(w => (w.code || w.id) !== defaultOrigin)?.code || 
+    transferWarehouses.find(w => (w.code || w.id) !== defaultOrigin)?.id || 
+    transferWarehouses[1]?.code || "WH3")
 
   // --- LIST FILTER STATE ---
   const [searchQuery, setSearchQuery] = useState("")
@@ -162,27 +130,38 @@ export default function StoreTransfersTab() {
   const [formDate, setFormDate] = useState(new Date().toISOString().split("T")[0])
   const [formLineItems, setFormLineItems] = useState<TransferLineItem[]>([])
 
+  // Warehouse matching helper for origin stock
+  const matchesOriginWarehouse = (candidateWh?: string, originWhId?: string): boolean => {
+    if (!candidateWh || !originWhId) return false
+    const cand = candidateWh.trim().toUpperCase()
+    const orig = originWhId.trim().toUpperCase()
+    if (cand === orig) return true
+    const pool = withOperatingWarehouses(erp.getWarehouses())
+    const origWh = pool.find(w => w.id?.toUpperCase() === orig || w.code?.toUpperCase() === orig)
+    if (origWh) {
+      if (origWh.id && cand === origWh.id.toUpperCase()) return true
+      if (origWh.code && cand === origWh.code.toUpperCase()) return true
+    }
+    const candWh = pool.find(w => w.id?.toUpperCase() === cand || w.code?.toUpperCase() === cand)
+    if (candWh && origWh) {
+      return (Boolean(candWh.id) && candWh.id === origWh.id) || (Boolean(candWh.code) && candWh.code === origWh.code)
+    }
+    return cand.includes(orig) || orig.includes(cand)
+  }
+
   // Products available in selected Origin Store
   const originProducts = useMemo(() => {
     if (!formFromW) return []
-    const originUpper = formFromW.toUpperCase()
     return products.filter((p) => {
-      const pWh = (p.warehouse || "").toUpperCase()
-      const matchesWh = pWh === originUpper ||
-        (originUpper.includes("WH2") && pWh.includes("WH2")) ||
-        (originUpper.includes("WH3") && pWh.includes("WH3"))
+      const matchesWh = matchesOriginWarehouse(p.warehouse, formFromW)
       if (matchesWh && (p.quantity || 0) > 0) return true
 
       const hasBreakdown = (p.stockBreakdown || []).some((sb) => {
-        const sbWh = (sb.warehouse || "").toUpperCase()
-        const matchesSb = sbWh === originUpper ||
-          (originUpper.includes("WH2") && sbWh.includes("WH2")) ||
-          (originUpper.includes("WH3") && sbWh.includes("WH3"))
-        return matchesSb && Number(sb.qty || 0) > 0
+        return matchesOriginWarehouse(sb.warehouse, formFromW) && Number(sb.qty || 0) > 0
       })
       return hasBreakdown
     })
-  }, [products, formFromW])
+  }, [products, formFromW, erp])
 
   // --- RECEIPT MODAL STATE ---
   const [receivingTransfer, setReceivingTransfer] = useState<Transfer | null>(null)
@@ -191,12 +170,12 @@ export default function StoreTransfersTab() {
   const [discrepancyText, setDiscrepancyText] = useState("")
   const [isProcessingReceipt, setIsProcessingReceipt] = useState(false)
 
-  // --- PDF EXPORT STATE ---
-  const [isExporting, setIsExporting] = useState(false)
+  // --- PRINT & EXPORT MODAL STATE ---
+  const [printTransfer, setPrintTransfer] = useState<Transfer | null>(null)
 
   // Lock body scroll when modal is open
   useEffect(() => {
-    if (isFormOpen || selectedTransfer !== null || isReceiptOpen || receivingTransfer !== null) {
+    if (isFormOpen || selectedTransfer !== null || isReceiptOpen || receivingTransfer !== null || printTransfer !== null) {
       document.body.style.overflow = "hidden"
     } else {
       document.body.style.overflow = ""
@@ -204,7 +183,44 @@ export default function StoreTransfersTab() {
     return () => {
       document.body.style.overflow = ""
     }
-  }, [isFormOpen, selectedTransfer, isReceiptOpen, receivingTransfer])
+  }, [isFormOpen, selectedTransfer, isReceiptOpen, receivingTransfer, printTransfer])
+
+  const getTransferPrintOptions = (t: Transfer) => {
+    const lineItems = Array.isArray(t.line_items)
+      ? t.line_items
+      : Array.isArray((t as any).items)
+      ? (t as any).items
+      : []
+
+    const totalQty = t.total_quantity || lineItems.reduce((sum: number, item: any) => sum + (Number(item.quantity) || 0), 0)
+
+    return {
+      referenceNumber: t.reference_number,
+      date: t.date,
+      fromWarehouse: t.from_warehouse,
+      toWarehouse: t.to_warehouse,
+      status: t.status,
+      issuedBy: t.issued_by,
+      issuedAt: t.issued_at,
+      issuedSignature: t.issued_signature,
+      receivedBy: t.received_by,
+      receivedAt: t.received_at,
+      receivedSignature: t.received_signature,
+      discrepancyRemark: t.discrepancy_remark,
+      lineItems: lineItems.map((line: any, idx: number) => ({
+        line_no: line.line_no || idx + 1,
+        productId: line.productId,
+        item: line.item || (line as any).productName || (line as any).product_name || "Medicine",
+        UOM: line.UOM || (line as any).uom || "Pieces",
+        batch_no: line.batch_no || (line as any).batchNo || "Standard Lot",
+        expiry: line.expiry || (line as any).expiryDate || "",
+        quantity: Number(line.quantity || 0),
+        unit_price: Number(line.unit_price || (line as any).unitCost || 0),
+        remark: line.remark || (line as any).notes || "",
+      })),
+      totalQuantity: totalQty,
+    }
+  }
 
   // Live auto-calculated total quantity in form
   const formTotalQuantity = useMemo(() => {
@@ -262,11 +278,7 @@ export default function StoreTransfersTab() {
       totalStock = b ? b.qty : 0
     }
     if (totalStock === 0) {
-      const originUpper = formFromW.toUpperCase()
-      const breakdownEntry = prod.stockBreakdown?.find((sb) => {
-        const sbWh = (sb.warehouse || "").toUpperCase()
-        return sbWh === originUpper || (originUpper.includes("WH2") && sbWh.includes("WH2")) || (originUpper.includes("WH3") && sbWh.includes("WH3"))
-      })
+      const breakdownEntry = prod.stockBreakdown?.find((sb) => matchesOriginWarehouse(sb.warehouse, formFromW))
       totalStock = breakdownEntry != null ? Number(breakdownEntry.qty || 0) : Number(prod.quantity || 0)
     }
 
@@ -532,21 +544,11 @@ export default function StoreTransfersTab() {
     )
   }
 
-  // --- PDF DOWNLOAD ---
-  const handleDownloadPDF = (refNum: string) => {
-    setIsExporting(true)
-    setTimeout(() => {
-      setIsExporting(false)
-      showToast("Document Ready", "success", `Downloaded Material Transfer Note ${refNum}.pdf`)
-    }, 1200)
-  }
-
   // --- DUAL-PARTY FILTERED TRANSFERS ---
   const filteredTransfers = useMemo(() => {
     return transfers.filter(t => {
-      // 1. Role / Facility Scope: WH2/WH3 users see transfers where their warehouse is sender or receiver
+      // 1. Role / Facility Scope: users see transfers where their warehouse is sender or receiver
       if (!isSuperAdmin) {
-        if (!hasWH2Privilege && !hasWH3Privilege) return false
         const matchesFrom = canSendFrom(t.from_warehouse)
         const matchesTo = canApproveReceiptFor(t.to_warehouse)
         if (!matchesFrom && !matchesTo) return false
@@ -554,16 +556,24 @@ export default function StoreTransfersTab() {
 
       // 2. Status filter
       const matchesStatus = statusFilter === "ALL" || t.status === statusFilter
-      
-      // 3. Search query
-      const lowerQuery = searchQuery.toLowerCase()
-      const matchesSearch = 
-        t.reference_number.toLowerCase().includes(lowerQuery) ||
-        t.from_warehouse.toLowerCase().includes(lowerQuery) ||
-        t.to_warehouse.toLowerCase().includes(lowerQuery) ||
-        t.line_items.some(item => item.item.toLowerCase().includes(lowerQuery))
+      if (!matchesStatus) return false
 
-      return matchesStatus && matchesSearch
+      // 3. Search query
+      const lowerQuery = searchQuery.toLowerCase().trim()
+      if (!lowerQuery) return true
+
+      const refNo = String(t.reference_number || (t as any).transfer_no || (t as any).transferNo || (t as any).id || "").toLowerCase()
+      const fromW = String(t.from_warehouse || (t as any).fromWarehouse || "").toLowerCase()
+      const toW = String(t.to_warehouse || (t as any).toWarehouse || "").toLowerCase()
+      const lineItems = Array.isArray(t.line_items) ? t.line_items : Array.isArray((t as any).items) ? (t as any).items : []
+
+      const matchesSearch =
+        refNo.includes(lowerQuery) ||
+        fromW.includes(lowerQuery) ||
+        toW.includes(lowerQuery) ||
+        lineItems.some((item: any) => String(item.item || item.product_name || item.productName || item.notes || "").toLowerCase().includes(lowerQuery))
+
+      return matchesSearch
     })
   }, [transfers, searchQuery, statusFilter, isSuperAdmin, userWarehouseIds])
 
@@ -571,7 +581,7 @@ export default function StoreTransfersTab() {
     <div className="space-y-6">
       <DataTable
         title="Store-to-Store Transfers"
-        subtitle={`${filteredTransfers.length} inter-store movements between WH2 & WH3`}
+        subtitle={`${filteredTransfers.length} inter-store movements between pharmaceutical hubs`}
         columns={transferColumns}
         data={filteredTransfers}
         isLoading={false}
@@ -602,14 +612,18 @@ export default function StoreTransfersTab() {
             ],
           },
         ]}
+        onReload={async () => {
+          await erp.reloadFromApi()
+        }}
+        reloadTooltip="Reload store transfers from server"
         defaultWidths={{
-          reference_number: 160,
-          from_warehouse: 180,
-          to_warehouse: 180,
-          total_quantity: 140,
-          date: 130,
-          status: 140,
-          _actions: 140,
+          reference_number: 150,
+          from_warehouse: 170,
+          to_warehouse: 170,
+          total_quantity: 130,
+          date: 120,
+          status: 130,
+          _actions: 210,
         }}
         renderRow={(transfer, colWidths) => {
           const isIssued = transfer.status === "Issued"
@@ -652,7 +666,7 @@ export default function StoreTransfersTab() {
               {/* Total Quantity */}
               <td style={{ width: `${colWidths.total_quantity}px` }} className="py-4 px-4 text-right overflow-hidden">
                 <span className="font-mono font-black text-xs text-zinc-900 dark:text-zinc-100 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-0.5 rounded-md border border-zinc-200/80 inline-block">
-                  {transfer.total_quantity.toLocaleString()} units
+                  {Number(transfer.total_quantity || 0).toLocaleString()} units
                 </span>
               </td>
 
@@ -673,7 +687,31 @@ export default function StoreTransfersTab() {
 
               {/* Actions */}
               <td style={{ width: `${colWidths._actions}px` }} className="py-4 px-4 text-center overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-center gap-1.5">
+                <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSelectedTransfer(transfer)
+                    }}
+                    className="px-2.5 py-1.5 rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-800 font-extrabold text-[10px] inline-flex items-center gap-1 transition-all active:scale-95 shadow-xs cursor-pointer"
+                    title="View Transfer Details"
+                  >
+                    <Eye className="size-3 text-zinc-500" /> View
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setPrintTransfer(transfer)
+                    }}
+                    className="px-2.5 py-1.5 rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-800 font-extrabold text-[10px] inline-flex items-center gap-1 transition-all active:scale-95 shadow-xs cursor-pointer"
+                    title="Print / Export Material Transfer Note"
+                  >
+                    <Download className="size-3 text-zinc-500" /> Export
+                  </button>
+
                   {canProcessReceipt && (
                     <button
                       type="button"
@@ -761,13 +799,9 @@ export default function StoreTransfersTab() {
                     <span className="block text-[11px] font-black uppercase text-zinc-700">
                       Origin Warehouse (Sender) <span className="text-rose-600">*</span>
                     </span>
-                    {isAssignedOnlyToWH2 ? (
+                    {isAssignedStrictlyToOne && singleAssignedWarehouse ? (
                       <div className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-800">
-                        {transferWarehouses.find(w => (w.code || w.id || "").toUpperCase().includes("WH2"))?.name || "WH2 (Veterinary Import Hub)"}
-                      </div>
-                    ) : isAssignedOnlyToWH3 ? (
-                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-800">
-                        {transferWarehouses.find(w => (w.code || w.id || "").toUpperCase().includes("WH3"))?.name || "WH3 (Veterinary Import Hub)"}
+                        {singleAssignedWarehouse.name || singleAssignedWarehouse.code || singleAssignedWarehouse.id}
                       </div>
                     ) : (
                       <select
@@ -784,7 +818,7 @@ export default function StoreTransfersTab() {
                         }}
                         className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-900 outline-none focus:border-emerald-500 cursor-pointer shadow-xs"
                       >
-                        {transferWarehouses.map((w) => (
+                        {(userAssignedWarehouses.length > 0 ? userAssignedWarehouses : transferWarehouses).map((w) => (
                           <option key={w.id || w.code} value={w.code || w.id}>
                             {w.name || w.code || w.id}
                           </option>
@@ -798,27 +832,17 @@ export default function StoreTransfersTab() {
                     <span className="block text-[11px] font-black uppercase text-zinc-700">
                       Destination Warehouse (Receiver) <span className="text-rose-600">*</span>
                     </span>
-                    {isAssignedOnlyToWH2 ? (
-                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-800">
-                        {transferWarehouses.find(w => (w.code || w.id || "").toUpperCase().includes("WH3"))?.name || "WH3 (Veterinary Import Hub)"}
-                      </div>
-                    ) : isAssignedOnlyToWH3 ? (
-                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-3 flex items-center text-xs font-bold text-zinc-800">
-                        {transferWarehouses.find(w => (w.code || w.id || "").toUpperCase().includes("WH2"))?.name || "WH2 (Veterinary Import Hub)"}
-                      </div>
-                    ) : (
-                      <select
-                        value={formToW}
-                        onChange={(e) => setFormToW(e.target.value)}
-                        className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-900 outline-none focus:border-emerald-500 cursor-pointer shadow-xs"
-                      >
-                        {transferWarehouses.filter(w => (w.code || w.id) !== formFromW).map((w) => (
-                          <option key={w.id || w.code} value={w.code || w.id}>
-                            {w.name || w.code || w.id}
-                          </option>
-                        ))}
-                      </select>
-                    )}
+                    <select
+                      value={formToW}
+                      onChange={(e) => setFormToW(e.target.value)}
+                      className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-xs font-bold text-zinc-900 outline-none focus:border-emerald-500 cursor-pointer shadow-xs"
+                    >
+                      {transferWarehouses.filter(w => (w.code || w.id) !== formFromW).map((w) => (
+                        <option key={w.id || w.code} value={w.code || w.id}>
+                          {w.name || w.code || w.id}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* Transfer Date */}
@@ -1194,12 +1218,25 @@ export default function StoreTransfersTab() {
               <div className="pt-4 border-t border-zinc-200 shrink-0 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
-                  onClick={() => handleDownloadPDF(selectedTransfer.reference_number)}
-                  disabled={isExporting}
-                  className="h-11 px-5 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-xs font-bold text-zinc-700 cursor-pointer inline-flex items-center gap-1.5 transition-colors"
+                  onClick={() => {
+                    exportStoreTransferExcel(getTransferPrintOptions(selectedTransfer))
+                    showToast("Excel Exported", "success", `Exported Material Transfer Note ${selectedTransfer.reference_number}.xls`)
+                  }}
+                  className="h-11 px-4 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 text-xs font-extrabold cursor-pointer inline-flex items-center gap-1.5 transition-colors shadow-xs"
                 >
-                  <Download className={`size-4 ${isExporting ? "animate-spin" : ""}`} />
-                  {isExporting ? "Exporting..." : "Download Note PDF"}
+                  <Download className="size-4 text-emerald-700" />
+                  Export Excel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    printStoreTransferDocument(getTransferPrintOptions(selectedTransfer))
+                  }}
+                  className="h-11 px-5 rounded-xl bg-zinc-950 hover:bg-black text-white text-xs font-bold cursor-pointer inline-flex items-center gap-1.5 transition-colors shadow-md"
+                >
+                  <Printer className="size-4 text-white" />
+                  Print / Save PDF
                 </button>
 
                 {/* Receiver Process Receipt Action */}
@@ -1364,6 +1401,15 @@ export default function StoreTransfersTab() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* =========================================================================
+          PRINT & EXPORT MODAL (MATERIAL TRANSFER NOTE)
+          ========================================================================= */}
+      <StoreTransferPrintModal
+        isOpen={!!printTransfer}
+        transfer={printTransfer}
+        onClose={() => setPrintTransfer(null)}
+      />
     </div>
   )
 }

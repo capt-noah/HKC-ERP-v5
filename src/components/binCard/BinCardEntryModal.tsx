@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react"
 import { motion } from "framer-motion"
+import { ChevronDown } from "lucide-react"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
+import { useErpStore } from "@/lib/erpStore"
 import type { BinCardEntry } from "@/lib/binCardApi"
 
 interface BinCardEntryModalProps {
@@ -24,12 +26,14 @@ export default function BinCardEntryModal({
   onSave,
   onDelete
 }: BinCardEntryModalProps) {
+  const erp = useErpStore()
   const [date, setDate] = useState(new Date().toISOString().split("T")[0])
   const [batchNo, setBatchNo] = useState("")
   const [type, setType] = useState<"received" | "issued">("received")
   const [qty, setQty] = useState<number | "">(0)
   const [expiryDate, setExpiryDate] = useState("")
   const [party, setParty] = useState("")
+  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
   const [remark, setRemark] = useState("")
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -43,6 +47,7 @@ export default function BinCardEntryModal({
       setQty(entry.qtyReceived > 0 ? entry.qtyReceived : entry.qtyIssued)
       setExpiryDate(entry.expiryDate)
       setParty(entry.party)
+      setShowSupplierDropdown(false)
       setRemark(entry.remark)
     } else {
       setDate(new Date().toISOString().split("T")[0])
@@ -50,7 +55,9 @@ export default function BinCardEntryModal({
       setType("received")
       setQty("")
       setExpiryDate("")
-      setParty("")
+      const suppliers = erp.getSuppliers()
+      setParty(suppliers.length === 1 ? suppliers[0].name : "")
+      setShowSupplierDropdown(false)
       setRemark("")
     }
   }, [entry, isOpen])
@@ -189,16 +196,78 @@ export default function BinCardEntryModal({
                 />
               </div>
 
-              <div>
-                <label className="font-bold uppercase text-[10px] text-zinc-500 block mb-1">Received From / Issued To</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Addis Vet Clinic"
-                  value={party}
-                  onChange={(e) => setParty(e.target.value)}
-                  className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-semibold outline-none"
-                />
-              </div>
+              {type === "received" ? (
+                <div className="relative">
+                  <label className="font-bold uppercase text-[10px] text-zinc-500 block mb-1">
+                    Received From (Supplier)
+                  </label>
+                  <div className="relative flex items-center">
+                    <input
+                      type="text"
+                      placeholder="Search or enter supplier..."
+                      value={party}
+                      onFocus={() => setShowSupplierDropdown(true)}
+                      onChange={(e) => {
+                        setParty(e.target.value)
+                        setShowSupplierDropdown(true)
+                      }}
+                      className="w-full pl-3 pr-8 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-semibold outline-none text-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSupplierDropdown((prev) => !prev)}
+                      className="absolute right-1.5 p-1 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors cursor-pointer"
+                      title="Choose supplier from registry"
+                    >
+                      <ChevronDown className={`size-3.5 transition-transform ${showSupplierDropdown ? "rotate-180" : ""}`} />
+                    </button>
+                  </div>
+                  {showSupplierDropdown && (
+                    <div className="absolute top-full left-0 right-0 z-30 mt-1 max-h-48 overflow-y-auto rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-xl py-1 divide-y divide-zinc-100 dark:divide-zinc-700">
+                      {(() => {
+                        const suppliers = erp.getSuppliers()
+                        const filtered = party.trim()
+                          ? suppliers.filter((s) => s.name.toLowerCase().includes(party.toLowerCase()))
+                          : suppliers
+                        if (filtered.length === 0) {
+                          return (
+                            <div className="px-3 py-2 text-xs text-zinc-400 font-medium text-center">
+                              {suppliers.length === 0 ? "No suppliers registered" : `No matches for "${party}"`}
+                            </div>
+                          )
+                        }
+                        return filtered.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              setParty(s.name)
+                              setShowSupplierDropdown(false)
+                            }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-emerald-50 dark:hover:bg-zinc-700 text-xs flex items-center justify-between transition-colors cursor-pointer"
+                          >
+                            <span className="font-bold text-zinc-900 dark:text-zinc-100">{s.name}</span>
+                            <span className="text-[10px] text-zinc-400">{s.city || "Ethiopia"}</span>
+                          </button>
+                        ))
+                      })()}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="font-bold uppercase text-[10px] text-zinc-500 block mb-1">
+                    Issued To (Client / Dept)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Addis Vet Clinic"
+                    value={party}
+                    onChange={(e) => setParty(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl font-semibold outline-none"
+                  />
+                </div>
+              )}
             </div>
 
             <div>

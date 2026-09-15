@@ -1,0 +1,78 @@
+[
+  {
+    "id": "PS-09746",
+    "reference_number": "PS-09746",
+    "client_company_name": "Hagos",
+    "customer_id": "CUST-4260",
+    "goods_description": "sesame seed",
+    "quantity": "870.0000",
+    "uom": "Quintal",
+    "entry_date": "2026-08-30",
+    "agreed_price": "174000.00",
+    "currency": "ETB",
+    "status": "Processed",
+    "status_history": [
+      {
+        "stage": "Received",
+        "timestamp": "2026-08-30T16:20:09.746Z"
+      },
+      {
+        "stage": "Processed",
+        "timestamp": "2026-08-30T16:21:11.659Z"
+      }
+    ],
+    "assigned_to": null,
+    "invoice_id": null,
+    "notes": "",
+    "contract_url": null,
+    "contract_file_name": null,
+    "locked_processing_rate": "200.0000",
+    "locked_processing_fee": "174000.00",
+    "locked_storage_fee": null,
+    "locked_total_fee": null,
+    "processed_at": "2026-08-30T16:21:11.659Z",
+    "delivered_at": null,
+    "created_at": "2026-08-30T16:20:09.746Z",
+    "updated_at": "2026-08-30T16:21:11.661Z"
+  },
+  {
+    "id": "PS-AUDIT-1788287068340",
+    "reference_number": "PS-REF-1788287068340",
+    "client_company_name": "Oromia Coffee Cooperative Union",
+    "customer_id": null,
+    "goods_description": "Raw Natural Coffee Cherry (Export Grade)",
+    "quantity": "50.0000",
+    "uom": "Quintal",
+    "entry_date": "2026-09-01",
+    "agreed_price": "10500.00",
+    "currency": "ETB",
+    "status": "Delivered",
+    "status_history": [
+      {
+        "stage": "Received",
+        "timestamp": "2026-09-01T18:24:28.340Z"
+      },
+      {
+        "stage": "Processed",
+        "timestamp": "2026-09-01T18:24:28.342Z"
+      },
+      {
+        "stage": "Delivered",
+        "timestamp": "2026-09-01T18:24:28.343Z"
+      }
+    ],
+    "assigned_to": null,
+    "invoice_id": "INV-PS-PS-AUDIT-1788287068340",
+    "notes": "",
+    "contract_url": null,
+    "contract_file_name": null,
+    "locked_processing_rate": "180.0000",
+    "locked_processing_fee": "9000.00",
+    "locked_storage_fee": "1500.00",
+    "locked_total_fee": "10500.00",
+    "processed_at": "2026-09-01T18:24:28.342Z",
+    "delivered_at": "2026-09-01T18:24:28.342Z",
+    "created_at": "2026-09-01T18:24:28.340Z",
+    "updated_at": "2026-09-01T18:24:28.345Z"
+  }
+]

@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from "react-router-dom"
 import { ProtectedRoute } from "@/components/ProtectedRoute"
 import { Toaster } from "sonner"
 import { useAuthStore } from "@/lib/authStore"
+import { SessionExpiryWarningModal } from "@/components/auth/SessionExpiryWarningModal"
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -75,6 +76,7 @@ export function App() {
     <>
       <ScrollToTop />
       <Toaster position="top-right" richColors />
+      <SessionExpiryWarningModal />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route
@@ -96,9 +98,11 @@ export function App() {
         <Route path="/sales/quotations" element={<Navigate to="/sales/sales-orders" replace />} />
         <Route path="/sales/delivery-notes" element={<Navigate to="/sales/sales-orders" replace />} />
         <Route path="/sales/purchase-orders" element={<ProtectedRoute allowedRoles={["superadmin", "sales_manager", "hkc_docs_manager"]}><PurchaseOrders /></ProtectedRoute>} />
+        <Route path="/purchase-orders" element={<Navigate to="/sales/purchase-orders" replace />} />
 
         {/* Inventory section */}
         <Route path="/inventory" element={<ProtectedRoute allowedRoles={["superadmin", "inventory_admin"]}><InventoryDashboard /></ProtectedRoute>} />
+        <Route path="/inventory/dashboard" element={<Navigate to="/inventory" replace />} />
         <Route path="/inventory/stock" element={<ProtectedRoute allowedRoles={["superadmin", "inventory_admin"]}><StockProducts /></ProtectedRoute>} />
         <Route path="/inventory/bin-card" element={<Navigate to="/inventory/stock" replace />} />
         <Route path="/inventory/processing-services" element={<ProtectedRoute allowedRoles={["superadmin", "inventory_admin"]}><ProcessingServices /></ProtectedRoute>} />

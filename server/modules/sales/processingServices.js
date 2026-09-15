@@ -72,6 +72,10 @@ export async function createProcessingService(input) {
     locked_processing_fee: input?.locked_processing_fee ? String(input.locked_processing_fee) : null,
     locked_storage_fee: input?.locked_storage_fee ? String(input.locked_storage_fee) : null,
     locked_total_fee: input?.locked_total_fee ? String(input.locked_total_fee) : null,
+    reject_quantity: input?.reject_quantity !== undefined ? String(Number(input.reject_quantity)) : "0",
+    reject_reason: input?.reject_reason || null,
+    net_deliverable_quantity: input?.net_deliverable_quantity !== undefined ? String(Number(input.net_deliverable_quantity)) : null,
+    reject_recorded_at: input?.reject_recorded_at ? new Date(input.reject_recorded_at).toISOString() : null,
     processed_at: input?.processed_at ? new Date(input.processed_at).toISOString() : null,
     delivered_at: input?.delivered_at ? new Date(input.delivered_at).toISOString() : null,
     created_at: new Date().toISOString(),
@@ -113,6 +117,18 @@ export async function updateProcessingService(input, id) {
   if (input.notes !== undefined) patchFields.notes = input.notes
   if (input.contract_url !== undefined) patchFields.contract_url = input.contract_url
   if (input.contract_file_name !== undefined) patchFields.contract_file_name = input.contract_file_name
+  if (input.reject_quantity !== undefined || input.rejectQuantity !== undefined) {
+    patchFields.reject_quantity = String(Number(input.reject_quantity ?? input.rejectQuantity ?? 0))
+  }
+  if (input.reject_reason !== undefined || input.rejectReason !== undefined) {
+    patchFields.reject_reason = input.reject_reason ?? input.rejectReason ?? null
+  }
+  if (input.net_deliverable_quantity !== undefined || input.netDeliverableQuantity !== undefined) {
+    patchFields.net_deliverable_quantity = String(Number(input.net_deliverable_quantity ?? input.netDeliverableQuantity ?? 0))
+  }
+  if (input.reject_recorded_at || input.rejectRecordedAt) {
+    patchFields.reject_recorded_at = new Date(input.reject_recorded_at || input.rejectRecordedAt).toISOString()
+  }
 
   try {
     const resource = getResource("processing_services")
@@ -285,6 +301,19 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
     delivered_at: deliveredAt,
     agreed_price: String(agreedPrice),
     updated_at: new Date().toISOString(),
+  }
+
+  if (extraData.reject_quantity !== undefined || extraData.rejectQuantity !== undefined) {
+    patchBody.reject_quantity = String(Number(extraData.reject_quantity ?? extraData.rejectQuantity ?? 0))
+  }
+  if (extraData.reject_reason !== undefined || extraData.rejectReason !== undefined) {
+    patchBody.reject_reason = extraData.reject_reason ?? extraData.rejectReason ?? null
+  }
+  if (extraData.net_deliverable_quantity !== undefined || extraData.netDeliverableQuantity !== undefined) {
+    patchBody.net_deliverable_quantity = String(Number(extraData.net_deliverable_quantity ?? extraData.netDeliverableQuantity ?? 0))
+  }
+  if (extraData.reject_recorded_at || extraData.rejectRecordedAt) {
+    patchBody.reject_recorded_at = new Date(extraData.reject_recorded_at || extraData.rejectRecordedAt).toISOString()
   }
 
   try {

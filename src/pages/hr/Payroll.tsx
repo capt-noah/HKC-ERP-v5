@@ -413,6 +413,9 @@ export default function Payroll() {
               { value: warehouse, onChange: setWarehouse, options: ["All", ...Array.from(new Set(employees.map((employee) => employee.warehouse_id).filter(Boolean)))].map((item) => ({ value: item, label: item === "All" ? "All Warehouses" : item })) },
             ]}
             actions={[{ label: "Create Period", onClick: () => setShowPeriodForm(true), variant: "secondary" }, { label: "Load Active Employees", onClick: loadActiveEmployees }]}
+            onReload={refresh}
+            isReloading={loading}
+            reloadTooltip="Reload payroll records from server"
             secondary={currentPeriod && <div className="flex flex-wrap gap-2">{PAYROLL_PERIOD_STATUSES.filter((item) => item !== currentPeriod.status).map((item) => <button key={item} onClick={() => updatePeriodStatus(item)} className="rounded-full bg-black/[0.04] px-3 py-1.5 text-[10px] font-black uppercase text-zinc-700 hover:bg-black/10 transition-colors">{item}</button>)}</div>}
           />
           <TableScrollWrapper>

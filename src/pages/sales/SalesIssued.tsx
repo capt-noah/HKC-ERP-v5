@@ -10,7 +10,7 @@ import { useResizableTable, ResizableTh, type TableColumn } from "@/components/R
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, getTradeLicenseStatus } from "@/lib/erpStore"
 import { useFinanceStore } from "@/lib/financeStore"
-import { withOperatingWarehouses } from "@/lib/warehouses"
+import { withOperatingWarehouses, isWH1 } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { sortNewestFirst } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -27,6 +27,7 @@ import {
   fetchTradeAndAdviceDocs,
 } from "@/lib/tradeDocumentService"
 import { uploadFile } from "@/lib/fileUpload"
+import { getLocalDateString } from "@/lib/dateUtils"
 
 import {
   createSalesIssue,
@@ -62,7 +63,17 @@ function money(value: number) {
 function formatDate(d?: string | Date | null) {
   if (!d) return "—"
   try {
-    const str = typeof d === "string" ? (d.includes("T") ? d.split("T")[0] : d) : new Date(d).toISOString().split("T")[0]
+    let str = ""
+    if (typeof d === "string") {
+      str = d.includes("T") ? d.split("T")[0] : d.split(" ")[0]
+    } else if (d instanceof Date) {
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, "0")
+      const day = String(d.getDate()).padStart(2, "0")
+      str = `${year}-${month}-${day}`
+    } else {
+      str = String(d)
+    }
     const [y, m, day] = str.split("-")
     if (y && m && day) {
       const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -75,12 +86,6 @@ function formatDate(d?: string | Date | null) {
   } catch {
     return String(d)
   }
-}
-
-const isWH1 = (w?: string) => {
-  if (!w) return false
-  const upper = w.toUpperCase()
-  return upper.includes("WH1") || upper.includes("WH-01") || upper.includes("WH 1") || upper.includes("AGRI")
 }
 
 export const COMMODITY_UNITS = ["Quintal", "Ton"]
@@ -176,7 +181,7 @@ export default function SalesIssued() {
   // Partial Payment Installment Modal State
   const [payingIssue, setPayingIssue] = useState<SalesIssue | null>(null)
   const [payAmount, setPayAmount] = useState("")
-  const [payDate, setPayDate] = useState(new Date().toISOString().split("T")[0])
+  const [payDate, setPayDate] = useState(getLocalDateString())
   const [payBank, setPayBank] = useState("1000-02-26")
   const [payRef, setPayRef] = useState("")
   const [payAdviceFile, setPayAdviceFile] = useState<File | null>(null)
@@ -255,7 +260,7 @@ export default function SalesIssued() {
     const targetIsCash = explicitPaymentType === "cash" || (!explicitPaymentType && (so.payment_terms || so.paymentTerms || "").toString().toLowerCase() === "cash")
     setPaymentType(targetIsCash ? "Cash" : "Credit")
     setReferenceNo(so.id)
-    if (!saleDate) setSaleDate(new Date().toISOString().split("T")[0])
+    if (!saleDate) setSaleDate(getLocalDateString())
     setIssueFormErrors({})
 
     setIsDocsLoading(true)
@@ -363,7 +368,7 @@ export default function SalesIssued() {
     setIssueFormErrors({})
     const nextFs = `FS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
     setFsNo(nextFs)
-    setSaleDate(new Date().toISOString().split("T")[0])
+    setSaleDate(getLocalDateString())
     setStagedTradePaperName("")
     setStagedTradePaperUrl("")
     setStagedPaymentAdviceName("")
@@ -454,7 +459,7 @@ export default function SalesIssued() {
       setEditing(full)
       setFsNo(full.fs_no || full.id || "")
       setReferenceNo(full.reference_no || "")
-      setSaleDate(full.sale_date ? (typeof full.sale_date === "string" ? full.sale_date.split("T")[0] : new Date(full.sale_date).toISOString().split("T")[0]) : "")
+      setSaleDate(full.sale_date ? getLocalDateString(full.sale_date) : "")
       setCustomerName(full.customer_name || (full as any).customer || "")
       const canonicalWh = canonicalWarehouseId(full.warehouse_id || "")
       setWarehouseId(canonicalWh)
@@ -569,7 +574,7 @@ export default function SalesIssued() {
 
     setPayingIssue(issue)
     setPayAmount(dueVal > 0 ? String(dueVal) : "")
-    setPayDate(new Date().toISOString().split("T")[0])
+    setPayDate(getLocalDateString())
     setPayBank("1000-02-26")
     setPayRef(`DEP-${Date.now().toString().slice(-4)}`)
     setPayAdviceFile(null)
@@ -944,8 +949,8 @@ export default function SalesIssued() {
     payment_status: 170,
     total_quantity: 90,
     unit_price: 100,
-    total_amount: 110,
-    _actions: 190,
+    total_amount: 120,
+    _actions: 280,
   })
 
   const isPostedEditing = Boolean(editing && (editing.status || "").toLowerCase() === "posted")
@@ -983,6 +988,9 @@ export default function SalesIssued() {
                   variant: "primary",
                 },
               ]}
+              onReload={load}
+              isReloading={loading}
+              reloadTooltip="Reload sales issue register from server"
             />
           </div>
 
@@ -1076,8 +1084,8 @@ export default function SalesIssued() {
                       </td>
                       <td style={{ width: `${salesTable.colWidths.unit_price}px` }} className="px-3 py-3 text-right font-mono text-xs font-bold truncate">{money(row.items?.[0]?.unit_price || 0)}</td>
                       <td style={{ width: `${salesTable.colWidths.total_amount}px` }} className="px-3 py-3 text-right font-mono text-xs font-black truncate">{money(row.total_amount)}</td>
-                      <td style={{ width: `${salesTable.colWidths._actions}px` }} className="py-4 px-4 text-center whitespace-nowrap overflow-hidden">
-                        <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <td style={{ width: `${salesTable.colWidths._actions}px` }} className="py-4 px-2 text-center whitespace-nowrap overflow-hidden">
+                        <div className="flex items-center justify-center gap-1.5 flex-nowrap" onClick={(e) => e.stopPropagation()}>
                           {!isCash && dueAmt > 0 && (
                             <button
                               type="button"
@@ -1623,20 +1631,22 @@ export default function SalesIssued() {
                                   <input
                                     type="file"
                                     className="hidden"
-                                    onChange={(e) => {
+                                    onChange={async (e) => {
                                       const f = e.target.files?.[0]
                                       if (f) {
-                                        const reader = new FileReader()
-                                        reader.onload = () => {
-                                          setStagedPaymentAdviceName(f.name)
-                                          setStagedPaymentAdviceUrl(reader.result as string)
+                                        try {
+                                          const uploadRes = await uploadFile(f, "sales_issued")
+                                          setStagedPaymentAdviceName(uploadRes.originalName || f.name)
+                                          setStagedPaymentAdviceUrl(uploadRes.url)
                                           setIssueFormErrors((prev) => {
                                             const next = { ...prev }
                                             delete next.paymentAdvice
                                             return next
                                           })
+                                        } catch (err) {
+                                          console.warn("Payment advice upload failed:", err)
+                                          showToast("Upload Failed", "warning", "Could not upload payment advice.")
                                         }
-                                        reader.readAsDataURL(f)
                                       }
                                     }}
                                   />
@@ -1769,16 +1779,17 @@ export default function SalesIssued() {
                             </div>
                           ) : (
                             <select
-                              value={item.batch_no}
+                              value={item.batch_id || item.batch_no}
                               onChange={(e) => {
                                 const rawOpts = batchOptions[index] || []
-                                const batch = rawOpts.find((b) => b.batch_no === e.target.value)
+                                const val = e.target.value
+                                const batch = rawOpts.find((b) => (b.batch_id && b.batch_id === val) || b.batch_no === val)
                                 void updateItem(index, {
-                                  batch_no: e.target.value,
-                                  batch_id: e.target.value,
+                                  batch_no: batch?.batch_no || val,
+                                  batch_id: batch?.batch_id || batch?.id || val,
                                   packaging_unit: batch?.packaging_unit || item.packaging_unit,
                                   available_quantity: batch?.available_quantity || item.available_quantity || 1000,
-                                  unit_price: batch?.unit_price ?? item.unit_price,
+                                  unit_price: Number(item.unit_price) > 0 ? item.unit_price : (batch?.unit_price ?? item.unit_price),
                                 })
                               }}
                               className={`h-10 w-full rounded-xl text-xs font-bold ${
@@ -1790,12 +1801,12 @@ export default function SalesIssued() {
                               <option value="">Select batch</option>
                               {(() => {
                                 const opts = batchOptions[index] || []
-                                const hasSelected = opts.some((b) => b.batch_no === item.batch_no)
+                                const hasSelected = opts.some((b) => (b.batch_id && b.batch_id === item.batch_id) || b.batch_no === item.batch_no)
                                 const displayOpts = item.batch_no && !hasSelected && item.batch_no !== "N/A"
-                                  ? [{ batch_no: item.batch_no, available_quantity: item.available_quantity || 1000, unit_price: item.unit_price, packaging_unit: item.packaging_unit }, ...opts]
+                                  ? [{ batch_id: item.batch_id || item.batch_no, batch_no: item.batch_no, available_quantity: item.available_quantity || 1000, unit_price: item.unit_price, packaging_unit: item.packaging_unit }, ...opts]
                                   : opts
                                 return displayOpts.map((b) => (
-                                  <option key={b.batch_no} value={b.batch_no}>
+                                  <option key={b.batch_id || b.batch_no} value={b.batch_id || b.batch_no}>
                                     {b.batch_no} {b.available_quantity ? `(${b.available_quantity} avail)` : ""}
                                   </option>
                                 ))

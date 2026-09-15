@@ -19,6 +19,8 @@ import { LoadingDots } from "@/components/ui/LoadingDots"
 import { GlassCard } from "@/components/GlassCard"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
+import { getLocalDateString } from "@/lib/dateUtils"
+import { isPharmaWarehouse, withOperatingWarehouses } from "@/lib/warehouses"
 
 interface QuarantineTabProps {
   warehouseId?: string
@@ -73,7 +75,7 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
   const [addProductId, setAddProductId] = useState("")
   const [addBatchNo, setAddBatchNo] = useState("")
   const [addNameEntered, setAddNameEntered] = useState(currentUserName)
-  const [addQuarantineDate, setAddQuarantineDate] = useState(new Date().toISOString().slice(0, 10))
+  const [addQuarantineDate, setAddQuarantineDate] = useState(getLocalDateString())
   const [addQuantity, setAddQuantity] = useState("")
   const [addProposedReleaseDate, setAddProposedReleaseDate] = useState("")
   const [addReason, setAddReason] = useState("")
@@ -100,25 +102,19 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
     const a = whA.toLowerCase().trim()
     const b = whB.toLowerCase().trim()
     if (a === b) return true
-    if (a.includes("wh2") && b.includes("wh2")) return true
-    if (a.includes("wh3") && b.includes("wh3")) return true
+    const pool = withOperatingWarehouses(erp.getWarehouses())
+    const whObjA = pool.find((w) => w.id?.toLowerCase() === a || w.code?.toLowerCase() === a || w.name?.toLowerCase() === a)
+    const whObjB = pool.find((w) => w.id?.toLowerCase() === b || w.code?.toLowerCase() === b || w.name?.toLowerCase() === b)
+    if (whObjA && whObjB) {
+      return (Boolean(whObjA.id) && whObjA.id === whObjB.id) || (Boolean(whObjA.code) && whObjA.code === whObjB.code)
+    }
     return a.includes(b) || b.includes(a)
   }
 
-  // Available commercial warehouses
+  // Available commercial warehouses (all pharmaceutical warehouses)
   const commercialWarehouses = useMemo(() => {
-    return erp.getWarehouses().filter((w) => {
-      const code = (w.code || w.id || w.name || "").toUpperCase()
-      return (
-        code.includes("WH2") ||
-        code.includes("WH3") ||
-        code.includes("WH-02") ||
-        code.includes("WH-03") ||
-        code.includes("WAREHOUSE 2") ||
-        code.includes("WAREHOUSE 3") ||
-        code.includes("VET")
-      )
-    })
+    const rawWhs = withOperatingWarehouses(erp.getWarehouses())
+    return rawWhs.filter((w) => isPharmaWarehouse(w, rawWhs))
   }, [erp])
 
   // Products available in the selected add modal warehouse
@@ -154,11 +150,15 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
 
   // All Quarantine records
   const allQuarantineRecords = erp.getQuarantineRecords()
+  const allProducts = erp.getProducts()
 
   const filteredRecords = useMemo(() => {
     return allQuarantineRecords.filter((rec) => {
+      const prod = allProducts.find((p) => p.id === rec.productId || (rec.sku && p.sku === rec.sku))
+      const whId = rec.warehouseId || prod?.warehouse || "WH2"
+
       if (selectedWarehouseFilter !== "ALL") {
-        if (!matchesWarehouse(rec.warehouseId, selectedWarehouseFilter)) {
+        if (!matchesWarehouse(whId, selectedWarehouseFilter)) {
           return false
         }
       }
@@ -169,35 +169,49 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim()
+        const pName = (rec.productName || prod?.name || "").toLowerCase()
+        const pSku = (rec.sku || prod?.sku || "").toLowerCase()
+        const pBatch = (rec.batchNo || prod?.batch || "").toLowerCase()
+        const pOfficer = (rec.nameEntered || "").toLowerCase()
+        const pReason = (rec.reason || "").toLowerCase()
+        const pWh = whId.toLowerCase()
+
         const match =
-          rec.productName.toLowerCase().includes(q) ||
-          rec.sku.toLowerCase().includes(q) ||
-          rec.batchNo.toLowerCase().includes(q) ||
-          rec.nameEntered.toLowerCase().includes(q) ||
-          (rec.reason || "").toLowerCase().includes(q) ||
-          rec.warehouseId.toLowerCase().includes(q)
+          pName.includes(q) ||
+          pSku.includes(q) ||
+          pBatch.includes(q) ||
+          pOfficer.includes(q) ||
+          pReason.includes(q) ||
+          pWh.includes(q)
         if (!match) return false
       }
 
       return true
     })
-  }, [allQuarantineRecords, selectedWarehouseFilter, statusFilter, searchQuery])
+  }, [allQuarantineRecords, allProducts, selectedWarehouseFilter, statusFilter, searchQuery])
 
   // KPI Metrics Calculation
   const metrics = useMemo(() => {
     const totalVolume = filteredRecords.reduce((sum, r) => sum + Number(r.quantity || 0), 0)
     const activeCount = filteredRecords.filter((r) => r.status === "Quarantined").length
-    const wh2Count = filteredRecords.filter((r) => matchesWarehouse(r.warehouseId, "WH2")).length
-    const wh3Count = filteredRecords.filter((r) => matchesWarehouse(r.warehouseId, "WH3")).length
+    const countMap = new Map<string, number>()
+    for (const r of filteredRecords) {
+      const prod = allProducts.find((p) => p.id === r.productId || (r.sku && p.sku === r.sku))
+      const rawWh = r.warehouseId || prod?.warehouse
+      const whObj = commercialWarehouses.find((w) => matchesWarehouse(rawWh, w.code || w.id))
+      const label = whObj?.code || whObj?.id || rawWh || "Pharma Hub"
+      countMap.set(label, (countMap.get(label) || 0) + 1)
+    }
+    const warehouseBreakdown = Array.from(countMap.entries()).map(([label, count]) => ({ label, count }))
 
     const estimatedValue = filteredRecords.reduce((sum, r) => {
-      const prod = erp.getProducts().find((p) => p.id === r.productId)
-      const cost = prod?.unitCost || 0
+      const prod = allProducts.find((p) => p.id === r.productId || (r.sku && p.sku === r.sku))
+      const cost = Number(prod?.unitCost || 0)
       return sum + Number(r.quantity || 0) * cost
     }, 0)
 
-    return { totalVolume, activeCount, wh2Count, wh3Count, estimatedValue }
-  }, [filteredRecords, erp])
+    return { totalVolume, activeCount, warehouseBreakdown, estimatedValue }
+  }, [filteredRecords, allProducts, commercialWarehouses])
 
   const openAddModal = () => {
     const defaultWh = selectedWarehouseFilter !== "ALL" ? selectedWarehouseFilter : (commercialWarehouses[0]?.code || "WH2")
@@ -205,7 +219,7 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
     setAddProductId("")
     setAddBatchNo("")
     setAddNameEntered(currentUserName)
-    setAddQuarantineDate(new Date().toISOString().slice(0, 10))
+    setAddQuarantineDate(getLocalDateString())
     setAddQuantity("")
     setAddProposedReleaseDate("")
     setAddReason("")
@@ -377,10 +391,17 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
           </div>
           <div>
             <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">Warehouse Breakdown</span>
-            <div className="flex items-center gap-2 mt-0.5 text-xs font-black">
-              <span className="text-zinc-800">WH2: <strong className="text-indigo-600 font-bold">{metrics.wh2Count}</strong></span>
-              <span className="text-zinc-300">&bull;</span>
-              <span className="text-zinc-800">WH3: <strong className="text-indigo-600 font-bold">{metrics.wh3Count}</strong></span>
+            <div className="flex items-center gap-2 mt-0.5 text-xs font-black flex-wrap">
+              {metrics.warehouseBreakdown.length > 0 ? (
+                metrics.warehouseBreakdown.map((item, idx) => (
+                  <span key={item.label} className="text-zinc-800">
+                    {idx > 0 && <span className="text-zinc-300 mr-1.5">&bull;</span>}
+                    {item.label}: <strong className="text-indigo-600 font-bold">{item.count}</strong>
+                  </span>
+                ))
+              ) : (
+                <span className="text-zinc-400">0 in hold</span>
+              )}
             </div>
           </div>
         </GlassCard>
@@ -427,8 +448,10 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
             ariaLabel: "Filter by Warehouse",
             options: [
               { value: "ALL", label: "All Commercial Warehouses" },
-              { value: "WH2", label: "Warehouse 2 (Indian)" },
-              { value: "WH3", label: "Warehouse 3 (Chinese)" },
+              ...commercialWarehouses.map((w) => ({
+                value: w.code || w.id,
+                label: w.name || w.code || w.id,
+              })),
             ],
           },
           {
@@ -443,58 +466,68 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
             ],
           },
         ]}
+        onReload={async () => {
+          await erp.reloadFromApi()
+        }}
+        reloadTooltip="Reload quarantine records from server"
         defaultWidths={{
           item: 200,
           batchNo: 130,
-          warehouse: 130,
+          warehouse: 110,
           nameEntered: 140,
           quarantineDate: 130,
           quantity: 120,
-          proposedReleaseDate: 160,
-          status: 120,
+          proposedReleaseDate: 150,
+          status: 150,
           reason: 180,
-          _actions: 90,
+          _actions: 95,
         }}
         renderRow={(rec, colWidths) => {
-          const isWH2 = matchesWarehouse(rec.warehouseId, "WH2")
+          const prod = allProducts.find((p) => p.id === rec.productId || (rec.sku && p.sku === rec.sku))
+          const productName = rec.productName || prod?.name || "Medicine"
+          const sku = rec.sku || prod?.sku || ""
+          const batchNo = rec.batchNo || prod?.batch || "—"
+          const unit = rec.unit || prod?.unit || "Units"
+          const qtyNum = Number(rec.quantity || 0)
+          const whId = rec.warehouseId || prod?.warehouse || (commercialWarehouses[0]?.code || "WH")
+          const whObj = commercialWarehouses.find((w) => matchesWarehouse(whId, w.code || w.id))
+          const whLabel = whObj?.code || whObj?.id || whId
 
           return (
             <>
               {/* Medicine / Product */}
               <td style={{ width: `${colWidths.item}px` }} className="py-4 px-4 overflow-hidden border-r border-zinc-100">
                 <div className="flex flex-col">
-                  <span className="font-black text-zinc-950 text-xs truncate">{rec.productName}</span>
-                  <span className="font-mono text-[10px] text-zinc-400">{rec.sku}</span>
+                  <span className="font-black text-zinc-950 text-xs truncate" title={productName}>{productName}</span>
+                  {sku && <span className="font-mono text-[10px] text-zinc-400">{sku}</span>}
                 </div>
               </td>
 
               {/* Batch Number */}
               <td style={{ width: `${colWidths.batchNo}px` }} className="py-4 px-4 font-mono font-bold text-zinc-950 border-r border-zinc-100 overflow-hidden">
-                {rec.batchNo}
+                {batchNo}
               </td>
 
               {/* Warehouse */}
               <td style={{ width: `${colWidths.warehouse}px` }} className="py-4 px-4 border-r border-zinc-100 overflow-hidden">
-                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
-                  isWH2 ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-purple-50 text-purple-700 border border-purple-200"
-                }`}>
-                  {isWH2 ? "WH2" : "WH3"}
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  {whLabel}
                 </span>
               </td>
 
               {/* NAME ENTERED */}
               <td style={{ width: `${colWidths.nameEntered}px` }} className="py-4 px-4 font-bold text-zinc-800 border-r border-zinc-100 overflow-hidden">
-                {rec.nameEntered}
+                {rec.nameEntered || "Store Officer"}
               </td>
 
               {/* QUARANTINE DATE */}
               <td style={{ width: `${colWidths.quarantineDate}px` }} className="py-4 px-4 font-mono font-bold text-zinc-700 border-r border-zinc-100 overflow-hidden">
-                {rec.quarantineDate}
+                {rec.quarantineDate || "—"}
               </td>
 
               {/* QUANTITY */}
               <td style={{ width: `${colWidths.quantity}px` }} className="py-4 px-4 text-right font-mono font-black text-rose-700 border-r border-zinc-100 overflow-hidden">
-                -{rec.quantity.toLocaleString()} {rec.unit}
+                -{qtyNum.toLocaleString()} {unit}
               </td>
 
               {/* PROPOSED RELEASE DATE */}
@@ -503,9 +536,9 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
               </td>
 
               {/* Status */}
-              <td style={{ width: `${colWidths.status}px` }} className="py-4 px-4 text-center border-r border-zinc-100 overflow-hidden">
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-900 border border-emerald-200">
-                  <AlertOctagon className="size-3 text-emerald-700" />
+              <td style={{ width: `${colWidths.status}px` }} className="py-4 px-2 text-center border-r border-zinc-100 overflow-hidden">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-900 border border-emerald-200 whitespace-nowrap">
+                  <AlertOctagon className="size-3 text-emerald-700 shrink-0" />
                   {rec.status}
                 </span>
               </td>
@@ -795,33 +828,44 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
               exit={{ opacity: 0, scale: 0.96, y: 12 }}
               className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 z-[121] relative"
             >
-              <EditModalHeader
-                title={`Edit Quarantine: ${editingRecord.productName}`}
-                subtitle={`Ref: ${editingRecord.id} • Batch: ${editingRecord.batchNo} • Warehouse: ${editingRecord.warehouseId}`}
-                onClose={() => setEditingRecord(null)}
-                onRequestDelete={() => setDeletingRecord(editingRecord)}
-                deleteLabel="Delete Quarantine Record"
-              />
+              {(() => {
+                const editProd = allProducts.find((p) => p.id === editingRecord.productId || (editingRecord.sku && p.sku === editingRecord.sku))
+                const editProductName = editingRecord.productName || editProd?.name || "Medicine"
+                const editSku = editingRecord.sku || editProd?.sku || ""
+                const editBatchNo = editingRecord.batchNo || editProd?.batch || "—"
+                const editUnit = editingRecord.unit || editProd?.unit || "Units"
+                const editQuantity = Number(editingRecord.quantity || 0)
+                const editWh = editingRecord.warehouseId || editProd?.warehouse || (commercialWarehouses[0]?.code || "Warehouse")
 
-              <form onSubmit={handleEditSave} className="mt-4 space-y-4 text-xs font-semibold">
-                {/* Light Green Summary Section (Replacing Yellow Section) */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-emerald-50/70 p-4 rounded-2xl border border-emerald-200/80">
-                  <div>
-                    <span className="text-[10px] font-black uppercase text-emerald-800/70 block">Medicine / SKU</span>
-                    <span className="font-bold text-zinc-950">{editingRecord.productName}</span>
-                    <span className="font-mono text-[10px] text-zinc-500 block">{editingRecord.sku}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-black uppercase text-emerald-800/70 block">Batch Number</span>
-                    <span className="font-mono font-bold text-zinc-950">{editingRecord.batchNo}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-black uppercase text-emerald-800/70 block">Quarantined Quantity</span>
-                    <span className="font-mono font-black text-rose-700">
-                      -{editingRecord.quantity.toLocaleString()} {editingRecord.unit}
-                    </span>
-                  </div>
-                </div>
+                return (
+                  <>
+                    <EditModalHeader
+                      title={`Edit Quarantine: ${editProductName}`}
+                      subtitle={`Ref: ${editingRecord.id} • Batch: ${editBatchNo} • Warehouse: ${editWh}`}
+                      onClose={() => setEditingRecord(null)}
+                      onRequestDelete={() => setDeletingRecord(editingRecord)}
+                      deleteLabel="Delete Quarantine Record"
+                    />
+
+                    <form onSubmit={handleEditSave} className="mt-4 space-y-4 text-xs font-semibold">
+                      {/* Light Green Summary Section (Replacing Yellow Section) */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-emerald-50/70 p-4 rounded-2xl border border-emerald-200/80">
+                        <div>
+                          <span className="text-[10px] font-black uppercase text-emerald-800/70 block">Medicine / SKU</span>
+                          <span className="font-bold text-zinc-950">{editProductName}</span>
+                          {editSku && <span className="font-mono text-[10px] text-zinc-500 block">{editSku}</span>}
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-black uppercase text-emerald-800/70 block">Batch Number</span>
+                          <span className="font-mono font-bold text-zinc-950">{editBatchNo}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] font-black uppercase text-emerald-800/70 block">Quarantined Quantity</span>
+                          <span className="font-mono font-black text-rose-700">
+                            -{editQuantity.toLocaleString()} {editUnit}
+                          </span>
+                        </div>
+                      </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
                   {/* NAME ENTERED */}
@@ -913,9 +957,12 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
                   </div>
                 </div>
               </form>
-            </motion.div>
-          </div>
-        )}
+            </>
+          )
+        })()}
+      </motion.div>
+    </div>
+  )}
       </AnimatePresence>
 
       {/* =========================================================================

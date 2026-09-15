@@ -19,6 +19,10 @@ import {
   Trash2,
   AlertTriangle,
   Download,
+  Scale,
+  Lock,
+  ArrowLeftRight,
+  CalendarCheck,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -35,6 +39,10 @@ import {
 
 import { Skeleton } from "@/components/ui/skeleton"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
+import PeachtreeBeginningBalancesModal from "@/components/finance/PeachtreeBeginningBalancesModal"
+import { PeachtreePeriodClosingModal } from "@/components/finance/PeachtreePeriodClosingModal"
+import TransactionMappingMatrix from "@/components/finance/TransactionMappingMatrix"
+import FiscalPeriodsTab from "@/components/finance/FiscalPeriodsTab"
 
 const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -44,7 +52,7 @@ export default function Ledger() {
   const store = useFinanceStore()
   const isLoading = store.isLoading()
 
-  const [activeTab, setActiveTab] = useState<"Entries" | "Chart">("Entries")
+  const [activeTab, setActiveTab] = useState<"Entries" | "Periods" | "Chart" | "Mappings">("Entries")
 
   // Store data
   const entries = store.getJournalEntries()
@@ -147,6 +155,9 @@ export default function Ledger() {
   const [editAccIsActive, setEditAccIsActive] = useState(true)
   const [editMenuOpen, setEditMenuOpen] = useState(false)
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false)
+  const [showBeginningBalancesModal, setShowBeginningBalancesModal] = useState(false)
+  const [showPeriodClosingModal, setShowPeriodClosingModal] = useState(false)
+  const periodLockStatus = store.getPeriodLockStatus()
 
   // Posting modal state
   const todayStr = new Date().toISOString().split("T")[0]
@@ -155,6 +166,7 @@ export default function Ledger() {
   const [newDesc, setNewDesc] = useState("")
   const [newSourceType, setNewSourceType] = useState<JournalEntry["source_type"]>("Manual Adjustment")
   const [newSourceId, setNewSourceId] = useState(`JV-${Date.now().toString().slice(-4)}`)
+  const [autoReverse, setAutoReverse] = useState(false)
   const newCurrency = "ETB"
 
   const [formLines, setFormLines] = useState<Array<{
@@ -202,6 +214,7 @@ export default function Ledger() {
         created_by: "Senior Accountant",
         currency: newCurrency,
         exchange_rate: 1.0,
+        auto_reverse: autoReverse,
       },
       payloadLines
     )
@@ -213,12 +226,19 @@ export default function Ledger() {
 
     setShowPostModal(false)
     setNewDesc("")
+    setAutoReverse(false)
     setFormLines([
       { account_id: accounts.find((a) => a.is_active)?.id || "", debit: "", credit: "", party_type: "", party_id: "", party_name: "" },
       { account_id: accounts.filter((a) => a.is_active)[1]?.id || "", debit: "", credit: "", party_type: "", party_id: "", party_name: "" },
     ])
 
-    if (result.autoRounded) {
+    if (result.reversalEntry) {
+      showToast(
+        "Journal Entry & Auto-Reversal Created",
+        "success",
+        `Posted entry ${result.entry?.id} and scheduled mirror reversal ${result.reversalEntry.id} on ${result.reversalEntry.entry_date}.`
+      )
+    } else if (result.autoRounded) {
       showToast(
         "Journal Entry Posted",
         "info",
@@ -734,7 +754,9 @@ export default function Ledger() {
           <div className="flex gap-1 min-w-max">
             {[
               { id: "Entries", label: "Journal Entries", icon: FileText },
+              { id: "Periods", label: "Fiscal Periods", icon: CalendarCheck },
               { id: "Chart", label: "Chart of Accounts", icon: FolderTree },
+              { id: "Mappings", label: "Account Mappings", icon: ArrowLeftRight },
             ].map((tab) => {
               const isActive = activeTab === tab.id
               const Icon = tab.icon
@@ -777,6 +799,25 @@ export default function Ledger() {
               className="flex flex-col gap-4"
             >
               <GlassCard className="flex flex-col p-0">
+                {periodLockStatus.is_locked && (
+                  <div className="mx-6 mt-6 p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-900 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-1.5 rounded-lg bg-amber-200 text-amber-900">
+                        <Lock className="size-3.5" />
+                      </div>
+                      <span>
+                        <strong>Fiscal Period Locked through {periodLockStatus.locked_until_date}:</strong> Backdated entries on or prior to this date cannot be posted or edited without unlocking.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("Periods")}
+                      className="text-amber-800 underline hover:text-amber-950 font-bold ml-2 shrink-0 cursor-pointer"
+                    >
+                      Manage Fiscal Periods
+                    </button>
+                  </div>
+                )}
                 <div className="px-6 pt-6">
                   <FinanceTableToolbar
                     title="Journal Entry Ledger"
@@ -817,6 +858,11 @@ export default function Ledger() {
                       },
                       { label: "Post Entry", onClick: () => setShowPostModal(true) },
                     ]}
+                    onReload={async () => {
+                      await store.reloadFromApi()
+                    }}
+                    isReloading={isLoading}
+                    reloadTooltip="Reload journal entries from server"
                   />
                 </div>
                 <TableScrollWrapper>
@@ -1145,7 +1191,20 @@ export default function Ledger() {
             </motion.div>
           )}
 
-          {/* TAB 2: Chart of Accounts Tree */}
+          {/* TAB 2: Fiscal Periods Dedicated Dashboard */}
+          {activeTab === "Periods" && (
+            <motion.div
+              key="periods-tab"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <FiscalPeriodsTab />
+            </motion.div>
+          )}
+
+          {/* TAB 3: Chart of Accounts Tree */}
           {activeTab === "Chart" && (
             <motion.div
               key="chart-tab"
@@ -1199,13 +1258,22 @@ export default function Ledger() {
                   </div>
 
                   <button
+                    onClick={() => setShowBeginningBalancesModal(true)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md shadow-emerald-900/15 transition-all cursor-pointer active:scale-95"
+                    title="Maintain Chart of Accounts balances & historical cutover values"
+                  >
+                    <Scale className="size-3.5" />
+                    <span>Maintain COA</span>
+                  </button>
+
+                  <button
                     onClick={() => {
                       exportPeachtreeChartOfAccounts(accounts, { format: "PEACHTREE_EXCEL" })
                       showToast("COA Exported", "success", "Exported Chart of Accounts to Excel.")
                     }}
-                    className="flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-700 text-white hover:bg-emerald-800 text-xs font-black shadow-md shadow-emerald-900/15 transition-all cursor-pointer active:scale-95"
+                    className="flex items-center gap-2 px-4 py-2 rounded-full border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs font-bold transition-all cursor-pointer active:scale-95"
                   >
-                    <Download className="size-3.5" />
+                    <Download className="size-3.5 text-zinc-500" />
                     <span>Export COA</span>
                   </button>
 
@@ -1299,7 +1367,18 @@ export default function Ledger() {
             </motion.div>
           )}
 
-
+          {/* TAB 3: Transaction Mappings Matrix */}
+          {activeTab === "Mappings" && (
+            <motion.div
+              key="mappings-tab"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <TransactionMappingMatrix />
+            </motion.div>
+          )}
 
         </AnimatePresence>
 
@@ -1411,6 +1490,23 @@ export default function Ledger() {
                         />
                       </div>
                     ))}
+                  </div>
+
+                  {/* Auto-Reversal Option */}
+                  <div className="flex items-start gap-2.5 p-3 rounded-2xl bg-amber-50/70 border border-amber-200/80">
+                    <input
+                      type="checkbox"
+                      id="ledger-auto-reverse-checkbox"
+                      checked={autoReverse}
+                      onChange={(e) => setAutoReverse(e.target.checked)}
+                      className="mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer size-4"
+                    />
+                    <label htmlFor="ledger-auto-reverse-checkbox" className="text-xs font-bold text-zinc-800 cursor-pointer select-none">
+                      Auto-Reverse on Next Period (1st of next month)
+                      <span className="block text-[11px] font-normal text-zinc-500 mt-0.5">
+                        Automatically posts an offsetting mirror entry on the first day of the subsequent fiscal month (ideal for month-end accruals).
+                      </span>
+                    </label>
                   </div>
 
                   <div className="flex justify-end gap-3 pt-4 border-t border-zinc-100">
@@ -1896,6 +1992,18 @@ export default function Ledger() {
             </div>
           )}
         </AnimatePresence>
+
+        {/* MODAL 5: Peachtree Beginning Balances & Cutover Modal */}
+        <PeachtreeBeginningBalancesModal
+          isOpen={showBeginningBalancesModal}
+          onClose={() => setShowBeginningBalancesModal(false)}
+        />
+
+        {/* MODAL 6: Peachtree Fiscal Period Closing Modal */}
+        <PeachtreePeriodClosingModal
+          isOpen={showPeriodClosingModal}
+          onClose={() => setShowPeriodClosingModal(false)}
+        />
 
       </motion.div>
     </div>

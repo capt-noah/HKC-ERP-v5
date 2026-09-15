@@ -1,5 +1,5 @@
 import { useState, useEffect, type ReactNode } from "react"
-import { Search, Plus, Calendar, ChevronDown, Check, X } from "lucide-react"
+import { Search, Plus, Calendar, ChevronDown, Check, X, RefreshCw } from "lucide-react"
 import { FINANCE_DATE_FILTER_OPTIONS } from "@/lib/peachtreeExportUtils"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
@@ -211,7 +211,7 @@ export function FinanceDateFilter({
   )
 }
 
-interface FinanceTableToolbarProps {
+export interface FinanceTableToolbarProps {
   title: string
   subtitle?: string
   searchValue?: string
@@ -220,6 +220,12 @@ interface FinanceTableToolbarProps {
   filters?: FinanceTableFilter[]
   dateFilter?: FinanceDateFilterConfig
   actions?: FinanceTableAction[]
+  onRefresh?: () => Promise<void> | void
+  isRefreshing?: boolean
+  /** Dedicated table reload button */
+  onReload?: () => Promise<void> | void
+  isReloading?: boolean
+  reloadTooltip?: string
   /** Extra controls rendered inline with search/filters (e.g. date inputs) */
   children?: ReactNode
   /** Full-width row below the main toolbar (e.g. category pill filters) */
@@ -236,19 +242,58 @@ export function FinanceTableToolbar({
   filters = [],
   dateFilter,
   actions = [],
+  onRefresh,
+  isRefreshing = false,
+  onReload,
+  isReloading = false,
+  reloadTooltip,
   children,
   secondary,
   className = "",
 }: FinanceTableToolbarProps) {
+  const effectiveReload = onReload || onRefresh
+  const [isLocalReloading, setIsLocalReloading] = useState(false)
+  const reloading = isReloading || isRefreshing || isLocalReloading
+
+  const handleReload = async () => {
+    if (!effectiveReload || reloading) return
+    setIsLocalReloading(true)
+    try {
+      await effectiveReload()
+    } catch (err) {
+      console.warn("[FinanceTableToolbar] Reload notice:", err)
+    } finally {
+      setIsLocalReloading(false)
+    }
+  }
+
   const showControls =
-    onSearchChange !== undefined || filters.length > 0 || dateFilter !== undefined || actions.length > 0 || children
+    onSearchChange !== undefined || filters.length > 0 || dateFilter !== undefined || actions.length > 0 || effectiveReload !== undefined || children
 
   return (
     <div className={className}>
       <div className={`flex flex-col sm:flex-row sm:items-center justify-between ${secondary ? "mb-3 sm:mb-4" : "mb-4 sm:mb-5"} gap-3 sm:gap-4`}>
-        <div>
-          <h3 className="font-bold text-sm sm:text-base text-black">{title}</h3>
-          {subtitle && <p className="text-[11px] sm:text-xs text-gray-400">{subtitle}</p>}
+        <div className="flex items-center gap-2.5">
+          <div>
+            <h3 className="font-bold text-sm sm:text-base text-black">{title}</h3>
+            {subtitle && <p className="text-[11px] sm:text-xs text-gray-400">{subtitle}</p>}
+          </div>
+
+          {effectiveReload && (
+            <button
+              type="button"
+              onClick={handleReload}
+              disabled={reloading}
+              title={reloadTooltip || "Reload table data from server"}
+              aria-label="Reload table data"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm shadow-emerald-700/20 hover:shadow-md hover:shadow-emerald-700/30 transition-all cursor-pointer shrink-0 disabled:opacity-50 active:scale-95"
+            >
+              <RefreshCw className={cn("size-3.5 text-white shrink-0", reloading && "animate-spin")} />
+              <span className="text-xs font-bold text-white tracking-tight">
+                {reloading ? "Reloading..." : "Reload"}
+              </span>
+            </button>
+          )}
         </div>
 
         {showControls && (

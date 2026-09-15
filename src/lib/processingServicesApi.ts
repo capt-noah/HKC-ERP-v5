@@ -27,6 +27,10 @@ export interface ProcessingServiceOrder {
   locked_processing_fee?: number | null
   locked_storage_fee?: number | null
   locked_total_fee?: number | null
+  reject_quantity?: number | null
+  reject_reason?: string | null
+  net_deliverable_quantity?: number | null
+  reject_recorded_at?: string | null
   processed_at?: string | null
   delivered_at?: string | null
   created_at?: string

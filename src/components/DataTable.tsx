@@ -16,6 +16,9 @@ export interface DataTableProps<T> {
   searchPlaceholder?: string
   filters?: FilterOption[]
   actions?: HeaderAction[]
+  onReload?: () => Promise<void> | void
+  isReloading?: boolean
+  reloadTooltip?: string
   defaultWidths?: Record<string, number>
   emptyMessage?: string
   enablePagination?: boolean
@@ -52,6 +55,9 @@ export function DataTable<T>({
   searchPlaceholder = "Search records...",
   filters = [],
   actions = [],
+  onReload,
+  isReloading,
+  reloadTooltip,
   defaultWidths,
   emptyMessage = "No records match your active search filters.",
   enablePagination = true,
@@ -99,6 +105,9 @@ export function DataTable<T>({
           searchPlaceholder={searchPlaceholder}
           filters={filters}
           actions={actions}
+          onReload={onReload}
+          isReloading={isReloading}
+          reloadTooltip={reloadTooltip}
         />
       </div>
 

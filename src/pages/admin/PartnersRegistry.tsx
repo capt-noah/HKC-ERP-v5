@@ -16,6 +16,7 @@ import {
   Globe,
   FileText,
   Eye,
+  RefreshCw,
 } from "lucide-react"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
@@ -32,6 +33,7 @@ import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { saveTradeLicense } from "@/lib/tradeDocumentService"
+import { PeachtreePartnerBalancesModal } from "@/components/finance/PeachtreePartnerBalancesModal"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
@@ -42,11 +44,13 @@ export default function PartnersRegistry() {
 
   const customers = erp.getCustomers()
   const suppliers = erp.getSuppliers()
+  const warehouses = erp.getWarehouses()
 
   const [activeTab, setActiveTab] = useState<"customers" | "suppliers">("customers")
   const [search, setSearch] = useState("")
 
   // Modals & Deleting states
+  const [showBeginningBalancesModal, setShowBeginningBalancesModal] = useState(false)
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [deletingCustomer, setDeletingCustomer] = useState<Customer | null>(null)
@@ -66,7 +70,7 @@ export default function PartnersRegistry() {
   const [custEmail, setCustEmail] = useState("")
   const [custAddress, setCustAddress] = useState("")
   const [custCategory, setCustCategory] = useState("Commercial Union")
-  const [custWarehouseTarget, setCustWarehouseTarget] = useState("WH1")
+  const [custWarehouseTarget, setCustWarehouseTarget] = useState(warehouses[0]?.id || "WH1")
   const [custTradePaperName, setCustTradePaperName] = useState("")
   const [custTradePaperUrl, setCustTradePaperUrl] = useState("")
   const [isNewlyUploadedCustLicense, setIsNewlyUploadedCustLicense] = useState(false)
@@ -77,16 +81,12 @@ export default function PartnersRegistry() {
 
   // Supplier Form State
   const [suppName, setSuppName] = useState("")
-  const [suppCountry, setSuppCountry] = useState("China")
   const [suppCity, setSuppCity] = useState("")
   const [suppContactPerson, setSuppContactPerson] = useState("")
   const [suppPhone, setSuppPhone] = useState("")
   const [suppEmail, setSuppEmail] = useState("")
   const [suppAddress, setSuppAddress] = useState("")
-  const [suppCategory, setSuppCategory] = useState("Pharmaceutical Manufacturer")
   const [suppTaxId, setSuppTaxId] = useState("")
-  const [suppTradePaperName, setSuppTradePaperName] = useState("")
-  const [suppTradePaperUrl, setSuppTradePaperUrl] = useState("")
 
   const openAddCustomer = () => {
     setCustName("")
@@ -97,7 +97,7 @@ export default function PartnersRegistry() {
     setCustEmail("")
     setCustAddress("")
     setCustCategory("Commercial Union")
-    setCustWarehouseTarget("WH1")
+    setCustWarehouseTarget(warehouses[0]?.id || "WH1")
     setCustTradePaperName("")
     setCustTradePaperUrl("")
     setIsNewlyUploadedCustLicense(false)
@@ -124,16 +124,12 @@ export default function PartnersRegistry() {
 
   const openAddSupplier = () => {
     setSuppName("")
-    setSuppCountry("China")
     setSuppCity("")
     setSuppContactPerson("")
     setSuppPhone("")
     setSuppEmail("")
     setSuppAddress("")
-    setSuppCategory("Pharmaceutical Manufacturer")
     setSuppTaxId("")
-    setSuppTradePaperName("")
-    setSuppTradePaperUrl("")
     setEditingSupplier(null)
     setShowAddSupplierModal(true)
   }
@@ -141,33 +137,23 @@ export default function PartnersRegistry() {
   const openEditSupplier = (s: Supplier) => {
     setEditingSupplier(s)
     setSuppName(s.name || "")
-    setSuppCountry(s.country || "China")
     setSuppCity(s.city || "")
     setSuppContactPerson(s.contactPerson || "")
     setSuppPhone(s.phone || "")
     setSuppEmail(s.email || "")
     setSuppAddress(s.address || "")
-    setSuppCategory(s.category || "Pharmaceutical Manufacturer")
     setSuppTaxId(s.taxId || "")
-    setSuppTradePaperName(s.tradePaperFileName || "")
-    setSuppTradePaperUrl(s.tradePaperUrl || "")
     setShowAddSupplierModal(true)
   }
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, fileType: "trade" | "supplier" = "trade") => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     try {
-      const folder = fileType === "supplier" ? "suppliers" : "customers"
-      const res = await uploadFile(file, folder)
-      if (fileType === "supplier") {
-        setSuppTradePaperName(res.originalName)
-        setSuppTradePaperUrl(res.url)
-      } else {
-        setCustTradePaperName(res.originalName)
-        setCustTradePaperUrl(res.url)
-        setIsNewlyUploadedCustLicense(true)
-      }
+      const res = await uploadFile(file, "customers")
+      setCustTradePaperName(res.originalName)
+      setCustTradePaperUrl(res.url)
+      setIsNewlyUploadedCustLicense(true)
     } catch (err: any) {
       console.error("File upload failed:", err)
       showToast("Upload Failed", "warning", err.message || "Failed to upload file")
@@ -268,35 +254,31 @@ export default function PartnersRegistry() {
       if (editingSupplier) {
         erp.updateSupplier(editingSupplier.id, {
           name: suppName.trim(),
-          country: suppCountry,
-          city: suppCity,
-          contactPerson: suppContactPerson,
-          phone: suppPhone,
-          email: suppEmail,
-          address: suppAddress,
-          category: suppCategory,
-          taxId: suppTaxId,
-          tradePaperFileName: suppTradePaperName,
-          tradePaperUrl: suppTradePaperUrl,
+          country: "Ethiopia",
+          city: suppCity.trim(),
+          contactPerson: suppContactPerson.trim(),
+          phone: suppPhone.trim(),
+          email: suppEmail.trim(),
+          address: suppAddress.trim(),
+          category: "Agricultural Producer / Union",
+          taxId: suppTaxId.trim(),
         })
         showToast("Supplier Updated", "success", `Supplier ${suppName} successfully updated in registry.`)
       } else {
         const newSupp: Supplier = {
           id: `SUPP-${Date.now().toString().slice(-4)}`,
           name: suppName.trim(),
-          country: suppCountry,
-          city: suppCity,
-          contactPerson: suppContactPerson,
-          phone: suppPhone,
-          email: suppEmail,
-          address: suppAddress,
-          category: suppCategory,
-          taxId: suppTaxId,
+          country: "Ethiopia",
+          city: suppCity.trim(),
+          contactPerson: suppContactPerson.trim(),
+          phone: suppPhone.trim(),
+          email: suppEmail.trim(),
+          address: suppAddress.trim(),
+          category: "Agricultural Producer / Union",
+          taxId: suppTaxId.trim(),
           warehouseTarget: "WH1",
           rating: "A",
           status: "Active",
-          tradePaperFileName: suppTradePaperName,
-          tradePaperUrl: suppTradePaperUrl,
         }
         erp.addSupplier(newSupp)
         showToast("Supplier Added", "success", `New supplier ${suppName} added to registry.`)
@@ -447,6 +429,30 @@ export default function PartnersRegistry() {
                   className="w-full pl-9 pr-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-semibold outline-none focus:border-zinc-400"
                 />
               </div>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  await erp.reloadFromApi()
+                }}
+                disabled={isLoading}
+                title="Reload partners from server"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm shadow-emerald-700/20 hover:shadow-md hover:shadow-emerald-700/30 transition-all cursor-pointer shrink-0 disabled:opacity-50 active:scale-95 h-[38px]"
+              >
+                <RefreshCw className={`size-3.5 text-white shrink-0 ${isLoading ? "animate-spin" : ""}`} />
+                <span className="text-xs font-bold text-white tracking-tight">
+                  {isLoading ? "Reloading..." : "Reload"}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowBeginningBalancesModal(true)}
+                className="px-3.5 sm:px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-transform"
+                title="Maintain Partner Beginning Balances for Cutover"
+              >
+                <Users className="size-3.5" /> Maintain Beginning Balances
+              </button>
 
               {activeTab === "customers" ? (
                 <button
@@ -611,9 +617,9 @@ export default function PartnersRegistry() {
                 <thead className="bg-black/[0.02] border-b border-zinc-200/40 text-[10px] font-black tracking-wider text-zinc-400 uppercase">
                   <tr>
                     <th className="px-4 py-3">Supplier ID / Name</th>
-                    <th className="px-4 py-3">Category & Location</th>
+                    <th className="px-4 py-3">Location & Region</th>
                     <th className="px-4 py-3">Contact Details</th>
-                    <th className="px-4 py-3 text-center">Trade License</th>
+                    <th className="px-4 py-3">Tax ID / TIN</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -634,8 +640,8 @@ export default function PartnersRegistry() {
                             <Skeleton className="h-4 w-32 bg-zinc-200/80 rounded-md" />
                             <Skeleton className="h-3 w-40 bg-zinc-150/60 rounded-md mt-1.5" />
                           </td>
-                          <td className="px-4 py-4 text-center">
-                            <Skeleton className="h-6 w-32 bg-zinc-200/70 rounded-full mx-auto" />
+                          <td className="px-4 py-4">
+                            <Skeleton className="h-6 w-24 bg-zinc-200/70 rounded-lg" />
                           </td>
                           <td className="px-4 py-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
@@ -658,12 +664,10 @@ export default function PartnersRegistry() {
                           <div className="font-bold text-zinc-900 text-sm mt-0.5">{s.name}</div>
                         </td>
                         <td className="px-4 py-3.5">
-                          <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 text-zinc-800 border border-zinc-200">
-                            {s.category || "Supplier Partner"}
-                          </span>
-                          <div className="text-[11px] text-zinc-500 font-medium mt-1 flex items-center gap-1">
-                            <Globe className="size-3 text-zinc-400" /> {s.country} {s.city ? `(${s.city})` : ""}
-                          </div>
+                          <div className="text-xs font-bold text-zinc-800">{s.city || s.address || "Ethiopia"}</div>
+                          {s.address && s.city && (
+                            <div className="text-[11px] text-zinc-500 font-medium mt-0.5">{s.address}</div>
+                          )}
                         </td>
                         <td className="px-4 py-3.5">
                           <div className="font-bold text-zinc-900">{s.contactPerson || "N/A"}</div>
@@ -672,16 +676,10 @@ export default function PartnersRegistry() {
                             {s.email && <span className="flex items-center gap-1"><Mail className="size-3 text-zinc-400" /> {s.email}</span>}
                           </div>
                         </td>
-                        <td className="px-4 py-3.5 text-center">
-                          {s.tradePaperFileName ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                              <CheckCircle2 className="size-3 text-emerald-600" /> {s.tradePaperFileName}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                              <AlertCircle className="size-3 text-amber-500" /> Missing Trade License
-                            </span>
-                          )}
+                        <td className="px-4 py-3.5">
+                          <span className="font-mono font-bold text-xs text-zinc-700 bg-zinc-100 px-2 py-1 rounded-lg">
+                            {s.taxId || "—"}
+                          </span>
                         </td>
                         <td className="px-4 py-3.5 text-right whitespace-nowrap overflow-hidden">
                           <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -842,9 +840,11 @@ export default function PartnersRegistry() {
                       onChange={(e) => setCustWarehouseTarget(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
                     >
-                      <option value="WH1">WH1 - Ethiopia Agricultural Export Hub</option>
-                      <option value="WH2">WH2 - Central Veterinary Hub</option>
-                      <option value="WH3">WH3 - Regional Veterinary Depot</option>
+                      {warehouses.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.name || w.code || w.id}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -982,7 +982,7 @@ export default function PartnersRegistry() {
                           <div className="flex items-center gap-2 pt-1">
                             <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
                               <Upload className="size-3" /> Select File
-                              <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, "trade")} />
+                              <input type="file" className="hidden" onChange={handleFileUpload} />
                             </label>
                             <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{custTradePaperName || "No file chosen"}</span>
                             {custTradePaperUrl && (
@@ -1039,7 +1039,7 @@ export default function PartnersRegistry() {
             >
               <EditModalHeader
                 title={editingSupplier ? `Edit Supplier: ${editingSupplier.name}` : "Onboard New Supplier"}
-                subtitle={editingSupplier ? `ID: ${editingSupplier.id} • ${editingSupplier.category}` : "Register supplier details and contact profile."}
+                subtitle={editingSupplier ? `ID: ${editingSupplier.id} • ${editingSupplier.city || "Domestic"}` : "Register domestic supplier / union details and contact profile."}
                 onClose={() => setShowAddSupplierModal(false)}
                 onRequestDelete={editingSupplier ? () => handleDeleteSupplier(editingSupplier) : undefined}
                 deleteLabel="Delete Supplier Profile"
@@ -1048,47 +1048,13 @@ export default function PartnersRegistry() {
               <form onSubmit={handleSaveSupplier} className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Supplier Company Name *</label>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">Supplier / Farm / Union Name *</label>
                     <input
                       type="text"
                       required
                       value={suppName}
                       onChange={(e) => setSuppName(e.target.value)}
-                      placeholder="e.g. Hebei Vet Chem Ltd"
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Category</label>
-                    <select
-                      value={suppCategory}
-                      onChange={(e) => setSuppCategory(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    >
-                      <option value="Pharmaceutical Manufacturer">Pharmaceutical Manufacturer</option>
-                      <option value="Raw Materials Supplier">Raw Materials Supplier</option>
-                      <option value="Packaging Equipment Vendor">Packaging Equipment Vendor</option>
-                      <option value="Logistics Shipping Partner">Logistics Shipping Partner</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Country</label>
-                    <input
-                      type="text"
-                      value={suppCountry}
-                      onChange={(e) => setSuppCountry(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">City</label>
-                    <input
-                      type="text"
-                      value={suppCity}
-                      onChange={(e) => setSuppCity(e.target.value)}
+                      placeholder="e.g. Oromia Coffee Farmers Coop / Abyssinia Agro"
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
                     />
                   </div>
@@ -1098,20 +1064,20 @@ export default function PartnersRegistry() {
                       type="text"
                       value={suppTaxId}
                       onChange={(e) => setSuppTaxId(e.target.value)}
-                      placeholder="Tax Reg ID"
+                      placeholder="e.g. 0012345678"
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Contact Person</label>
                     <input
                       type="text"
                       value={suppContactPerson}
                       onChange={(e) => setSuppContactPerson(e.target.value)}
-                      placeholder="Account Officer"
+                      placeholder="e.g. Ato Bekele Tadesse"
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
                     />
                   </div>
@@ -1121,43 +1087,44 @@ export default function PartnersRegistry() {
                       type="text"
                       value={suppPhone}
                       onChange={(e) => setSuppPhone(e.target.value)}
-                      placeholder="+86 ..."
+                      placeholder="+251 91 123 4567"
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
                     />
                   </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Email Address</label>
                     <input
                       type="email"
                       value={suppEmail}
                       onChange={(e) => setSuppEmail(e.target.value)}
-                      placeholder="sales@vendor.com"
+                      placeholder="supplier@trade.et"
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">City / Region / Zone</label>
+                    <input
+                      type="text"
+                      value={suppCity}
+                      onChange={(e) => setSuppCity(e.target.value)}
+                      placeholder="e.g. Jimma / Sidama / Addis Ababa"
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
                     />
                   </div>
                 </div>
 
-                {/* Trade Paper File Upload */}
-                <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-bold text-zinc-900 block">Default Trade Paper / Manufacturer Registration</span>
-                      <span className="text-[10px] text-zinc-500 font-medium block">Pre-attached automatically for import Purchase Orders</span>
-                    </div>
-                    {suppTradePaperName && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full">
-                        <CheckCircle2 className="size-3 text-emerald-600" /> Attached
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-3 pt-1">
-                    <label className="cursor-pointer px-4 py-1.5 rounded-xl bg-zinc-900 text-white font-bold text-xs hover:bg-zinc-800 shadow-sm flex items-center gap-1.5">
-                      <Upload className="size-3.5" /> Select Trade Paper File
-                      <input type="file" className="hidden" onChange={(e) => handleFileUpload(e, "supplier")} />
-                    </label>
-                    <span className="text-xs font-mono text-zinc-600 truncate">{suppTradePaperName || "No file chosen"}</span>
-                  </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Physical Address / Farm Location</label>
+                  <input
+                    type="text"
+                    value={suppAddress}
+                    onChange={(e) => setSuppAddress(e.target.value)}
+                    placeholder="e.g. Woreda 04, Kebele 12 / Warehouse Depot 2"
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                  />
                 </div>
 
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
@@ -1216,6 +1183,13 @@ export default function PartnersRegistry() {
           setShowAddSupplierModal(false)
           setEditingSupplier(null)
         }}
+      />
+
+      {/* Peachtree / Sage 50 Partner Beginning Balances Cutover Modal */}
+      <PeachtreePartnerBalancesModal
+        isOpen={showBeginningBalancesModal}
+        onClose={() => setShowBeginningBalancesModal(false)}
+        initialType={activeTab === "customers" ? "Customer" : "Supplier"}
       />
 
       {/* Document Preview Modal */}

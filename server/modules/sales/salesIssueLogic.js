@@ -67,10 +67,12 @@ export function validateSalesIssueDraft(issue, inputItems) {
   if (!warehouse) errors.push("Warehouse is required.")
   if (!Array.isArray(items) || items.length === 0) errors.push("At least one item row is required.")
 
+  const isExport = /wh1|export/i.test(String(warehouse || ""))
+
   for (const [index, item] of items.entries()) {
     const label = `Row ${index + 1}`
     if (!item.item_id && !item.productId && !item.item_name) errors.push(`${label}: Item is required.`)
-    if (!item.batch_id && !item.batch_no) errors.push(`${label}: Batch is required.`)
+    if (!isExport && !item.batch_id && !item.batch_no) errors.push(`${label}: Batch is required.`)
     if (Number(item.quantity ?? item.qty) <= 0) errors.push(`${label}: Quantity must be greater than zero.`)
     if (Number(item.unit_price ?? item.price ?? item.unitPrice) < 0) errors.push(`${label}: Unit price must be greater than or equal to zero.`)
   }

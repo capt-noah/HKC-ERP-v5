@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken"
 import { config } from "../../config.js"
 import { pool } from "../../db/client.js"
+import { validateSession } from "./sessionService.js"
 
 const JWT_SECRET = config.jwtSecret
 
@@ -22,65 +23,95 @@ export function authenticateToken(req, res, next) {
     }
 
     try {
-      // Real-time verification: check if user still exists in database and is active
-      const [userRows] = await pool.query(
-        "SELECT id, username, roles, role, status, is_active FROM `users` WHERE id = ? OR LOWER(TRIM(username)) = LOWER(?) LIMIT 1",
-        [decodedUser.id, decodedUser.username]
-      )
-
-      const dbUser = Array.isArray(userRows) && userRows.length > 0 ? userRows[0] : null
-      if (!dbUser) {
+      // Enforce strict database session requirement: only sessions registered in user_sessions can access the system
+      if (!decodedUser.sessionId) {
         return res.status(401).json({
-          error: "Your user account has been deleted. Session terminated.",
-          code: "ACCOUNT_DELETED",
+          error: "Your session has expired or is no longer valid. Please log in again.",
+          code: "SESSION_EXPIRED",
         })
       }
 
-      const isInactive =
-        dbUser.status === "suspended" ||
-        dbUser.status === "inactive" ||
-        dbUser.status === "disabled" ||
-        dbUser.status === "deactivated" ||
-        dbUser.is_active === 0 ||
-        dbUser.is_active === false
+      const sessionCheck = await validateSession(decodedUser.sessionId)
 
-      if (isInactive) {
-        return res.status(403).json({
-          error: "Your user account has been deactivated. Session terminated.",
-          code: "ACCOUNT_SUSPENDED",
+      if (!sessionCheck.valid) {
+        const statusCode = sessionCheck.code === "ACCOUNT_SUSPENDED" ? 403 : 401
+        return res.status(statusCode).json({
+          error: sessionCheck.error,
+          code: sessionCheck.code || "SESSION_REVOKED",
         })
+      }
+
+      // Real-time live role sync: inherit latest permissions without requiring re-login
+      if (sessionCheck.user) {
+        let currentRoles = sessionCheck.user.roles
+        if (typeof currentRoles === "string") {
+          try {
+            currentRoles = JSON.parse(currentRoles)
+          } catch {
+            currentRoles = [sessionCheck.user.role || "viewer"]
+          }
+        }
+        if (Array.isArray(currentRoles) && currentRoles.length > 0) {
+          decodedUser.roles = currentRoles
+          decodedUser.role = currentRoles[0]
+        }
       }
 
       req.user = decodedUser
-      next()
+      req.sessionId = decodedUser.sessionId
+
+      // Expose active session database expiration timestamp on all authenticated responses
+      if (sessionCheck.user?.expires_at) {
+        res.setHeader("X-Session-Expires-At", new Date(sessionCheck.user.expires_at).toISOString())
+      }
+
+      return next()
     } catch (dbErr) {
       console.warn("[AUTH TOKEN DB CHECK WARNING]:", dbErr.message)
-      req.user = decodedUser
-      next()
+      return res.status(401).json({
+        error: "Session verification error. Please log in again.",
+        code: "SESSION_EXPIRED",
+      })
     }
   })
 }
 
 export function authorizeRoles(...allowedRoles) {
+  const flatRoles = allowedRoles.flat().map((r) => String(r).toLowerCase().trim())
+
   return (req, res, next) => {
     if (req.method === "OPTIONS") {
       return next()
     }
 
     if (!req.user) {
-      return res.status(401).json({ error: "Not authenticated" })
+      return res.status(401).json({ error: "Not authenticated", code: "UNAUTHORIZED" })
     }
-    
-    const userRoles = req.user.roles || (req.user.role ? [req.user.role] : [])
 
-    // Superadmin always has access
+    let userRoles = req.user.roles || (req.user.role ? [req.user.role] : [])
+    if (typeof userRoles === "string") {
+      try {
+        userRoles = JSON.parse(userRoles)
+      } catch {
+        userRoles = [userRoles]
+      }
+    }
+    if (!Array.isArray(userRoles)) {
+      userRoles = [String(userRoles)]
+    }
+    userRoles = userRoles.map((r) => String(r).toLowerCase().trim())
+
+    // Superadmin always has universal access across all modules
     if (userRoles.includes("superadmin")) {
       return next()
     }
 
-    const hasAccess = userRoles.some(role => allowedRoles.includes(role))
+    const hasAccess = userRoles.some((role) => flatRoles.includes(role))
     if (!hasAccess) {
-      return res.status(403).json({ error: "Insufficient permissions" })
+      return res.status(403).json({
+        error: `Access Denied: Role [${userRoles.join(", ")}] does not have required permissions [${flatRoles.join(", ")}].`,
+        code: "FORBIDDEN",
+      })
     }
 
     next()

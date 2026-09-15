@@ -1,14 +1,35 @@
 import { pool, db } from "./client.js"
 import * as schema from "./schema/index.js"
 import crypto from "node:crypto"
+import {
+  unwrapRow,
+  getTableColumns,
+  sanitizeSqlValue,
+  normalizeBodyToDbColumns,
+  parseJsonField,
+} from "./dbUtils.js"
+import { inventoryService } from "../modules/inventory/inventoryService.js"
+import { getDefaultWarehouseForType } from "../utils/warehouseUtils.js"
+
+export {
+  unwrapRow,
+  getTableColumns,
+  sanitizeSqlValue,
+  normalizeBodyToDbColumns,
+  parseJsonField,
+}
 
 // Master mapping from resource table name to Drizzle schema table object (for type-safe schema checks/migrations)
 export const tableMap = {
-  // Inventory (4)
+  // Inventory (8 Dedicated Relational Tables)
   warehouses: schema.warehouses,
-  inventory_products: schema.inventoryProducts,
+  export_products: schema.exportProducts,
+  pharma_products: schema.pharmaProducts,
+  pharma_product_batches: schema.pharmaProductBatches,
   stock_movements: schema.stockMovements,
   store_transfers: schema.storeTransfers,
+  store_transfer_items: schema.storeTransferItems,
+  export_warehouse_movements: schema.exportWarehouseMovements,
 
   // Sales & Purchasing (9)
   customers: schema.customers,
@@ -21,9 +42,10 @@ export const tableMap = {
   shipment_documents: schema.shipmentDocuments,
   hkc_doc_records: schema.hkcDocRecords,
 
-  // Finance & GL (10)
+  // Finance & GL (11)
   company_settings: schema.companySettings,
   chart_of_accounts: schema.chartOfAccounts,
+  gl_account_mappings: schema.glAccountMappings,
   journal_entries: schema.journalEntries,
   journal_entry_lines: schema.journalEntryLines,
   invoices: schema.invoices,
@@ -41,34 +63,16 @@ export const tableMap = {
   leave_types: schema.leaveTypes,
   leave_requests: schema.leaveRequests,
 
-  // Admin (2)
+  // Admin (3)
   users: schema.users,
   user_activity_logs: schema.userActivityLogs,
+  user_sessions: schema.userSessions,
 }
 
 export function getDrizzleTable(tableName) {
   return tableMap[tableName] || null
 }
 
-export function unwrapRow(row, storage) {
-  if (!row) return null
-  const isDoc = storage === "jsonb_document" || storage === "json_document"
-  if (isDoc) {
-    let payload = row.payload
-    if (typeof payload === "string") {
-      try {
-        payload = JSON.parse(payload)
-      } catch {
-        payload = {}
-      }
-    }
-    const merged = { ...(payload || {}), id: row.id || payload?.id }
-    if (row.created_at && !merged.created_at) merged.created_at = row.created_at
-    if (row.updated_at && !merged.updated_at) merged.updated_at = row.updated_at
-    return merged
-  }
-  return row
-}
 
 // ── Native Resilient MySQL CRUD Methods (Direct Pool Connection for Maximum Compatibility) ──
 
@@ -83,21 +87,34 @@ export async function drizzleListRows({ resource, query = {} }) {
   try {
     const conditions = []
     const params = []
+    const validCols = await getTableColumns(tableName)
 
     for (const [key, rawVal] of Object.entries(query)) {
       if (
         key === "limit" ||
         key === "offset" ||
         key === "order" ||
+        key === "sort" ||
+        key === "direction" ||
         key === "select" ||
+        key === "fields" ||
         key === "page" ||
         key === "pageSize" ||
+        key === "per_page" ||
         key === "search" ||
         key === "batch" ||
         key === "q" ||
-        key === "apikey"
-      )
+        key === "query" ||
+        key === "apikey" ||
+        key === "_t" ||
+        key === "_" ||
+        key === "t" ||
+        key === "timestamp" ||
+        key === "cacheBust" ||
+        key.startsWith("_")
+      ) {
         continue
+      }
       if (rawVal === undefined || rawVal === null || rawVal === "") continue
 
       const cleanVal = typeof rawVal === "string" && rawVal.startsWith("eq.") ? rawVal.slice(3) : rawVal
@@ -106,10 +123,36 @@ export async function drizzleListRows({ resource, query = {} }) {
         conditions.push(`id = ?`)
         params.push(cleanVal)
       } else if (isDoc) {
-        conditions.push(`JSON_UNQUOTE(JSON_EXTRACT(payload, '$.${key}')) = ?`)
-        params.push(String(cleanVal))
+        if (validCols && validCols.has(key)) {
+          conditions.push(`\`${key}\` = ?`)
+          params.push(cleanVal)
+        } else {
+          conditions.push(`JSON_UNQUOTE(JSON_EXTRACT(payload, '$.${key}')) = ?`)
+          params.push(String(cleanVal))
+        }
       } else {
-        conditions.push(`\`${key}\` = ?`)
+        let dbCol = key
+        if (validCols && !validCols.has(dbCol)) {
+          const aliases = {
+            warehouse: "warehouse_id",
+            warehouseId: "warehouse_id",
+            productId: "product_id",
+            customerId: "customer_id",
+            supplierId: "supplier_id",
+            orderId: "order_id",
+            salesOrderId: "sales_order_id",
+            salesIssueId: "sales_issue_id",
+            batchNo: "batch_no",
+            batchNumber: "batch_no",
+          }
+          if (aliases[key] && validCols.has(aliases[key])) {
+            dbCol = aliases[key]
+          } else {
+            // Unknown column on this table: ignore to prevent ER_BAD_FIELD_ERROR
+            continue
+          }
+        }
+        conditions.push(`\`${dbCol}\` = ?`)
         params.push(cleanVal)
       }
     }
@@ -223,35 +266,6 @@ export async function drizzleGetRow({ resource, id }) {
   }
 }
 
-const tableColumnsCache = new Map()
-
-async function getTableColumns(tableName) {
-  if (tableColumnsCache.has(tableName)) {
-    return tableColumnsCache.get(tableName)
-  }
-  try {
-    const [cols] = await pool.query(`SHOW COLUMNS FROM \`${tableName}\``)
-    const colNames = new Set(cols.map((c) => c.Field))
-    tableColumnsCache.set(tableName, colNames)
-    return colNames
-  } catch (err) {
-    console.warn(`[TABLE COLUMNS CHECK WARNING] \`${tableName}\`:`, err.message)
-    return null
-  }
-}
-
-function sanitizeSqlValue(val) {
-  if (val === undefined) return null
-  if (val instanceof Date) return val
-  if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) {
-    const d = new Date(val)
-    if (!isNaN(d.getTime())) return d
-  }
-  if (typeof val === "object" && val !== null) {
-    return JSON.stringify(val)
-  }
-  return val
-}
 
 export async function drizzleCreateRow({ resource, body }) {
   if (!resource || !resource.table) {
@@ -259,12 +273,58 @@ export async function drizzleCreateRow({ resource, body }) {
   }
 
   const tableName = resource.table
+  if (tableName === "pharma_products" || tableName === "export_products") {
+    return await inventoryService.createProduct({
+      ...body,
+      warehouse_id: body.warehouse_id || body.warehouse || (await getDefaultWarehouseForType(tableName === "export_products" ? "EXPORT_WH" : "PHARMA_WH")),
+    })
+  }
+  if (tableName === "pharma_product_batches") {
+    return await inventoryService.createBatch(body)
+  }
+  if (tableName === "stock_movements" || tableName === "export_warehouse_movements") {
+    return await inventoryService.recordMovement(body, tableName)
+  }
+  if (tableName === "store_transfers") {
+    return await inventoryService.createTransfer(body)
+  }
+
   const isDoc = resource.storage === "jsonb_document" || resource.storage === "json_document"
   const id = body?.id ? String(body.id) : crypto.randomUUID()
 
   try {
     if (isDoc) {
-      const { id: _ignoredId, ...payloadData } = body || {}
+      let rawData = { ...(body || {}) }
+      if (rawData.payload && typeof rawData.payload === "object" && !Array.isArray(rawData.payload)) {
+        rawData = { ...rawData, ...rawData.payload }
+        delete rawData.payload
+      }
+      const { id: _ignoredId, ...payloadData } = rawData
+
+      // Server-side de-duplication for directory tables (suppliers & customers)
+      if (tableName === "suppliers" || tableName === "customers") {
+        const candidateName = (payloadData.name || payloadData.client_company_name || "").toLowerCase().trim()
+        if (candidateName) {
+          const [existingRows] = await pool.query(`SELECT id, payload FROM \`${tableName}\``)
+          for (const row of existingRows) {
+            let rowPayload = row.payload
+            if (typeof rowPayload === "string") {
+              try { rowPayload = JSON.parse(rowPayload) } catch {}
+            }
+            const existingName = (rowPayload?.name || rowPayload?.client_company_name || "").toLowerCase().trim()
+            if (existingName === candidateName || String(row.id) === String(id)) {
+              // Merge and update existing record rather than creating duplicate
+              const merged = { ...(rowPayload || {}), ...payloadData, id: row.id }
+              await pool.query(
+                `UPDATE \`${tableName}\` SET payload = ?, updated_at = NOW(3) WHERE id = ?`,
+                [JSON.stringify(merged), row.id]
+              )
+              return { status: 200, body: merged }
+            }
+          }
+        }
+      }
+
       const payloadString = JSON.stringify({ id, ...payloadData })
       await pool.query(
         `INSERT INTO \`${tableName}\` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3))
@@ -274,11 +334,16 @@ export async function drizzleCreateRow({ resource, body }) {
       return { status: 200, body: { id, ...payloadData } }
     } else {
       const validCols = await getTableColumns(tableName)
-      const fields = Object.keys(body).filter((k) => k !== "created_at" && k !== "updated_at" && (!validCols || validCols.has(k)))
+      const normalizedBody = normalizeBodyToDbColumns(body, validCols)
+      if (!normalizedBody.id) normalizedBody.id = id
+
+      const fields = Object.keys(normalizedBody).filter(
+        (k) => k !== "created_at" && k !== "updated_at" && (!validCols || validCols.has(k))
+      )
       if (fields.length === 0) {
-        return { status: 200, body: { id, ...body } }
+        return { status: 200, body: unwrapRow({ id, ...body }, "relational") }
       }
-      const values = fields.map((k) => sanitizeSqlValue(body[k]))
+      const values = fields.map((k) => sanitizeSqlValue(normalizedBody[k]))
       const placeholders = fields.map(() => "?").join(", ")
       const colNames = fields.map((f) => `\`${f}\``).join(", ")
 
@@ -286,7 +351,7 @@ export async function drizzleCreateRow({ resource, body }) {
         `INSERT INTO \`${tableName}\` (${colNames}) VALUES (${placeholders})`,
         values
       )
-      return { status: 200, body: { id, ...body } }
+      return { status: 200, body: unwrapRow({ ...normalizedBody, id }, "relational") }
     }
   } catch (err) {
     console.error(`[MYSQL CREATE ERROR] ${tableName}:`, err)
@@ -300,8 +365,22 @@ export async function drizzleUpdateRow({ resource, id, body }) {
   }
 
   const tableName = resource.table
-  const isDoc = resource.storage === "jsonb_document" || resource.storage === "json_document"
   const cleanId = String(id).trim()
+
+  if (tableName === "pharma_products" || tableName === "export_products") {
+    return await inventoryService.updateProduct(cleanId, body)
+  }
+  if (tableName === "pharma_product_batches") {
+    return await inventoryService.updateBatch(cleanId, body)
+  }
+  if (tableName === "stock_movements" || tableName === "export_warehouse_movements") {
+    return await inventoryService.updateMovement(cleanId, body, tableName)
+  }
+  if (tableName === "store_transfers") {
+    return await inventoryService.updateTransfer(cleanId, body)
+  }
+
+  const isDoc = resource.storage === "jsonb_document" || resource.storage === "json_document"
 
   try {
     if (isDoc) {
@@ -309,7 +388,12 @@ export async function drizzleUpdateRow({ resource, id, body }) {
       const existingPayload = (getRes.status === 200 && getRes.body) ? getRes.body : {}
       const targetId = existingPayload.id || cleanId
 
-      const mergedPayload = { ...existingPayload, ...body, id: targetId }
+      let rawUpdate = { ...(body || {}) }
+      if (rawUpdate.payload && typeof rawUpdate.payload === "object" && !Array.isArray(rawUpdate.payload)) {
+        rawUpdate = { ...rawUpdate, ...rawUpdate.payload }
+        delete rawUpdate.payload
+      }
+      const mergedPayload = { ...existingPayload, ...rawUpdate, id: targetId }
       const payloadString = JSON.stringify(mergedPayload)
 
       const [updateResult] = await pool.query(
@@ -333,17 +417,21 @@ export async function drizzleUpdateRow({ resource, id, body }) {
       const targetDbId = existingRow?.id || cleanId
 
       const validCols = await getTableColumns(tableName)
-      const fields = Object.keys(body).filter((k) => k !== "id" && k !== "created_at" && (!validCols || validCols.has(k)))
+      const normalizedBody = normalizeBodyToDbColumns(body, validCols)
+
+      const fields = Object.keys(normalizedBody).filter(
+        (k) => k !== "id" && k !== "created_at" && (!validCols || validCols.has(k))
+      )
       if (fields.length === 0) {
-        return { status: 200, body: { id: targetDbId, ...body } }
+        return { status: 200, body: unwrapRow({ id: targetDbId, ...existingRow, ...body }, "relational") }
       }
 
       const setClauses = fields.map((f) => `\`${f}\` = ?`).join(", ")
-      const values = fields.map((k) => sanitizeSqlValue(body[k]))
+      const values = fields.map((k) => sanitizeSqlValue(normalizedBody[k]))
       values.push(String(targetDbId))
 
       await pool.query(`UPDATE \`${tableName}\` SET ${setClauses} WHERE id = ?`, values)
-      return { status: 200, body: { id: targetDbId, ...body } }
+      return { status: 200, body: unwrapRow({ id: targetDbId, ...existingRow, ...normalizedBody }, "relational") }
     }
   } catch (err) {
     console.error(`[MYSQL UPDATE ERROR] ${tableName}:${id}:`, err)
@@ -358,6 +446,20 @@ export async function drizzleDeleteRow({ resource, id }) {
 
   const tableName = resource.table
   const cleanId = String(id).trim()
+
+  if (tableName === "pharma_products" || tableName === "export_products") {
+    return await inventoryService.deleteProduct(cleanId)
+  }
+  if (tableName === "pharma_product_batches") {
+    return await inventoryService.deleteBatch(cleanId)
+  }
+  if (tableName === "stock_movements" || tableName === "export_warehouse_movements") {
+    return await inventoryService.deleteMovement(cleanId, tableName)
+  }
+  if (tableName === "store_transfers") {
+    return await inventoryService.deleteTransfer(cleanId)
+  }
+
   try {
     if (tableName === "users") {
       // 1. Decouple/nullify foreign keys in user_activity_logs
@@ -378,6 +480,15 @@ export async function drizzleDeleteRow({ resource, id }) {
 
     const getRes = await drizzleGetRow({ resource, id: cleanId })
     const targetDbId = getRes.body?.id || cleanId
+
+    // Clean up dependent relational movements and batches before deleting the product
+    if (tableName === "export_products") {
+      await pool.query("DELETE FROM export_warehouse_movements WHERE product_id = ?", [String(targetDbId)]).catch(() => {})
+    }
+    if (tableName === "pharma_products") {
+      await pool.query("DELETE FROM pharma_product_batches WHERE product_id = ?", [String(targetDbId)]).catch(() => {})
+    }
+
     await pool.query(`DELETE FROM \`${tableName}\` WHERE id = ?`, [String(targetDbId)])
     return { status: 200, body: { ok: true, deletedId: id } }
   } catch (err) {
@@ -412,15 +523,17 @@ export async function drizzleReplaceRows({ resource, body }) {
           [id, payloadString]
         )
       } else {
-        const fields = Object.keys(item)
+        const validCols = await getTableColumns(tableName)
+        const normalizedItem = normalizeBodyToDbColumns(item, validCols)
+        if (!normalizedItem.id) normalizedItem.id = id
+
+        const fields = Object.keys(normalizedItem).filter(
+          (k) => k !== "created_at" && k !== "updated_at" && (!validCols || validCols.has(k))
+        )
         const colNames = fields.map((f) => `\`${f}\``).join(", ")
         const placeholders = fields.map(() => "?").join(", ")
         const updates = fields.filter((f) => f !== "id").map((f) => `\`${f}\` = VALUES(\`${f}\`)`).join(", ")
-        const values = fields.map((k) => {
-          const val = item[k]
-          if (typeof val === "object" && val !== null) return JSON.stringify(val)
-          return val
-        })
+        const values = fields.map((k) => sanitizeSqlValue(normalizedItem[k]))
 
         const sql = `INSERT INTO \`${tableName}\` (${colNames}) VALUES (${placeholders}) ${
           updates.length > 0 ? `ON DUPLICATE KEY UPDATE ${updates}` : ""

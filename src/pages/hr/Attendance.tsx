@@ -236,6 +236,9 @@ export default function Attendance() {
                 { label: "Mark All Present", onClick: markAllPresent, variant: "secondary" },
                 { label: "Mark All Absent", onClick: markAllAbsent, variant: "secondary" },
               ]}
+              onReload={refresh}
+              isReloading={loading}
+              reloadTooltip="Reload attendance records from server"
               secondary={
                 <input
                   type="date"

@@ -7,6 +7,8 @@ import { authRouter } from "../modules/auth/authRouter.js"
 import { authenticateToken, authorizeRoles } from "../modules/auth/authMiddleware.js"
 import { activityLoggerMiddleware } from "../modules/common/activityLogger.js"
 
+import { inventoryRouter } from "./inventoryRouter.js"
+import { hrRouter } from "./hrRouter.js"
 import { uploadRouter } from "./uploadRouter.js"
 
 export const masterRouter = Router()
@@ -18,6 +20,14 @@ masterRouter.get(["/health", "/api/health"], (_req, res) => {
 
 // Auth routes (unprotected for login)
 masterRouter.use("/api/auth", authRouter)
+
+// Anti-caching headers on all API routes so browsers & devices never get stale 304 or cached data
+masterRouter.use("/api", (_req, res, next) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0")
+  res.set("Pragma", "no-cache")
+  res.set("Expires", "0")
+  next()
+})
 
 // Protect all other /api routes
 masterRouter.use("/api", authenticateToken)
@@ -34,6 +44,8 @@ masterRouter.get("/api", (_req, res) => {
 masterRouter.use("/api", uploadRouter)
 masterRouter.use("/api", salesRouter)
 masterRouter.use("/api", financeRouter)
+masterRouter.use("/api", inventoryRouter)
+masterRouter.use("/api", hrRouter)
 masterRouter.use("/api", crudRouter)
 
 // Catch-all 404 for unmatched /api routes only

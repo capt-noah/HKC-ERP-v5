@@ -529,6 +529,11 @@ export default function Expenses() {
                   variant: "primary",
                 },
               ]}
+              onReload={async () => {
+                await store.reloadFromApi()
+              }}
+              isReloading={isLoading}
+              reloadTooltip="Reload expense claims from server"
             />
 
             {/* Expense Table List */}
@@ -602,7 +607,7 @@ export default function Expenses() {
                             </span>
                           </td>
                           <td className="py-3.5 text-right font-mono font-black text-black">
-                            ETB {exp.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ETB {Number(exp.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className="py-3.5 text-right font-mono font-bold text-emerald-800">
                             ETB {netAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

@@ -121,7 +121,7 @@ export function generateProcessingServiceRevenueJournalEntry(order) {
   const orderId = order.id || order.reference_number || "PS-0001"
 
   return {
-    id: `JE-PS-${orderId.replace(/[^a-zA-Z0-9]/g, "")}`,
+    id: `JE-PS-${orderId}`,
     journalNumber: `JV-PS-${Date.now().toString().slice(-4)}`,
     date: new Date().toISOString().split("T")[0],
     reference: `Processing Fee - ${orderId} (${clientName})`,

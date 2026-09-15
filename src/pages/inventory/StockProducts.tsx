@@ -25,6 +25,8 @@ import {
   resolveWarehouseScope,
   isWarehouseInScope,
   isProductInWarehouseScope,
+  isExportWarehouse,
+  isPharmaWarehouse,
 } from "@/lib/warehouses"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
@@ -62,6 +64,8 @@ interface StockEditForm {
   expiry: string
   entryDate?: string
   leaveDate?: string
+  quantityPerPack?: string
+  numberOfCartons?: string
   unit: string
   unitCost: string
   sellingPrice: string
@@ -72,13 +76,6 @@ interface StockEditForm {
 
 function money(value: number) {
   return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function displayDate(value?: string) {
-  if (!value) return "-"
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return value
-  return parsed.toISOString().slice(0, 10)
 }
 
 function ProductTableSkeletonRows({ colSpan }: { colSpan: number }) {
@@ -116,22 +113,16 @@ export default function StockProducts() {
     ? allProducts.filter(p => isProductInWarehouseScope(p, resolvedWarehouseIds))
     : allProducts
 
-  const isLoading = erp.isLoading()
+  const isLoading = erp.isInventoryLoading()
   const warehouseRecords = (isInventoryAdminOnly && resolvedWarehouseIds.length > 0)
     ? allWarehouses.filter(w => isWarehouseInScope(w.id, resolvedWarehouseIds) || isWarehouseInScope(w.code, resolvedWarehouseIds))
     : allWarehouses
-  const isWH1 = (w: string) => w === "WH1" || w === "WH1-AGRI-EXP"
+  const isWH1 = (w: string) => isExportWarehouse(w, allWarehouses)
 
   const hasCommercialStoreAccess =
     !isInventoryAdminOnly ||
     resolvedWarehouseIds.length === 0 ||
-    resolvedWarehouseIds.some(
-      (id) =>
-        id.toUpperCase().includes("WH2") ||
-        id.toUpperCase().includes("WH3") ||
-        id.toUpperCase().includes("WH-02") ||
-        id.toUpperCase().includes("WH-03")
-    )
+    resolvedWarehouseIds.some((id) => isPharmaWarehouse(id, allWarehouses))
 
   const [searchParams] = useSearchParams()
   const initialSearch = searchParams.get("search") || ""
@@ -141,6 +132,23 @@ export default function StockProducts() {
     ? (warehouseRecords[0].code || warehouseRecords[0].id)
     : "ALL"
   const [selectedWarehouse, setSelectedWarehouse] = useState(defaultWarehouse)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    try {
+      await erp.loadInventoryData(true)
+      showToast("Inventory Refreshed", "success", "Latest warehouse inventory loaded.")
+    } catch (err: any) {
+      showToast("Refresh Failed", "warning", err?.message || "Failed to reload inventory.")
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  useEffect(() => {
+    void erp.loadInventoryData()
+  }, [])
 
   useEffect(() => {
     if (!hasCommercialStoreAccess && activeTab !== "Register") {
@@ -167,6 +175,8 @@ export default function StockProducts() {
   const [addDescription, setAddDescription] = useState("")
   const [addVoucherNo, setAddVoucherNo] = useState("")
   const [addCustomer, setAddCustomer] = useState("")
+  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
+  const [saveSupplierToRegistry, setSaveSupplierToRegistry] = useState(false)
   const [addPlateNumber, setAddPlateNumber] = useState("")
   const [addDosage, setAddDosage] = useState("")
   const [addShelfNo, setAddShelfNo] = useState("")
@@ -194,6 +204,7 @@ export default function StockProducts() {
   const [editingSubEntry, setEditingSubEntry] = useState<{ product: Product; entry: WH1Entry } | null>(null)
   const [editSubEntryVoucherNo, setEditSubEntryVoucherNo] = useState("")
   const [editSubEntryCustomer, setEditSubEntryCustomer] = useState("")
+  const [showEditSubSupplierDropdown, setShowEditSubSupplierDropdown] = useState(false)
   const [editSubEntryPlateNumber, setEditSubEntryPlateNumber] = useState("")
   const [editSubEntryQty, setEditSubEntryQty] = useState("")
   const [editSubEntryPrice, setEditSubEntryPrice] = useState("")
@@ -201,6 +212,7 @@ export default function StockProducts() {
   const [editSubEntryLeave, setEditSubEntryLeave] = useState("")
   const [editSubEntryNotes, setEditSubEntryNotes] = useState("")
   const [isSavingSubEdit, setIsSavingSubEdit] = useState(false)
+  const [showEditParentSupplierDropdown, setShowEditParentSupplierDropdown] = useState(false)
 
   // Bin Card Movement Modal State (WH2 / WH3)
   const [binEntryModal, setBinEntryModal] = useState<{
@@ -306,6 +318,8 @@ export default function StockProducts() {
     setAddDescription("")
     setAddVoucherNo("")
     setAddCustomer("")
+    setShowSupplierDropdown(false)
+    setSaveSupplierToRegistry(false)
     setAddPlateNumber("")
     setAddDosage("")
     setAddShelfNo("")
@@ -327,12 +341,12 @@ export default function StockProducts() {
   const warehouseOptions = useMemo(() => [
     { value: "ALL", label: "All Warehouses" },
     ...warehouseRecords.map((warehouse) => ({
-      value: warehouse.code || warehouse.id,
+      value: warehouse.id || warehouse.code,
       label: warehouse.name || warehouse.code || warehouse.id,
     })),
   ], [warehouseRecords])
 
-  const warehouseKeyMap = useMemo(() => new Map(warehouseRecords.map((warehouse) => [warehouse.code || warehouse.id, new Set([warehouse.id, warehouse.code, warehouse.name].filter(Boolean))])), [warehouseRecords])
+  const warehouseKeyMap = useMemo(() => new Map(warehouseRecords.map((warehouse) => [warehouse.id || warehouse.code, new Set([warehouse.id, warehouse.code, warehouse.name].filter(Boolean))])), [warehouseRecords])
 
   // Expiry summary for warehouse stock
   const expirySummary = useMemo(() => {
@@ -345,16 +359,23 @@ export default function StockProducts() {
   // Filters for Table
   const filteredProducts = useMemo(() => {
     return products.filter((prod) => {
-      const matchesSearch = prod.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                            prod.sku.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            (prod.dosage && prod.dosage.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                            (prod.shelfNo && prod.shelfNo.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                            prod.batch.toLowerCase().includes(searchQuery.toLowerCase())
+      const name = (prod.name || "").toLowerCase()
+      const sku = (prod.sku || "").toLowerCase()
+      const dosage = (prod.dosage || "").toLowerCase()
+      const shelfNo = (prod.shelfNo || "").toLowerCase()
+      const batch = (prod.batch || "").toLowerCase()
+      const q = searchQuery.toLowerCase()
+
+      const matchesSearch = name.includes(q) || sku.includes(q) || dosage.includes(q) || shelfNo.includes(q) || batch.includes(q)
       const selectedWarehouseKeys = warehouseKeyMap.get(selectedWarehouse) || new Set([selectedWarehouse])
+      const sb = Array.isArray(prod.stockBreakdown) && prod.stockBreakdown.length > 0
+        ? prod.stockBreakdown
+        : [{ warehouse: prod.warehouse || "WH1", qty: prod.quantity || 0 }]
+
       const matchesWarehouse =
         selectedWarehouse === "ALL" ||
         selectedWarehouseKeys.has(prod.warehouse) ||
-        prod.stockBreakdown.some((breakdown) => selectedWarehouseKeys.has(breakdown.warehouse))
+        sb.some((breakdown) => selectedWarehouseKeys.has(breakdown.warehouse))
 
       let matchesExpiry = true
       if (expiryFilter !== "ALL") {
@@ -381,10 +402,19 @@ export default function StockProducts() {
       { key: "name", label: "Item", align: "left" },
     ]
 
-    if (isWH1(selectedWarehouse)) {
+    if (selectedWarehouse === "ALL") {
+      cols.push(
+        { key: "warehouse", label: "Warehouse", align: "left" },
+        { key: "details", label: "Supplier / Dosage", align: "left" },
+        { key: "cartons", label: "Cartons / Plate", align: "left" },
+        { key: "quantity", label: "Total Quantity", align: "right" },
+        { key: "unit", label: "UOM / Unit", align: "left" },
+        { key: "totalStockValue", label: "Stock Value", align: "right" }
+      )
+    } else if (isWH1(selectedWarehouse)) {
       cols.push(
         { key: "voucherNo", label: "Voucher No", align: "left" },
-        { key: "customer", label: "Customer", align: "left" },
+        { key: "customer", label: "Supplier", align: "left" },
         { key: "plateNumber", label: "Plate No", align: "left" },
         { key: "quantity", label: "Total Quantity", align: "right" },
         { key: "unit", label: "UOM", align: "left" },
@@ -394,8 +424,6 @@ export default function StockProducts() {
       cols.push(
         { key: "dosage", label: "Strength / Dosage", align: "left" },
         { key: "shelfNo", label: "Shelf Number", align: "left" },
-        { key: "manufacturingDate", label: "MFG", align: "left" },
-        { key: "expiryDate", label: "EXP", align: "left" },
         { key: "numberOfCartons", label: "Cartons", align: "right" },
         { key: "quantityPerPack", label: "Quantity/Pack", align: "right" },
         { key: "quantity", label: "Total Quantity", align: "right" },
@@ -411,6 +439,9 @@ export default function StockProducts() {
   const productsTable = useResizableTable(currentProductColumns, filteredProducts, {
     sku: 110,
     name: 180,
+    warehouse: 100,
+    details: 140,
+    cartons: 110,
     voucherNo: 110,
     customer: 130,
     plateNumber: 110,
@@ -465,6 +496,19 @@ export default function StockProducts() {
 
     setIsSavingAdd(true)
     try {
+      if (isWH1Form && saveSupplierToRegistry && addCustomer.trim()) {
+        const suppName = addCustomer.trim()
+        const existingSupp = erp.getSuppliers().find((s) => s.name.toLowerCase() === suppName.toLowerCase())
+        if (!existingSupp) {
+          erp.addSupplier({
+            id: `SUP-${Date.now()}`,
+            name: suppName,
+            country: "Ethiopia",
+            status: "Active",
+          })
+        }
+      }
+
       const now = new Date().toISOString()
       const selectedWarehouseRecord = warehouseRecords.find((item) => (item.code || item.id) === addWarehouse || item.id === addWarehouse)
       
@@ -595,11 +639,28 @@ export default function StockProducts() {
     await erp.addWH1LeaveEntry(productId, leaveData)
   }
 
+  const handleSaveWH1Reject = async (
+    productId: string,
+    rejectData: {
+      entryId?: string
+      date: string
+      voucherNo?: string
+      party?: string
+      plateNumber?: string
+      rejectQuantity: number
+      reason?: string
+      notes?: string
+    }
+  ) => {
+    await erp.addWH1RejectEntry(productId, rejectData)
+  }
+
   // Handle Edit/Delete Sub Entry
   const openEditSubEntry = (product: Product, entry: WH1Entry) => {
     setEditingSubEntry({ product, entry })
     setEditSubEntryVoucherNo(entry.voucherNo || "")
     setEditSubEntryCustomer(entry.customer || "")
+    setShowEditSubSupplierDropdown(false)
     setEditSubEntryPlateNumber(entry.plateNumber || "")
     setEditSubEntryQty(String(entry.quantityReceived))
     setEditSubEntryPrice(String(entry.unitPrice))
@@ -617,7 +678,8 @@ export default function StockProducts() {
       const difference = editingSubEntry.entry.quantityReceived - nextQty
       const nextRemaining = Math.max(0, originalRemaining - difference)
 
-      await erp.updateWH1Entry(editingSubEntry.product.id, editingSubEntry.entry.entryId, {
+      const targetEntryId = editingSubEntry.entry.entryId || editingSubEntry.entry.id || ""
+      await erp.updateWH1Entry(editingSubEntry.product.id, targetEntryId, {
         voucherNo: editSubEntryVoucherNo.trim() || undefined,
         customer: editSubEntryCustomer.trim() || undefined,
         plateNumber: editSubEntryPlateNumber.trim() || undefined,
@@ -680,24 +742,33 @@ export default function StockProducts() {
   // Normal product edit dialog
   const openEditProduct = (product: Product) => {
     setEditingProduct(product)
+    setShowEditParentSupplierDropdown(false)
+    const whRecord = allWarehouses.find(
+      (w) => w.id === product.warehouse || w.code === product.warehouse || w.name === product.warehouse
+    )
+    const resolvedWarehouse = whRecord?.id || product.warehouse || (isWH1(product.warehouse) ? "WH1" : "WH2")
+    const isWh1 = isWH1(resolvedWarehouse)
+
     setEditForm({
       name: product.name,
       sku: product.sku,
       voucherNo: product.voucherNo || (product.wh1Entries?.[0]?.voucherNo || ""),
       customer: product.customer || (product.wh1Entries?.[0]?.customer || ""),
       plateNumber: product.plateNumber || (product.wh1Entries?.[0]?.plateNumber || ""),
-      dosage: product.dosage || "",
-      shelfNo: product.shelfNo || "",
+      dosage: product.dosage || (product as any).strength || (product as any).dosage_form || "",
+      shelfNo: product.shelfNo || (product as any).shelf_number || (product as any).shelf_no || "",
       category: product.category || "",
-      warehouse: product.warehouse,
-      batch: product.batch || "",
-      expiry: product.expiry || "",
+      warehouse: resolvedWarehouse,
+      batch: product.batch || (product.batches?.[0]?.batchNo || ""),
+      expiry: product.expiry || (product.batches?.[0]?.expiry || ""),
       entryDate: product.entryDate || "",
       leaveDate: product.leaveDate || "",
-      unit: product.unit,
+      quantityPerPack: String(product.quantityPerPack || (product as any).quantity_per_pack || 1),
+      numberOfCartons: String(product.numberOfCartons || (product as any).number_of_cartons || 0),
+      unit: product.unit || (isWh1 ? "Quintal" : "Box"),
       unitCost: String(product.unitCost || 0),
       sellingPrice: String(product.sellingPrice || 0),
-      price: isWH1(product.warehouse) ? String(product.unitCost || 0) : "",
+      price: isWh1 ? String(product.unitCost || 0) : "",
       reorderLevel: String(product.reorderLevel || ""),
       approvalStatus: product.approvalStatus || "Approved",
     })
@@ -711,24 +782,27 @@ export default function StockProducts() {
     if (!editingProduct) return
     const name = editForm.name.trim()
     const sku = editForm.sku.trim()
-    const voucherNo = editForm.voucherNo?.trim() || undefined
-    const customer = editForm.customer?.trim() || undefined
-    const plateNumber = editForm.plateNumber?.trim() || undefined
-    const dosage = editForm.dosage?.trim() || undefined
-    const shelfNo = editForm.shelfNo?.trim() || undefined
-    const batch = editForm.batch.trim()
     const warehouse = editForm.warehouse
-    const expiry = isWH1(warehouse) ? "" : editForm.expiry
-    const entryDate = isWH1(warehouse) ? editForm.entryDate : undefined
-    const leaveDate = (isWH1(warehouse) && editForm.leaveDate) ? editForm.leaveDate : undefined
+    const isWh1 = isWH1(warehouse)
+    const voucherNo = isWh1 ? (editForm.voucherNo?.trim() || undefined) : undefined
+    const customer = isWh1 ? (editForm.customer?.trim() || undefined) : undefined
+    const plateNumber = isWh1 ? (editForm.plateNumber?.trim() || undefined) : undefined
+    const dosage = isWh1 ? undefined : (editForm.dosage?.trim() || undefined)
+    const shelfNo = isWh1 ? undefined : (editForm.shelfNo?.trim() || undefined)
+    const batch = isWh1 ? "" : editForm.batch.trim()
+    const expiry = isWh1 ? "" : editForm.expiry
+    const entryDate = isWh1 ? editForm.entryDate : undefined
+    const leaveDate = (isWh1 && editForm.leaveDate) ? editForm.leaveDate : undefined
     const unit = editForm.unit.trim()
+    const quantityPerPack = isWh1 ? undefined : (editForm.quantityPerPack ? Number(editForm.quantityPerPack) : undefined)
+    const numberOfCartons = isWh1 ? undefined : (editForm.numberOfCartons ? Number(editForm.numberOfCartons) : undefined)
     
-    const priceVal = isWH1(warehouse) ? Number(editForm.price || 0) : Number(editForm.unitCost || 0)
+    const priceVal = isWh1 ? Number(editForm.price || 0) : Number(editForm.unitCost || 0)
     const unitCost = priceVal
     const sellingPrice = priceVal
     const reorderLevel = editForm.reorderLevel === "" ? undefined : Number(editForm.reorderLevel)
 
-    if (isWH1(warehouse)) {
+    if (isWh1) {
       if (!name || !sku || !warehouse || !entryDate || !unit) {
         showToast("Cannot save stock details", "warning", "Complete item name, ID (SKU), warehouse, entry date, and UOM.")
         return
@@ -750,13 +824,18 @@ export default function StockProducts() {
       }
     }
 
-    const selectedWarehouseRecord = warehouseRecords.find((item) => (item.code || item.id) === warehouse || item.id === warehouse)
+    const selectedWarehouseRecord = warehouseRecords.find((item) => (item.id || item.code) === warehouse || item.code === warehouse)
     const nextBreakdown = editingProduct.stockBreakdown.length
       ? editingProduct.stockBreakdown.map((item, index) => index === 0 ? { ...item, warehouse } : item)
       : [{ warehouse, qty: editingProduct.quantity }]
-    const nextBatches = editingProduct.batches.length
+    const nextBatches = isWh1 ? [] : (editingProduct.batches.length
       ? editingProduct.batches.map((item, index) => index === 0 ? { ...item, batchNo: batch, expiry: expiry || item.expiry } : item)
-      : [{ batchNo: batch || "BATCH-01", qty: editingProduct.quantity, expiry: expiry || "", status: "Released" as const }]
+      : [{ batchNo: batch || "BATCH-01", qty: editingProduct.quantity, expiry: expiry || "", status: "Released" as const }])
+
+    const hasWH1Entries = isWh1 && Array.isArray(editingProduct.wh1Entries) && (editingProduct.wh1Entries || []).length > 0
+    const computedTotalStockVal = hasWH1Entries
+      ? (editingProduct.wh1Entries || []).reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || unitCost || 0)), 0)
+      : editingProduct.quantity * unitCost
 
     setIsSavingEdit(true)
     try {
@@ -775,11 +854,13 @@ export default function StockProducts() {
         expiry,
         entryDate,
         leaveDate,
+        quantityPerPack,
+        numberOfCartons,
         unit,
         unitCost,
         sellingPrice,
         reorderLevel,
-        totalStockValue: editingProduct.quantity * unitCost,
+        totalStockValue: computedTotalStockVal,
         stockBreakdown: nextBreakdown,
         batches: nextBatches,
         approvalStatus: editForm.approvalStatus,
@@ -940,6 +1021,8 @@ export default function StockProducts() {
                     searchValue={searchQuery}
                     onSearchChange={setSearchQuery}
                     searchPlaceholder="Search product name, SKU..."
+                    onRefresh={handleRefresh}
+                    isRefreshing={isRefreshing}
                     filters={[
                       ...(warehouseRecords.length > 1
                         ? [
@@ -1009,14 +1092,215 @@ export default function StockProducts() {
                           const isWH1Item = isWH1(prod.warehouse)
                           const isExpanded = expandedProductIds.has(prod.id)
 
-                          // Render Parent Row for WH1 items
-                          if (isWH1Item && isWH1(selectedWarehouse)) {
-                            const entries = prod.wh1Entries || []
-                            const totalReceived = entries.reduce((sum, e) => sum + e.quantityReceived, 0)
+                          // WH1 entries and calculations
+                          const wh1Entries = prod.wh1Entries || []
+                          const wh1TotalReceived = wh1Entries.reduce((sum, e) => sum + Number(e.quantityReceived || 0), 0)
 
+                          // Pharma bin card calculations
+                          const binEntries = prod.binCardEntries || []
+                          const pharmaTotalReceived = binEntries.reduce((sum, e) => sum + Number(e.qtyReceived || 0), 0)
+                          const pharmaTotalIssued = binEntries.reduce((sum, e) => sum + Number(e.qtyIssued || 0), 0)
+                          const pharmaBalance = binEntries.length > 0
+                            ? Number(binEntries[binEntries.length - 1].balance ?? 0)
+                            : (Array.isArray(prod.batches) && prod.batches.length > 0)
+                              ? prod.batches.reduce((sum, b) => sum + Number(b.qty ?? (b as any).quantity ?? 0), 0)
+                              : Number(prod.quantity ?? 0)
+                          const packSize = Number(prod.quantityPerPack || (prod as any).quantity_per_pack || 0)
+                          const explicitCartons = Number(prod.numberOfCartons || (prod as any).number_of_cartons || 0)
+                          const computedCartons = explicitCartons > 0 ? explicitCartons : (packSize > 0 ? Math.floor(pharmaBalance / packSize) : 0)
+
+                          const displayQuantity = isWH1Item ? Number(prod.quantity || 0) : pharmaBalance
+                          const computedStockValue = Number(prod.totalStockValue || 0) > 0
+                            ? Number(prod.totalStockValue)
+                            : (isWH1Item
+                                ? displayQuantity * Number(prod.unitCost || 0)
+                                : (Array.isArray(prod.batches) && prod.batches.length > 0)
+                                  ? prod.batches.reduce((sum, b) => sum + (Number(b.qty ?? (b as any).quantity ?? 0) * Number((b as any).unitPrice ?? (prod as any).unitPrice ?? (prod as any).unit_price ?? 0)), 0)
+                                  : (displayQuantity * Number((prod as any).unitPrice ?? (prod as any).unit_price ?? prod.unitCost ?? 0)))
+
+                          // 1. ALL Warehouses View
+                          if (selectedWarehouse === "ALL") {
                             return (
                               <Fragment key={prod.id}>
-                                <tr className="hover:bg-white/45 cursor-pointer transition-colors font-semibold text-xs border-b border-zinc-100">
+                                <tr
+                                  onClick={() => toggleRowExpand(prod.id)}
+                                  className="hover:bg-white/45 cursor-pointer transition-colors font-semibold text-xs border-b border-zinc-100"
+                                >
+                                  {/* ID / SKU */}
+                                  <td className="py-4 px-4 overflow-hidden">
+                                    <div className="flex items-center gap-1.5 font-mono text-[10px] text-zinc-400 font-bold uppercase">
+                                      <button 
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); toggleRowExpand(prod.id) }} 
+                                        className="p-1 hover:bg-zinc-100 rounded-md"
+                                      >
+                                        {isExpanded ? <ChevronDown className="size-3 text-zinc-800" /> : <ChevronRight className="size-3 text-zinc-400" />}
+                                      </button>
+                                      <span className="truncate">{prod.sku}</span>
+                                    </div>
+                                  </td>
+
+                                  {/* Item Name */}
+                                  <td className="py-4 px-4 overflow-hidden font-black text-zinc-950 leading-tight">
+                                    <div className="flex items-center gap-2">
+                                      <span className="truncate">{prod.name}</span>
+                                      {isWH1Item ? (
+                                        wh1Entries.length > 0 && (
+                                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[9px] font-black text-emerald-800 border border-emerald-100 shrink-0">
+                                            {wh1Entries.length} {wh1Entries.length === 1 ? "entry" : "entries"}
+                                          </span>
+                                        )
+                                      ) : (
+                                        binEntries.length > 0 && (
+                                          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[9px] font-black text-emerald-800 border border-emerald-100 shrink-0">
+                                            {binEntries.length} {binEntries.length === 1 ? "entry" : "entries"}
+                                          </span>
+                                        )
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* Warehouse Badge */}
+                                  <td className="py-4 px-4">
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
+                                      isWH1Item 
+                                        ? "bg-amber-50 text-amber-800 border-amber-200" 
+                                        : (prod.warehouse === "WH2" || prod.warehouseName?.includes("2"))
+                                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                          : "bg-purple-50 text-purple-800 border-purple-200"
+                                    }`}>
+                                      {prod.warehouseName || prod.warehouse || (isWH1Item ? "WH1" : "WH2")}
+                                    </span>
+                                  </td>
+
+                                  {/* Supplier / Dosage */}
+                                  <td className="py-4 px-4 font-bold text-zinc-700 truncate max-w-[150px]" title={isWH1Item ? (prod.customer || wh1Entries[0]?.customer || "—") : (prod.dosage || "—")}>
+                                    {isWH1Item ? (
+                                      <div>
+                                        <div className="truncate text-zinc-900">{prod.customer || wh1Entries[0]?.customer || "—"}</div>
+                                        {prod.voucherNo && <div className="text-[9px] font-mono text-rose-700">No. {prod.voucherNo}</div>}
+                                      </div>
+                                    ) : (
+                                      <div>
+                                        <div className="truncate text-zinc-800">{prod.dosage || "—"}</div>
+                                        {prod.shelfNo && <div className="text-[9px] font-mono text-zinc-400">Shelf {prod.shelfNo}</div>}
+                                      </div>
+                                    )}
+                                  </td>
+
+                                  {/* Cartons / Plate */}
+                                  <td className="py-4 px-4 font-mono text-[11px] text-zinc-600">
+                                    {isWH1Item ? (
+                                      <div>{prod.plateNumber || wh1Entries[0]?.plateNumber || "—"}</div>
+                                    ) : (
+                                      <div>
+                                        <div className="font-bold text-zinc-800">{computedCartons > 0 ? `${computedCartons.toLocaleString()} ctn` : (pharmaBalance > 0 ? "0 ctn" : "—")}</div>
+                                        {packSize > 0 && <div className="text-[9px] text-zinc-400 font-semibold">{packSize.toLocaleString()}/pack</div>}
+                                      </div>
+                                    )}
+                                  </td>
+
+                                  {/* Total Quantity */}
+                                  <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
+                                    <div>{displayQuantity.toLocaleString()}</div>
+                                    {isWH1Item ? (
+                                      <div className="text-[9px] text-zinc-400 font-bold">of {wh1TotalReceived.toLocaleString()} received</div>
+                                    ) : binEntries.length > 0 ? (
+                                      <div className="text-[9px] text-zinc-400 font-bold">+{pharmaTotalReceived.toLocaleString()} / -{pharmaTotalIssued.toLocaleString()}</div>
+                                    ) : null}
+                                  </td>
+
+                                  {/* UOM / Unit */}
+                                  <td className="py-4 px-4 font-bold text-zinc-500 uppercase">{prod.unit}</td>
+
+                                  {/* Stock Value */}
+                                  <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
+                                    ETB {money(computedStockValue || 0)}
+                                  </td>
+
+                                  {/* Actions */}
+                                  <td className="py-4 px-4 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      {isWH1Item ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => setSlimAddEntryProduct(prod)}
+                                            className="px-2.5 py-1.5 rounded-full bg-zinc-950 text-white font-extrabold text-[10px] inline-flex items-center gap-1 hover:bg-zinc-800 transition-all active:scale-95 shadow-xs cursor-pointer"
+                                            title="Add sub-entry"
+                                          >
+                                            <PlusCircle className="size-3" /> Add
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setWh1VoucherModal({ isOpen: true, product: prod })}
+                                            className="px-2.5 py-1.5 rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-800 font-extrabold text-[10px] inline-flex items-center gap-1 transition-all active:scale-95 shadow-xs cursor-pointer"
+                                            title="Print & Export Goods Receiving Voucher"
+                                          >
+                                            <Download className="size-3 text-zinc-500" /> Export
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={() => setBinEntryModal({ isOpen: true, product: prod, entry: null })}
+                                            className="px-2.5 py-1.5 rounded-full bg-zinc-950 text-white font-extrabold text-[10px] inline-flex items-center gap-1 hover:bg-zinc-800 transition-all active:scale-95 shadow-xs cursor-pointer"
+                                            title="Record Stock Movement"
+                                          >
+                                            <PlusCircle className="size-3" /> Add
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setPrintModalProduct(prod)}
+                                            className="px-2.5 py-1.5 rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-800 font-extrabold text-[10px] inline-flex items-center gap-1 transition-all active:scale-95 shadow-xs cursor-pointer"
+                                            title="Print & Export Bin Card"
+                                          >
+                                            <Download className="size-3 text-zinc-500" /> Export
+                                          </button>
+                                        </>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => openEditProduct(prod)}
+                                        className="px-2.5 py-1.5 rounded-full border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-800 font-extrabold text-[10px] inline-flex items-center gap-1 transition-all active:scale-95 shadow-xs cursor-pointer"
+                                        title="Edit stock item"
+                                      >
+                                        <Edit3 className="size-3 text-zinc-500" /> Edit
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+
+                                {isExpanded && (
+                                  <tr className="bg-zinc-50/60">
+                                    <td colSpan={currentProductColumns.length} className="px-6 py-3">
+                                      {isWH1Item ? (
+                                        <WH1ChildMovementLedger
+                                          product={prod}
+                                          onEditEntry={openEditSubEntry}
+                                        />
+                                      ) : (
+                                        <StockBinCardLedger
+                                          product={prod}
+                                          onEditEntry={(product, entry) => setBinEntryModal({ isOpen: true, product, entry })}
+                                        />
+                                      )}
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
+                            )
+                          }
+
+                          // 2. WH1 Dedicated Warehouse View
+                          if (isWH1Item && isWH1(selectedWarehouse)) {
+                            return (
+                              <Fragment key={prod.id}>
+                                <tr 
+                                  onClick={() => toggleRowExpand(prod.id)}
+                                  className="hover:bg-white/45 cursor-pointer transition-colors font-semibold text-xs border-b border-zinc-100"
+                                >
                                   {/* ID / SKU */}
                                   <td className="py-4 px-6 overflow-hidden">
                                     <div className="flex items-center gap-1.5 font-mono text-[10px] text-zinc-400 font-bold uppercase">
@@ -1035,31 +1319,33 @@ export default function StockProducts() {
                                   <td className="py-4 px-4 overflow-hidden font-black text-zinc-950">
                                     <div className="flex items-center gap-2">
                                       <span className="truncate">{prod.name}</span>
-                                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[9px] font-black text-emerald-800 border border-emerald-100">
-                                        {entries.length} {entries.length === 1 ? "entry" : "entries"}
-                                      </span>
+                                      {wh1Entries.length > 0 && (
+                                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-[9px] font-black text-emerald-800 border border-emerald-100">
+                                          {wh1Entries.length} {wh1Entries.length === 1 ? "entry" : "entries"}
+                                        </span>
+                                      )}
                                     </div>
                                   </td>
 
                                   {/* Voucher No */}
                                   <td className="py-4 px-4 font-mono text-[11px] font-black text-rose-700">
-                                    {prod.voucherNo || (entries[0]?.voucherNo ? `No. ${entries[0].voucherNo}` : "—")}
+                                    {prod.voucherNo || (wh1Entries[0]?.voucherNo ? `No. ${wh1Entries[0].voucherNo}` : "—")}
                                   </td>
 
-                                  {/* Customer */}
-                                  <td className="py-4 px-4 font-bold text-zinc-900 truncate max-w-[130px]" title={prod.customer || entries[0]?.customer || "—"}>
-                                    {prod.customer || (entries[0]?.customer || "—")}
+                                  {/* Supplier */}
+                                  <td className="py-4 px-4 font-bold text-zinc-900 truncate max-w-[130px]" title={prod.customer || wh1Entries[0]?.customer || "—"}>
+                                    {prod.customer || (wh1Entries[0]?.customer || "—")}
                                   </td>
 
                                   {/* Plate Number */}
                                   <td className="py-4 px-4 font-mono text-[11px] text-zinc-600">
-                                    {prod.plateNumber || (entries[0]?.plateNumber || "—")}
+                                    {prod.plateNumber || (wh1Entries[0]?.plateNumber || "—")}
                                   </td>
 
                                   {/* Total quantity */}
                                   <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
-                                    <div>{prod.quantity.toLocaleString()}</div>
-                                    <div className="text-[9px] text-zinc-400 font-bold">of {totalReceived.toLocaleString()} received</div>
+                                    <div>{displayQuantity.toLocaleString()}</div>
+                                    <div className="text-[9px] text-zinc-400 font-bold">of {wh1TotalReceived.toLocaleString()} received</div>
                                   </td>
 
                                   {/* UOM */}
@@ -1067,7 +1353,7 @@ export default function StockProducts() {
 
                                   {/* Stock Value */}
                                   <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
-                                    <div>ETB {money(prod.totalStockValue || 0)}</div>
+                                    <div>ETB {money(computedStockValue || 0)}</div>
                                   </td>
 
                                   {/* Actions */}
@@ -1115,12 +1401,7 @@ export default function StockProducts() {
                             )
                           }
 
-                          // Standard / WH2 / WH3 Warehouse rendering (Unified Bin Card parent-child row)
-                          const binEntries = prod.binCardEntries || []
-                          const totalReceived = binEntries.reduce((sum, e) => sum + Number(e.qtyReceived || 0), 0)
-                          const totalIssued = binEntries.reduce((sum, e) => sum + Number(e.qtyIssued || 0), 0)
-                          const currentBalance = binEntries.length > 0 ? binEntries[binEntries.length - 1].balance : prod.quantity
-
+                          // 3. Standard / WH2 / WH3 Pharma Warehouse rendering
                           return (
                             <Fragment key={prod.id}>
                               <tr
@@ -1159,51 +1440,30 @@ export default function StockProducts() {
                                 {/* Shelf Number */}
                                 <td className="py-4 px-4 font-mono font-bold text-zinc-600 truncate">{prod.shelfNo || "—"}</td>
 
-                                {/* MFG */}
-                                <td className="py-4 px-4 font-mono text-zinc-600">{displayDate(prod.manufacturingDate)}</td>
-
-                                {/* EXP */}
-                                <td className="py-4 px-4 font-mono">
-                                  {(() => {
-                                    const status = getExpiryStatus(prod.expiry, 90)
-                                    if (status.tier === "UNKNOWN") {
-                                      return <span className="text-zinc-400 font-bold text-[11px]">—</span>
-                                    }
-                                    return (
-                                      <div className="flex flex-col gap-0.5 min-w-[90px]">
-                                        <span className="font-bold text-zinc-800 text-[11px]">{displayDate(prod.expiry)}</span>
-                                        <span
-                                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] border font-black truncate max-w-[110px] ${status.badgeClass}`}
-                                          title={status.sublabel}
-                                        >
-                                          <span className={`size-1.5 rounded-full shrink-0 ${status.dotClass}`} />
-                                          <span className="truncate">{status.label}</span>
-                                        </span>
-                                      </div>
-                                    )
-                                  })()}
+                                {/* Cartons */}
+                                <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">
+                                  {computedCartons > 0 ? computedCartons.toLocaleString() : (pharmaBalance > 0 ? "0" : "—")}
                                 </td>
 
-                                {/* Cartons */}
-                                <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">{prod.numberOfCartons?.toLocaleString() || "—"}</td>
-
                                 {/* Quantity Per Pack */}
-                                <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">{prod.quantityPerPack?.toLocaleString() || "—"}</td>
+                                <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">
+                                  {packSize > 0 ? packSize.toLocaleString() : "—"}
+                                </td>
 
                                 {/* Total Quantity */}
                                 <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
-                                  <div>{currentBalance.toLocaleString()}</div>
+                                  <div>{pharmaBalance.toLocaleString()}</div>
                                   {binEntries.length > 0 && (
-                                    <div className="text-[9px] text-zinc-400 font-bold">+{totalReceived.toLocaleString()} / -{totalIssued.toLocaleString()}</div>
+                                    <div className="text-[9px] text-zinc-400 font-bold">+{pharmaTotalReceived.toLocaleString()} / -{pharmaTotalIssued.toLocaleString()}</div>
                                   )}
                                 </td>
 
                                 {/* Packaging Unit */}
                                 <td className="py-4 px-4 font-bold text-zinc-600 uppercase">{prod.unit}</td>
 
-                                {/* Total Stock Value (Aggregate across all child batches) */}
+                                {/* Total Stock Value */}
                                 <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
-                                  ETB {money(prod.totalStockValue || 0)}
+                                  ETB {money(computedStockValue || 0)}
                                 </td>
 
                                 {/* Actions */}
@@ -1241,17 +1501,10 @@ export default function StockProducts() {
                               {isExpanded && (
                                 <tr className="bg-zinc-50/60">
                                   <td colSpan={currentProductColumns.length} className="px-6 py-3">
-                                    {isWH1(prod.warehouse) ? (
-                                      <WH1ChildMovementLedger
-                                        product={prod}
-                                        onEditEntry={openEditSubEntry}
-                                      />
-                                    ) : (
-                                      <StockBinCardLedger
-                                        product={prod}
-                                        onEditEntry={(product, entry) => setBinEntryModal({ isOpen: true, product, entry })}
-                                      />
-                                    )}
+                                    <StockBinCardLedger
+                                      product={prod}
+                                      onEditEntry={(product, entry) => setBinEntryModal({ isOpen: true, product, entry })}
+                                    />
                                   </td>
                                 </tr>
                               )}
@@ -1342,195 +1595,306 @@ export default function StockProducts() {
 
       {/* MODAL: EDIT PRODUCT DETAILS */}
       <AnimatePresence>
-        {editingProduct && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/35 backdrop-blur-sm"
-              onClick={() => setEditingProduct(null)}
-            />
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="relative w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl z-[121]"
-            >
-              <EditModalHeader
-                title={`Edit Stock Details: ${editingProduct.name}`}
-                subtitle={`SKU: ${editingProduct.sku}`}
-                onClose={() => setEditingProduct(null)}
-                onRequestDelete={() => setDeletingProduct(editingProduct)}
-                deleteLabel="Delete Stock Product"
+        {editingProduct && (() => {
+          const isEditWH1 = isWH1(editForm.warehouse)
+          return (
+            <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 bg-black/35 backdrop-blur-sm"
+                onClick={() => setEditingProduct(null)}
               />
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="relative w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl z-[121]"
+              >
+                <EditModalHeader
+                  title={isEditWH1 ? `Edit Commodity Details: ${editingProduct.name}` : `Edit Medicine Details: ${editingProduct.name}`}
+                  subtitle={`SKU / Card No: ${editingProduct.sku}`}
+                  onClose={() => setEditingProduct(null)}
+                  onRequestDelete={() => setDeletingProduct(editingProduct)}
+                  deleteLabel="Delete Stock Product"
+                />
 
-              <div className="grid gap-4 md:grid-cols-2 mt-4 text-xs font-semibold">
-                <label className="space-y-1">
-                  <span className="block text-[11px] font-black uppercase text-zinc-500">Item Name</span>
-                  <input value={editForm.name} onChange={(e) => updateEditForm({ name: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" />
-                </label>
-                <label className="space-y-1">
-                  <span className="block text-[11px] font-black uppercase text-zinc-500">SKU</span>
-                  <input value={editForm.sku} onChange={(e) => updateEditForm({ sku: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
-                </label>
-                <label className="space-y-1">
-                  <span className="block text-[11px] font-black uppercase text-zinc-500">Warehouse</span>
-                  <select value={editForm.warehouse} onChange={(e) => updateEditForm({ warehouse: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs">
-                    {warehouseOptions.filter(w => w.value !== "ALL").map((w) => (
-                      <option key={w.value} value={w.value}>{w.label}</option>
-                    ))}
-                  </select>
-                </label>
-                
-                {!isWH1(editForm.warehouse) && (
-                  <>
-                    <label className="space-y-1">
-                      <span className="block text-[11px] font-black uppercase text-zinc-500">Strength / Dosage</span>
-                      <input 
-                        value={editForm.dosage || ""} 
-                        placeholder="e.g. 100ml Vial / 500mg" 
-                        onChange={(e) => updateEditForm({ dosage: e.target.value })} 
-                        className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" 
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="block text-[11px] font-black uppercase text-zinc-500">Shelf Number</span>
-                      <input 
-                        value={editForm.shelfNo || ""} 
-                        placeholder="e.g. Shelf A-04" 
-                        onChange={(e) => updateEditForm({ shelfNo: e.target.value })} 
-                        className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="block text-[11px] font-black uppercase text-zinc-500">Batch Number</span>
-                      <input value={editForm.batch} onChange={(e) => updateEditForm({ batch: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
-                    </label>
-                  </>
-                )}
-
-                {isWH1(editForm.warehouse) ? (
-                  <>
-                    <label className="space-y-1">
-                      <span className="block text-[11px] font-black uppercase text-zinc-500">Voucher No / ID (Optional)</span>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. 1251" 
-                        value={editForm.voucherNo || ""} 
-                        onChange={(e) => updateEditForm({ voucherNo: e.target.value })} 
-                        className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="block text-[11px] font-black uppercase text-zinc-500">Customer (Optional)</span>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. Samii" 
-                        value={editForm.customer || ""} 
-                        onChange={(e) => updateEditForm({ customer: e.target.value })} 
-                        className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" 
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="block text-[11px] font-black uppercase text-zinc-500">Plate Number (Optional)</span>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. A52735" 
-                        value={editForm.plateNumber || ""} 
-                        onChange={(e) => updateEditForm({ plateNumber: e.target.value })} 
-                        className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
-                      />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="block text-[11px] font-black uppercase text-zinc-500">Entry Date</span>
-                      <input type="date" value={editForm.entryDate} onChange={(e) => updateEditForm({ entryDate: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
-                    </label>
-                    <label className="space-y-1">
-                      <span className="block text-[11px] font-black uppercase text-zinc-500">Leave Date <span className="text-[10px] text-zinc-400 font-semibold lowercase">(optional)</span></span>
-                      <input type="date" value={editForm.leaveDate} onChange={(e) => updateEditForm({ leaveDate: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
-                    </label>
-                  </>
-                ) : (
+                <div className="grid gap-4 md:grid-cols-2 mt-4 text-xs font-semibold">
                   <label className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="block text-[11px] font-black uppercase text-zinc-500">Expiry Date</span>
-                      {editForm.expiry && (() => {
-                        const s = getExpiryStatus(editForm.expiry)
-                        if (s.tier !== "UNKNOWN") {
-                          return (
-                            <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border ${s.badgeClass}`}>
-                              {s.label}
-                            </span>
-                          )
-                        }
-                        return null
-                      })()}
-                    </div>
-                    <input type="date" value={editForm.expiry} onChange={(e) => updateEditForm({ expiry: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
+                    <span className="block text-[11px] font-black uppercase text-zinc-500">Item Name</span>
+                    <input value={editForm.name} onChange={(e) => updateEditForm({ name: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" />
                   </label>
-                )}
-                
-                <label className="space-y-1">
-                  <span className="block text-[11px] font-black uppercase text-zinc-500">{isWH1(editForm.warehouse) ? "UOM" : "Unit"}</span>
-                  <select 
-                    value={editForm.unit} 
-                    onChange={(e) => updateEditForm({ unit: e.target.value })} 
-                    className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs outline-none focus:border-emerald-500 cursor-pointer"
+                  <label className="space-y-1">
+                    <span className="block text-[11px] font-black uppercase text-zinc-500">{isEditWH1 ? "ID / SKU" : "SKU / Card No"}</span>
+                    <input value={editForm.sku} onChange={(e) => updateEditForm({ sku: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="block text-[11px] font-black uppercase text-zinc-500">Warehouse</span>
+                    <select value={editForm.warehouse} onChange={(e) => updateEditForm({ warehouse: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs">
+                      {warehouseOptions.filter(w => w.value !== "ALL").map((w) => (
+                        <option key={w.value} value={w.value}>{w.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  
+                  {!isEditWH1 ? (
+                    <>
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Strength / Dosage</span>
+                        <input 
+                          value={editForm.dosage || ""} 
+                          placeholder="e.g. 100ml Vial / 500mg" 
+                          onChange={(e) => updateEditForm({ dosage: e.target.value })} 
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" 
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Shelf Number</span>
+                        <input 
+                          value={editForm.shelfNo || ""} 
+                          placeholder="e.g. Shelf A-04" 
+                          onChange={(e) => updateEditForm({ shelfNo: e.target.value })} 
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Batch Number</span>
+                        <input value={editForm.batch} onChange={(e) => updateEditForm({ batch: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
+                      </label>
+                      <label className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="block text-[11px] font-black uppercase text-zinc-500">Expiry Date</span>
+                          {editForm.expiry && (() => {
+                            const s = getExpiryStatus(editForm.expiry)
+                            if (s.tier !== "UNKNOWN") {
+                              return (
+                                <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border ${s.badgeClass}`}>
+                                  {s.label}
+                                </span>
+                              )
+                            }
+                            return null
+                          })()}
+                        </div>
+                        <input type="date" value={editForm.expiry} onChange={(e) => updateEditForm({ expiry: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Packaging Unit</span>
+                        <select 
+                          value={editForm.unit} 
+                          onChange={(e) => updateEditForm({ unit: e.target.value })} 
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs outline-none focus:border-emerald-500 cursor-pointer"
+                        >
+                          <option value="Box">Box</option>
+                          <option value="Bottle">Bottle</option>
+                          <option value="Vial">Vial</option>
+                          <option value="Sachet">Sachet</option>
+                          <option value="Ampoule">Ampoule</option>
+                          <option value="Carton">Carton</option>
+                          <option value="Piece">Piece</option>
+                          <option value="Tube">Tube</option>
+                        </select>
+                      </label>
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Quantity Per Pack (Pack Size)</span>
+                        <input 
+                          type="number"
+                          min="1"
+                          value={editForm.quantityPerPack || "1"} 
+                          onChange={(e) => updateEditForm({ quantityPerPack: e.target.value })} 
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
+                          placeholder="e.g. 10"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Number of Cartons</span>
+                        <input 
+                          type="number"
+                          min="0"
+                          value={editForm.numberOfCartons || "0"} 
+                          onChange={(e) => updateEditForm({ numberOfCartons: e.target.value })} 
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
+                          placeholder="e.g. 50"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Unit Price (ETB)</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={editForm.unitCost}
+                          onChange={(e) => updateEditForm({ unitCost: e.target.value, sellingPrice: e.target.value, price: e.target.value })}
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                          placeholder="e.g. 150"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Reorder Level (Optional)</span>
+                        <input 
+                          type="number" 
+                          min="0"
+                          value={editForm.reorderLevel} 
+                          onChange={(e) => updateEditForm({ reorderLevel: e.target.value })} 
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
+                          placeholder="e.g. 50"
+                        />
+                      </label>
+                    </>
+                  ) : (
+                    <>
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Voucher No / ID (Optional)</span>
+                        <input 
+                          type="text" 
+                          placeholder="e.g. 1251" 
+                          value={editForm.voucherNo || ""} 
+                          onChange={(e) => updateEditForm({ voucherNo: e.target.value })} 
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
+                        />
+                      </label>
+                      <div className="space-y-1 relative">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Supplier / Source (Optional)</span>
+                        <div className="relative flex items-center">
+                          <input 
+                            type="text" 
+                            placeholder="Search or enter supplier..." 
+                            value={editForm.customer || ""} 
+                            onFocus={() => setShowEditParentSupplierDropdown(true)}
+                            onChange={(e) => {
+                              updateEditForm({ customer: e.target.value })
+                              setShowEditParentSupplierDropdown(true)
+                            }} 
+                            className="h-11 w-full rounded-xl border border-zinc-200 pl-3 pr-9 text-xs outline-none focus:border-emerald-500" 
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowEditParentSupplierDropdown((prev) => !prev)}
+                            className="absolute right-2 p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+                            title="Choose supplier from registry"
+                          >
+                            <ChevronDown className={`size-4 transition-transform ${showEditParentSupplierDropdown ? "rotate-180" : ""}`} />
+                          </button>
+                        </div>
+                        {showEditParentSupplierDropdown && (
+                          <div className="absolute top-full left-0 right-0 z-30 mt-1 max-h-52 overflow-y-auto rounded-xl bg-white border border-zinc-200 shadow-xl py-1 divide-y divide-zinc-50">
+                            {(() => {
+                              const allSuppliers = Array.from(
+                                new Set([
+                                  ...erp.getSuppliers().map((s) => s.name),
+                                  editingProduct.customer,
+                                  editingProduct.supplierName,
+                                  ...(editingProduct.wh1Entries || []).map((e: any) => e.customer || e.party),
+                                ].filter((s): s is string => Boolean(s && s.trim())))
+                              )
+                              const currentVal = (editForm.customer || "").trim()
+                              const filtered = currentVal
+                                ? allSuppliers.filter((s) => s.toLowerCase().includes(currentVal.toLowerCase()))
+                                : allSuppliers
+                              if (filtered.length === 0) {
+                                return (
+                                  <div className="px-3 py-2.5 text-xs text-zinc-400 font-medium text-center">
+                                    {allSuppliers.length === 0 ? "No suppliers registered yet" : `No matches for "${currentVal}"`}
+                                  </div>
+                                )
+                              }
+                              return filtered.map((suppName) => {
+                                const regSupp = erp.getSuppliers().find((s) => s.name.toLowerCase() === suppName.toLowerCase())
+                                return (
+                                  <button
+                                    key={suppName}
+                                    type="button"
+                                    onClick={() => {
+                                      updateEditForm({ customer: suppName })
+                                      setShowEditParentSupplierDropdown(false)
+                                    }}
+                                    className="w-full text-left px-3 py-2 hover:bg-emerald-50 text-xs flex items-center justify-between transition-colors cursor-pointer"
+                                  >
+                                    <div>
+                                      <span className="font-bold text-zinc-900 block">{suppName}</span>
+                                      {regSupp && (
+                                        <span className="text-[10px] text-zinc-500 font-medium">
+                                          {regSupp.phone ? `📞 ${regSupp.phone} • ` : ""}{regSupp.city || "Ethiopia"}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </button>
+                                )
+                              })
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Plate Number (Optional)</span>
+                        <input 
+                          type="text" 
+                          placeholder="e.g. A52735" 
+                          value={editForm.plateNumber || ""} 
+                          onChange={(e) => updateEditForm({ plateNumber: e.target.value })} 
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Entry Date</span>
+                        <input type="date" value={editForm.entryDate} onChange={(e) => updateEditForm({ entryDate: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Leave Date <span className="text-[10px] text-zinc-400 font-semibold lowercase">(optional)</span></span>
+                        <input type="date" value={editForm.leaveDate} onChange={(e) => updateEditForm({ leaveDate: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">UOM</span>
+                        <select 
+                          value={editForm.unit} 
+                          onChange={(e) => updateEditForm({ unit: e.target.value })} 
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs outline-none focus:border-emerald-500 cursor-pointer"
+                        >
+                          <option value="Quintal">Quintal</option>
+                          <option value="Ton">Ton</option>
+                          <option value="Kg">Kg</option>
+                          <option value="Bag">Bag</option>
+                        </select>
+                      </label>
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Price / Cost per Unit (ETB)</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={editForm.price}
+                          onChange={(e) => updateEditForm({ price: e.target.value, unitCost: e.target.value, sellingPrice: e.target.value })}
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                          placeholder="e.g. 2400"
+                        />
+                      </label>
+                    </>
+                  )}
+                </div>
+
+                <div className="mt-6 flex justify-end gap-2 border-t border-zinc-100 pt-4">
+                  <button
+                    type="button"
+                    disabled={isSavingEdit}
+                    onClick={() => setEditingProduct(null)}
+                    className="h-10 rounded-xl border border-zinc-200 px-4 text-xs font-black disabled:opacity-50"
                   >
-                    {isWH1(editForm.warehouse) ? (
-                      <>
-                        <option value="Quintal">Quintal</option>
-                        <option value="Ton">Ton</option>
-                      </>
-                    ) : (
-                      <>
-                        <option value="Box">Box</option>
-                        <option value="Bottle">Bottle</option>
-                        <option value="Vial">Vial</option>
-                        <option value="Sachet">Sachet</option>
-                      </>
-                    )}
-                  </select>
-                </label>
-
-                {!isWH1(editForm.warehouse) && (
-                  <label className="space-y-1">
-                    <span className="block text-[11px] font-black uppercase text-zinc-500">Unit Price (ETB)</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={editForm.unitCost}
-                      onChange={(e) => updateEditForm({ unitCost: e.target.value, sellingPrice: e.target.value, price: e.target.value })}
-                      className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs"
-                      placeholder="e.g. 150"
-                    />
-                  </label>
-                )}
-              </div>
-
-              <div className="mt-6 flex justify-end gap-2 border-t border-zinc-100 pt-4">
-                <button
-                  type="button"
-                  disabled={isSavingEdit}
-                  onClick={() => setEditingProduct(null)}
-                  className="h-10 rounded-xl border border-zinc-200 px-4 text-xs font-black disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={isSavingEdit}
-                  onClick={() => void handleSaveProductDetails()}
-                  className="h-10 min-w-[130px] inline-flex items-center justify-center rounded-xl bg-zinc-950 hover:bg-zinc-800 px-5 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
-                >
-                  {isSavingEdit ? <LoadingDots color="bg-white" size="sm" /> : "Save Stock Details"}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSavingEdit}
+                    onClick={() => void handleSaveProductDetails()}
+                    className="h-10 min-w-[130px] inline-flex items-center justify-center rounded-xl bg-zinc-950 hover:bg-zinc-800 px-5 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                  >
+                    {isSavingEdit ? <LoadingDots color="bg-white" size="sm" /> : "Save Stock Details"}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )
+        })()}
       </AnimatePresence>
 
       {/* MODAL: ADD NEW STOCK ITEM / ENTRY */}
@@ -1588,6 +1952,10 @@ export default function StockProducts() {
                               setSelectedExistingProduct(p)
                               setAddDescription(p.name)
                               setAddPackagingUnit(p.unit)
+                              const parentSupp = p.customer || p.supplierName || ""
+                              if (parentSupp) {
+                                setAddCustomer(parentSupp)
+                              }
                               setShowItemSuggestions(false)
                             }}
                             className="w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-50 flex items-center justify-between text-xs font-bold"
@@ -1700,7 +2068,7 @@ export default function StockProducts() {
                     />
                   </label>
 
-                  {isWH1Form ? (
+                    {isWH1Form ? (
                     <>
                       <label className="space-y-1">
                         <span className="text-[11px] font-black uppercase text-zinc-700">Voucher No / ID <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
@@ -1712,16 +2080,67 @@ export default function StockProducts() {
                           className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
                         />
                       </label>
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase text-zinc-700">Customer <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
-                        <input
-                          type="text"
-                          placeholder="e.g. Samii"
-                          value={addCustomer}
-                          onChange={(e) => setAddCustomer(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs"
-                        />
-                      </label>
+                      <div className="space-y-1 relative">
+                        <span className="text-[11px] font-black uppercase text-zinc-700">
+                          Supplier / Source <span className="text-[10px] text-zinc-400 lowercase">(optional)</span>
+                        </span>
+                        <div className="relative flex items-center">
+                          <input
+                            type="text"
+                            placeholder="Search or select supplier..."
+                            value={addCustomer}
+                            onFocus={() => setShowSupplierDropdown(true)}
+                            onChange={(e) => {
+                              setAddCustomer(e.target.value)
+                              setShowSupplierDropdown(true)
+                            }}
+                            className="h-11 w-full rounded-xl border border-zinc-200 pl-3 pr-9 text-xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowSupplierDropdown((prev) => !prev)}
+                            className="absolute right-2 p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+                            title="Choose supplier from registry"
+                          >
+                            <ChevronDown className={`size-4 transition-transform ${showSupplierDropdown ? "rotate-180" : ""}`} />
+                          </button>
+                        </div>
+                        {showSupplierDropdown && (
+                          <div className="absolute top-full left-0 right-0 z-30 mt-1 max-h-52 overflow-y-auto rounded-xl bg-white border border-zinc-200 shadow-xl py-1 divide-y divide-zinc-50">
+                            {(() => {
+                              const list = erp.getSuppliers()
+                              const filtered = addCustomer.trim()
+                                ? list.filter((s) => s.name.toLowerCase().includes(addCustomer.toLowerCase()))
+                                : list
+                              if (filtered.length === 0) {
+                                return (
+                                  <div className="px-3 py-2.5 text-xs text-zinc-400 font-medium text-center">
+                                    {list.length === 0 ? "No suppliers registered yet" : `No matches for "${addCustomer}"`}
+                                  </div>
+                                )
+                              }
+                              return filtered.map((s) => (
+                                <button
+                                  key={s.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setAddCustomer(s.name)
+                                    setShowSupplierDropdown(false)
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-emerald-50 text-xs flex items-center justify-between transition-colors cursor-pointer"
+                                >
+                                  <div>
+                                    <span className="font-bold text-zinc-900 block">{s.name}</span>
+                                    <span className="text-[10px] text-zinc-500 font-medium">
+                                      {s.phone ? `📞 ${s.phone} • ` : ""}{s.city || "Ethiopia"}
+                                    </span>
+                                  </div>
+                                </button>
+                              ))
+                            })()}
+                          </div>
+                        )}
+                      </div>
                       <label className="space-y-1">
                         <span className="text-[11px] font-black uppercase text-zinc-700">Plate Number <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
                         <input
@@ -1732,6 +2151,20 @@ export default function StockProducts() {
                           className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
                         />
                       </label>
+                      {!erp.getSuppliers().some((s) => s.name.toLowerCase() === addCustomer.trim().toLowerCase()) && addCustomer.trim() !== "" && (
+                        <div className="p-2.5 bg-emerald-50/80 border border-emerald-200/80 rounded-xl flex items-center gap-2 md:col-span-2">
+                          <input
+                            type="checkbox"
+                            id="saveSupplierCheckStock"
+                            checked={saveSupplierToRegistry}
+                            onChange={(e) => setSaveSupplierToRegistry(e.target.checked)}
+                            className="size-4 rounded text-emerald-700 focus:ring-emerald-600 cursor-pointer"
+                          />
+                          <label htmlFor="saveSupplierCheckStock" className="text-xs font-bold text-emerald-950 cursor-pointer">
+                            Save new supplier details to registry for future arrivals
+                          </label>
+                        </div>
+                      )}
                       <label className="space-y-1">
                         <span className="text-[11px] font-black uppercase text-zinc-700">Entry Date <span className="text-rose-600">*</span></span>
                         <input
@@ -1857,13 +2290,14 @@ export default function StockProducts() {
         )}
       </AnimatePresence>
 
-      {/* WH1 ADD MOVEMENT MODAL (INBOUND & RECONCILE LEAVE) */}
+      {/* WH1 ADD MOVEMENT MODAL (INBOUND, RECONCILE LEAVE & REJECT LOSS) */}
       <WH1AddMovementModal
         isOpen={Boolean(slimAddEntryProduct)}
         product={slimAddEntryProduct}
         onClose={() => setSlimAddEntryProduct(null)}
         onSaveEntry={handleSaveWH1Entry}
         onSaveLeave={handleSaveWH1Leave}
+        onSaveReject={handleSaveWH1Reject}
       />
 
       {/* EDIT WH1 SUB ENTRY MODAL */}
@@ -1900,16 +2334,78 @@ export default function StockProducts() {
                     />
                   </label>
 
-                  <label className="space-y-1 block">
-                    <span className="text-zinc-500 uppercase text-[10px] font-black">Customer (Optional)</span>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Samii" 
-                      value={editSubEntryCustomer} 
-                      onChange={(e) => setEditSubEntryCustomer(e.target.value)} 
-                      className="h-10 w-full border border-zinc-200 rounded-xl px-3"
-                    />
-                  </label>
+                  <div className="space-y-1 block relative">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Supplier / Source (Optional)</span>
+                    <div className="relative flex items-center">
+                      <input 
+                        type="text" 
+                        placeholder="Search or enter supplier..." 
+                        value={editSubEntryCustomer} 
+                        onFocus={() => setShowEditSubSupplierDropdown(true)}
+                        onChange={(e) => {
+                          setEditSubEntryCustomer(e.target.value)
+                          setShowEditSubSupplierDropdown(true)
+                        }} 
+                        className="h-10 w-full border border-zinc-200 rounded-xl pl-3 pr-9 font-semibold text-xs outline-none focus:border-emerald-500" 
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowEditSubSupplierDropdown((prev) => !prev)}
+                        className="absolute right-2 p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+                        title="Choose supplier from registry"
+                      >
+                        <ChevronDown className={`size-4 transition-transform ${showEditSubSupplierDropdown ? "rotate-180" : ""}`} />
+                      </button>
+                    </div>
+                    {showEditSubSupplierDropdown && (
+                      <div className="absolute top-full left-0 right-0 z-30 mt-1 max-h-52 overflow-y-auto rounded-xl bg-white border border-zinc-200 shadow-xl py-1 divide-y divide-zinc-50">
+                        {(() => {
+                          const allSuppliers = Array.from(
+                            new Set([
+                              ...erp.getSuppliers().map((s) => s.name),
+                              editingSubEntry.product.customer,
+                              editingSubEntry.product.supplierName,
+                              ...(editingSubEntry.product.wh1Entries || []).map((e: any) => e.customer || e.party),
+                            ].filter((s): s is string => Boolean(s && s.trim())))
+                          )
+                          const currentVal = editSubEntryCustomer.trim()
+                          const filtered = currentVal
+                            ? allSuppliers.filter((s) => s.toLowerCase().includes(currentVal.toLowerCase()))
+                            : allSuppliers
+                          if (filtered.length === 0) {
+                            return (
+                              <div className="px-3 py-2.5 text-xs text-zinc-400 font-medium text-center">
+                                {allSuppliers.length === 0 ? "No suppliers registered yet" : `No matches for "${currentVal}"`}
+                              </div>
+                            )
+                          }
+                          return filtered.map((suppName) => {
+                            const regSupp = erp.getSuppliers().find((s) => s.name.toLowerCase() === suppName.toLowerCase())
+                            return (
+                              <button
+                                key={suppName}
+                                type="button"
+                                onClick={() => {
+                                  setEditSubEntryCustomer(suppName)
+                                  setShowEditSubSupplierDropdown(false)
+                                }}
+                                className="w-full text-left px-3 py-2 hover:bg-emerald-50 text-xs flex items-center justify-between transition-colors cursor-pointer"
+                              >
+                                <div>
+                                  <span className="font-bold text-zinc-900 block">{suppName}</span>
+                                  {regSupp && (
+                                    <span className="text-[10px] text-zinc-500 font-medium">
+                                      {regSupp.phone ? `📞 ${regSupp.phone} • ` : ""}{regSupp.city || "Ethiopia"}
+                                    </span>
+                                  )}
+                                </div>
+                              </button>
+                            )
+                          })
+                        })()}
+                      </div>
+                    )}
+                  </div>
 
                   <label className="space-y-1 block">
                     <span className="text-zinc-500 uppercase text-[10px] font-black">Plate Number (Optional)</span>
@@ -1973,23 +2469,40 @@ export default function StockProducts() {
                   </label>
                 </div>
 
-                <div className="flex justify-end gap-2 border-t border-zinc-150 pt-4 mt-6">
-                  <button 
+                <div className="flex items-center justify-between border-t border-zinc-150 pt-4 mt-6">
+                  <button
                     type="button"
                     disabled={isSavingSubEdit}
-                    onClick={() => setEditingSubEntry(null)} 
-                    className="h-9 rounded-xl border border-zinc-200 px-4 text-xs font-bold disabled:opacity-50"
+                    onClick={async () => {
+                      if (!editingSubEntry) return
+                      const subId = editingSubEntry.entry.entryId || editingSubEntry.entry.id
+                      if (subId) {
+                        await handleDeleteSubEntry(editingSubEntry.product, subId)
+                        setEditingSubEntry(null)
+                      }
+                    }}
+                    className="h-9 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 px-4 text-xs font-bold transition-colors cursor-pointer"
                   >
-                    Cancel
+                    Delete Entry
                   </button>
-                  <button 
-                    type="button"
-                    disabled={isSavingSubEdit} 
-                    onClick={handleSaveSubEntryEdit} 
-                    className="h-9 min-w-[110px] inline-flex items-center justify-center rounded-xl bg-zinc-950 hover:bg-zinc-800 text-white px-5 text-xs font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {isSavingSubEdit ? <LoadingDots color="bg-white" size="sm" /> : "Save Changes"}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      type="button"
+                      disabled={isSavingSubEdit}
+                      onClick={() => setEditingSubEntry(null)} 
+                      className="h-9 rounded-xl border border-zinc-200 px-4 text-xs font-bold disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      type="button"
+                      disabled={isSavingSubEdit} 
+                      onClick={handleSaveSubEntryEdit} 
+                      className="h-9 min-w-[110px] inline-flex items-center justify-center rounded-xl bg-zinc-950 hover:bg-zinc-800 text-white px-5 text-xs font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {isSavingSubEdit ? <LoadingDots color="bg-white" size="sm" /> : "Save Changes"}
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>
