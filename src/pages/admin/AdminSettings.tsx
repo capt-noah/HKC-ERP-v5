@@ -29,6 +29,8 @@ import {
 } from "lucide-react"
 import { useErpStore, type Warehouse } from "@/lib/erpStore"
 import { useFinanceStore, type TaxRule } from "@/lib/financeStore"
+import { OPERATING_WAREHOUSES } from "@/lib/warehouses"
+import { loadResource } from "@/lib/apiPersistence"
 import { DEFAULT_ETHIOPIAN_TAX_BRACKETS, DEFAULT_ETHIOPIAN_PENSION_CONFIG, type TaxBracket } from "@/core/hr/payrollEngine"
 import { cn } from "@/lib/utils"
 import { LoadingDots } from "@/components/ui/LoadingDots"
@@ -164,6 +166,7 @@ export default function AdminSettings() {
   const [whManager, setWhManager] = useState("")
   const [whStatus, setWhStatus] = useState("Active")
   const [activeWhMenuId, setActiveWhMenuId] = useState<string | null>(null)
+  const [managerOptions, setManagerOptions] = useState<string[]>([])
 
   const syncFormFromSettings = (s: any) => {
     setCompanyName(s.company_name || "")
@@ -200,10 +203,32 @@ export default function AdminSettings() {
     async function loadData() {
       setLoading(true)
       try {
-        await Promise.all([erp.loadFromApi(), finance.loadFromApi()])
+        const [, , usersData, employeesData] = await Promise.all([
+          erp.loadFromApi(),
+          finance.loadFromApi(),
+          loadResource<any>("users").catch(() => []),
+          loadResource<any>("employees").catch(() => []),
+        ])
         if (active) {
           const fresh = finance.getCompanySettings()
           syncFormFromSettings(fresh)
+
+          const names = new Set<string>()
+          OPERATING_WAREHOUSES.forEach((w) => {
+            if (w.manager && w.manager !== "Unassigned") names.add(w.manager)
+          })
+          erp.getWarehouses().forEach((w) => {
+            if (w.manager && w.manager !== "Unassigned") names.add(w.manager)
+          })
+          ;(usersData || []).forEach((u: any) => {
+            const name = u.full_name || u.name || u.username
+            if (name && name !== "superadmin") names.add(name)
+          })
+          ;(employeesData || []).forEach((e: any) => {
+            const name = e.full_name || e.name || `${e.first_name || ""} ${e.last_name || ""}`.trim()
+            if (name) names.add(name)
+          })
+          setManagerOptions(Array.from(names).filter(Boolean))
         }
       } catch (err) {
         console.warn("Failed to load settings data:", err)
@@ -472,13 +497,13 @@ export default function AdminSettings() {
   const handleOpenWhModal = (wh?: Warehouse) => {
     if (wh) {
       setEditingWarehouse(wh)
-      setWhName(wh.name)
-      setWhCode(wh.code || wh.id)
+      setWhName(wh.name || "")
+      setWhCode(wh.code || wh.id || "")
       setWhLocation(wh.location || "")
       setWhType(wh.type || "Dry Storage / Processing")
       setWhSpecialization(wh.specialization || "Commercial & Specialty Coffee")
       setWhTargetMarkets(wh.targetMarkets || "Domestic & Export")
-      setWhManager(wh.manager || "")
+      setWhManager(wh.manager && wh.manager !== "Unassigned" ? wh.manager : "")
       setWhStatus(wh.status || "Active")
     } else {
       setEditingWarehouse(null)
@@ -502,6 +527,9 @@ export default function AdminSettings() {
       return
     }
 
+    const trimmedManager = whManager.trim()
+    const finalManager = trimmedManager ? trimmedManager : "Unassigned"
+
     try {
       setIsSavingWh(true)
       if (editingWarehouse) {
@@ -512,10 +540,10 @@ export default function AdminSettings() {
           type: whType,
           specialization: whSpecialization.trim(),
           targetMarkets: whTargetMarkets.trim(),
-          manager: whManager.trim() || "Unassigned",
+          manager: finalManager,
           status: whStatus,
         })
-        showToast("Warehouse Updated", "success", `Warehouse '${whName}' updated successfully.`)
+        showToast("Warehouse Updated", "success", `Warehouse '${whName}' updated successfully with assigned manager '${finalManager}'.`)
       } else {
         await erp.addWarehouse({
           name: whName.trim(),
@@ -524,10 +552,10 @@ export default function AdminSettings() {
           type: whType,
           specialization: whSpecialization.trim(),
           targetMarkets: whTargetMarkets.trim(),
-          manager: whManager.trim() || "Unassigned",
+          manager: finalManager,
           status: whStatus,
         })
-        showToast("Warehouse Created", "success", `New warehouse facility '${whName}' added.`)
+        showToast("Warehouse Created", "success", `New warehouse facility '${whName}' added with assigned manager '${finalManager}'.`)
       }
       setWhModalOpen(false)
     } catch (err: any) {
@@ -1065,6 +1093,7 @@ export default function AdminSettings() {
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           {warehouses.map((wh) => {
                             const isAssignedMenuOpen = activeWhMenuId === wh.id
+                            const hasManager = Boolean(wh.manager && wh.manager.trim() && wh.manager !== "Unassigned")
                             return (
                               <div
                                 key={wh.id}
@@ -1073,9 +1102,18 @@ export default function AdminSettings() {
                                 <div>
                                   <div className="flex items-start justify-between gap-2 mb-3">
                                     <div>
-                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
-                                        {wh.code || "WH"}
-                                      </span>
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
+                                          {wh.code || "WH"}
+                                        </span>
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                          wh.status === "Active"
+                                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                            : "bg-gray-100 text-gray-600 border border-gray-200"
+                                        }`}>
+                                          {wh.status || "Active"}
+                                        </span>
+                                      </div>
                                       <h4 className="text-base font-bold text-black mt-1.5 leading-snug">{wh.name}</h4>
                                     </div>
                                     <div className="relative">
@@ -1104,30 +1142,34 @@ export default function AdminSettings() {
                                     </div>
                                   </div>
 
-                                  <div className="space-y-1.5 text-xs text-gray-600 mb-4">
+                                  <div className="space-y-2 text-xs text-gray-600 mb-4">
                                     <div className="flex items-center gap-2">
                                       <MapPin className="size-3.5 text-gray-400 shrink-0" />
                                       <span className="truncate">{wh.location || "Location not specified"}</span>
                                     </div>
                                     <div className="flex items-center gap-2">
                                       <Tag className="size-3.5 text-gray-400 shrink-0" />
-                                      <span>{wh.type || "Dry Storage / Processing"}</span>
+                                      <span className="truncate">{wh.type || "Dry Storage / Processing"}</span>
                                     </div>
-                                    {wh.manager && (
-                                      <div className="flex items-center gap-2">
-                                        <UserCheck className="size-3.5 text-gray-400 shrink-0" />
-                                        <span>{wh.manager}</span>
-                                      </div>
-                                    )}
+                                    <div className="flex items-center gap-2">
+                                      <UserCheck className={`size-3.5 shrink-0 ${hasManager ? "text-emerald-600" : "text-amber-500"}`} />
+                                      <span className="truncate">
+                                        <span className="text-gray-400 font-medium">Assigned Manager: </span>
+                                        <span className={`font-semibold ${hasManager ? "text-gray-900 font-bold" : "text-amber-700 italic"}`}>
+                                          {hasManager ? wh.manager : "Unassigned"}
+                                        </span>
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
 
                                 <div className="flex items-center justify-between pt-3 border-t border-black/5 text-xs">
-                                  <span className="font-semibold text-gray-400">{wh.targetMarkets || "Domestic & Export"}</span>
+                                  <span className="font-semibold text-gray-400 truncate max-w-[65%]">{wh.targetMarkets || "Domestic & Export"}</span>
                                   <button
                                     onClick={() => handleOpenEditWarehouseModal(wh)}
-                                    className="px-3 py-1 rounded-xl bg-white border border-black/10 text-xs font-bold text-black hover:bg-black/5 transition-colors shadow-2xs"
+                                    className="px-3 py-1 rounded-xl bg-white border border-black/10 text-xs font-bold text-black hover:bg-black/5 transition-colors shadow-2xs flex items-center gap-1.5"
                                   >
+                                    <Pencil className="size-3 text-gray-500" />
                                     Edit
                                   </button>
                                 </div>
@@ -1668,14 +1710,25 @@ export default function AdminSettings() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5">Assigned Manager</label>
+                    <label className="block text-xs font-bold text-black uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                      <span>Assigned Manager</span>
+                      {whManager && whManager !== "Unassigned" && (
+                        <span className="text-[10px] text-emerald-600 font-bold normal-case">Manager Assigned</span>
+                      )}
+                    </label>
                     <input
                       type="text"
+                      list="wh-manager-suggestions"
                       value={whManager}
-                      placeholder="e.g. Dawit Tadesse"
+                      placeholder="e.g. Dawit Tadesse or select staff"
                       onChange={(e) => setWhManager(e.target.value)}
-                      className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-semibold text-black outline-none focus:border-amber-600 focus:bg-white"
+                      className="w-full bg-black/[0.02] border border-black/10 rounded-2xl px-4 py-2.5 text-sm font-semibold text-black outline-none focus:border-amber-600 focus:bg-white transition-colors"
                     />
+                    <datalist id="wh-manager-suggestions">
+                      {managerOptions.map((opt) => (
+                        <option key={opt} value={opt} />
+                      ))}
+                    </datalist>
                   </div>
                 </div>
               </div>

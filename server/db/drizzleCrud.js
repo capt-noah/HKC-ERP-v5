@@ -267,7 +267,8 @@ export async function drizzleCreateRow({ resource, body }) {
       const { id: _ignoredId, ...payloadData } = body || {}
       const payloadString = JSON.stringify({ id, ...payloadData })
       await pool.query(
-        `INSERT INTO \`${tableName}\` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3))`,
+        `INSERT INTO \`${tableName}\` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3))
+         ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)`,
         [id, payloadString]
       )
       return { status: 200, body: { id, ...payloadData } }
@@ -309,10 +310,21 @@ export async function drizzleUpdateRow({ resource, id, body }) {
       const targetId = existingPayload.id || cleanId
 
       const mergedPayload = { ...existingPayload, ...body, id: targetId }
-      await pool.query(
+      const payloadString = JSON.stringify(mergedPayload)
+
+      const [updateResult] = await pool.query(
         `UPDATE \`${tableName}\` SET payload = ?, updated_at = NOW(3) WHERE id = ?`,
-        [JSON.stringify(mergedPayload), String(targetId)]
+        [payloadString, String(targetId)]
       )
+
+      if (updateResult.affectedRows === 0) {
+        await pool.query(
+          `INSERT INTO \`${tableName}\` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3))
+           ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)`,
+          [String(targetId), payloadString]
+        )
+      }
+
       return { status: 200, body: mergedPayload }
     } else {
       // Find actual existing row in DB to get real primary key

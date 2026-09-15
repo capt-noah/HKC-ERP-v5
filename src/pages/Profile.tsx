@@ -14,6 +14,7 @@ import {
   BadgeCheck,
   Sparkles,
   Warehouse,
+  UserCheck,
   Eye,
   EyeOff,
   KeyRound,
@@ -756,9 +757,16 @@ export default function Profile() {
                               </span>
                             </div>
 
-                            {(wh.location || wh.specialization || wh.type) && (
-                              <div className="pt-2 border-t border-zinc-100 text-[11px] text-zinc-500 space-y-0.5">
+                            {(wh.location || wh.specialization || wh.type || wh.manager) && (
+                              <div className="pt-2 border-t border-zinc-100 text-[11px] text-zinc-500 space-y-1">
                                 {wh.location && <p className="truncate font-medium">📍 {wh.location}</p>}
+                                {wh.manager && wh.manager !== "Unassigned" && (
+                                  <p className="truncate font-medium text-zinc-700 flex items-center gap-1.5">
+                                    <UserCheck className="size-3 text-emerald-600 shrink-0 inline" />
+                                    <span className="text-zinc-400 font-medium">Assigned Manager:</span>{" "}
+                                    <span className="font-bold text-zinc-900">{wh.manager}</span>
+                                  </p>
+                                )}
                                 {wh.specialization && <p className="truncate text-zinc-400">🏷️ {wh.specialization}</p>}
                               </div>
                             )}
