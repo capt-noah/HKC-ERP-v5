@@ -18,6 +18,7 @@ const TABLES_TO_WIPE = [
   "recurring_expense_schedules",
   "export_products",
   "pharma_products",
+  "quarantine_records",
   "customers",
   "suppliers",
   "attendance_records",
