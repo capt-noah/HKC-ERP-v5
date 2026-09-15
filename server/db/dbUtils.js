@@ -62,6 +62,9 @@ export function normalizeBodyToDbColumns(body, validCols) {
   const normalized = {}
 
   const aliases = {
+    targetMarkets: "target_markets",
+    target_markets: "target_markets",
+    warehouseType: "warehouse_type",
     warehouse: "warehouse_id",
     warehouseId: "warehouse_id",
     unitCost: "unit_cost",
@@ -269,6 +272,8 @@ export function unwrapRow(row, storage) {
   // Normalization for inventory_products and warehouses
   if (out.warehouse_type !== undefined && out.warehouseType === undefined) out.warehouseType = out.warehouse_type
   if (out.warehouseType !== undefined && out.warehouse_type === undefined) out.warehouse_type = out.warehouseType
+  if (out.target_markets !== undefined && out.targetMarkets === undefined) out.targetMarkets = out.target_markets
+  if (out.targetMarkets !== undefined && out.target_markets === undefined) out.target_markets = out.targetMarkets
   if (out.warehouse_id !== undefined && out.warehouse === undefined) out.warehouse = out.warehouse_id
   if (out.warehouse !== undefined && out.warehouse_id === undefined) out.warehouse_id = out.warehouse
   if (out.shelf_number !== undefined && out.shelfNo === undefined) out.shelfNo = out.shelf_number

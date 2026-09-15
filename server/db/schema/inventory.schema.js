@@ -8,6 +8,10 @@ export const warehouses = mysqlTable("warehouses", {
   location: varchar("location", { length: 255 }),
   warehouseType: varchar("warehouse_type", { length: 50 }).default("PHARMA_WH").notNull(),
   type: varchar("type", { length: 100 }),
+  manager: varchar("manager", { length: 255 }),
+  specialization: varchar("specialization", { length: 255 }),
+  targetMarkets: varchar("target_markets", { length: 255 }),
+  status: varchar("status", { length: 50 }).default("Active"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })

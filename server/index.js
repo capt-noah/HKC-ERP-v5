@@ -52,9 +52,15 @@ app.set("etag", false)
 import { pool } from "./db/client.js"
 import { ensureSuperAdmin } from "./modules/auth/authController.js"
 import { migrateUserSessions } from "./scripts/migrateUserSessions.js"
+import { migrateWarehousesSchema } from "./scripts/migrateWarehousesSchema.js"
 
-// Auto-bootstrap database sessions table and superadmin account on server startup
+// Auto-bootstrap database sessions table, warehouse schema, and superadmin account on server startup
 async function initDatabase() {
+  try {
+    await migrateWarehousesSchema()
+  } catch (err) {
+    console.warn("[DB INIT] warehouses schema bootstrap notice:", err.message)
+  }
   try {
     await migrateUserSessions()
   } catch (err) {

@@ -58,7 +58,7 @@ export function withOperatingWarehouses(warehouses: Warehouse[] = []): Warehouse
 
   // Always seed with standard baseline operating warehouses
   for (const defaultWh of OPERATING_WAREHOUSES) {
-    byKey.set(defaultWh.id, defaultWh)
+    byKey.set(defaultWh.id, { ...defaultWh })
   }
 
   // Merge any dynamically registered warehouses from erpStore/server
@@ -72,6 +72,13 @@ export function withOperatingWarehouses(warehouses: Warehouse[] = []): Warehouse
       const mergedWh: Warehouse = {
         ...existing,
         ...warehouse,
+        manager:
+          warehouse.manager !== undefined && warehouse.manager !== null
+            ? warehouse.manager
+            : existing?.manager || "Unassigned",
+        specialization: warehouse.specialization || existing?.specialization,
+        targetMarkets: warehouse.targetMarkets || existing?.targetMarkets,
+        status: warehouse.status || existing?.status || "Active",
         warehouse_type:
           warehouse.warehouse_type ||
           existing?.warehouse_type ||
