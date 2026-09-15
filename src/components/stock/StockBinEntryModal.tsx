@@ -37,30 +37,34 @@ export default function StockBinEntryModal({
   const [party, setParty] = useState("")
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
   const [unitPrice, setUnitPrice] = useState("")
+  const [sellingPrice, setSellingPrice] = useState("")
   const [remark, setRemark] = useState("")
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
 
   useEffect(() => {
     if (entry) {
-      const isRec = Number(entry.qtyReceived || 0) > 0
+      const isRec = entry.type === "entry" || Number(entry.qtyReceived || 0) > 0
       setMovementType(isRec ? "received" : "issued")
       setDate(entry.date || new Date().toISOString().slice(0, 10))
       setBatchNo(entry.batchNo || "")
       setQuantity(String(isRec ? entry.qtyReceived : entry.qtyIssued))
-      setMfgDate(entry.mfgDate || "")
-      setExpiryDate(entry.expiryDate || "")
+      setMfgDate(entry.mfgDate || (product as any)?.mfgDate || product?.manufacturingDate || "")
+      setExpiryDate(entry.expiryDate || product?.expiry || "")
       setParty(entry.party || "")
       setShowSupplierDropdown(false)
-      setUnitPrice(entry.unitPrice !== undefined ? String(entry.unitPrice) : "")
+      setUnitPrice(entry.unitPrice !== undefined ? String(entry.unitPrice) : (product?.unitCost !== undefined ? String(product.unitCost) : ""))
+      setSellingPrice(entry.sellingPrice !== undefined ? String(entry.sellingPrice) : (product?.sellingPrice !== undefined ? String(product.sellingPrice) : ""))
       setRemark(entry.remark || "")
     } else {
       setMovementType("received")
-      setDate(new Date().toISOString().slice(0, 10))
-      setBatchNo(product?.batch || "")
+      const today = new Date().toISOString().slice(0, 10)
+      const currentYear = new Date().getFullYear()
+      setDate(today)
+      setBatchNo(product?.batch || product?.batches?.[0]?.batchNo || "")
       setQuantity("")
-      setMfgDate("")
-      setExpiryDate(product?.expiry || "")
+      setMfgDate(product?.manufacturingDate || (product as any)?.mfgDate || product?.batches?.[0]?.mfgDate || today)
+      setExpiryDate(product?.expiry || (product as any)?.expiryDate || product?.batches?.[0]?.expiry || `${currentYear + 2}-12-31`)
 
       // Associated suppliers for this product
       const itemSuppliers = Array.from(
@@ -96,6 +100,7 @@ export default function StockBinEntryModal({
       setParty(defaultSupplier)
       setShowSupplierDropdown(false)
       setUnitPrice(product?.unitCost !== undefined ? String(product.unitCost) : "")
+      setSellingPrice(product?.sellingPrice !== undefined ? String(product.sellingPrice) : "")
       setRemark("")
     }
   }, [entry, product, isOpen])
@@ -112,16 +117,22 @@ export default function StockBinEntryModal({
 
     setIsSaving(true)
     try {
+      const isRec = movementType === "received"
+      const effectiveUnitPrice = unitPrice ? Number(unitPrice) : (product?.unitCost !== undefined ? Number(product.unitCost) : undefined)
+      const effectiveSellingPrice = sellingPrice ? Number(sellingPrice) : (!isRec && product?.sellingPrice !== undefined ? Number(product.sellingPrice) : undefined)
+
       const entryPayload: Omit<BinCardMovementEntry, "id" | "balance"> = {
+        type: isRec ? "entry" : "leave",
         date,
         batchNo: batchNo.trim().toUpperCase(),
-        qtyReceived: movementType === "received" ? qtyNum : 0,
-        qtyIssued: movementType === "issued" ? qtyNum : 0,
-        mfgDate: mfgDate.trim(),
+        qtyReceived: isRec ? qtyNum : 0,
+        qtyIssued: !isRec ? qtyNum : 0,
+        mfgDate: mfgDate.trim() || undefined,
         expiryDate: expiryDate.trim(),
-        party: party.trim(),
-        unitPrice: unitPrice ? Number(unitPrice) : undefined,
-        remark: remark.trim()
+        party: party.trim() || (isRec ? "Stock Receipt" : "Customer Dispatch"),
+        unitPrice: effectiveUnitPrice,
+        sellingPrice: !isRec ? effectiveSellingPrice : undefined,
+        remark: remark.trim() || (isRec ? "Stock Inbound" : "Stock Dispatch")
       }
 
       await onSave(product.id, entryPayload, entry?.id)
@@ -240,8 +251,8 @@ export default function StockBinEntryModal({
               </div>
             </div>
 
-            {/* Quantity & Unit Price */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Quantity & Price Fields */}
+            <div className={`grid ${movementType === "issued" ? "grid-cols-3" : "grid-cols-2"} gap-3`}>
               <div className="space-y-1">
                 <label className="block text-[10px] font-black uppercase text-zinc-500">
                   Quantity ({product.unit}) *
@@ -259,7 +270,9 @@ export default function StockBinEntryModal({
               </div>
 
               <div className="space-y-1">
-                <label className="block text-[10px] font-black uppercase text-zinc-500">Unit Price (ETB)</label>
+                <label className="block text-[10px] font-black uppercase text-zinc-500">
+                  {movementType === "received" ? "Unit Cost (ETB)" : "Unit Cost (ETB)"}
+                </label>
                 <input
                   type="number"
                   min="0"
@@ -270,6 +283,23 @@ export default function StockBinEntryModal({
                   className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-zinc-900 outline-none font-mono"
                 />
               </div>
+
+              {movementType === "issued" && (
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-black uppercase text-blue-700">
+                    Selling Price (ETB)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="e.g. 350.00"
+                    value={sellingPrice}
+                    onChange={(e) => setSellingPrice(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-blue-50/50 border border-blue-200 rounded-xl focus:bg-white focus:border-blue-900 outline-none font-mono text-blue-950 font-bold"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Mfg Date & Expiry Date */}

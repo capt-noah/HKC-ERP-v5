@@ -281,6 +281,13 @@ export function unwrapRow(row, storage) {
     out.unitCost = Number(out.unit_cost)
     out.unit_cost = Number(out.unit_cost)
   }
+  if (out.unit_price !== undefined) {
+    out.unitPrice = Number(out.unit_price)
+    out.unit_price = Number(out.unit_price)
+  }
+  if (out.unitPrice !== undefined && out.unit_price === undefined) {
+    out.unit_price = Number(out.unitPrice)
+  }
   if (out.selling_price !== undefined) {
     out.sellingPrice = Number(out.selling_price)
     out.selling_price = Number(out.selling_price)
@@ -335,18 +342,43 @@ export function unwrapRow(row, storage) {
 
   // Normalization for stock_movements & export_warehouse_movements
   if (out.product_id !== undefined && out.productId === undefined) out.productId = out.product_id
+  if (out.party_name !== undefined) {
+    if (out.party === undefined) out.party = out.party_name
+    if (out.customer === undefined) out.customer = out.party_name
+  }
+  if (out.party !== undefined) {
+    if (out.party_name === undefined) out.party_name = out.party
+    if (out.customer === undefined) out.customer = out.party
+  }
+  if (out.plate_number !== undefined && out.plateNumber === undefined) out.plateNumber = out.plate_number
+  if (out.plateNumber !== undefined && out.plate_number === undefined) out.plate_number = out.plateNumber
+  if (out.voucher_no !== undefined && out.voucherNo === undefined) out.voucherNo = out.voucher_no
+  if (out.voucherNo !== undefined && out.voucher_no === undefined) out.voucher_no = out.voucherNo
+
   if (out.movement_type !== undefined) {
     if (out.movementType === undefined) out.movementType = out.movement_type
-    if (out.type === undefined) out.type = out.movement_type
   }
-  if (out.movementType !== undefined) {
-    if (out.movement_type === undefined) out.movement_type = out.movementType
-    if (out.type === undefined) out.type = out.movementType
+  if (out.movementType !== undefined && out.movement_type === undefined) {
+    out.movement_type = out.movementType
   }
-  if (out.type !== undefined) {
-    if (out.movement_type === undefined) out.movement_type = out.type
-    if (out.movementType === undefined) out.movementType = out.type
+
+  const rawMType = String(out.movement_type || out.movementType || out.type || "").toUpperCase()
+  const isReceipt = rawMType === "RECEIPT" || rawMType === "INBOUND" || rawMType === "ADJUSTMENT_IN" || rawMType === "ENTRY" || rawMType === "GRV_ENTRY"
+  const isQuarantine = rawMType === "QUARANTINE"
+  const isReject = rawMType === "REJECT_DEDUCTION" || rawMType === "REJECT"
+  const isIssue = rawMType === "ISSUE" || rawMType === "OUTBOUND" || rawMType === "DISPATCH" || rawMType === "ADJUSTMENT_OUT" || rawMType === "LEAVE" || rawMType === "OUTBOUND_DISPATCH"
+
+  const rawQty = Number(out.quantity ?? out.qty ?? out.gross_quantity ?? out.net_quantity ?? 0)
+  if (out.qtyReceived === undefined) {
+    out.qtyReceived = isReceipt ? rawQty : 0
   }
+  if (out.qtyIssued === undefined) {
+    out.qtyIssued = (isIssue || isQuarantine || isReject) ? Math.abs(rawQty) : 0
+  }
+  if (out.type === undefined || out.type === "RECEIPT" || out.type === "ISSUE" || out.type === "GRV_ENTRY" || out.type === "OUTBOUND_DISPATCH" || out.type === "REJECT_DEDUCTION") {
+    out.type = isQuarantine ? "quarantine" : isReject ? "reject" : isReceipt ? "entry" : "leave"
+  }
+
   if (out.movement_date !== undefined && out.date === undefined) out.date = out.movement_date
   if (out.movementDate !== undefined && out.date === undefined) out.date = out.movementDate
   if (out.selling_price !== undefined && out.selling_price !== null) {
@@ -364,6 +396,8 @@ export function unwrapRow(row, storage) {
   }
   if (out.batch_no !== undefined && out.batchNo === undefined) out.batchNo = out.batch_no
   if (out.expiry_date !== undefined && out.expiryDate === undefined) out.expiryDate = out.expiry_date
+  if (out.mfg_date !== undefined && out.mfgDate === undefined) out.mfgDate = out.mfg_date
+  if (out.mfgDate !== undefined && out.mfg_date === undefined) out.mfg_date = out.mfgDate
   if (out.quantity !== undefined) {
     out.quantity = Number(out.quantity)
     if (out.qty === undefined) out.qty = Number(out.quantity)
@@ -389,9 +423,13 @@ export function unwrapRow(row, storage) {
     out.notes = out.reason
     if (out.remarks === undefined) out.remarks = out.reason
   }
+  if (out.party === undefined) {
+    out.party = out.party_name || out.notes || (isReceipt ? "Stock Receipt" : isIssue ? "Stock Issue" : "Stock Movement")
+  }
   if (out.balance_after !== undefined) {
     out.balanceAfter = Number(out.balance_after)
     out.balance_after = Number(out.balance_after)
+    if (out.balance === undefined) out.balance = Number(out.balance_after)
   }
   if (out.performed_by !== undefined) {
     if (out.performedBy === undefined) out.performedBy = out.performed_by

@@ -97,7 +97,7 @@ function hydrateExportProduct(productRow, movements = []) {
       balance: Number(unwrapped.quantity || 0),
       expiryDate: "",
       party: r.partyName || (isReject ? "Cleaning Loss Deduction" : isEntry ? "Supplier Arrival" : "Customer Dispatch"),
-      unitPrice: Number(r.unitPrice || r.unit_cost || 0),
+      unitPrice: Number(r.unit_price ?? r.unitPrice ?? r.unit_cost ?? r.unitCost ?? 0),
       sellingPrice: !isReject && !isEntry && (r.sellingPrice != null || r.selling_price != null) ? Number(r.sellingPrice ?? r.selling_price) : undefined,
       remark: r.reason || (isReject ? "Reject / Cleaning Loss" : isEntry ? "Goods Receipt Voucher" : "Customer Dispatch"),
       reason: r.reason || undefined,
@@ -270,9 +270,9 @@ export async function createProduct(body = {}) {
         const movementId = `SM-INIT-${prodId}-${Date.now()}`
         await conn.query(
           `INSERT INTO stock_movements (
-            id, product_id, warehouse_id, movement_type, quantity, unit_cost, unit_price,
-            balance_after, batch_no, expiry_date, reference_type, reference_id, notes, performed_by, movement_date
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            id, product_id, warehouse_id, movement_type, quantity, unit_cost, unit_price, selling_price,
+            balance_after, batch_no, mfg_date, expiry_date, reference_type, reference_id, notes, party, performed_by, movement_date
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             movementId,
             prodId,
@@ -281,12 +281,15 @@ export async function createProduct(body = {}) {
             qty,
             unitCost,
             unitCost,
+            sellingPrice,
             qty,
             batchNo,
+            normalized.mfg_date || todayStr,
             normalized.expiry_date || null,
             "STOCK_RECEIPT",
             batchNo,
             "Initial Stock Registration",
+            body.supplierName || body.supplier_name || body.party || "Initial Stock Deposit",
             body.performedBy || body.createdBy || "Warehouse Officer",
             normalized.mfg_date || todayStr,
           ]
@@ -452,6 +455,14 @@ export async function updateProduct(id, updates = {}) {
         if (normalized.expiry_date && String(normalized.expiry_date).trim() !== "") {
           syncSmClauses.push("expiry_date = ?")
           syncSmVals.push(normalized.expiry_date)
+        }
+        if (normalized.mfg_date && String(normalized.mfg_date).trim() !== "") {
+          syncSmClauses.push("mfg_date = ?")
+          syncSmVals.push(normalized.mfg_date)
+        }
+        if (normalized.selling_price !== undefined) {
+          syncSmClauses.push("selling_price = ?")
+          syncSmVals.push(Number(normalized.selling_price))
         }
 
         if (syncSmClauses.length > 0) {

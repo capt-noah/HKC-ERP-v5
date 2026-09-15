@@ -19,6 +19,7 @@ interface UnifiedWH1Row {
   unitPrice: number
   sellingPrice?: number
   remark: string
+  createdAt?: string
   rawEntry?: WH1Entry
   rawBinEntry?: BinCardMovementEntry
 }
@@ -49,6 +50,7 @@ export default function WH1ChildMovementLedger({
         unitPrice: Number(e.unitPrice ?? product.unitCost ?? 0),
         sellingPrice: undefined,
         remark: e.notes || "",
+        createdAt: e.createdAt,
         rawEntry: e,
       }
     })
@@ -82,19 +84,18 @@ export default function WH1ChildMovementLedger({
           unitPrice: effectiveUnitPrice,
           sellingPrice: !isReject ? effectiveSellingPrice : undefined,
           remark: rec.remark || (isReject ? "Reject / Cleaning Loss" : "Outbound Dispatch"),
+          createdAt: rec.createdAt,
           rawBinEntry: rec,
         }
       })
 
-    // Combine: Chronologically ordered stock movement transactions
+    // Combine: Chronologically ordered stock movement transactions (pure chronological ascending)
     const allRows = [...inboundRows, ...nonEntryBinRows]
 
     allRows.sort((a, b) => {
-      const timeA = new Date(a.date && a.date !== "—" ? a.date : 0).getTime()
-      const timeB = new Date(b.date && b.date !== "—" ? b.date : 0).getTime()
+      const timeA = new Date(a.createdAt || (a.date && a.date !== "—" ? a.date : 0)).getTime()
+      const timeB = new Date(b.createdAt || (b.date && b.date !== "—" ? b.date : 0)).getTime()
       if (timeA !== timeB) return timeA - timeB
-      if (a.type === "entry" && b.type !== "entry") return -1
-      if (a.type !== "entry" && b.type === "entry") return 1
       return 0
     })
 

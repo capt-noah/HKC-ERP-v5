@@ -20,13 +20,9 @@ export default function StockBinCardPrintModal({
   const entries = useMemo(() => {
     const raw = [...(product?.binCardEntries || [])]
     raw.sort((a, b) => {
-      const timeA = new Date(a.date && a.date !== "—" ? a.date : 0).getTime()
-      const timeB = new Date(b.date && b.date !== "—" ? b.date : 0).getTime()
+      const timeA = new Date(a.createdAt || (a.date && a.date !== "—" ? a.date : 0)).getTime()
+      const timeB = new Date(b.createdAt || (b.date && b.date !== "—" ? b.date : 0)).getTime()
       if (timeA !== timeB) return timeA - timeB
-      const aIsEntry = a.type === "entry" || Number(a.qtyReceived || 0) > 0
-      const bIsEntry = b.type === "entry" || Number(b.qtyReceived || 0) > 0
-      if (aIsEntry && !bIsEntry) return -1
-      if (!aIsEntry && bIsEntry) return 1
       return 0
     })
 

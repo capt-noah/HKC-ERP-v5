@@ -14,13 +14,9 @@ export default function StockBinCardLedger({
   const entries = useMemo(() => {
     const raw = [...(product.binCardEntries || [])]
     raw.sort((a, b) => {
-      const timeA = new Date(a.date && a.date !== "—" ? a.date : 0).getTime()
-      const timeB = new Date(b.date && b.date !== "—" ? b.date : 0).getTime()
+      const timeA = new Date(a.createdAt || (a.date && a.date !== "—" ? a.date : 0)).getTime()
+      const timeB = new Date(b.createdAt || (b.date && b.date !== "—" ? b.date : 0)).getTime()
       if (timeA !== timeB) return timeA - timeB
-      const aIsEntry = a.type === "entry" || Number(a.qtyReceived || 0) > 0
-      const bIsEntry = b.type === "entry" || Number(b.qtyReceived || 0) > 0
-      if (aIsEntry && !bIsEntry) return -1
-      if (!aIsEntry && bIsEntry) return 1
       return 0
     })
 
@@ -42,10 +38,12 @@ export default function StockBinCardLedger({
 
   // Valuation totals: Invoiced Sales total vs Net Stock Asset Value at Cost
   const totalInvoicedSalesValue = entries
-    .filter((e) => e.type === "leave" && e.sellingPrice && Number(e.sellingPrice) > 0)
+    .filter((e) => (e.type === "leave" || Number(e.qtyIssued || 0) > 0) && e.sellingPrice && Number(e.sellingPrice) > 0)
     .reduce((sum, e) => sum + (Number(e.qtyIssued || 0) * Number(e.sellingPrice || 0)), 0)
 
-  const netRemainingStockValue = product.totalStockValue != null && Number(product.totalStockValue) > 0
+  const netRemainingStockValue = Array.isArray(product.batches) && product.batches.length > 0
+    ? product.batches.reduce((sum, b) => sum + (Number(b.qty || 0) * Number(b.unitPrice ?? (b as any).unit_cost ?? product.unitCost ?? 0)), 0)
+    : product.totalStockValue != null && Number(product.totalStockValue) > 0
     ? Number(product.totalStockValue)
     : currentBalance * Number(product.unitCost || 0)
 
@@ -117,7 +115,7 @@ export default function StockBinCardLedger({
                     </td>
                     {/* Selling Price / Value (ETB) */}
                     <td className="py-2.5 px-4 text-right font-mono font-bold text-blue-950 border-r border-zinc-100 whitespace-nowrap">
-                      {rec.sellingPrice != null && Number(rec.sellingPrice) > 0 ? (
+                      {isLeave && rec.sellingPrice != null && Number(rec.sellingPrice) > 0 ? (
                         <div>
                           <div className="font-extrabold text-blue-700">
                             ETB {Number(rec.sellingPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

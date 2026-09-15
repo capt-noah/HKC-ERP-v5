@@ -19,7 +19,6 @@ import {
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
-import { useAuthStore } from "@/lib/authStore"
 import { useErpStore, getTradeLicenseStatus, type SalesOrder, type Quotation, type SalesOrderItem, type Product } from "@/lib/erpStore"
 import { useFinanceStore, calculateMultiTax, resolveAutoTaxScheduleId } from "@/lib/financeStore"
 import { withOperatingWarehouses, isWH1 } from "@/lib/warehouses"
@@ -91,8 +90,6 @@ const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, trans
 
 export default function SalesOrders() {
   const { showToast } = useFeedback()
-  const { user } = useAuthStore()
-  const isSuperadmin = user?.roles?.includes("superadmin") ?? false
   const erp = useErpStore()
   const isLoading = erp.isLoading() && !erp.isSalesLoaded()
   
@@ -409,6 +406,21 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       next[index] = current
       return next
     })
+    if (isEditing) {
+      setEditFormErrors((prev) => {
+        if (!prev.items) return prev
+        const next = { ...prev }
+        delete next.items
+        return next
+      })
+    } else {
+      setCreateFormErrors((prev) => {
+        if (!prev.items) return prev
+        const next = { ...prev }
+        delete next.items
+        return next
+      })
+    }
   }
 
   const handleWarehouseChange = (whCode: string, isEditing = false) => {
@@ -604,8 +616,23 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       errors.paymentAdvice = "Payment Advice deposit receipt is mandatory when saving or converting to a Cash order."
     }
 
+    const targetEditWh = editingOrder.warehouse
     if (editingOrderItems.length === 0 || editingOrderItems.some((i) => !i.productId || Number(i.qty) <= 0)) {
       errors.items = "Order must contain at least one valid item with a quantity greater than 0."
+    } else {
+      const overStockItems = editingOrderItems.filter((i) => {
+        const p = products.find((prod) => prod.id === i.productId)
+        const avail = p ? (targetEditWh && targetEditWh !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === targetEditWh)?.qty ?? p.quantity) : p.quantity) : 0
+        return Number(i.qty) > avail
+      })
+      if (overStockItems.length > 0) {
+        const details = overStockItems.map((i) => {
+          const p = products.find((prod) => prod.id === i.productId)
+          const avail = p ? (targetEditWh && targetEditWh !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === targetEditWh)?.qty ?? p.quantity) : p.quantity) : 0
+          return `${p?.name || i.productId} (Ordered: ${i.qty}, Available: ${avail})`
+        }).join("; ")
+        errors.items = `Cannot save Sales Order: Insufficient warehouse stock for: ${details}.`
+      }
     }
 
     if (Object.keys(errors).length > 0) {
@@ -726,6 +753,20 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       const hasInvalidItem = orderItems.some((i) => !i.productId || Number(i.qty) <= 0)
       if (hasInvalidItem) {
         errors.items = "All line items must have a selected product and quantity greater than 0."
+      } else {
+        const overStockItems = orderItems.filter((i) => {
+          const p = products.find((prod) => prod.id === i.productId)
+          const avail = p ? (targetWh && targetWh !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === targetWh)?.qty ?? p.quantity) : p.quantity) : 0
+          return Number(i.qty) > avail
+        })
+        if (overStockItems.length > 0) {
+          const details = overStockItems.map((i) => {
+            const p = products.find((prod) => prod.id === i.productId)
+            const avail = p ? (targetWh && targetWh !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === targetWh)?.qty ?? p.quantity) : p.quantity) : 0
+            return `${p?.name || i.productId} (Ordered: ${i.qty}, Available: ${avail})`
+          }).join("; ")
+          errors.items = `Cannot create Sales Order: Insufficient warehouse stock for: ${details}.`
+        }
       }
     }
 
@@ -1165,19 +1206,6 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
               <td style={{ width: `${colWidths._actions}px` }} className="py-4 px-4 text-center whitespace-nowrap overflow-hidden">
                 <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                  {isSuperadmin && so.approvalStatus !== "Approved" && (
-                    <button 
-                      onClick={async () => {
-                        const approver = user?.fullname || user?.username || "Super Admin"
-                        await erp.approveSalesOrder(so.id, approver)
-                        showToast("Order Approved", "success", `Sales Order ${so.id} approved and unlocked for stock issue.`)
-                      }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] tracking-tight transition-all active:scale-95 shadow-xs cursor-pointer"
-                      title="Superadmin: Approve Order & Unlock for Fulfillment"
-                    >
-                      <CheckCircle2 className="size-3 text-white" /> Approve
-                    </button>
-                  )}
                   <button 
                     onClick={() => handleOpenEditModal(so)}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs"
@@ -2445,20 +2473,6 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         )}
 
         <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
-          {isSuperadmin && editingOrder.approvalStatus !== "Approved" && (
-            <button 
-              type="button"
-              onClick={async () => {
-                const approver = user?.fullname || user?.username || "Super Admin"
-                await erp.approveSalesOrder(editingOrder.id, approver)
-                showToast("Order Approved", "success", `Sales Order ${editingOrder.id} approved and unlocked for stock issue.`)
-                setIsEditOrderOpen(false)
-              }}
-              className="px-4 py-2 rounded-full bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 shadow-sm transition-colors inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <CheckCircle2 className="size-3.5 text-white" /> Approve Order
-            </button>
-          )}
           <button 
             type="button" 
             disabled={isSavingEditOrder}

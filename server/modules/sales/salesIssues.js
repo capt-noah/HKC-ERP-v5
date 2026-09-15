@@ -910,21 +910,23 @@ export async function postSalesIssue(arg1, arg2) {
           const smId = `SM-ISSUE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
           await pool.query(
             `INSERT INTO stock_movements (
-              id, product_id, warehouse_id, movement_type, quantity, unit_cost, unit_price,
-              balance_after, batch_no, expiry_date, reference_type, reference_id, notes, performed_by, movement_date
-            ) VALUES (?, ?, ?, 'ISSUE', ?, ?, ?, ?, ?, ?, 'SALES_ISSUE', ?, ?, ?, ?)`,
+              id, product_id, warehouse_id, movement_type, quantity, unit_cost, unit_price, selling_price,
+              balance_after, batch_no, expiry_date, reference_type, reference_id, notes, party, performed_by, movement_date
+            ) VALUES (?, ?, ?, 'ISSUE', ?, ?, ?, ?, ?, ?, ?, 'SALES_ISSUE', ?, ?, ?, ?, ?)`,
             [
               smId,
               realProdId,
               prod.warehouse_id || prod.warehouse || existing.warehouse_id || "WH2",
               issueQty,
               deductedBatchCost,
-              itemSellingPrice,
+              deductedBatchCost,
+              itemSellingPrice > 0 ? itemSellingPrice : null,
               newQty,
               targetBatchNo || "BATCH-ISSUE",
               item.expiry_date || item.expiryDate || null,
               existing.fs_no || id,
               `Sales Issue FS-${existing.fs_no || id} (${existing.customer_name || 'Customer Dispatch'})`,
+              existing.customer_name || existing.customer || "Customer Dispatch",
               "Sales Officer",
               existing.sale_date || getLocalDateString(),
             ]
