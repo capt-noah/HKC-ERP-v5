@@ -69,6 +69,7 @@ export interface BinCardMovementEntry {
   balance: number
   expiryDate: string
   mfgDate?: string
+  proposedReleaseDate?: string
   party: string
   unitPrice?: number
   sellingPrice?: number
@@ -544,6 +545,7 @@ class ErpStore {
         suppliers,
         purchaseOrders,
         transferItems,
+        quarantineRecordsDb,
       ] = await Promise.all([
         loadResource<Warehouse>("warehouses"),
         loadResource<Product>("export_products").catch(() => []),
@@ -555,6 +557,7 @@ class ErpStore {
         loadResource<Supplier>("suppliers").catch(() => []),
         loadResource<PurchaseOrder>("purchase_orders").catch(() => []),
         loadResource<any>("store_transfer_items").catch(() => []),
+        loadResource<any>("quarantine_records").catch(() => []),
       ])
 
       this.warehouses = withOperatingWarehouses(warehouses)
@@ -741,7 +744,36 @@ class ErpStore {
       if (suppliers.length > 0) this.suppliers = sortNewestFirst(suppliers)
       if (purchaseOrders.length > 0) this.purchaseOrders = sortNewestFirst(purchaseOrders)
 
-      // Sync quarantine records from stock movements and product bin card ledgers
+      // Hydrate quarantine records from MySQL quarantine_records table
+      const dbQuarantines: QuarantineRecord[] = (quarantineRecordsDb || []).map((q: any) => {
+        const prod = this.products.find((p) => p.id === (q.product_id || q.productId) || (q.sku && p.sku === q.sku))
+        const pName = q.product_name || q.productName || prod?.name || "Medicine"
+        const pSku = q.sku || prod?.sku || ""
+        const pUnit = q.unit || prod?.unit || "Box"
+        const pWh = q.warehouse_id || q.warehouseId || prod?.warehouse || "WH2"
+        const proposedRelease = q.proposed_release_date || q.proposedReleaseDate || ""
+
+        return {
+          id: q.id,
+          warehouseId: pWh,
+          warehouseName: pWh,
+          productId: q.product_id || q.productId || prod?.id || "",
+          productName: pName,
+          sku: pSku,
+          batchNo: q.batch_no || q.batchNo || prod?.batch || "",
+          nameEntered: q.name_entered || q.nameEntered || "Store Officer",
+          quarantineDate: q.quarantine_date || q.quarantineDate || q.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+          quantity: Number(q.quantity || 0),
+          unit: pUnit,
+          proposedReleaseDate: proposedRelease,
+          reason: q.reason || "Broken / Damaged Medicine",
+          status: ((q.status || "Quarantined") as "Quarantined" | "Released" | "Disposed"),
+          binCardEntryId: q.bin_card_entry_id || q.binCardEntryId,
+          createdAt: q.created_at || q.createdAt || new Date().toISOString(),
+        }
+      })
+
+      // Sync fallback quarantine records from stock movements and product bin card ledgers
       const movementQuarantines: QuarantineRecord[] = this.stockMovements
         .filter((m: any) => {
           const type = String(m.type || m.movementType || m.movement_type || "").toUpperCase()
@@ -758,6 +790,8 @@ class ErpStore {
           const quarantineDate = (m as any).quarantineDate || m.date || (m as any).movementDate || (m as any).movement_date || new Date().toISOString().slice(0, 10)
           const reason = m.remarks || m.notes || (m as any).reason || "Broken / Damaged Medicine"
           const whId = m.fromWarehouse || m.toWarehouse || m.warehouseId || (m as any).warehouse_id || prod?.warehouse || "WH2"
+          const releaseMatch = (m.remarks || m.notes || (m as any).reason || "").match(/Release Date:\s*([0-9-]+)/i)
+          const proposedRelease = (m as any).proposedReleaseDate || (m as any).proposed_release_date || (releaseMatch ? releaseMatch[1] : "")
 
           return {
             id: m.id || (m as any).reference_id || `QRN-${Date.now()}`,
@@ -771,7 +805,7 @@ class ErpStore {
             quarantineDate: quarantineDate,
             quantity: qty,
             unit: prod?.unit || m.unit || "Box",
-            proposedReleaseDate: (m as any).proposedReleaseDate || "",
+            proposedReleaseDate: proposedRelease,
             reason: reason,
             status: ((m as any).status || "Quarantined") as "Quarantined" | "Released" | "Disposed",
             createdAt: (m as any).createdAt || m.date || new Date().toISOString(),
@@ -784,34 +818,45 @@ class ErpStore {
         if (prod.binCardEntries && Array.isArray(prod.binCardEntries)) {
           for (const bce of prod.binCardEntries) {
             if (bce.type === "quarantine") {
-              const alreadyInMovs = movementQuarantines.some((mq) => mq.id === bce.id || mq.binCardEntryId === bce.id || mq.id.includes(bce.id) || bce.id.includes(mq.id))
-              if (!alreadyInMovs) {
-                binCardQuarantines.push({
-                  id: bce.id,
-                  warehouseId: prod.warehouse || "WH2",
-                  warehouseName: prod.warehouse || "WH2",
-                  productId: prod.id,
-                  productName: prod.name,
-                  sku: prod.sku,
-                  batchNo: bce.batchNo || prod.batch || "",
-                  nameEntered: "Store Officer",
-                  quarantineDate: bce.date || new Date().toISOString().slice(0, 10),
-                  quantity: Number(bce.qtyIssued || 0),
-                  unit: prod.unit || "Box",
-                  proposedReleaseDate: "",
-                  reason: bce.remark || "Broken / Damaged Medicine",
-                  status: "Quarantined",
-                  binCardEntryId: bce.id,
-                  createdAt: bce.createdAt || bce.date || new Date().toISOString(),
-                })
-              }
+              const releaseMatch = (bce.remark || "").match(/Release Date:\s*([0-9-]+)/i)
+              const proposedRelease = bce.proposedReleaseDate || (releaseMatch ? releaseMatch[1] : "")
+              binCardQuarantines.push({
+                id: bce.id,
+                warehouseId: prod.warehouse || "WH2",
+                warehouseName: prod.warehouse || "WH2",
+                productId: prod.id,
+                productName: prod.name,
+                sku: prod.sku,
+                batchNo: bce.batchNo || prod.batch || "",
+                nameEntered: "Store Officer",
+                quarantineDate: bce.date || new Date().toISOString().slice(0, 10),
+                quantity: Number(bce.qtyIssued || 0),
+                unit: prod.unit || "Box",
+                proposedReleaseDate: proposedRelease,
+                reason: bce.remark || "Broken / Damaged Medicine",
+                status: "Quarantined",
+                binCardEntryId: bce.id,
+                createdAt: bce.createdAt || bce.date || new Date().toISOString(),
+              })
             }
           }
         }
       }
 
-      // Set quarantine records strictly from database movements + product bin cards
-      this.quarantineRecords = [...movementQuarantines, ...binCardQuarantines]
+      // Merge records: prioritize DB quarantine_records table, then fallback movements/bincards
+      const missingFromDb: QuarantineRecord[] = []
+      for (const mq of movementQuarantines) {
+        if (!dbQuarantines.some((dq) => dq.id === mq.id || dq.binCardEntryId === mq.id || (mq.binCardEntryId && dq.binCardEntryId === mq.binCardEntryId))) {
+          missingFromDb.push(mq)
+        }
+      }
+      for (const bq of binCardQuarantines) {
+        if (!dbQuarantines.some((dq) => dq.id === bq.id || dq.binCardEntryId === bq.id) && !missingFromDb.some((m) => m.id === bq.id)) {
+          missingFromDb.push(bq)
+        }
+      }
+
+      this.quarantineRecords = [...dbQuarantines, ...missingFromDb]
       try {
         if (typeof window !== "undefined" && window.localStorage) {
           localStorage.setItem("hkc_quarantine_records", JSON.stringify(this.quarantineRecords))
@@ -977,11 +1022,13 @@ class ErpStore {
       totalStockValue = Math.round(totalStockValue * 100) / 100
     } else if (!isWH1(product.warehouse)) {
       if (Array.isArray(product.batches) && product.batches.length > 0) {
-        const batchSum = product.batches.reduce(
-          (sum, b) => sum + (Number(b.qty ?? (b as any).quantity ?? 0) * Number((b as any).unitPrice ?? (b as any).unit_cost ?? unitCost ?? 0)),
-          0
-        )
-        if (batchSum > 0) {
+        const batchSum = product.batches
+          .filter((b) => b.status !== "Quarantined")
+          .reduce(
+            (sum, b) => sum + (Number(b.qty ?? (b as any).quantity ?? 0) * Number((b as any).unitPrice ?? (b as any).unit_cost ?? unitCost ?? 0)),
+            0
+          )
+        if (batchSum >= 0) {
           totalStockValue = Math.round(batchSum * 100) / 100
         }
       } else if (Array.isArray(product.binCardEntries) && product.binCardEntries.length > 0) {
@@ -1139,9 +1186,15 @@ class ErpStore {
     let remainingToDeduct = issueQty
     const updatedBatches = (prod.batches || []).map((b) => {
       if (remainingToDeduct > 0 && (!input.batchNo || b.batchNo === input.batchNo)) {
-        const deduct = Math.min(Number(b.qty || 0), remainingToDeduct)
+        const cur = Number(b.qty || 0)
+        const deduct = Math.min(cur, remainingToDeduct)
         remainingToDeduct -= deduct
-        return { ...b, qty: Math.max(0, Number(b.qty || 0) - deduct) }
+        const newBatchQty = Math.max(0, cur - deduct)
+        return {
+          ...b,
+          qty: newBatchQty,
+          status: newBatchQty === 0 && (!input.batchNo || b.batchNo === input.batchNo) ? ("Quarantined" as const) : b.status,
+        }
       }
       return b
     })
@@ -1162,10 +1215,10 @@ class ErpStore {
     const packSize = Number(prod.quantityPerPack || 1)
     const nextCartons = packSize > 0 ? Math.floor(nextQty / packSize) : (prod.numberOfCartons || 0)
     
-    // Accurate stock valuation deducting at targeted batch cost
-    const hasBatchPrices = updatedBatches.some((b: any) => Number(b.unitPrice || b.costPrice || 0) > 0)
-    const nextVal = hasBatchPrices
-      ? updatedBatches.reduce((sum, b: any) => sum + (Number(b.qty || 0) * Number(b.unitPrice || b.costPrice || prod.unitCost || 0)), 0)
+    // Accurate stock valuation deducting non-quarantined batches at targeted batch cost
+    const activeBatches = updatedBatches.filter((b) => b.status !== "Quarantined")
+    const nextVal = activeBatches.length > 0
+      ? activeBatches.reduce((sum, b: any) => sum + (Number(b.qty || 0) * Number(b.unitPrice || b.costPrice || prod.unitCost || 0)), 0)
       : Math.max(0, (prod.totalStockValue != null && prod.totalStockValue > 0 ? prod.totalStockValue - (issueQty * batchUnitCost) : nextQty * Number(prod.unitCost || 0)))
 
     const qrnId = `QRN-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
@@ -1200,7 +1253,7 @@ class ErpStore {
       binCardEntries: updatedBinEntries,
     })
 
-    // 5. Store Quarantine record
+    // 5. Store Quarantine record in memory and MySQL
     const record: QuarantineRecord = {
       id: qrnId,
       warehouseId: input.warehouseId,
@@ -1225,7 +1278,6 @@ class ErpStore {
       localStorage.setItem("hkc_quarantine_records", JSON.stringify(this.quarantineRecords))
     } catch {}
 
-    // 6. Log to stock_movements in MySQL
     const movementLog: any = {
       id: qrnId,
       date: input.quarantineDate || new Date().toISOString().slice(0, 10),
@@ -1251,12 +1303,27 @@ class ErpStore {
       reference_id: qrnId,
       referenceType: "QUARANTINE",
       reference_type: "QUARANTINE",
-      remarks: `Quarantined by ${input.nameEntered}: ${input.reason || "Broken/Damaged Medicine"} [Batch: ${input.batchNo}]`,
-      notes: `Quarantined by ${input.nameEntered}: ${input.reason || "Broken/Damaged Medicine"} [Batch: ${input.batchNo}]`,
+      remarks: `Quarantined by ${input.nameEntered}: ${input.reason || "Broken/Damaged Medicine"} (Release Date: ${input.proposedReleaseDate}) [Batch: ${input.batchNo}]`,
+      notes: `Quarantined by ${input.nameEntered}: ${input.reason || "Broken/Damaged Medicine"} (Release Date: ${input.proposedReleaseDate}) [Batch: ${input.batchNo}]`,
       balanceAfter: nextQty,
       balance_after: nextQty,
     }
-    await createResource<StockMovementLog>("stock_movements", movementLog).catch(() => {})
+    this.stockMovements = [movementLog, ...this.stockMovements]
+
+    await createResource<any>("quarantine_records", {
+      id: qrnId,
+      product_id: prod.id,
+      warehouse_id: input.warehouseId,
+      quantity: issueQty,
+      quarantine_date: input.quarantineDate || new Date().toISOString().slice(0, 10),
+      proposed_release_date: input.proposedReleaseDate || null,
+      status: "Quarantined",
+      reason: input.reason || "Broken/Damaged Medicine",
+      name_entered: input.nameEntered,
+      bin_card_entry_id: binEntryId,
+      unit: prod.unit || "Box",
+      batch_no: input.batchNo || null,
+    }).catch((e) => console.warn("quarantine_records API sync warning:", e))
 
     this.notify()
     return record
@@ -1941,9 +2008,17 @@ class ErpStore {
     const targetTable = isExport ? "export_products" : "pharma_products"
     const withVal = this.withInventoryValue(product)
     const savedProduct = await createResource<Product>(targetTable, withVal)
-    this.products = [savedProduct, ...this.products]
+    const merged = this.withInventoryValue({
+      ...withVal,
+      ...(savedProduct || {}),
+      batches: withVal.batches || [],
+      wh1Entries: withVal.wh1Entries || [],
+      binCardEntries: withVal.binCardEntries || [],
+      stockBreakdown: withVal.stockBreakdown || [],
+    })
+    this.products = [merged, ...this.products]
     this.listeners.forEach((l) => l())
-    return savedProduct
+    return merged
   }
 
   public async deleteProduct(id: string) {
@@ -1981,9 +2056,21 @@ class ErpStore {
       updatedAt: new Date().toISOString(),
     })
     const savedProduct = await updateResource<Product>(targetTable, id, updatedProduct)
-    this.products = this.products.map((product) => (product.id === id ? savedProduct : product))
+
+    // Crucial: Merge saved product from MySQL with current child collections to avoid erasing relational arrays in client memory
+    const mergedProduct = this.withInventoryValue({
+      ...currentProduct,
+      ...partial,
+      ...(savedProduct || {}),
+      batches: partial.batches !== undefined ? partial.batches : (currentProduct.batches || []),
+      wh1Entries: partial.wh1Entries !== undefined ? partial.wh1Entries : (currentProduct.wh1Entries || []),
+      binCardEntries: partial.binCardEntries !== undefined ? partial.binCardEntries : (currentProduct.binCardEntries || []),
+      stockBreakdown: partial.stockBreakdown !== undefined ? partial.stockBreakdown : (currentProduct.stockBreakdown || []),
+    })
+
+    this.products = this.products.map((product) => (product.id === id ? mergedProduct : product))
     this.listeners.forEach((listener) => listener())
-    return savedProduct
+    return mergedProduct
   }
 
   public async addWH1Entry(productId: string, entry: Omit<WH1Entry, "entryId">) {

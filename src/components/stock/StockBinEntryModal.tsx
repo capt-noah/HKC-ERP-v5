@@ -220,7 +220,7 @@ export default function StockBinEntryModal({
                       : "bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100"
                   }`}
                 >
-                  - Issued (Stock Out)
+                  - Outbound Issue / Dispatch
                 </button>
               </div>
             </div>
@@ -271,7 +271,7 @@ export default function StockBinEntryModal({
 
               <div className="space-y-1">
                 <label className="block text-[10px] font-black uppercase text-zinc-500">
-                  {movementType === "received" ? "Unit Cost (ETB)" : "Unit Cost (ETB)"}
+                  {movementType === "received" ? "Unit Cost (ETB)" : "Acquisition COGS Unit Cost (ETB)"}
                 </label>
                 <input
                   type="number"
@@ -287,7 +287,7 @@ export default function StockBinEntryModal({
               {movementType === "issued" && (
                 <div className="space-y-1">
                   <label className="block text-[10px] font-black uppercase text-blue-700">
-                    Selling Price (ETB)
+                    Commercial Selling Price (ETB)
                   </label>
                   <input
                     type="number"

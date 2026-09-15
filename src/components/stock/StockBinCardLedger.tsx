@@ -38,11 +38,13 @@ export default function StockBinCardLedger({
 
   // Valuation totals: Invoiced Sales total vs Net Stock Asset Value at Cost
   const totalInvoicedSalesValue = entries
-    .filter((e) => (e.type === "leave" || Number(e.qtyIssued || 0) > 0) && e.sellingPrice && Number(e.sellingPrice) > 0)
+    .filter((e) => e.type !== "quarantine" && (e.type === "leave" || Number(e.qtyIssued || 0) > 0) && e.sellingPrice && Number(e.sellingPrice) > 0)
     .reduce((sum, e) => sum + (Number(e.qtyIssued || 0) * Number(e.sellingPrice || 0)), 0)
 
   const netRemainingStockValue = Array.isArray(product.batches) && product.batches.length > 0
-    ? product.batches.reduce((sum, b) => sum + (Number(b.qty || 0) * Number(b.unitPrice ?? (b as any).unit_cost ?? product.unitCost ?? 0)), 0)
+    ? product.batches
+        .filter((b) => b.status !== "Quarantined")
+        .reduce((sum, b) => sum + (Number(b.qty || 0) * Number(b.unitPrice ?? (b as any).unit_cost ?? product.unitCost ?? 0)), 0)
     : product.totalStockValue != null && Number(product.totalStockValue) > 0
     ? Number(product.totalStockValue)
     : currentBalance * Number(product.unitCost || 0)
@@ -80,7 +82,7 @@ export default function StockBinCardLedger({
             </thead>
             <tbody className="divide-y divide-zinc-150">
               {entries.map((rec) => {
-                const isQuarantine = rec.type === "quarantine"
+                const isQuarantine = rec.type === "quarantine" || (rec.party && rec.party.includes("Quarantine"))
                 const isEntry = !isQuarantine && (rec.type === "entry" || Number(rec.qtyReceived || 0) > 0)
                 const isLeave = !isQuarantine && (rec.type === "leave" || Number(rec.qtyIssued || 0) > 0)
 
@@ -99,7 +101,7 @@ export default function StockBinCardLedger({
                     <td className={`py-2.5 px-4 text-right font-mono font-bold border-r border-zinc-100 ${rec.qtyReceived > 0 ? "text-emerald-700 font-black" : "text-zinc-400"}`}>
                       {rec.qtyReceived > 0 ? `+${rec.qtyReceived.toLocaleString()}` : "-"}
                     </td>
-                    <td className={`py-2.5 px-4 text-right font-mono font-bold border-r border-zinc-100 ${rec.qtyIssued > 0 ? (rec.type === "quarantine" ? "text-amber-800 font-black" : "text-rose-700 font-black") : "text-zinc-400"}`}>
+                    <td className={`py-2.5 px-4 text-right font-mono font-bold border-r border-zinc-100 ${rec.qtyIssued > 0 ? (isQuarantine ? "text-amber-800 font-black" : "text-rose-700 font-black") : "text-zinc-400"}`}>
                       {rec.qtyIssued > 0 ? `-${rec.qtyIssued.toLocaleString()}` : "-"}
                     </td>
                     <td className="py-2.5 px-4 text-right font-mono font-black text-zinc-950 bg-black/[0.02] border-r border-zinc-100">
@@ -107,11 +109,21 @@ export default function StockBinCardLedger({
                     </td>
                     {/* Unit Cost (ETB) */}
                     <td className="py-2.5 px-4 text-right font-mono font-bold text-zinc-800 border-r border-zinc-100 whitespace-nowrap">
-                      {rec.unitPrice != null && Number(rec.unitPrice) > 0
-                        ? `ETB ${Number(rec.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                        : product.unitCost
-                          ? `ETB ${Number(product.unitCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                          : "—"}
+                      {rec.unitPrice != null && Number(rec.unitPrice) > 0 ? (
+                        <div>
+                          <div>ETB {Number(rec.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          <div className={`text-[9px] font-sans font-semibold ${isQuarantine ? "text-amber-700" : isLeave ? "text-rose-600" : "text-emerald-700"}`}>
+                            {isQuarantine ? "Loss" : isLeave ? "COGS" : "Acq Cost"}
+                          </div>
+                        </div>
+                      ) : product.unitCost ? (
+                        <div>
+                          <div>ETB {Number(product.unitCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                          <div className="text-[9px] font-sans font-semibold text-zinc-400">Default Cost</div>
+                        </div>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     {/* Selling Price / Value (ETB) */}
                     <td className="py-2.5 px-4 text-right font-mono font-bold text-blue-950 border-r border-zinc-100 whitespace-nowrap">
@@ -132,7 +144,7 @@ export default function StockBinCardLedger({
                     <td className="py-2.5 px-4 font-mono text-zinc-600 border-r border-zinc-100">{rec.expiryDate || "-"}</td>
                     <td className="py-2.5 px-4 font-semibold text-zinc-800 border-r border-zinc-100">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        {rec.type === "quarantine" && (
+                        {isQuarantine && (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
                             QUARANTINE
                           </span>
@@ -142,14 +154,20 @@ export default function StockBinCardLedger({
                     </td>
                     <td className="py-2.5 px-4 text-zinc-500 max-w-xs truncate border-r border-zinc-100">{rec.remark || "-"}</td>
                     <td className="py-2.5 px-4 text-center">
-                      <button
-                        type="button"
-                        onClick={() => onEditEntry(product, rec)}
-                        className="px-2.5 py-1 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-800 text-[10px] font-extrabold inline-flex items-center gap-1 transition-all shadow-xs cursor-pointer"
-                        title="Edit sub-entry details"
-                      >
-                        <Edit3 className="size-3 text-zinc-500" /> Edit
-                      </button>
+                      {isQuarantine ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-900 text-[10px] font-black tracking-wider shadow-2xs">
+                          QA Locked
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onEditEntry(product, rec)}
+                          className="px-2.5 py-1 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-800 text-[10px] font-extrabold inline-flex items-center gap-1 transition-all shadow-xs cursor-pointer"
+                          title="Edit sub-entry details"
+                        >
+                          <Edit3 className="size-3 text-zinc-500" /> Edit
+                        </button>
+                      )}
                     </td>
                   </tr>
                 )

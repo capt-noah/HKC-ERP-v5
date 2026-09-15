@@ -532,7 +532,7 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
 
               {/* PROPOSED RELEASE DATE */}
               <td style={{ width: `${colWidths.proposedReleaseDate}px` }} className="py-4 px-4 font-mono font-bold text-zinc-700 border-r border-zinc-100 overflow-hidden">
-                {rec.proposedReleaseDate || "—"}
+                {rec.proposedReleaseDate || (rec as any).proposed_release_date || "—"}
               </td>
 
               {/* Status */}
@@ -697,7 +697,9 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
                         Quarantine Quantity <span className="text-rose-600">*</span>
                       </span>
                       {maxAvailableQty > 0 && (
-                        <span className="text-[10px] font-bold text-zinc-400">Max: {maxAvailableQty} {selectedProduct?.unit}</span>
+                        <span className={`text-[10px] font-bold ${Number(addQuantity) > maxAvailableQty ? "text-rose-600 font-black" : "text-zinc-400"}`}>
+                          Max: {maxAvailableQty} {selectedProduct?.unit}
+                        </span>
                       )}
                     </div>
                     <div className="relative">
@@ -709,12 +711,21 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
                         onChange={(e) => setAddQuantity(e.target.value)}
                         required
                         placeholder={`Max ${maxAvailableQty}`}
-                        className="h-11 w-full rounded-xl border border-zinc-200 px-3 pr-14 text-xs font-mono font-bold outline-none focus:border-emerald-500"
+                        className={`h-11 w-full rounded-xl border ${
+                          maxAvailableQty > 0 && Number(addQuantity) > maxAvailableQty
+                            ? "border-rose-500 bg-rose-50/30 text-rose-950 focus:border-rose-600 focus:ring-2 focus:ring-rose-500/20"
+                            : "border-zinc-200 focus:border-emerald-500"
+                        } px-3 pr-14 text-xs font-mono font-bold outline-none transition-all`}
                       />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-zinc-400">
                         {selectedProduct?.unit || "Units"}
                       </span>
                     </div>
+                    {maxAvailableQty > 0 && Number(addQuantity) > maxAvailableQty && (
+                      <p className="text-[10px] font-bold text-rose-600 mt-1 flex items-center gap-1">
+                        <span>⚠️</span> Quantity exceeds available batch balance ({maxAvailableQty} {selectedProduct?.unit || "Units"}).
+                      </p>
+                    )}
                   </label>
 
                   {/* NAME ENTERED */}
@@ -795,8 +806,8 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
                     </button>
                     <button
                       type="submit"
-                      disabled={isSubmittingAdd}
-                      className="h-10 rounded-full bg-zinc-950 px-5 font-bold text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors"
+                      disabled={isSubmittingAdd || (maxAvailableQty > 0 && Number(addQuantity) > maxAvailableQty) || !addProductId || !addBatchNo || !addQuantity}
+                      className="h-10 rounded-full bg-zinc-950 px-5 font-bold text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors cursor-pointer disabled:cursor-not-allowed"
                     >
                       {isSubmittingAdd ? <LoadingDots color="bg-white" size="sm" /> : "Confirm Quarantine Hold"}
                     </button>

@@ -833,8 +833,9 @@ export async function postSalesIssue(arg1, arg2) {
           // ── PHARMA PRODUCT LIFECYCLE (WH2 / WH3) ───────────────────────
           let targetBatchId = item.batch_id
           let targetBatchNo = item.batch_no || item.batch || item.batch_number
-          let deductedBatchCost = unitCost
           let remainingPharmaDeduct = issueQty
+          let totalDeductedPharmaCost = 0
+          const deductedBatchNos = []
 
           // 1. Deduct from specific batch in pharma_product_batches if specified
           if (targetBatchId) {
@@ -847,8 +848,11 @@ export async function postSalesIssue(arg1, arg2) {
               const curQty = Number(b.quantity || 0)
               const deduct = Math.min(curQty, remainingPharmaDeduct)
               remainingPharmaDeduct -= deduct
-              deductedBatchCost = Number(b.unit_cost || unitCost)
-              targetBatchNo = b.batch_no || targetBatchNo
+              const bCost = Number(b.unit_cost || unitCost)
+              totalDeductedPharmaCost += deduct * bCost
+              if (b.batch_no && !deductedBatchNos.includes(b.batch_no)) {
+                deductedBatchNos.push(b.batch_no)
+              }
               await pool.query(
                 "UPDATE `pharma_product_batches` SET quantity = GREATEST(0, quantity - ?), updated_at = NOW(3) WHERE id = ?",
                 [deduct, b.id]
@@ -859,7 +863,7 @@ export async function postSalesIssue(arg1, arg2) {
           // 2. If not found by batch_id or if remaining qty > 0, match by batch_no
           if (remainingPharmaDeduct > 0 && targetBatchNo) {
             const [bRows] = await pool.query(
-              "SELECT * FROM `pharma_product_batches` WHERE product_id = ? AND batch_no = ? AND quantity > 0 ORDER BY expiry_date ASC, created_at ASC",
+              "SELECT * FROM `pharma_product_batches` WHERE product_id = ? AND batch_no = ? AND quantity > 0 AND (qa_status != 'Quarantined' OR qa_status IS NULL) ORDER BY expiry_date ASC, created_at ASC",
               [realProdId, targetBatchNo]
             )
             for (const b of bRows) {
@@ -867,7 +871,11 @@ export async function postSalesIssue(arg1, arg2) {
               const curQty = Number(b.quantity || 0)
               const deduct = Math.min(curQty, remainingPharmaDeduct)
               remainingPharmaDeduct -= deduct
-              deductedBatchCost = Number(b.unit_cost || unitCost)
+              const bCost = Number(b.unit_cost || unitCost)
+              totalDeductedPharmaCost += deduct * bCost
+              if (b.batch_no && !deductedBatchNos.includes(b.batch_no)) {
+                deductedBatchNos.push(b.batch_no)
+              }
               await pool.query(
                 "UPDATE `pharma_product_batches` SET quantity = GREATEST(0, quantity - ?), updated_at = NOW(3) WHERE id = ?",
                 [deduct, b.id]
@@ -878,7 +886,7 @@ export async function postSalesIssue(arg1, arg2) {
           // 3. If still remaining (or no batch was specified), deduct in FIFO order
           if (remainingPharmaDeduct > 0) {
             const [bRows] = await pool.query(
-              "SELECT * FROM `pharma_product_batches` WHERE product_id = ? AND quantity > 0 ORDER BY expiry_date ASC, created_at ASC",
+              "SELECT * FROM `pharma_product_batches` WHERE product_id = ? AND quantity > 0 AND (qa_status != 'Quarantined' OR qa_status IS NULL) ORDER BY expiry_date ASC, created_at ASC",
               [realProdId]
             )
             for (const b of bRows) {
@@ -886,8 +894,11 @@ export async function postSalesIssue(arg1, arg2) {
               const curQty = Number(b.quantity || 0)
               const deduct = Math.min(curQty, remainingPharmaDeduct)
               remainingPharmaDeduct -= deduct
-              deductedBatchCost = Number(b.unit_cost || unitCost)
-              targetBatchNo = targetBatchNo || b.batch_no
+              const bCost = Number(b.unit_cost || unitCost)
+              totalDeductedPharmaCost += deduct * bCost
+              if (b.batch_no && !deductedBatchNos.includes(b.batch_no)) {
+                deductedBatchNos.push(b.batch_no)
+              }
               await pool.query(
                 "UPDATE `pharma_product_batches` SET quantity = GREATEST(0, quantity - ?), updated_at = NOW(3) WHERE id = ?",
                 [deduct, b.id]
@@ -895,11 +906,19 @@ export async function postSalesIssue(arg1, arg2) {
             }
           }
 
-          totalCost += issueQty * deductedBatchCost
+          // If still remaining qty couldn't be deducted from batches, fallback to product unitCost
+          if (remainingPharmaDeduct > 0) {
+            totalDeductedPharmaCost += remainingPharmaDeduct * unitCost
+          }
 
-          // 4. Compute aggregate stock across all batches
+          const leavePharmaCOGSUnitCost = issueQty > 0
+            ? Math.round((totalDeductedPharmaCost / issueQty) * 100) / 100
+            : unitCost
+          totalCost += totalDeductedPharmaCost
+
+          // 4. Compute aggregate stock across all non-quarantined batches
           const [allBatches] = await pool.query(
-            "SELECT * FROM `pharma_product_batches` WHERE product_id = ?",
+            "SELECT * FROM `pharma_product_batches` WHERE product_id = ? AND (qa_status != 'Quarantined' OR qa_status IS NULL)",
             [realProdId]
           )
           const newQty = allBatches.reduce((s, b) => s + Number(b.quantity || 0), 0)
@@ -908,6 +927,7 @@ export async function postSalesIssue(arg1, arg2) {
 
           // 5. Insert stock_movements record in MySQL
           const smId = `SM-ISSUE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+          const recordedBatchNo = deductedBatchNos.length > 0 ? deductedBatchNos.join(", ") : targetBatchNo || "BATCH-ISSUE"
           await pool.query(
             `INSERT INTO stock_movements (
               id, product_id, warehouse_id, movement_type, quantity, unit_cost, unit_price, selling_price,
@@ -918,11 +938,11 @@ export async function postSalesIssue(arg1, arg2) {
               realProdId,
               prod.warehouse_id || prod.warehouse || existing.warehouse_id || "WH2",
               issueQty,
-              deductedBatchCost,
-              deductedBatchCost,
+              leavePharmaCOGSUnitCost,
+              leavePharmaCOGSUnitCost,
               itemSellingPrice > 0 ? itemSellingPrice : null,
               newQty,
-              targetBatchNo || "BATCH-ISSUE",
+              recordedBatchNo,
               item.expiry_date || item.expiryDate || null,
               existing.fs_no || id,
               `Sales Issue FS-${existing.fs_no || id} (${existing.customer_name || 'Customer Dispatch'})`,
@@ -1196,7 +1216,7 @@ export async function getAvailableBatches(query = {}) {
     if (itemId) {
       // 1. Try relational pharma_product_batches
       const [batchRows] = await pool.query(
-        "SELECT b.*, p.name as product_name, p.unit, p.selling_price as prod_selling_price, p.unit_cost as prod_unit_cost, p.warehouse_id as prod_wh FROM `pharma_product_batches` b JOIN `pharma_products` p ON b.product_id = p.id WHERE b.product_id = ? ORDER BY b.expiry_date ASC, b.created_at ASC",
+        "SELECT b.*, p.name as product_name, p.unit, p.selling_price as prod_selling_price, p.unit_cost as prod_unit_cost, p.warehouse_id as prod_wh FROM `pharma_product_batches` b JOIN `pharma_products` p ON b.product_id = p.id WHERE b.product_id = ? AND (b.qa_status != 'Quarantined' OR b.qa_status IS NULL) AND b.quantity > 0 ORDER BY b.expiry_date ASC, b.created_at ASC",
         [itemId]
       )
       if (batchRows.length > 0) {
