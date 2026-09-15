@@ -4,7 +4,7 @@ import * as schema from "./schema/index.js"
 import { config } from "../config.js"
 
 function getPoolConfig() {
-  if (process.env.DATABASE_URL && !config.dbHost) {
+  if (process.env.DATABASE_URL) {
     return {
       uri: process.env.DATABASE_URL,
       waitForConnections: true,
