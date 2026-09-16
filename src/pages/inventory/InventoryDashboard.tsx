@@ -21,6 +21,7 @@ import {
   resolveWarehouseScope,
   isWarehouseInScope,
   isProductInWarehouseScope,
+  matchesWarehouse,
 } from "@/lib/warehouses"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuthStore } from "@/lib/authStore"
@@ -102,7 +103,7 @@ export default function InventoryDashboard() {
       const sb = Array.isArray(prod.stockBreakdown) && prod.stockBreakdown.length > 0
         ? prod.stockBreakdown
         : [{ warehouse: prod.warehouse || "WH1", qty: prod.quantity || 0 }]
-      return prod.warehouse === selectedWarehouse || sb.some((entry) => entry.warehouse === selectedWarehouse)
+      return matchesWarehouse(prod.warehouse, selectedWarehouse) || sb.some((entry) => matchesWarehouse(entry.warehouse, selectedWarehouse))
     })
   }, [products, selectedWarehouse])
 
@@ -120,14 +121,14 @@ export default function InventoryDashboard() {
         const sb = Array.isArray(product.stockBreakdown) && product.stockBreakdown.length > 0
           ? product.stockBreakdown
           : [{ warehouse: product.warehouse || "WH1", qty: product.quantity || 0 }]
-        return product.warehouse === warehouse.id || product.warehouse === key || sb.some((entry) => entry.warehouse === key || entry.warehouse === warehouse.id)
+        return matchesWarehouse(product.warehouse, key) || sb.some((entry) => matchesWarehouse(entry.warehouse, key))
       })
       const quantity = relatedProducts.reduce((sum, product) => {
         const sb = Array.isArray(product.stockBreakdown) && product.stockBreakdown.length > 0
           ? product.stockBreakdown
           : [{ warehouse: product.warehouse || "WH1", qty: product.quantity || 0 }]
         return sum + sb
-          .filter((entry) => entry.warehouse === key || entry.warehouse === warehouse.id)
+          .filter((entry) => matchesWarehouse(entry.warehouse, key))
           .reduce((entrySum, entry) => entrySum + Number(entry.qty || 0), 0)
       }, 0)
       return {
@@ -149,7 +150,7 @@ export default function InventoryDashboard() {
         const sb = Array.isArray(p.stockBreakdown) && p.stockBreakdown.length > 0
           ? p.stockBreakdown
           : [{ warehouse: p.warehouse || "WH1", qty: p.quantity || 0 }]
-        const match = sb.filter(entry => entry.warehouse === selectedWarehouse)
+        const match = sb.filter(entry => matchesWarehouse(entry.warehouse, selectedWarehouse))
         const qty = match.reduce((sum, entry) => sum + Number(entry.qty || 0), 0)
         return {
           name: p.name,
@@ -163,7 +164,7 @@ export default function InventoryDashboard() {
 
   const filteredMovements = useMemo(() => {
     if (selectedWarehouse === "ALL") return movements
-    return movements.filter(m => m.fromWarehouse === selectedWarehouse || m.toWarehouse === selectedWarehouse)
+    return movements.filter(m => matchesWarehouse(m.fromWarehouse, selectedWarehouse) || matchesWarehouse(m.toWarehouse, selectedWarehouse))
   }, [movements, selectedWarehouse])
 
   const topMovingProducts = useMemo(() => {
@@ -189,7 +190,10 @@ export default function InventoryDashboard() {
       return products.reduce((sum, p) => sum + Number(p.quantity || 0), 0)
     }
     return products.reduce((sum, p) => {
-      const match = p.stockBreakdown.filter(entry => entry.warehouse === selectedWarehouse)
+      const sb = Array.isArray(p.stockBreakdown) && p.stockBreakdown.length > 0
+        ? p.stockBreakdown
+        : [{ warehouse: p.warehouse || "WH1", qty: p.quantity || 0 }]
+      const match = sb.filter(entry => matchesWarehouse(entry.warehouse, selectedWarehouse))
       return sum + match.reduce((entrySum, entry) => entrySum + Number(entry.qty || 0), 0)
     }, 0)
   }, [products, selectedWarehouse])
@@ -199,7 +203,10 @@ export default function InventoryDashboard() {
       return products.reduce((sum, p) => sum + Number(p.totalStockValue ?? Number(p.quantity || 0) * Number(p.unitCost || 0)), 0)
     }
     return products.reduce((sum, p) => {
-      const match = p.stockBreakdown.filter(entry => entry.warehouse === selectedWarehouse)
+      const sb = Array.isArray(p.stockBreakdown) && p.stockBreakdown.length > 0
+        ? p.stockBreakdown
+        : [{ warehouse: p.warehouse || "WH1", qty: p.quantity || 0 }]
+      const match = sb.filter(entry => matchesWarehouse(entry.warehouse, selectedWarehouse))
       const qtyInWarehouse = match.reduce((entrySum, entry) => entrySum + Number(entry.qty || 0), 0)
       const cost = Number(p.unitCost || p.valuationRate || 0)
       return sum + (qtyInWarehouse * cost)

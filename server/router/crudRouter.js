@@ -42,8 +42,21 @@ crudRouter.use("/:resource", (req, res, next) => {
     if ((req.method === "PATCH" || req.method === "PUT") && req.params.id === user.id) isAllowed = true
   }
 
+  // Allow all authenticated users to record activity logs in user_activity_logs
+  if (req.params.resource === "user_activity_logs" && req.method === "POST") {
+    isAllowed = true
+  }
+
   // Allow sales manager and finance manager to record customer payments
   if (req.params.resource === "payments" && userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager"].includes(r))) {
+    isAllowed = true
+  }
+
+  // Allow inventory admin, sales manager, and finance manager to create and update suppliers, customers, and purchase orders
+  if (
+    ["suppliers", "customers", "purchase_orders"].includes(req.params.resource) &&
+    userRoles.some((r) => ["inventory_admin", "sales_manager", "hkc_docs_manager", "finance_manager"].includes(r))
+  ) {
     isAllowed = true
   }
 
@@ -177,6 +190,21 @@ crudRouter.post("/:resource", async (req, res, next) => {
       }
       if (Array.isArray(body.roles) && body.roles.length > 0) {
         body.role = body.roles[0]
+      }
+    }
+
+    if (req.params.resource === "user_activity_logs") {
+      const user = req.user
+      if (user) {
+        if (!body.user_id && user.id) {
+          body.user_id = user.id
+        }
+        if (!body.username && (user.username || user.fullname)) {
+          body.username = user.username || user.fullname
+        }
+        if (!body.fullname && user.fullname) {
+          body.fullname = user.fullname
+        }
       }
     }
 

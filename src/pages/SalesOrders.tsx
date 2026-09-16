@@ -21,7 +21,8 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, getTradeLicenseStatus, type SalesOrder, type Quotation, type SalesOrderItem, type Product } from "@/lib/erpStore"
 import { useFinanceStore, calculateMultiTax, resolveAutoTaxScheduleId } from "@/lib/financeStore"
-import { withOperatingWarehouses, isWH1 } from "@/lib/warehouses"
+import { useAuthStore } from "@/lib/authStore"
+import { withOperatingWarehouses, isWH1, matchesWarehouse, getUserPermittedWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { type TableColumn } from "@/components/ResizableTable"
 import { EditModalHeader } from "@/components/EditModalHeader"
@@ -91,13 +92,19 @@ const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, trans
 export default function SalesOrders() {
   const { showToast } = useFeedback()
   const erp = useErpStore()
+  const { user } = useAuthStore()
   const isLoading = erp.isLoading() && !erp.isSalesLoaded()
   
   const salesOrders = erp.getSalesOrders()
   const customers = erp.getCustomers()
   const products = erp.getProducts()
-  const warehouses = withOperatingWarehouses(erp.getWarehouses())
-  const warehouseOptions = warehouses.map((warehouse) => ({ value: warehouse.code || warehouse.id, label: warehouse.name || warehouse.code || warehouse.id }))
+  const allWarehouses = erp.getWarehouses()
+  const warehouses = withOperatingWarehouses(allWarehouses)
+  const permittedWarehouses = useMemo(() => getUserPermittedWarehouses(user, allWarehouses), [user, allWarehouses])
+  const warehouseOptions = useMemo(
+    () => permittedWarehouses.map((warehouse) => ({ value: warehouse.code || warehouse.id, label: warehouse.name || warehouse.code || warehouse.id })),
+    [permittedWarehouses]
+  )
 
   // Search & Filter states for Sales Orders
   const [soSearch, setSoSearch] = useState("")
@@ -241,7 +248,8 @@ export default function SalesOrders() {
 
     const matchesSearch = cust.includes(q) || id.includes(q) || desc.includes(q)
     if (!matchesSearch) return false
-    if (soWhFilter !== "ALL" && so.warehouse !== soWhFilter) return false
+    if (soWhFilter !== "ALL" && !matchesWarehouse(so.warehouse, soWhFilter)) return false
+    if (permittedWarehouses.length > 0 && !permittedWarehouses.some(pw => matchesWarehouse(so.warehouse, pw.id) || matchesWarehouse(so.warehouse, pw.code))) return false
     if (soApprovalFilter !== "ALL") {
       const currentApproval = so.approvalStatus || "Pending"
       if (currentApproval !== soApprovalFilter) return false
@@ -278,36 +286,23 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
   const getProductsForWarehouse = (targetWh: string) => {
     if (!targetWh || targetWh === "ALL") return products
     const cleanTarget = targetWh.trim()
-    const targetWhBase = cleanTarget.split("-")[0].toUpperCase()
     const targetIsWh1 = isWH1(cleanTarget)
 
     const matched = products.filter((p) => {
       // 1. Stock breakdown match with qty > 0
       const sbMatch = (p.stockBreakdown || []).some((sb) => {
         if (!sb.warehouse) return false
-        const sbCode = resolveWarehouseCode(sb.warehouse, warehouses)
-        return (
-          sb.warehouse === cleanTarget ||
-          sbCode === cleanTarget ||
-          sb.warehouse.toUpperCase().startsWith(targetWhBase) ||
-          sbCode.toUpperCase().startsWith(targetWhBase)
-        ) && Number(sb.qty || 0) > 0
+        return matchesWarehouse(sb.warehouse, cleanTarget) && Number(sb.qty || 0) > 0
       })
       if (sbMatch) return true
 
       // 2. Primary warehouse match
-      if (p.warehouse) {
-        const prodWhCode = resolveWarehouseCode(p.warehouse, warehouses)
-        const matchesWh =
-          p.warehouse === cleanTarget ||
-          prodWhCode === cleanTarget ||
-          p.warehouse.toUpperCase().startsWith(targetWhBase) ||
-          prodWhCode.toUpperCase().startsWith(targetWhBase)
-        if (matchesWh) return true
+      if (p.warehouse && matchesWarehouse(p.warehouse, cleanTarget)) {
+        return true
       }
 
       // 3. WH1 commodities match
-      if (targetIsWh1 && (isWH1(p.warehouse) || isWH1(resolveWarehouseCode(p.warehouse, warehouses)))) {
+      if (targetIsWh1 && isWH1(p.warehouse)) {
         return true
       }
 
@@ -320,9 +315,10 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
   // Open New Order modal prefilled with default line item and product warehouse
   const handleOpenNewOrderModal = () => {
-    const targetWh = soWhFilter !== "ALL" 
+    const defaultWh = permittedWarehouses[0]?.code || permittedWarehouses[0]?.id || "WH2-VET-ALEM"
+    const targetWh = (soWhFilter !== "ALL" && permittedWarehouses.some(pw => matchesWarehouse(pw.id, soWhFilter) || matchesWarehouse(pw.code, soWhFilter)))
       ? soWhFilter 
-      : (warehouses[0]?.code || warehouses[0]?.id || "WH1")
+      : defaultWh
     const isWh1Target = isWH1(targetWh)
     const matchingProducts = getProductsForWarehouse(targetWh)
     const defaultProduct = matchingProducts[0] || (isWh1Target 
@@ -622,13 +618,13 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     } else {
       const overStockItems = editingOrderItems.filter((i) => {
         const p = products.find((prod) => prod.id === i.productId)
-        const avail = p ? (targetEditWh && targetEditWh !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === targetEditWh)?.qty ?? p.quantity) : p.quantity) : 0
+        const avail = p ? (targetEditWh && targetEditWh !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, targetEditWh))?.qty ?? p.quantity) : p.quantity) : 0
         return Number(i.qty) > avail
       })
       if (overStockItems.length > 0) {
         const details = overStockItems.map((i) => {
           const p = products.find((prod) => prod.id === i.productId)
-          const avail = p ? (targetEditWh && targetEditWh !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === targetEditWh)?.qty ?? p.quantity) : p.quantity) : 0
+          const avail = p ? (targetEditWh && targetEditWh !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, targetEditWh))?.qty ?? p.quantity) : p.quantity) : 0
           return `${p?.name || i.productId} (Ordered: ${i.qty}, Available: ${avail})`
         }).join("; ")
         errors.items = `Cannot save Sales Order: Insufficient warehouse stock for: ${details}.`
@@ -756,13 +752,13 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       } else {
         const overStockItems = orderItems.filter((i) => {
           const p = products.find((prod) => prod.id === i.productId)
-          const avail = p ? (targetWh && targetWh !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === targetWh)?.qty ?? p.quantity) : p.quantity) : 0
+          const avail = p ? (targetWh && targetWh !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, targetWh))?.qty ?? p.quantity) : p.quantity) : 0
           return Number(i.qty) > avail
         })
         if (overStockItems.length > 0) {
           const details = overStockItems.map((i) => {
             const p = products.find((prod) => prod.id === i.productId)
-            const avail = p ? (targetWh && targetWh !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === targetWh)?.qty ?? p.quantity) : p.quantity) : 0
+            const avail = p ? (targetWh && targetWh !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, targetWh))?.qty ?? p.quantity) : p.quantity) : 0
             return `${p?.name || i.productId} (Ordered: ${i.qty}, Available: ${avail})`
           }).join("; ")
           errors.items = `Cannot create Sales Order: Insufficient warehouse stock for: ${details}.`
@@ -1845,7 +1841,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                           <tbody className="divide-y divide-zinc-100">
                             {orderItems.map((item, index) => {
                               const p = products.find((prod) => prod.id === item.productId)
-                              const avail = p ? (newWarehouse && newWarehouse !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === newWarehouse)?.qty ?? p.quantity) : p.quantity) : 0
+                              const avail = p ? (newWarehouse && newWarehouse !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, newWarehouse))?.qty ?? p.quantity) : p.quantity) : 0
                               const isOver = item.qty > avail
                               return (
                                 <tr key={index}>
@@ -1961,7 +1957,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     disabled={isSubmittingOrder}
                     className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {isSubmittingOrder ? <LoadingDots color="bg-white" size="sm" /> : "Create Contract"}
+                    {isSubmittingOrder ? <LoadingDots color="bg-white" size="sm" /> : "Create Order"}
                   </button>
                 </div>
               </form>
@@ -2370,7 +2366,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   <tbody className="divide-y divide-zinc-100">
                     {editingOrderItems.map((item, index) => {
                       const p = products.find((prod) => prod.id === item.productId)
-                      const avail = p ? (editingOrder.warehouse && editingOrder.warehouse !== "ALL" ? (p.stockBreakdown?.find((sb) => sb.warehouse === editingOrder.warehouse)?.qty ?? p.quantity) : p.quantity) : 0
+                      const avail = p ? (editingOrder.warehouse && editingOrder.warehouse !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, editingOrder.warehouse))?.qty ?? p.quantity) : p.quantity) : 0
                       const isOver = item.qty > avail
                       return (
                         <tr key={index}>

@@ -129,7 +129,7 @@ export async function validateSession(sessionId) {
 
   const [rows] = await pool.query(
     `SELECT s.id AS session_id, s.user_id, s.is_revoked, s.expires_at, s.last_active_at,
-            u.id, u.username, u.roles, u.role, u.status, u.is_active
+            u.id, u.username, u.roles, u.role, u.status, u.is_active, u.warehouse_ids, u.warehouse_id
      FROM user_sessions s
      JOIN users u ON s.user_id = u.id
      WHERE s.id = ? LIMIT 1`,

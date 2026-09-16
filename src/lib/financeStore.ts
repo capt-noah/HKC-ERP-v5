@@ -618,7 +618,9 @@ class FinanceStore {
 
       if (!Array.isArray(accounts) || accounts.length === 0 || accounts.some((a) => a.id?.startsWith("ACC-1000") || a.code === "1010")) {
         this.accounts = COMPANY_CHART_OF_ACCOUNTS
-        void persistResources([{ resource: "chart_of_accounts", items: COMPANY_CHART_OF_ACCOUNTS }])
+        if (isFullFinance) {
+          void persistResources([{ resource: "chart_of_accounts", items: COMPANY_CHART_OF_ACCOUNTS }])
+        }
       } else {
         this.accounts = accounts
       }

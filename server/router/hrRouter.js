@@ -4,8 +4,37 @@ import { authorizeRoles } from "../modules/auth/authMiddleware.js"
 
 export const hrRouter = Router()
 
+const hrAllPaths = [
+  "/employees",
+  "/hr/employees",
+  "/attendance_records",
+  "/attendance-records",
+  "/hr/attendance_records",
+  "/hr/attendance-records",
+  "/hr/attendance",
+  "/leave_requests",
+  "/leave-requests",
+  "/hr/leave_requests",
+  "/hr/leave-requests",
+  "/hr/leaves",
+  "/leave_types",
+  "/leave-types",
+  "/hr/leave_types",
+  "/hr/leave-types",
+  "/payroll_periods",
+  "/payroll-periods",
+  "/hr/payroll_periods",
+  "/hr/payroll-periods",
+  "/hr/payroll",
+  "/payroll_records",
+  "/payroll-records",
+  "/hr/payroll_records",
+  "/hr/payroll-records",
+]
+
 // All HR routes are strictly confidential to superadmin and hr_manager
-hrRouter.use(authorizeRoles("superadmin", "hr_manager"))
+hrRouter.use(hrAllPaths, authorizeRoles("superadmin", "hr_manager"))
+
 
 // ── 1. Employees ─────────────────────────────────────────────────────────────
 const employeeRoutes = ["/employees", "/hr/employees"]

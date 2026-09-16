@@ -62,7 +62,8 @@ export default function StoreTransfersTab() {
   // Dynamic user warehouse privileges
   const hasWarehousePrivilege = (whIdOrCode?: string): boolean => {
     if (isSuperAdmin) return true
-    if (!whIdOrCode || userWarehouseIds.length === 0) return false
+    if (!whIdOrCode) return false
+    if (userWarehouseIds.length === 0) return true
     const target = String(whIdOrCode).trim().toUpperCase()
     const pool = withOperatingWarehouses(erp.getWarehouses())
     

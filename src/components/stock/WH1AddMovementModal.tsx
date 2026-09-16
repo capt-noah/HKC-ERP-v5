@@ -321,7 +321,7 @@ export default function WH1AddMovementModal({
     ? selectedRejectEntry.quantityRemaining
     : product?.quantity || 0
   const effectiveRejectUnitCost = selectedRejectEntry
-    ? Number(selectedRejectEntry.unitPrice || 0)
+    ? Number(selectedRejectEntry.unitPrice ?? product?.unitCost ?? 0)
     : Number(product?.unitCost || 0)
   const computedRejectLossValue = (Number(rejectQuantity) || 0) * effectiveRejectUnitCost
 

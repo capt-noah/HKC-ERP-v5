@@ -1,4 +1,4 @@
-import { isExportWarehouse } from "./warehouses"
+import { isExportWarehouse, matchesWarehouse } from "./warehouses"
 import type { Product } from "./erpStore"
 
 export type ExpiryTier = "EXPIRED" | "CRITICAL" | "WARNING" | "GOOD" | "UNKNOWN"
@@ -182,8 +182,9 @@ export function getExpiringItemsSummary(
 
     if (
       warehouseFilter &&
-      product.warehouse !== warehouseFilter &&
-      !product.stockBreakdown?.some((sb) => sb.warehouse === warehouseFilter)
+      warehouseFilter !== "ALL" &&
+      !matchesWarehouse(product.warehouse, warehouseFilter) &&
+      !product.stockBreakdown?.some((sb) => matchesWarehouse(sb.warehouse, warehouseFilter))
     ) {
       continue
     }

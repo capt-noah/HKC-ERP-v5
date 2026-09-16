@@ -27,6 +27,7 @@ import {
   isProductInWarehouseScope,
   isExportWarehouse,
   isPharmaWarehouse,
+  matchesWarehouse,
 } from "@/lib/warehouses"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
@@ -338,15 +339,16 @@ export default function StockProducts() {
   }
 
   // Filtered warehouses mapping
-  const warehouseOptions = useMemo(() => [
-    { value: "ALL", label: "All Warehouses" },
-    ...warehouseRecords.map((warehouse) => ({
-      value: warehouse.id || warehouse.code,
+  const warehouseOptions = useMemo(() => {
+    const opts = warehouseRecords.map((warehouse) => ({
+      value: warehouse.code || warehouse.id,
       label: warehouse.name || warehouse.code || warehouse.id,
-    })),
-  ], [warehouseRecords])
-
-  const warehouseKeyMap = useMemo(() => new Map(warehouseRecords.map((warehouse) => [warehouse.id || warehouse.code, new Set([warehouse.id, warehouse.code, warehouse.name].filter(Boolean))])), [warehouseRecords])
+    }))
+    if (warehouseRecords.length > 1) {
+      opts.unshift({ value: "ALL", label: "All Warehouses" })
+    }
+    return opts
+  }, [warehouseRecords])
 
   // Expiry summary for warehouse stock
   const expirySummary = useMemo(() => {
@@ -367,15 +369,14 @@ export default function StockProducts() {
       const q = searchQuery.toLowerCase()
 
       const matchesSearch = name.includes(q) || sku.includes(q) || dosage.includes(q) || shelfNo.includes(q) || batch.includes(q)
-      const selectedWarehouseKeys = warehouseKeyMap.get(selectedWarehouse) || new Set([selectedWarehouse])
       const sb = Array.isArray(prod.stockBreakdown) && prod.stockBreakdown.length > 0
         ? prod.stockBreakdown
         : [{ warehouse: prod.warehouse || "WH1", qty: prod.quantity || 0 }]
 
-      const matchesWarehouse =
+      const matchesWarehouseFilter =
         selectedWarehouse === "ALL" ||
-        selectedWarehouseKeys.has(prod.warehouse) ||
-        sb.some((breakdown) => selectedWarehouseKeys.has(breakdown.warehouse))
+        matchesWarehouse(prod.warehouse, selectedWarehouse) ||
+        sb.some((breakdown) => matchesWarehouse(breakdown.warehouse, selectedWarehouse))
 
       let matchesExpiry = true
       if (expiryFilter !== "ALL") {
@@ -385,9 +386,9 @@ export default function StockProducts() {
         matchesExpiry = allStatuses.some((s) => s.tier === expiryFilter)
       }
 
-      return matchesSearch && matchesWarehouse && matchesExpiry
+      return matchesSearch && matchesWarehouseFilter && matchesExpiry
     })
-  }, [products, searchQuery, selectedWarehouse, warehouseKeyMap, expiryFilter])
+  }, [products, searchQuery, selectedWarehouse, expiryFilter])
 
   // Suggested matching existing items list for WH1 auto-complete lookup
   const wh1ItemSuggestions = useMemo(() => {

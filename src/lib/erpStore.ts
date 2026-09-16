@@ -563,7 +563,7 @@ class ErpStore {
       this.warehouses = withOperatingWarehouses(warehouses)
 
       // 1. Hydrate export products with wh1Entries and binCardEntries from export_warehouse_movements
-      const hydratedExport = (exportProducts || []).map((p) => {
+      const hydratedExport = (exportProducts || []).map((p: any) => {
         const prodMovements = (exportMovements || []).filter((em: any) => em.product_id === p.id || em.productId === p.id)
         
         // Build wh1Entries (Inbound GRVs)
@@ -612,18 +612,24 @@ class ErpStore {
 
         const finalWh1Entries = mappedWh1Entries.length > 0 ? mappedWh1Entries : p.wh1Entries || []
         const stockVal = finalWh1Entries.length > 0
-          ? finalWh1Entries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || 0)), 0)
+          ? finalWh1Entries.reduce((sum: number, e: any) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || 0)), 0)
           : Number(p.totalStockValue ?? (Number(p.quantity || 0) * Number(p.unitCost || 0)))
         const weightedCost = Number(p.quantity || 0) > 0
           ? Math.round((stockVal / Number(p.quantity || 0)) * 100) / 100
           : Number(p.unitCost || 0)
 
+        const targetWh = p.warehouse || p.warehouse_id || "WH1"
+
         return {
           ...p,
+          warehouse: targetWh,
           totalStockValue: stockVal,
           unitCost: weightedCost,
           wh1Entries: finalWh1Entries,
           binCardEntries: mappedBinEntries.length > 0 ? mappedBinEntries : p.binCardEntries || [],
+          stockBreakdown: Array.isArray(p.stockBreakdown) && p.stockBreakdown.length > 0
+            ? p.stockBreakdown
+            : [{ warehouse: targetWh, qty: Number(p.quantity || 0) }],
         }
       })
 
@@ -680,12 +686,17 @@ class ErpStore {
           }
         })
 
+        const targetWh = p.warehouse || p.warehouse_id || "WH2"
+        const totalQty = mappedBatches.length > 0
+          ? mappedBatches.filter(b => b.status === "Released").reduce((acc, b) => acc + (b.qty || 0), 0)
+          : Number(p.quantity || 0)
         const latestBatch = mappedBatches[0]?.batchNo || p.batch || p.batch_no || ""
         const latestExpiry = mappedBatches[0]?.expiry || p.expiry || p.expiry_date || ""
 
         return {
           ...p,
-          warehouse: p.warehouse || p.warehouse_id || "WH2",
+          warehouse: targetWh,
+          quantity: totalQty,
           dosage: p.dosage || p.strength || p.dosage_form || "",
           shelfNo: p.shelfNo || p.shelf_number || p.shelf_no || "",
           quantityPerPack: Number(p.quantityPerPack || p.quantity_per_pack || 1),
@@ -694,6 +705,9 @@ class ErpStore {
           expiry: latestExpiry,
           batches: mappedBatches.length > 0 ? mappedBatches : p.batches || [],
           binCardEntries: mappedPharmaBinEntries.length > 0 ? mappedPharmaBinEntries : p.binCardEntries || [],
+          stockBreakdown: Array.isArray(p.stockBreakdown) && p.stockBreakdown.length > 0
+            ? p.stockBreakdown
+            : [{ warehouse: targetWh, qty: totalQty }],
         }
       })
 
@@ -902,25 +916,76 @@ class ErpStore {
         warehouses,
         exportProducts,
         pharmaProducts,
+        pharmaBatches,
       ] = await Promise.all([
-        loadResource<SalesOrder>("sales_orders"),
-        loadResource<PurchaseOrder>("purchase_orders"),
-        loadResource<Customer>("customers"),
-        loadResource<Supplier>("suppliers"),
+        loadResource<SalesOrder>("sales_orders").catch(() => []),
+        loadResource<PurchaseOrder>("purchase_orders").catch(() => []),
+        loadResource<Customer>("customers").catch(() => []),
+        loadResource<Supplier>("suppliers").catch(() => []),
         loadResource<Warehouse>("warehouses").catch(() => []),
         loadResource<Product>("export_products").catch(() => []),
         loadResource<Product>("pharma_products").catch(() => []),
+        loadResource<any>("pharma_product_batches").catch(() => []),
       ])
 
-      this.salesOrders = sortNewestFirst(salesOrders)
+      this.salesOrders = sortNewestFirst((salesOrders || []).map((so: any) => ({
+        ...so,
+        warehouse: so.warehouse || so.warehouse_id || "WH2-VET-ALEM",
+        customer: so.customer || so.customer_name || "Customer",
+        amount: Number(so.amount ?? so.grand_total ?? so.total_amount ?? so.subtotal ?? 0),
+        items: Array.isArray(so.items) ? so.items : [],
+        approvalStatus: so.approvalStatus || so.approval_status || "Pending",
+        paymentType: so.paymentType || so.payment_type || "Credit",
+      })))
       this.purchaseOrders = sortNewestFirst(purchaseOrders)
       this.customers = sortNewestFirst(customers)
       this.suppliers = sortNewestFirst(suppliers)
       if (warehouses && warehouses.length > 0) {
         this.warehouses = withOperatingWarehouses(warehouses)
       }
-      if (!this._inventoryLoaded && this.products.length === 0) {
-        const combinedProds = [...(exportProducts || []), ...(pharmaProducts || [])]
+      if (!this._inventoryLoaded || this.products.length === 0) {
+        const hydratedExport = (exportProducts || []).map((p: any) => ({
+          ...p,
+          warehouse: p.warehouse || p.warehouse_id || "WH1",
+          stockBreakdown: Array.isArray(p.stockBreakdown) && p.stockBreakdown.length > 0
+            ? p.stockBreakdown
+            : [{ warehouse: p.warehouse || "WH1", qty: Number(p.quantity || 0) }],
+        }))
+
+        const hydratedPharma = (pharmaProducts || []).map((p: any) => {
+          const matchingBatches = (pharmaBatches || []).filter((b: any) => b.product_id === p.id || b.productId === p.id)
+          const mappedBatches: BatchInfo[] = matchingBatches.map((b: any) => ({
+            id: b.id,
+            batchNo: b.batch_no || b.batchNo || "BATCH-001",
+            qty: Number(b.quantity || b.qty || 0),
+            expiry: b.expiry_date || b.expiryDate || "",
+            mfgDate: b.mfg_date || b.mfgDate,
+            unitPrice: Number(b.unit_cost || b.unitPrice || p.unitCost || 0),
+            status: b.qa_status === "Released" ? ("Released" as const) : b.qa_status === "Quarantined" ? ("Quarantined" as const) : ("Released" as const),
+            notes: b.notes,
+          }))
+
+          const targetWh = p.warehouse || p.warehouse_id || "WH2"
+          const totalQty = mappedBatches.length > 0
+            ? mappedBatches.filter(b => b.status === "Released").reduce((acc, b) => acc + (b.qty || 0), 0)
+            : Number(p.quantity || 0)
+          const latestBatch = mappedBatches[0]?.batchNo || p.batch || p.batch_no || ""
+          const latestExpiry = mappedBatches[0]?.expiry || p.expiry || p.expiry_date || ""
+
+          return {
+            ...p,
+            warehouse: targetWh,
+            quantity: totalQty,
+            batch: latestBatch,
+            expiry: latestExpiry,
+            batches: mappedBatches.length > 0 ? mappedBatches : p.batches || [],
+            stockBreakdown: Array.isArray(p.stockBreakdown) && p.stockBreakdown.length > 0
+              ? p.stockBreakdown
+              : [{ warehouse: targetWh, qty: totalQty }],
+          }
+        })
+
+        const combinedProds = [...hydratedExport, ...hydratedPharma]
         if (combinedProds.length > 0) {
           this.products = sortNewestFirst(combinedProds).map((product) => this.withInventoryValue(product))
         }
@@ -2016,6 +2081,38 @@ class ErpStore {
       binCardEntries: withVal.binCardEntries || [],
       stockBreakdown: withVal.stockBreakdown || [],
     })
+
+    // If initial WH1 child entries exist on a new export product, persist them to export_warehouse_movements
+    if (isExport && Array.isArray(withVal.wh1Entries) && withVal.wh1Entries.length > 0) {
+      for (const entry of withVal.wh1Entries) {
+        const entryId = entry.entryId || entry.id || `EWM-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+        const qtyReceived = Number(entry.quantityReceived ?? entry.quantityRemaining ?? product.quantity ?? 0)
+        const unitPrice = Number(entry.unitPrice ?? product.unitCost ?? 0)
+        try {
+          await createResource<any>("export_warehouse_movements", {
+            id: entryId,
+            warehouse_id: product.warehouse || "WH1",
+            product_id: product.id,
+            movement_type: "GRV_ENTRY",
+            voucher_no: entry.voucherNo || product.voucherNo || null,
+            batch_no: entry.voucherNo ? `GRV-${entry.voucherNo}` : (product.voucherNo ? `GRV-${product.voucherNo}` : "COMMODITY-WH1"),
+            party_name: entry.customer || product.customer || product.supplierName || "Supplier Arrival",
+            plate_number: entry.plateNumber || product.plateNumber || null,
+            gross_quantity: qtyReceived,
+            reject_quantity: 0,
+            net_quantity: qtyReceived,
+            uom: product.unit || "Quintal",
+            unit_price: unitPrice,
+            movement_date: entry.entryDate || product.entryDate || new Date().toISOString().slice(0, 10),
+            reason: entry.notes || null,
+            created_by: useAuthStore.getState().user?.fullname || "Warehouse Officer",
+          })
+        } catch (e) {
+          console.warn("Could not persist initial export_warehouse_movements entry:", e)
+        }
+      }
+    }
+
     this.products = [merged, ...this.products]
     this.listeners.forEach((l) => l())
     return merged
@@ -2325,7 +2422,7 @@ class ErpStore {
     })
 
     const nextQty = updatedEntries.reduce((sum, e) => sum + Number(e.quantityRemaining || 0), 0)
-    const nextVal = updatedEntries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || 0)), 0)
+    const nextVal = updatedEntries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice ?? prod.unitCost ?? 0)), 0)
     const weightedCost = nextQty > 0 ? Math.round((nextVal / nextQty) * 100) / 100 : Number(prod.unitCost || 0)
 
     const updatedBreakdown = [{ warehouse: prod.warehouse, qty: nextQty }]
@@ -2435,11 +2532,17 @@ class ErpStore {
     })
 
     const nextQty = Math.max(0, Number(prod.quantity || 0) - rejectQty)
-    const nextVal = updatedWH1Entries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || 0)), 0)
-    const weightedCost = nextQty > 0 ? Math.round((nextVal / nextQty) * 100) / 100 : Number(prod.unitCost || 0)
+    const nextVal = updatedWH1Entries.length > 0
+      ? updatedWH1Entries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice ?? prod.unitCost ?? 0)), 0)
+      : Math.max(0, (Number(prod.totalStockValue || 0) || (nextQty * Number(prod.unitCost || 0))) - (rejectQty * Number(prod.unitCost || 0)))
+    const weightedCost = nextQty > 0
+      ? (nextVal > 0 ? Math.round((nextVal / nextQty) * 100) / 100 : Number(prod.unitCost || 0))
+      : Number(prod.unitCost || 0)
 
     // Exact acquisition cost of the deducted stock
-    const rejectUnitCost = rejectQty > 0 ? Math.round((totalDeductedCost / rejectQty) * 100) / 100 : (targetEntry?.unitPrice ?? weightedCost)
+    const rejectUnitCost = rejectQty > 0 && totalDeductedCost > 0
+      ? Math.round((totalDeductedCost / rejectQty) * 100) / 100
+      : (targetEntry?.unitPrice ?? prod.unitCost ?? weightedCost ?? 0)
 
     const movementId = `EWM-REJ-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
     const voucherRef = rejectData.voucherNo || (targetEntry?.voucherNo ? `GRV-${targetEntry.voucherNo}` : undefined)
@@ -2534,7 +2637,7 @@ class ErpStore {
     const updatedBinEntries = (prod.binCardEntries || []).filter((b) => b.id !== entryId)
 
     const nextQty = updatedEntries.reduce((sum, e) => sum + Number(e.quantityRemaining || 0), 0)
-    const nextVal = updatedEntries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || 0)), 0)
+    const nextVal = updatedEntries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice ?? prod.unitCost ?? 0)), 0)
     const weightedCost = nextQty > 0 ? Math.round((nextVal / nextQty) * 100) / 100 : Number(prod.unitCost || 0)
 
     const updatedBreakdown = [{ warehouse: prod.warehouse, qty: nextQty }]
@@ -2737,6 +2840,7 @@ class ErpStore {
         net_quantity: entry.type === "entry" ? Number(entry.qtyReceived || 0) : -Number(entry.qtyIssued || 0),
         uom: prod.unit || "Quintal",
         unit_price: unitCost,
+        selling_price: !isRec && entry.type !== "reject" ? (sellingPrice || prod.sellingPrice || null) : null,
         movement_date: entry.date || new Date().toISOString().slice(0, 10),
         reason: entry.remark || null,
         created_by: useAuthStore.getState().user?.fullname || "Warehouse Officer",
@@ -2793,6 +2897,7 @@ class ErpStore {
         plate_number: patch.plateNumber,
         voucher_no: patch.voucherNo,
         unit_price: patch.unitPrice,
+        selling_price: patch.sellingPrice,
         movement_date: patch.date,
         reason: patch.remark,
       } as any).catch(() => {})

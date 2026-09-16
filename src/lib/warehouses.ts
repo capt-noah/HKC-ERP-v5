@@ -17,8 +17,8 @@ export const OPERATING_WAREHOUSES: Warehouse[] = [
   },
   {
     id: "WH2",
-    code: "WH2-VET-CENTRAL",
-    name: "WH2 - Central Veterinary Hub",
+    code: "WH2-VET-ALEM",
+    name: "WH2 - Alemgena Veterinary Hub",
     warehouse_type: "PHARMA_WH",
     type: "Central Warehouse",
     status: "Active",
@@ -29,8 +29,8 @@ export const OPERATING_WAREHOUSES: Warehouse[] = [
   },
   {
     id: "WH3",
-    code: "WH3-VET-REGIONAL",
-    name: "WH3 - Regional Veterinary Depot",
+    code: "WH3-VET-LEBU",
+    name: "WH3 - Lebu Veterinary Depot",
     warehouse_type: "PHARMA_WH",
     type: "Regional Depot",
     status: "Active",
@@ -40,6 +40,7 @@ export const OPERATING_WAREHOUSES: Warehouse[] = [
     specialization: "Veterinary Supplies & Consumables",
   },
 ]
+
 
 let registeredDynamicWarehouses: Warehouse[] = []
 
@@ -169,12 +170,25 @@ export const isWH1 = (w?: string | Warehouse, allWarehouses: Warehouse[] = []): 
 const KNOWN_MAP: Record<string, string[]> = {
   "wh1": ["WH1", "WH1-AGRI-EXP"],
   "wh1-agri-exp": ["WH1", "WH1-AGRI-EXP"],
-  "wh2": ["WH2", "WH2-VET-IND", "WH2-VET-CENTRAL"],
-  "wh2-vet-ind": ["WH2", "WH2-VET-IND", "WH2-VET-CENTRAL"],
-  "wh2-vet-central": ["WH2", "WH2-VET-IND", "WH2-VET-CENTRAL"],
-  "wh3": ["WH3", "WH3-VET-CHN", "WH3-VET-REGIONAL"],
-  "wh3-vet-chn": ["WH3", "WH3-VET-CHN", "WH3-VET-REGIONAL"],
-  "wh3-vet-regional": ["WH3", "WH3-VET-CHN", "WH3-VET-REGIONAL"],
+  "wh2": ["WH2", "WH2-VET-IND", "WH2-VET-CENTRAL", "WH2-VET-ALEM"],
+  "wh2-vet-ind": ["WH2", "WH2-VET-IND", "WH2-VET-CENTRAL", "WH2-VET-ALEM"],
+  "wh2-vet-central": ["WH2", "WH2-VET-IND", "WH2-VET-CENTRAL", "WH2-VET-ALEM"],
+  "wh2-vet-alem": ["WH2", "WH2-VET-IND", "WH2-VET-CENTRAL", "WH2-VET-ALEM"],
+  "wh3": ["WH3", "WH3-VET-CHN", "WH3-VET-REGIONAL", "WH3-VET-LEBU"],
+  "wh3-vet-chn": ["WH3", "WH3-VET-CHN", "WH3-VET-REGIONAL", "WH3-VET-LEBU"],
+  "wh3-vet-regional": ["WH3", "WH3-VET-CHN", "WH3-VET-REGIONAL", "WH3-VET-LEBU"],
+  "wh3-vet-lebu": ["WH3", "WH3-VET-CHN", "WH3-VET-REGIONAL", "WH3-VET-LEBU"],
+}
+
+export function matchesWarehouse(w1?: string | null, w2?: string | null): boolean {
+  if (!w1 || !w2) return false
+  const s1 = String(w1).trim().toLowerCase()
+  const s2 = String(w2).trim().toLowerCase()
+  if (s1 === s2) return true
+
+  const aliases1 = KNOWN_MAP[s1] ? [s1, ...KNOWN_MAP[s1].map((a) => a.toLowerCase())] : [s1]
+  const aliases2 = KNOWN_MAP[s2] ? [s2, ...KNOWN_MAP[s2].map((a) => a.toLowerCase())] : [s2]
+  return aliases1.some((a) => aliases2.includes(a))
 }
 
 export function resolveWarehouseScope(userWarehouseIds: string[], allWarehouses: Warehouse[] = []): string[] {
@@ -212,7 +226,7 @@ export function resolveWarehouseScope(userWarehouseIds: string[], allWarehouses:
 export function isWarehouseInScope(warehouseKey: string, scopeIds: string[]): boolean {
   if (!scopeIds || scopeIds.length === 0) return true
   const lower = (warehouseKey || "").trim().toLowerCase()
-  return scopeIds.some((s) => s.toLowerCase() === lower || (KNOWN_MAP[lower] && KNOWN_MAP[lower].some(a => a.toLowerCase() === s.toLowerCase())))
+  return scopeIds.some((s) => s.toLowerCase() === lower || (KNOWN_MAP[lower] && KNOWN_MAP[lower].some((a) => a.toLowerCase() === s.toLowerCase())))
 }
 
 export function isProductInWarehouseScope(product: Product, scopeIds: string[]): boolean {
@@ -223,3 +237,30 @@ export function isProductInWarehouseScope(product: Product, scopeIds: string[]):
   }
   return false
 }
+
+export function getUserPermittedWarehouses(
+  user?: { roles?: string[]; role?: string; warehouse_ids?: string[] } | null,
+  allWarehouses: Warehouse[] = []
+): Warehouse[] {
+  const list = withOperatingWarehouses(allWarehouses)
+  if (!user) return list
+
+  const roles = user.roles || (user.role ? [user.role] : [])
+  if (roles.includes("superadmin")) return list
+
+  const userWhIds = user.warehouse_ids || []
+  if (userWhIds.length > 0) {
+    const scope = resolveWarehouseScope(userWhIds, list)
+    const filtered = list.filter((w) => isWarehouseInScope(w.id, scope) || isWarehouseInScope(w.code, scope))
+    if (filtered.length > 0) return filtered
+  }
+
+  // Fallback for sales_manager role: strictly pharmaceutical warehouses
+  if (roles.includes("sales_manager") || roles.includes("hkc_docs_manager")) {
+    const pharmaWhs = list.filter((w) => isPharmaWarehouse(w, list))
+    if (pharmaWhs.length > 0) return pharmaWhs
+  }
+
+  return list
+}
+

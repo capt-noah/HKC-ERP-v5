@@ -10,7 +10,8 @@ import { useResizableTable, ResizableTh, type TableColumn } from "@/components/R
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, getTradeLicenseStatus } from "@/lib/erpStore"
 import { useFinanceStore } from "@/lib/financeStore"
-import { withOperatingWarehouses, isWH1 } from "@/lib/warehouses"
+import { useAuthStore } from "@/lib/authStore"
+import { isWH1, matchesWarehouse, getUserPermittedWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { sortNewestFirst } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -119,9 +120,11 @@ function SalesIssuedSkeletonRows() {
 export default function SalesIssued() {
   const erp = useErpStore()
   const financeStore = useFinanceStore()
+  const { user } = useAuthStore()
   const { showToast, confirm } = useFeedback()
   const products = erp.getProducts()
-  const warehouses = withOperatingWarehouses(erp.getWarehouses())
+  const allWarehouses = erp.getWarehouses()
+  const warehouses = useMemo(() => getUserPermittedWarehouses(user, allWarehouses), [user, allWarehouses])
   const bankAccounts = useMemo(() => {
     const raw = financeStore.getAccounts().filter((a) => !a.is_group && (a.code.startsWith("1000") || a.account_type === "Asset"))
     if (raw.length > 0) return raw
@@ -230,7 +233,7 @@ export default function SalesIssued() {
   const lockedOrders = useMemo(() => evaluatedPendingSalesOrders.filter((s) => !s.isFulfillable), [evaluatedPendingSalesOrders])
 
   const canonicalWarehouseId = (value: string) => {
-    const warehouse = warehouses.find((entry) => entry.id === value || entry.code === value || entry.name === value)
+    const warehouse = warehouses.find((entry) => matchesWarehouse(entry.id, value) || matchesWarehouse(entry.code, value) || entry.name === value)
     return warehouse?.id || value
   }
 
@@ -252,7 +255,7 @@ export default function SalesIssued() {
 
     setSelectedSoId(so.id)
     setCustomerName(so.customer)
-    const matchedWh = warehouses.find((w) => w.code === so.warehouse || w.id === so.warehouse || w.name === so.warehouse)
+    const matchedWh = warehouses.find((w) => matchesWarehouse(w.id, so.warehouse) || matchesWarehouse(w.code, so.warehouse) || w.name === so.warehouse)
     const targetWhId = matchedWh ? matchedWh.id : canonicalWarehouseId(so.warehouse)
     setWarehouseId(targetWhId)
     const targetIsWh1 = isWH1(so.warehouse) || isWH1(targetWhId)
@@ -377,7 +380,7 @@ export default function SalesIssued() {
     if (preselectedSo && preselectedSo.id) {
       setSelectedSoId(preselectedSo.id)
       setCustomerName(preselectedSo.customer)
-      const matchedWh = warehouses.find((w) => w.code === preselectedSo.warehouse || w.id === preselectedSo.warehouse || w.name === preselectedSo.warehouse)
+      const matchedWh = warehouses.find((w) => matchesWarehouse(w.id, preselectedSo.warehouse) || matchesWarehouse(w.code, preselectedSo.warehouse) || w.name === preselectedSo.warehouse)
       const targetWhId = matchedWh ? matchedWh.id : canonicalWarehouseId(preselectedSo.warehouse)
       const targetIsWh1 = isWH1(preselectedSo.warehouse) || isWH1(targetWhId)
       setWarehouseId(targetWhId)

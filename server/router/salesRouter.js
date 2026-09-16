@@ -7,7 +7,7 @@ export const salesRouter = Router()
 // RBAC Role Guard Helpers
 const requireProcessingMutation = authorizeRoles("superadmin", "inventory_admin", "sales_manager")
 const requireShipmentDocMutation = authorizeRoles("superadmin", "hkc_docs_manager", "sales_manager")
-const requireSalesIssueMutation = authorizeRoles("superadmin", "sales_manager", "hkc_docs_manager")
+const requireSalesIssueMutation = authorizeRoles("superadmin", "sales_manager", "hkc_docs_manager", "inventory_admin")
 const requireSuperAdmin = authorizeRoles("superadmin")
 
 salesRouter.get(["/processing-services", "/processing_services"], async (req, res, next) => {

@@ -358,11 +358,11 @@ export default function ControlCenter() {
   const [auditPageSize, setAuditPageSize] = useState(10)
 
   // Sales Order Approvals State
-  const warehouses = erp.getWarehouses()
-  const salesOrders = erp.getSalesOrders()
-  const pendingOrders = useMemo(() => salesOrders.filter((so) => (so.approvalStatus || "Pending") === "Pending"), [salesOrders])
-  const approvedOrders = useMemo(() => salesOrders.filter((so) => so.approvalStatus === "Approved"), [salesOrders])
-  const declinedOrders = useMemo(() => salesOrders.filter((so) => so.approvalStatus === "Declined"), [salesOrders])
+  const warehouses = erp.getWarehouses() || []
+  const salesOrders = erp.getSalesOrders() || []
+  const pendingOrders = useMemo(() => (salesOrders || []).filter((so) => (so.approvalStatus || (so as any).approval_status || "Pending") === "Pending"), [salesOrders])
+  const approvedOrders = useMemo(() => (salesOrders || []).filter((so) => (so.approvalStatus || (so as any).approval_status) === "Approved"), [salesOrders])
+  const declinedOrders = useMemo(() => (salesOrders || []).filter((so) => (so.approvalStatus || (so as any).approval_status) === "Declined"), [salesOrders])
 
   const [approvalFilter, setApprovalFilter] = useState<string>("ALL")
   const [approvalSearch, setApprovalSearch] = useState<string>("")
@@ -378,6 +378,11 @@ export default function ControlCenter() {
   const [soDocsMap, setSoDocsMap] = useState<Record<string, ShipmentDocAttachment[]>>({})
 
   useEffect(() => {
+    void erp.loadSalesData()
+    void erp.loadInventoryData()
+  }, [erp])
+
+  useEffect(() => {
     fetchAllShipmentDocs().then((docs) => {
       if (Array.isArray(docs)) {
         const map: Record<string, ShipmentDocAttachment[]> = {}
@@ -389,6 +394,7 @@ export default function ControlCenter() {
       }
     }).catch(() => {})
   }, [])
+
 
   // Outstanding Customer Receivables & Unsettled Sales Issues State
   const [salesIssues, setSalesIssues] = useState<SalesIssue[]>([])
@@ -647,21 +653,29 @@ export default function ControlCenter() {
   }, [erp, invoices, payableFilter, payableSearch])
 
   const filteredApprovals = useMemo(() => {
-    return salesOrders.filter((so) => {
+    return (salesOrders || []).filter((so) => {
+      if (!so) return false
+      const soId = (so.id || "").toLowerCase()
+      const soCustomer = (so.customer || (so as any).customer_name || "").toLowerCase()
+      const soWh = (so.warehouse || (so as any).warehouse_id || "").toLowerCase()
+      const soSalesPerson = (so.salesPerson || (so as any).sales_person || "").toLowerCase()
+      const q = (approvalSearch || "").toLowerCase()
+
       const matchesSearch =
-        so.id.toLowerCase().includes(approvalSearch.toLowerCase()) ||
-        so.customer.toLowerCase().includes(approvalSearch.toLowerCase()) ||
-        so.warehouse.toLowerCase().includes(approvalSearch.toLowerCase()) ||
-        (so.salesPerson && so.salesPerson.toLowerCase().includes(approvalSearch.toLowerCase()))
+        soId.includes(q) ||
+        soCustomer.includes(q) ||
+        soWh.includes(q) ||
+        soSalesPerson.includes(q)
 
       if (!matchesSearch) return false
 
-      const currentStatus = so.approvalStatus || "Pending"
+      const currentStatus = so.approvalStatus || (so as any).approval_status || "Pending"
       if (approvalFilter !== "ALL" && currentStatus !== approvalFilter) return false
 
       return true
     })
   }, [salesOrders, approvalSearch, approvalFilter])
+
 
   const handleConfirmApprove = async () => {
     if (!approveModalOrder) return
@@ -2850,7 +2864,7 @@ export default function ControlCenter() {
                           </tr>
                         ) : (
                           filteredApprovals.map((so) => {
-                            const status = so.approvalStatus || "Pending"
+                            const status = so.approvalStatus || (so as any).approval_status || "Pending"
                             const docs = soDocsMap[so.id] || []
                             const isWh1Order = isExportWarehouse(so.warehouse, warehouses)
                             const tradeDoc = docs.find((d) => 
@@ -2859,23 +2873,25 @@ export default function ControlCenter() {
                                 : (d.document_type === "Trade License" || d.document_type === "Trade Paper")
                             )
                             const adviceDoc = docs.find((d) => d.document_type === "Payment Advice")
-                            const isCredit = so.paymentType === "Credit"
+                            const isCredit = (so.paymentType || (so as any).payment_type) === "Credit"
                             const isProcessing = isProcessingAction === so.id
+                            const items = Array.isArray(so.items) ? so.items : []
+                            const amount = Number(so.amount ?? (so as any).grand_total ?? (so as any).total_amount ?? (so as any).subtotal ?? 0)
 
                             return (
                               <tr key={so.id} className="hover:bg-black/[0.015] transition-colors">
                                 <td className="py-4 px-5">
                                   <span className="font-mono font-black text-xs text-zinc-950 block">{so.id}</span>
-                                  <span className="text-[10px] text-zinc-400 font-medium">{so.date || "Recent"}</span>
+                                  <span className="text-[10px] text-zinc-400 font-medium">{so.date || (so as any).created_at?.slice(0, 10) || "Recent"}</span>
                                 </td>
 
                                 <td className="py-4 px-4">
-                                  <span className="font-bold text-zinc-900 block">{so.customer}</span>
+                                  <span className="font-bold text-zinc-900 block">{so.customer || (so as any).customer_name || "Customer"}</span>
                                   <span className="text-[10px] text-zinc-500 font-medium">Customer Order</span>
                                 </td>
 
                                 <td className="py-4 px-4">
-                                  <span className="font-semibold text-zinc-800 block">{so.warehouse}</span>
+                                  <span className="font-semibold text-zinc-800 block">{so.warehouse || (so as any).warehouse_id || "WH2"}</span>
                                   <span className={cn(
                                     "inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase mt-0.5",
                                     isCredit ? "bg-purple-100 text-purple-800" : "bg-emerald-100 text-emerald-800"
@@ -2886,17 +2902,18 @@ export default function ControlCenter() {
 
                                 <td className="py-4 px-4">
                                   <span className="font-bold text-zinc-800 block">
-                                    {so.items.length} {so.items.length === 1 ? "Line Item" : "Line Items"}
+                                    {items.length} {items.length === 1 ? "Line Item" : "Line Items"}
                                   </span>
                                   <span className="text-[10px] text-zinc-400 truncate max-w-[140px] block">
-                                    {so.items.map((i) => i.name).join(", ")}
+                                    {items.map((i) => i?.name || "Item").join(", ") || "No items"}
                                   </span>
                                 </td>
 
                                 <td className="py-4 px-4 text-right font-mono">
-                                  <span className="font-black text-zinc-950 block">{so.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+                                  <span className="font-black text-zinc-950 block">{amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                                   <span className="text-[9px] text-zinc-400 font-medium">ETB Gross</span>
                                 </td>
+
 
                                 <td className="py-4 px-4">
                                   <div className="flex flex-col gap-1">

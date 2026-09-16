@@ -41,7 +41,7 @@ export function authenticateToken(req, res, next) {
         })
       }
 
-      // Real-time live role sync: inherit latest permissions without requiring re-login
+      // Real-time live role and warehouse scope sync: inherit latest permissions without requiring re-login
       if (sessionCheck.user) {
         let currentRoles = sessionCheck.user.roles
         if (typeof currentRoles === "string") {
@@ -55,6 +55,20 @@ export function authenticateToken(req, res, next) {
           decodedUser.roles = currentRoles
           decodedUser.role = currentRoles[0]
         }
+
+        let currentWhIds = sessionCheck.user.warehouse_ids
+        if (typeof currentWhIds === "string") {
+          try {
+            currentWhIds = JSON.parse(currentWhIds)
+          } catch {
+            currentWhIds = currentWhIds ? [currentWhIds] : []
+          }
+        }
+        if (!Array.isArray(currentWhIds)) {
+          currentWhIds = sessionCheck.user.warehouse_id ? [sessionCheck.user.warehouse_id] : []
+        }
+        decodedUser.warehouse_ids = currentWhIds
+        decodedUser.warehouse_id = currentWhIds[0] || sessionCheck.user.warehouse_id || null
       }
 
       req.user = decodedUser
