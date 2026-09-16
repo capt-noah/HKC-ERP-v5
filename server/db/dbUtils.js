@@ -259,6 +259,7 @@ export function unwrapRow(row, storage) {
     "items",
     "payload",
     "lines",
+    "details",
     "attachments",
     "payment_advice_attachment",
     "installment_payments",

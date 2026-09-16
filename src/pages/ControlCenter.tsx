@@ -741,20 +741,35 @@ export default function ControlCenter() {
   }, [])
 
   // Load audit logs and user context
-  const fetchAuditLogsData = async () => {
+  const fetchAuditLogsData = async (notify = false) => {
     setLogsLoading(true)
     try {
       const [logsData, usersData] = await Promise.all([
         loadResource<UserActivityLog>("user_activity_logs"),
         loadResource<UserAccount>("users"),
       ])
-      setLogs(logsData.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()))
-      setUsers(usersData)
+      const sorted = (Array.isArray(logsData) ? logsData : []).sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      )
+      setLogs(sorted)
+      if (Array.isArray(usersData)) {
+        setUsers(usersData)
+      }
+      if (notify) {
+        showToast("Audit Logs Refreshed", "success", `Refreshed audit log registry (${sorted.length} total entries).`)
+      }
     } catch (err: any) {
       console.error("[AUDIT LOGS FETCH ERROR]:", err.message)
+      if (notify) {
+        showToast("Refresh Notice", "warning", err.message || "Failed to reload audit logs.")
+      }
     } finally {
       setLogsLoading(false)
     }
+  }
+
+  const handleReloadAuditLogs = async () => {
+    await fetchAuditLogsData(true)
   }
 
   useEffect(() => {
@@ -2566,9 +2581,9 @@ export default function ControlCenter() {
                       variant: "secondary",
                     },
                   ]}
-                  onReload={fetchAuditLogsData}
+                  onReload={handleReloadAuditLogs}
                   isReloading={logsLoading}
-                  reloadTooltip="Refresh log registry"
+                  reloadTooltip="Refresh audit activity logs"
                 />
               </div>
 
