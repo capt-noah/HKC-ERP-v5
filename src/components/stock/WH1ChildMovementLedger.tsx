@@ -30,7 +30,15 @@ export default function WH1ChildMovementLedger({
 }: WH1ChildMovementLedgerProps) {
   // Build unified transaction list by combining BOTH inbound arrival entries, outbound leaves, and reject losses
   const rows: UnifiedWH1Row[] = (() => {
-    const wh1Entries = product.wh1Entries || []
+    const rawWh1Entries = product.wh1Entries || []
+    const seenWh1Ids = new Set<string>()
+    const wh1Entries = rawWh1Entries.filter((e) => {
+      const key = e.entryId || e.id
+      if (!key) return true
+      if (seenWh1Ids.has(key)) return false
+      seenWh1Ids.add(key)
+      return true
+    })
     const binEntries = product.binCardEntries || []
     const inboundIds = new Set(wh1Entries.map((e) => e.entryId || e.id).filter(Boolean))
 

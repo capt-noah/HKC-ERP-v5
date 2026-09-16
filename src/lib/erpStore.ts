@@ -2076,42 +2076,11 @@ class ErpStore {
     const merged = this.withInventoryValue({
       ...withVal,
       ...(savedProduct || {}),
-      batches: withVal.batches || [],
-      wh1Entries: withVal.wh1Entries || [],
-      binCardEntries: withVal.binCardEntries || [],
-      stockBreakdown: withVal.stockBreakdown || [],
+      batches: (savedProduct?.batches && savedProduct.batches.length > 0) ? savedProduct.batches : (withVal.batches || []),
+      wh1Entries: (savedProduct?.wh1Entries && savedProduct.wh1Entries.length > 0) ? savedProduct.wh1Entries : (withVal.wh1Entries || []),
+      binCardEntries: (savedProduct?.binCardEntries && savedProduct.binCardEntries.length > 0) ? savedProduct.binCardEntries : (withVal.binCardEntries || []),
+      stockBreakdown: (savedProduct?.stockBreakdown && savedProduct.stockBreakdown.length > 0) ? savedProduct.stockBreakdown : (withVal.stockBreakdown || []),
     })
-
-    // If initial WH1 child entries exist on a new export product, persist them to export_warehouse_movements
-    if (isExport && Array.isArray(withVal.wh1Entries) && withVal.wh1Entries.length > 0) {
-      for (const entry of withVal.wh1Entries) {
-        const entryId = entry.entryId || entry.id || `EWM-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-        const qtyReceived = Number(entry.quantityReceived ?? entry.quantityRemaining ?? product.quantity ?? 0)
-        const unitPrice = Number(entry.unitPrice ?? product.unitCost ?? 0)
-        try {
-          await createResource<any>("export_warehouse_movements", {
-            id: entryId,
-            warehouse_id: product.warehouse || "WH1",
-            product_id: product.id,
-            movement_type: "GRV_ENTRY",
-            voucher_no: entry.voucherNo || product.voucherNo || null,
-            batch_no: entry.voucherNo ? `GRV-${entry.voucherNo}` : (product.voucherNo ? `GRV-${product.voucherNo}` : "COMMODITY-WH1"),
-            party_name: entry.customer || product.customer || product.supplierName || "Supplier Arrival",
-            plate_number: entry.plateNumber || product.plateNumber || null,
-            gross_quantity: qtyReceived,
-            reject_quantity: 0,
-            net_quantity: qtyReceived,
-            uom: product.unit || "Quintal",
-            unit_price: unitPrice,
-            movement_date: entry.entryDate || product.entryDate || new Date().toISOString().slice(0, 10),
-            reason: entry.notes || null,
-            created_by: useAuthStore.getState().user?.fullname || "Warehouse Officer",
-          })
-        } catch (e) {
-          console.warn("Could not persist initial export_warehouse_movements entry:", e)
-        }
-      }
-    }
 
     this.products = [merged, ...this.products]
     this.listeners.forEach((l) => l())

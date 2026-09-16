@@ -213,10 +213,14 @@ export async function createProduct(body = {}) {
     // Dependent records creation
     if (isExport) {
       if (qty > 0) {
-        const movementId = `EWM-INIT-${prodId}-${Date.now()}`
-        const voucherNo = body.voucher_no || body.voucherNo || normalized.voucher_no || null
-        const plateNumber = body.plate_number || body.plateNumber || body.truck_plate || body.truckPlate || normalized.plate_number || null
-        const partyName = body.party_name || body.supplier_name || body.supplierName || body.driver_name || body.driverName || body.customer || normalized.supplier_name || "Supplier Arrival"
+        const clientEntry = Array.isArray(body.wh1Entries) && body.wh1Entries.length > 0 ? body.wh1Entries[0] : null
+        const movementId = clientEntry?.entryId || clientEntry?.id || body.movement_id || body.movementId || body.entryId || `EWM-INIT-${prodId}-${Date.now()}`
+        const voucherNo = clientEntry?.voucherNo || body.voucher_no || body.voucherNo || normalized.voucher_no || null
+        const plateNumber = clientEntry?.plateNumber || body.plate_number || body.plateNumber || body.truck_plate || body.truckPlate || normalized.plate_number || null
+        const partyName = clientEntry?.customer || body.party_name || body.supplier_name || body.supplierName || body.driver_name || body.driverName || body.customer || normalized.supplier_name || "Supplier Arrival"
+        const entryUnitPrice = (clientEntry?.unitPrice != null && Number(clientEntry.unitPrice) >= 0) ? Number(clientEntry.unitPrice) : unitCost
+        const entryReason = clientEntry?.notes || body.reason || body.notes || "Initial Stock Registration"
+        const entryDate = clientEntry?.entryDate || body.entryDate || todayStr
         const batchNo = voucherNo ? `GRV-${voucherNo}` : "COMMODITY-WH1"
         await conn.query(
           `INSERT INTO export_warehouse_movements (
@@ -237,9 +241,9 @@ export async function createProduct(body = {}) {
             0,
             qty,
             normalized.unit || "Quintal",
-            unitCost,
-            body.entryDate || todayStr,
-            "Initial Stock Registration",
+            entryUnitPrice,
+            entryDate,
+            entryReason,
             body.createdBy || body.performedBy || "Warehouse Officer",
           ]
         )
