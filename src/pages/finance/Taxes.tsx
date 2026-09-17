@@ -17,6 +17,7 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useFinanceStore } from "@/lib/financeStore"
+import { erpStore } from "@/lib/erpStore"
 import type { TaxRule } from "@/lib/taxEngine"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
@@ -365,7 +366,7 @@ export default function Taxes() {
                 ]}
                 actions={[{ label: "Add Tax Rule", onClick: () => setShowAddRuleModal(true) }]}
                 onReload={async () => {
-                  await finance.reloadFromApi()
+                  await Promise.all([finance.reloadFromApi(), erpStore.reloadFromApi()])
                 }}
                 isReloading={isLoading}
                 reloadTooltip="Reload tax rules from server"

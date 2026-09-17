@@ -349,6 +349,11 @@ export default function Invoices() {
       return
     }
 
+    if (hasPayment && !editAdviceFile) {
+      showToast("Payment Advice Required", "warning", "Payment Advice receipt must be attached before recording an installment payment.")
+      return
+    }
+
     setIsSavingEdit(true)
     try {
       let stagedSlipUrl = ""
@@ -579,74 +584,99 @@ export default function Invoices() {
                   </div>
                 </div>
 
-                {/* Itemized Table */}
-                <div>
-                  <div className="text-[11px] font-extrabold text-zinc-500 uppercase tracking-wider mb-2">Invoice Items & Charges</div>
-                  <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-zinc-100 border-b border-zinc-200 text-[10px] font-black uppercase text-zinc-600">
-                        <tr>
-                          <th className="py-2.5 px-3">Item Details</th>
-                          <th className="py-2.5 px-3 text-center">Qty</th>
-                          <th className="py-2.5 px-3 text-right">Unit Price</th>
-                          <th className="py-2.5 px-3 text-right">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-zinc-100">
-                        {(activeInvoice.line_items || []).map((item, i) => {
-                          const q = Number(item.quantity ?? 1)
-                          const p = Number(item.unit_price ?? 0)
-                          const t = Number(item.line_total ?? q * p)
-                          return (
-                            <tr key={i}>
-                              <td className="py-2.5 px-3 font-bold text-zinc-950">{item.description || "Invoice Item"}</td>
-                              <td className="py-2.5 px-3 text-center font-mono font-bold text-zinc-600">{q}</td>
-                              <td className="py-2.5 px-3 text-right font-mono text-zinc-600">{activeInvoice.currency} {p.toFixed(2)}</td>
-                              <td className="py-2.5 px-3 text-right font-mono font-black text-zinc-950">{activeInvoice.currency} {t.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Financial Summary & Settlement Progress */}
+                {/* Itemized Table & Financial Summary */}
                 {(() => {
                   const totalVal = Number(activeInvoice.total ?? 0)
                   const lineItemsSum = (activeInvoice.line_items || []).reduce((s, i) => s + (Number(i.line_total) || (Number(i.quantity) * Number(i.unit_price)) || 0), 0)
-                  const subtotalVal = Number(activeInvoice.subtotal ?? (lineItemsSum > 0 ? lineItemsSum : (totalVal > 0 ? Math.round(totalVal / 1.15) : 0)))
+                  const subtotalVal = Number(activeInvoice.subtotal !== undefined ? activeInvoice.subtotal : (lineItemsSum > 0 ? lineItemsSum : totalVal))
                   const discVal = Number(activeInvoice.discount_amount ?? 0)
-                  const taxVal = Number(activeInvoice.tax_amount !== undefined && activeInvoice.tax_amount > 0 ? activeInvoice.tax_amount : (totalVal > subtotalVal ? totalVal - subtotalVal : 0))
+                  const taxVal = Number(activeInvoice.tax_amount !== undefined ? activeInvoice.tax_amount : (totalVal > subtotalVal ? totalVal - subtotalVal : 0))
                   const paidVal = Number(activeInvoice.amount_paid ?? 0)
                   const dueVal = Number(activeInvoice.balance_due ?? Math.max(0, totalVal - paidVal))
                   const pct = totalVal > 0 ? Math.min(100, Math.round((paidVal / totalVal) * 100)) : 0
-                  const recordedTaxRate = activeInvoice.tax_rate !== undefined && activeInvoice.tax_rate > 0
+                  const recordedTaxRate = activeInvoice.tax_rate !== undefined
                     ? activeInvoice.tax_rate
-                    : (subtotalVal > 0 && taxVal > 0 ? Math.round((taxVal / Math.max(1, subtotalVal - discVal)) * 100) : (taxVal > 0 ? 15 : 0))
+                    : (subtotalVal > 0 && taxVal > 0 ? Math.round((taxVal / Math.max(1, subtotalVal - discVal)) * 100) : 0)
 
                   return (
-                    <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3 text-xs">
-                      {/* Visual Settlement Progress Bar */}
-                      <div className="space-y-1.5 pb-2 border-b border-zinc-200">
-                        <div className="flex justify-between items-center text-xs font-bold">
-                          <span className="text-zinc-600">Settlement Progress</span>
-                          <span className="font-mono text-zinc-950">{pct}% Paid</span>
-                        </div>
-                        <div className="w-full bg-zinc-200 h-2 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full transition-all duration-300 ${dueVal <= 0 ? "bg-emerald-600" : "bg-emerald-500"}`}
-                            style={{ width: `${pct}%` }}
-                          />
+                    <div className="space-y-4">
+                      {/* Itemized Table */}
+                      <div>
+                        <div className="text-[11px] font-extrabold text-zinc-500 uppercase tracking-wider mb-2">Invoice Items & Charges</div>
+                        <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-zinc-100 border-b border-zinc-200 text-[10px] font-black uppercase text-zinc-600">
+                              <tr>
+                                <th className="py-2.5 px-3">Item Details</th>
+                                <th className="py-2.5 px-3 text-center">Qty</th>
+                                <th className="py-2.5 px-3 text-right">Unit Price</th>
+                                <th className="py-2.5 px-3 text-right">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-zinc-100">
+                              {(activeInvoice.line_items || []).map((item, i) => {
+                                const q = Number(item.quantity ?? 1)
+                                const p = Number(item.unit_price ?? 0)
+                                const t = Number(item.line_total ?? q * p)
+                                return (
+                                  <tr key={i}>
+                                    <td className="py-2.5 px-3 font-bold text-zinc-950">{item.description || "Invoice Item"}</td>
+                                    <td className="py-2.5 px-3 text-center font-mono font-bold text-zinc-600">{q}</td>
+                                    <td className="py-2.5 px-3 text-right font-mono text-zinc-600">{activeInvoice.currency} {p.toFixed(2)}</td>
+                                    <td className="py-2.5 px-3 text-right font-mono font-black text-zinc-950">{activeInvoice.currency} {t.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                            <tfoot className="border-t-2 border-zinc-200 bg-zinc-50/75 text-xs divide-y divide-zinc-100">
+                              <tr>
+                                <td colSpan={3} className="py-2 px-3 text-right font-bold text-zinc-600">Subtotal (Net):</td>
+                                <td className="py-2 px-3 text-right font-mono font-bold text-zinc-900">{activeInvoice.currency} {subtotalVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                              </tr>
+                              {discVal > 0 && (
+                                <tr>
+                                  <td colSpan={3} className="py-2 px-3 text-right font-bold text-emerald-700">Discount Applied:</td>
+                                  <td className="py-2 px-3 text-right font-mono font-bold text-emerald-700">-{activeInvoice.currency} {discVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                </tr>
+                              )}
+                              <tr>
+                                <td colSpan={3} className="py-2 px-3 text-right font-bold text-zinc-600">
+                                  Tax Charge ({recordedTaxRate > 0 ? `${recordedTaxRate}%` : "0% / No Tax"}):
+                                </td>
+                                <td className="py-2 px-3 text-right font-mono font-bold text-zinc-900">{activeInvoice.currency} {taxVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                              </tr>
+                              <tr className="bg-zinc-100 font-black text-zinc-950">
+                                <td colSpan={3} className="py-2.5 px-3 text-right font-black uppercase text-[11px] text-zinc-800">Total Billed:</td>
+                                <td className="py-2.5 px-3 text-right font-mono font-black text-sm text-zinc-950">{activeInvoice.currency} {totalVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                              </tr>
+                            </tfoot>
+                          </table>
                         </div>
                       </div>
 
-                      <div className="flex justify-between text-zinc-600"><span>Subtotal</span><span className="font-mono">{activeInvoice.currency} {subtotalVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
-                      {discVal > 0 && <div className="flex justify-between text-emerald-700 font-bold"><span>Discount Applied</span><span className="font-mono">-{activeInvoice.currency} {discVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>}
-                      <div className="flex justify-between text-zinc-600"><span>Tax (VAT {recordedTaxRate}%)</span><span className="font-mono">{activeInvoice.currency} {taxVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
-                      <div className="flex justify-between font-black text-zinc-950 text-sm pt-2 border-t border-zinc-200"><span>Total Billed</span><span className="font-mono">{activeInvoice.currency} {totalVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
-                      <div className="flex justify-between font-bold text-emerald-700"><span>Cumulative Amount Paid</span><span className="font-mono">{activeInvoice.currency} {paidVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
-                      <div className="flex justify-between font-black text-rose-700 text-sm"><span>Outstanding Balance Due</span><span className="font-mono">{activeInvoice.currency} {dueVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                      {/* Financial Summary & Settlement Progress */}
+                      <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3 text-xs">
+                        {/* Visual Settlement Progress Bar */}
+                        <div className="space-y-1.5 pb-2 border-b border-zinc-200">
+                          <div className="flex justify-between items-center text-xs font-bold">
+                            <span className="text-zinc-600">Settlement Progress</span>
+                            <span className="font-mono text-zinc-950">{pct}% Paid</span>
+                          </div>
+                          <div className="w-full bg-zinc-200 h-2 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full transition-all duration-300 ${dueVal <= 0 ? "bg-emerald-600" : "bg-emerald-500"}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between text-zinc-600"><span>Subtotal</span><span className="font-mono">{activeInvoice.currency} {subtotalVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                        {discVal > 0 && <div className="flex justify-between text-emerald-700 font-bold"><span>Discount Applied</span><span className="font-mono">-{activeInvoice.currency} {discVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>}
+                        <div className="flex justify-between text-zinc-600"><span>Tax ({recordedTaxRate > 0 ? `VAT ${recordedTaxRate}%` : "No Tax (0%)"})</span><span className="font-mono">{activeInvoice.currency} {taxVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                        <div className="flex justify-between font-black text-zinc-950 text-sm pt-2 border-t border-zinc-200"><span>Total Billed</span><span className="font-mono">{activeInvoice.currency} {totalVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                        <div className="flex justify-between font-bold text-emerald-700"><span>Cumulative Amount Paid</span><span className="font-mono">{activeInvoice.currency} {paidVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                        <div className="flex justify-between font-black text-rose-700 text-sm"><span>Outstanding Balance Due</span><span className="font-mono">{activeInvoice.currency} {dueVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>
+                      </div>
                     </div>
                   )
                 })()}
@@ -776,7 +806,7 @@ export default function Invoices() {
                 <button
                   type="button"
                   onClick={async () => {
-                    await store.reloadFromApi()
+                    await Promise.all([store.reloadFromApi(), erpStore.reloadFromApi()])
                   }}
                   disabled={isLoading}
                   title="Reload invoices from server"
@@ -1077,11 +1107,26 @@ export default function Invoices() {
 
                     {/* Payment Advice Receipt Attachment */}
                     <div>
-                      <label className="font-bold text-zinc-700 mb-1 block">Attach Payment Advice Receipt</label>
-                      <label className="flex flex-col items-center justify-center p-3.5 border-2 border-dashed border-zinc-300 hover:border-zinc-400 rounded-xl cursor-pointer bg-zinc-50/60 hover:bg-zinc-50 transition-colors">
-                        <Upload className="size-4 text-zinc-400 mb-1" />
-                        <span className="text-xs font-bold text-zinc-700">
-                          {editAdviceFile ? editAdviceFile.name : "Choose bank slip (PDF, PNG, JPG)"}
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-bold text-zinc-700">
+                          Attach Payment Advice Receipt {currentInputAmt > 0 ? "*" : "(Required for installments)"}
+                        </label>
+                        {editAdviceFile && (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                            Attached
+                          </span>
+                        )}
+                      </div>
+                      <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
+                        editAdviceFile
+                          ? "border-emerald-400 bg-emerald-50/40 hover:bg-emerald-50/70"
+                          : currentInputAmt > 0
+                          ? "border-amber-300 bg-amber-50/30 hover:bg-amber-50/60"
+                          : "border-zinc-300 hover:border-zinc-400 bg-zinc-50/60 hover:bg-zinc-50"
+                      }`}>
+                        <Upload className={`size-4 mb-1 ${editAdviceFile ? "text-emerald-600" : (currentInputAmt > 0 ? "text-amber-500" : "text-zinc-400")}`} />
+                        <span className={`text-xs font-bold ${editAdviceFile ? "text-emerald-800" : (currentInputAmt > 0 ? "text-amber-900" : "text-zinc-700")}`}>
+                          {editAdviceFile ? editAdviceFile.name : `Choose bank slip (PDF, PNG, JPG) ${currentInputAmt > 0 ? "*" : ""}`}
                         </span>
                         <input
                           type="file"
@@ -1094,6 +1139,11 @@ export default function Invoices() {
                           }}
                         />
                       </label>
+                      <span className="text-[10px] text-zinc-500 mt-1 block">
+                        {currentInputAmt > 0
+                          ? "Payment Advice / deposit receipt is mandatory when recording an installment payment."
+                          : "Upload bank deposit slip or advice receipt."}
+                      </span>
                     </div>
 
                     <div>

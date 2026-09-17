@@ -30,6 +30,7 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useFinanceStore, type JournalEntry } from "@/lib/financeStore"
+import { erpStore } from "@/lib/erpStore"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { 
   exportPeachtreeGeneralJournal, 
@@ -859,7 +860,7 @@ export default function Ledger() {
                       { label: "Post Entry", onClick: () => setShowPostModal(true) },
                     ]}
                     onReload={async () => {
-                      await store.reloadFromApi()
+                      await Promise.all([store.reloadFromApi(), erpStore.reloadFromApi()])
                     }}
                     isReloading={isLoading}
                     reloadTooltip="Reload journal entries from server"

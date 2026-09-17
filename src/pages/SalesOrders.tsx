@@ -19,7 +19,7 @@ import {
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
-import { useErpStore, getTradeLicenseStatus, type SalesOrder, type Quotation, type SalesOrderItem, type Product } from "@/lib/erpStore"
+import { useErpStore, getTradeLicenseStatus, type SalesOrder, type Quotation, type SalesOrderItem } from "@/lib/erpStore"
 import { useFinanceStore, calculateMultiTax, resolveAutoTaxScheduleId } from "@/lib/financeStore"
 import { useAuthStore } from "@/lib/authStore"
 import { withOperatingWarehouses, isWH1, matchesWarehouse, getUserPermittedWarehouses } from "@/lib/warehouses"
@@ -248,8 +248,22 @@ export default function SalesOrders() {
 
     const matchesSearch = cust.includes(q) || id.includes(q) || desc.includes(q)
     if (!matchesSearch) return false
-    if (soWhFilter !== "ALL" && !matchesWarehouse(so.warehouse, soWhFilter)) return false
-    if (permittedWarehouses.length > 0 && !permittedWarehouses.some(pw => matchesWarehouse(so.warehouse, pw.id) || matchesWarehouse(so.warehouse, pw.code))) return false
+
+    // Warehouse filter from dropdown
+    if (soWhFilter !== "ALL") {
+      const whMatchesHeader = matchesWarehouse(so.warehouse, soWhFilter)
+      const whMatchesItem = Array.isArray(so.items) && so.items.some((i) => matchesWarehouse(i.warehouse, soWhFilter))
+      if (!whMatchesHeader && !whMatchesItem) return false
+    }
+
+    // Role-based warehouse scoping
+    const isSuperAdmin = Boolean(user?.roles?.includes("superadmin") || (user as any)?.role === "superadmin")
+    if (!isSuperAdmin && permittedWarehouses.length > 0) {
+      const hasHeaderMatch = permittedWarehouses.some((pw) => matchesWarehouse(so.warehouse, pw.id) || matchesWarehouse(so.warehouse, pw.code))
+      const hasItemMatch = Array.isArray(so.items) && so.items.some((i) => permittedWarehouses.some((pw) => matchesWarehouse(i.warehouse, pw.id) || matchesWarehouse(i.warehouse, pw.code)))
+      if (!hasHeaderMatch && !hasItemMatch) return false
+    }
+
     if (soApprovalFilter !== "ALL") {
       const currentApproval = so.approvalStatus || "Pending"
       if (currentApproval !== soApprovalFilter) return false
@@ -345,6 +359,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
     setOrderItems([
       {
+        warehouse: targetWh,
         productId: defaultProduct.id,
         name: defaultProduct.name,
         qty: 10,
@@ -363,13 +378,30 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       const next = [...prev]
       const current = { ...next[index] }
 
-      if (field === "productId") {
-        const currentWh = isEditing ? editingOrder?.warehouse : newWarehouse
-        const availableForWh = getProductsForWarehouse(currentWh || "")
+      if (field === "warehouse") {
+        const rowWh = String(value || "")
+        current.warehouse = rowWh
+        const isWh1Row = isWH1(rowWh)
+        const availableForWh = getProductsForWarehouse(rowWh)
+        const nextProd = availableForWh.find((p) => p.id === current.productId) || availableForWh[0] || (isWh1Row 
+          ? { id: "PRD-001", name: "Sesame Seed", unit: "Quintal", sellingPrice: 1500, valuationRate: 1500 }
+          : { id: "PRD-002", name: "Oxytetracycline 20%", unit: "Box", sellingPrice: 850, valuationRate: 850 }
+        )
+        const loadedPrice = nextProd.sellingPrice || nextProd.unitCost || nextProd.valuationRate || 1500
+        const prodUnit = isWh1Row ? (nextProd.unit === "Ton" ? "Ton" : "Quintal") : (nextProd.unit || "Box")
+
+        current.productId = nextProd.id
+        current.name = nextProd.name
+        current.unit = prodUnit
+        current.unitPrice = loadedPrice
+        current.total = (Number(current.qty) || 1) * loadedPrice
+      } else if (field === "productId") {
+        const currentWh = current.warehouse || (isEditing ? editingOrder?.warehouse : newWarehouse) || permittedWarehouses[0]?.code || "WH1"
+        const availableForWh = getProductsForWarehouse(currentWh)
         const prod = availableForWh.find((p) => p.id === value) || products.find((p) => p.id === value)
         if (prod) {
           const loadedPrice = prod.sellingPrice || prod.unitCost || prod.valuationRate || 1500
-          const targetWh = !isEditing ? resolveWarehouseCode(prod.warehouse, warehouses) : (editingOrder?.warehouse || newWarehouse)
+          const targetWh = current.warehouse || resolveWarehouseCode(prod.warehouse, warehouses)
           const targetIsWh1 = isWH1(targetWh)
           const prodUnit = targetIsWh1 ? (prod.unit === "Ton" ? "Ton" : "Quintal") : (prod.unit || "Box")
 
@@ -377,15 +409,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           current.name = prod.name
           current.unit = prodUnit
           current.unitPrice = loadedPrice
-          current.total = current.qty * current.unitPrice
-
-          // If no warehouse has been chosen yet, auto-bind to product's designated stock warehouse
-          if (!isEditing && !newWarehouse) {
-            setNewWarehouse(targetWh)
-            if (targetIsWh1) {
-              setNewPaymentType("Credit")
-            }
-          }
+          current.total = (Number(current.qty) || 1) * current.unitPrice
         }
       } else if (field === "qty") {
         const parsed = Math.max(0, Number(value) || 0)
@@ -421,41 +445,33 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
   const handleWarehouseChange = (whCode: string, isEditing = false) => {
     const isWh1 = isWH1(whCode)
-    const availableForWh = getProductsForWarehouse(whCode)
-    const fallbackProd: Partial<Product> & { id: string; name: string } = (availableForWh[0] as Product) || (isWh1
-      ? { id: "PRD-001", name: "Sesame Seed", unit: "Quintal", valuationRate: 1500, sellingPrice: 1500, quantity: 1000, warehouse: "WH1" }
-      : { id: "PRD-002", name: "Oxytetracycline 20%", unit: "Box", valuationRate: 850, sellingPrice: 850, quantity: 1000, warehouse: "WH2" }
-    )
-
     if (isEditing && editingOrder) {
       setEditingOrder({ ...editingOrder, warehouse: whCode })
       if (isWh1) {
         setEditingPaymentType("Credit")
       }
-      setEditingOrderItems((prev) =>
-        prev.map((item) => {
-          const prod: Partial<Product> & { id: string; name: string } = availableForWh.find((p) => p.id === item.productId) || fallbackProd
-          const loadedPrice = prod.sellingPrice || prod.unitCost || prod.valuationRate || 1500
-          let newUnit = item.unit
-          if (isWh1) {
-            if (!COMMODITY_UNITS.includes(newUnit)) {
-              newUnit = prod.unit === "Ton" ? "Ton" : "Quintal"
-            }
-          } else {
-            if (!CONTAINER_UNITS.includes(newUnit)) {
-              newUnit = prod.unit && CONTAINER_UNITS.includes(prod.unit) ? prod.unit : "Box"
-            }
-          }
-          return {
-            ...item,
-            productId: prod.id,
-            name: prod.name,
-            unit: newUnit,
-            unitPrice: loadedPrice,
-            total: (Number(item.qty) || 1) * loadedPrice,
-          }
-        })
-      )
+      // Update ONLY the active (last) row for edit modal
+      setEditingOrderItems((prev) => {
+        if (prev.length === 0) return prev
+        const next = [...prev]
+        const lastIdx = next.length - 1
+        const lastItem = { ...next[lastIdx] }
+        const availableForWh = getProductsForWarehouse(whCode)
+        const p = availableForWh.find((prod) => prod.id === lastItem.productId) || availableForWh[0] || (isWh1
+          ? { id: "PRD-001", name: "Sesame Seed", unit: "Quintal", valuationRate: 1500, sellingPrice: 1500 }
+          : { id: "PRD-002", name: "Oxytetracycline 20%", unit: "Box", valuationRate: 850, sellingPrice: 850 }
+        )
+        const loadedPrice = p.sellingPrice || p.unitCost || p.valuationRate || 1500
+        const defaultUnit = isWh1 ? (p.unit === "Ton" ? "Ton" : "Quintal") : (p.unit || "Box")
+        lastItem.warehouse = whCode
+        lastItem.productId = p.id
+        lastItem.name = p.name
+        lastItem.unit = defaultUnit
+        lastItem.unitPrice = loadedPrice
+        lastItem.total = (Number(lastItem.qty) || 1) * loadedPrice
+        next[lastIdx] = lastItem
+        return next
+      })
     } else {
       setNewWarehouse(whCode)
       if (isWh1) {
@@ -463,37 +479,35 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       } else {
         setNewPaymentType("Cash")
       }
-      setOrderItems((prev) =>
-        prev.map((item) => {
-          const prod: Partial<Product> & { id: string; name: string } = availableForWh.find((p) => p.id === item.productId) || fallbackProd
-          const loadedPrice = prod.sellingPrice || prod.unitCost || prod.valuationRate || 1500
-          let newUnit = item.unit
-          if (isWh1) {
-            if (!COMMODITY_UNITS.includes(newUnit)) {
-              newUnit = prod.unit === "Ton" ? "Ton" : "Quintal"
-            }
-          } else {
-            if (!CONTAINER_UNITS.includes(newUnit)) {
-              newUnit = prod.unit && CONTAINER_UNITS.includes(prod.unit) ? prod.unit : "Box"
-            }
-          }
-          return {
-            ...item,
-            productId: prod.id,
-            name: prod.name,
-            unit: newUnit,
-            unitPrice: loadedPrice,
-            total: (Number(item.qty) || 1) * loadedPrice,
-          }
-        })
-      )
+      // Update ONLY the active (last) row for create modal
+      setOrderItems((prev) => {
+        if (prev.length === 0) return prev
+        const next = [...prev]
+        const lastIdx = next.length - 1
+        const lastItem = { ...next[lastIdx] }
+        const availableForWh = getProductsForWarehouse(whCode)
+        const p = availableForWh.find((prod) => prod.id === lastItem.productId) || availableForWh[0] || (isWh1
+          ? { id: "PRD-001", name: "Sesame Seed", unit: "Quintal", valuationRate: 1500, sellingPrice: 1500 }
+          : { id: "PRD-002", name: "Oxytetracycline 20%", unit: "Box", valuationRate: 850, sellingPrice: 850 }
+        )
+        const loadedPrice = p.sellingPrice || p.unitCost || p.valuationRate || 1500
+        const defaultUnit = isWh1 ? (p.unit === "Ton" ? "Ton" : "Quintal") : (p.unit || "Box")
+        lastItem.warehouse = whCode
+        lastItem.productId = p.id
+        lastItem.name = p.name
+        lastItem.unit = defaultUnit
+        lastItem.unitPrice = loadedPrice
+        lastItem.total = (Number(lastItem.qty) || 1) * loadedPrice
+        next[lastIdx] = lastItem
+        return next
+      })
     }
   }
 
   const handleAddOrderItemRow = (isEditing = false) => {
-    const currentWh = isEditing ? editingOrder?.warehouse : newWarehouse
-    const targetIsWh1 = isWH1(currentWh || "")
-    const availableForWh = getProductsForWarehouse(currentWh || "")
+    const activeTopWh = (isEditing ? editingOrder?.warehouse : newWarehouse) || permittedWarehouses[0]?.code || "WH1"
+    const targetIsWh1 = isWH1(activeTopWh || "")
+    const availableForWh = getProductsForWarehouse(activeTopWh || "")
     const p = availableForWh[0] || (targetIsWh1 
       ? { id: "PRD-001", name: "Sesame Seed", unit: "Quintal", valuationRate: 1500, sellingPrice: 1500 }
       : { id: "PRD-002", name: "Oxytetracycline 20%", unit: "Box", valuationRate: 850, sellingPrice: 850 }
@@ -505,6 +519,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     setter((prev) => [
       ...prev,
       {
+        warehouse: activeTopWh,
         productId: p.id,
         name: p.name,
         qty: 10,
@@ -531,16 +546,24 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     setEditingCustPhone(so.customerPhone || "")
     setCustomerSearchInput(so.customer)
     setEditingPaymentType(so.paymentType || (isWh1 ? "Credit" : "Cash"))
-    setEditingOrderItems(so.items.length > 0 ? [...so.items] : [
-      {
-        productId: products[0]?.id || "PRD-001",
-        name: products[0]?.name || (isWh1 ? "Sesame Seed" : "Amoxicillin 500mg"),
-        qty: 10,
-        unit: isWh1 ? "Quintal" : (products[0]?.unit || "Box"),
-        unitPrice: products[0]?.valuationRate || 1500,
-        total: (products[0]?.valuationRate || 1500) * 10,
-      }
-    ])
+    setEditingOrderItems(
+      so.items.length > 0
+        ? so.items.map((i) => ({
+            ...i,
+            warehouse: i.warehouse || so.warehouse || permittedWarehouses[0]?.code || "WH1",
+          }))
+        : [
+            {
+              warehouse: so.warehouse || permittedWarehouses[0]?.code || "WH1",
+              productId: products[0]?.id || "PRD-001",
+              name: products[0]?.name || (isWh1 ? "Sesame Seed" : "Amoxicillin 500mg"),
+              qty: 10,
+              unit: isWh1 ? "Quintal" : (products[0]?.unit || "Box"),
+              unitPrice: products[0]?.valuationRate || 1500,
+              total: (products[0]?.valuationRate || 1500) * 10,
+            },
+          ]
+    )
 
     // 1. Instant resolution from in-memory cache and customer profile for 0ms delay
     const cachedDocs = soAttachmentsMap[so.id] || []
@@ -617,15 +640,17 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       errors.items = "Order must contain at least one valid item with a quantity greater than 0."
     } else {
       const overStockItems = editingOrderItems.filter((i) => {
+        const itemWh = i.warehouse || targetEditWh
         const p = products.find((prod) => prod.id === i.productId)
-        const avail = p ? (targetEditWh && targetEditWh !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, targetEditWh))?.qty ?? p.quantity) : p.quantity) : 0
+        const avail = p ? (itemWh && itemWh !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, itemWh))?.qty ?? p.quantity) : p.quantity) : 0
         return Number(i.qty) > avail
       })
       if (overStockItems.length > 0) {
         const details = overStockItems.map((i) => {
+          const itemWh = i.warehouse || targetEditWh
           const p = products.find((prod) => prod.id === i.productId)
-          const avail = p ? (targetEditWh && targetEditWh !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, targetEditWh))?.qty ?? p.quantity) : p.quantity) : 0
-          return `${p?.name || i.productId} (Ordered: ${i.qty}, Available: ${avail})`
+          const avail = p ? (itemWh && itemWh !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, itemWh))?.qty ?? p.quantity) : p.quantity) : 0
+          return `${p?.name || i.productId} [${itemWh}] (Ordered: ${i.qty}, Available: ${avail})`
         }).join("; ")
         errors.items = `Cannot save Sales Order: Insufficient warehouse stock for: ${details}.`
       }
@@ -641,12 +666,21 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     const sanitizedItems: SalesOrderItem[] = editingOrderItems.map((i) => {
       const q = Math.max(1, Number(i.qty) || 1)
       const p = Math.max(0, Number(i.unitPrice) || 0)
-      return { ...i, qty: q, unitPrice: p, total: q * p }
+      return { ...i, warehouse: i.warehouse || targetEditWh, qty: q, unitPrice: p, total: q * p }
     })
 
     const totalAmt = sanitizedItems.reduce((sum, i) => sum + i.total, 0)
+    const distinctWhs = Array.from(new Set(sanitizedItems.map((i) => i.warehouse).filter(Boolean))) as string[]
+    const finalHeaderWh = distinctWhs.length === 1 ? distinctWhs[0] : (distinctWhs.length > 1 ? "WH-MULTI" : editingOrder.warehouse)
+    const whObj = warehouses.find((w) => w.code === finalHeaderWh || w.id === finalHeaderWh)
+    const finalHeaderWhName = distinctWhs.length > 1
+      ? `Multi-Warehouse (${distinctWhs.join(", ")})`
+      : (whObj ? `${whObj.code} - ${whObj.name}` : finalHeaderWh)
+
     const updatedSo: SalesOrder = {
       ...editingOrder,
+      warehouse: finalHeaderWh,
+      warehouseName: finalHeaderWhName,
       customerPhone: isWh1Order ? "" : editingCustPhone.trim(),
       items: sanitizedItems,
       amount: totalAmt,
@@ -751,15 +785,17 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         errors.items = "All line items must have a selected product and quantity greater than 0."
       } else {
         const overStockItems = orderItems.filter((i) => {
+          const itemWh = i.warehouse || targetWh
           const p = products.find((prod) => prod.id === i.productId)
-          const avail = p ? (targetWh && targetWh !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, targetWh))?.qty ?? p.quantity) : p.quantity) : 0
+          const avail = p ? (itemWh && itemWh !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, itemWh))?.qty ?? p.quantity) : p.quantity) : 0
           return Number(i.qty) > avail
         })
         if (overStockItems.length > 0) {
           const details = overStockItems.map((i) => {
+            const itemWh = i.warehouse || targetWh
             const p = products.find((prod) => prod.id === i.productId)
-            const avail = p ? (targetWh && targetWh !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, targetWh))?.qty ?? p.quantity) : p.quantity) : 0
-            return `${p?.name || i.productId} (Ordered: ${i.qty}, Available: ${avail})`
+            const avail = p ? (itemWh && itemWh !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, itemWh))?.qty ?? p.quantity) : p.quantity) : 0
+            return `${p?.name || i.productId} [${itemWh}] (Ordered: ${i.qty}, Available: ${avail})`
           }).join("; ")
           errors.items = `Cannot create Sales Order: Insufficient warehouse stock for: ${details}.`
         }
@@ -804,11 +840,17 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     const soId = `SO-${Date.now().toString().slice(-6)}`
     const finalItems = orderItems.map((i) => ({
       ...i,
+      warehouse: i.warehouse || targetWh,
       total: i.qty * i.unitPrice,
     }))
     const totalAmt = finalItems.reduce((sum, i) => sum + i.total, 0)
 
-    const wh = warehouses.find((w) => w.code === targetWh || w.id === targetWh)
+    const distinctWhs = Array.from(new Set(finalItems.map((i) => i.warehouse).filter(Boolean))) as string[]
+    const finalHeaderWh = distinctWhs.length === 1 ? distinctWhs[0] : (distinctWhs.length > 1 ? "WH-MULTI" : targetWh)
+    const whObj = warehouses.find((w) => w.code === finalHeaderWh || w.id === finalHeaderWh)
+    const finalHeaderWhName = distinctWhs.length > 1
+      ? `Multi-Warehouse (${distinctWhs.join(", ")})`
+      : (whObj ? `${whObj.code} - ${whObj.name}` : finalHeaderWh)
 
     const newSo: SalesOrder = {
       id: soId,
@@ -816,8 +858,8 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       customer: selectedCust.name,
       customerPhone: isWh1Order ? "" : custPhone.trim(),
       customerGroup: selectedCust.category,
-      warehouse: targetWh,
-      warehouseName: wh ? `${wh.code} - ${wh.name}` : targetWh,
+      warehouse: finalHeaderWh,
+      warehouseName: finalHeaderWhName,
       date: getLocalDateString(),
       amount: totalAmt,
       currency: "ETB",
@@ -1067,9 +1109,15 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               </td>
 
               <td style={{ width: `${colWidths.warehouse}px` }} className="py-4 px-4 overflow-hidden">
-                <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-tight bg-zinc-100 border border-zinc-200/50 px-2 py-0.5 rounded-full inline-block truncate max-w-full">
-                  {so.warehouse}
-                </span>
+                {so.warehouse === "WH-MULTI" ? (
+                  <span className="text-[10px] font-extrabold text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full inline-block truncate max-w-full" title={so.warehouseName || "Multi-Warehouse"}>
+                    {so.warehouseName || "Multi-Warehouse"}
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-tight bg-zinc-100 border border-zinc-200/50 px-2 py-0.5 rounded-full inline-block truncate max-w-full">
+                    {so.warehouse}
+                  </span>
+                )}
               </td>
 
               <td style={{ width: `${colWidths.paymentType}px` }} className="py-4 px-4 overflow-hidden">
@@ -1795,7 +1843,6 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                 {/* Line Items Table */}
                 {(() => {
                   const isWh1Order = isWH1(newWarehouse)
-                  const availableUnits = isWh1Order ? COMMODITY_UNITS : CONTAINER_UNITS
                   return (
                     <div className="pt-2">
                       <div className="flex items-center justify-between mb-2">
@@ -1831,39 +1878,46 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         <table className="w-full text-left">
                           <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[9px]">
                             <tr>
-                              <th className="px-3 py-2 w-[35%]">Product Item</th>
-                              <th className="px-3 py-2 w-[18%] text-center">Qty</th>
-                              <th className="px-3 py-2 w-[20%] text-center">Unit</th>
-                              <th className="px-3 py-2 w-[20%] text-right">Unit Price</th>
-                              <th className="px-3 py-2 w-[7%] text-center"></th>
+                              <th className="px-3 py-2 w-[22%]">Warehouse</th>
+                              <th className="px-3 py-2 w-[32%]">Product Item</th>
+                              <th className="px-3 py-2 w-[14%] text-center">Qty</th>
+                              <th className="px-3 py-2 w-[14%] text-center">Unit</th>
+                              <th className="px-3 py-2 w-[14%] text-right">Unit Price</th>
+                              <th className="px-3 py-2 w-[4%] text-center"></th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-zinc-100">
                             {orderItems.map((item, index) => {
+                              const itemWh = item.warehouse || newWarehouse || permittedWarehouses[0]?.code || "WH1"
+                              const isWh1Item = isWH1(itemWh)
+                              const availableUnits = isWh1Item ? COMMODITY_UNITS : CONTAINER_UNITS
+                              const scopedProducts = getProductsForWarehouse(itemWh)
                               const p = products.find((prod) => prod.id === item.productId)
-                              const avail = p ? (newWarehouse && newWarehouse !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, newWarehouse))?.qty ?? p.quantity) : p.quantity) : 0
+                              const avail = p ? (itemWh && itemWh !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, itemWh))?.qty ?? p.quantity) : p.quantity) : 0
                               const isOver = item.qty > avail
+                              const whInfo = warehouses.find((w) => w.code === itemWh || w.id === itemWh)
+                              const whDisplay = whInfo ? `${whInfo.code} (${whInfo.name})` : itemWh
                               return (
                                 <tr key={index}>
-                                  <td className="p-2">
-                                    {(() => {
-                                      const scopedProducts = getProductsForWarehouse(newWarehouse)
-                                      return (
-                                        <select
-                                          disabled={!newWarehouse}
-                                          value={item.productId}
-                                          onChange={(e) => handleOrderItemChange(index, "productId", e.target.value, false)}
-                                          className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold disabled:cursor-not-allowed disabled:bg-zinc-100"
-                                        >
-                                          <option value="">{newWarehouse ? "Select item" : "Select warehouse first"}</option>
-                                          {scopedProducts.map((prod) => (
-                                            <option key={prod.id} value={prod.id}>{prod.name}</option>
-                                          ))}
-                                        </select>
-                                      )
-                                    })()}
+                                  <td className="p-2 align-top">
+                                    <div className="px-2.5 py-1.5 rounded-lg bg-zinc-100 border border-zinc-200 text-xs font-bold text-zinc-800 flex items-center justify-between" title={whDisplay}>
+                                      <span className="font-mono text-[11px] font-black text-emerald-700">{whInfo?.code || itemWh}</span>
+                                      {whInfo?.name && <span className="text-[10px] text-zinc-500 font-medium truncate max-w-[80px]">{whInfo.name}</span>}
+                                    </div>
+                                  </td>
+                                  <td className="p-2 align-top">
+                                    <select
+                                      value={item.productId}
+                                      onChange={(e) => handleOrderItemChange(index, "productId", e.target.value, false)}
+                                      className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold focus:border-emerald-600 focus:outline-none"
+                                    >
+                                      <option value="">Select item</option>
+                                      {scopedProducts.map((prod) => (
+                                        <option key={prod.id} value={prod.id}>{prod.name}</option>
+                                      ))}
+                                    </select>
                                     <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
-                                      <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail}{isWh1Order ? ` ${item.unit}` : ""}</span></span>
+                                      <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail}{isWh1Item ? ` ${item.unit}` : ""}</span></span>
                                       {isOver && (
                                         <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md mt-0.5">
                                           <AlertTriangle className="size-3 text-amber-600 shrink-0" />
@@ -1885,7 +1939,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                     <select
                                       value={item.unit}
                                       onChange={(e) => handleOrderItemChange(index, "unit", e.target.value, false)}
-                                      className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold"
+                                      className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-center"
                                     >
                                       {availableUnits.map((u) => (
                                         <option key={u} value={u}>{u}</option>
@@ -1907,7 +1961,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                       type="button"
                                       disabled={orderItems.length === 1}
                                       onClick={() => handleRemoveOrderItemRow(index, false)}
-                                      className="p-1 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-30 disabled:hover:text-zinc-400"
+                                      className="p-1 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-30 disabled:hover:text-zinc-400 cursor-pointer"
                                     >
                                       <Trash2 className="size-3.5" />
                                     </button>
@@ -2320,7 +2374,6 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
         {(() => {
           const isWh1Editing = isWH1(editingOrder.warehouse)
-          const availableEditUnits = isWh1Editing ? COMMODITY_UNITS : CONTAINER_UNITS
           return (
             <div className="pt-2">
               <div className="flex items-center justify-between mb-2">
@@ -2356,39 +2409,46 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                 <table className="w-full text-left">
                   <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[9px]">
                     <tr>
-                      <th className="px-3 py-2 w-[35%]">Product Item</th>
-                      <th className="px-3 py-2 w-[18%] text-center">Qty</th>
-                      <th className="px-3 py-2 w-[20%] text-center">Unit</th>
-                      <th className="px-3 py-2 w-[20%] text-right">Unit Price</th>
-                      <th className="px-3 py-2 w-[7%] text-center"></th>
+                      <th className="px-3 py-2 w-[22%]">Warehouse</th>
+                      <th className="px-3 py-2 w-[32%]">Product Item</th>
+                      <th className="px-3 py-2 w-[14%] text-center">Qty</th>
+                      <th className="px-3 py-2 w-[14%] text-center">Unit</th>
+                      <th className="px-3 py-2 w-[14%] text-right">Unit Price</th>
+                      <th className="px-3 py-2 w-[4%] text-center"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
                     {editingOrderItems.map((item, index) => {
+                      const itemWh = item.warehouse || editingOrder.warehouse || permittedWarehouses[0]?.code || "WH1"
+                      const isWh1Item = isWH1(itemWh)
+                      const availableUnits = isWh1Item ? COMMODITY_UNITS : CONTAINER_UNITS
+                      const scopedProducts = getProductsForWarehouse(itemWh)
                       const p = products.find((prod) => prod.id === item.productId)
-                      const avail = p ? (editingOrder.warehouse && editingOrder.warehouse !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, editingOrder.warehouse))?.qty ?? p.quantity) : p.quantity) : 0
+                      const avail = p ? (itemWh && itemWh !== "ALL" ? (p.stockBreakdown?.find((sb) => matchesWarehouse(sb.warehouse, itemWh))?.qty ?? p.quantity) : p.quantity) : 0
                       const isOver = item.qty > avail
+                      const whInfo = warehouses.find((w) => w.code === itemWh || w.id === itemWh)
+                      const whDisplay = whInfo ? `${whInfo.code} (${whInfo.name})` : itemWh
                       return (
                         <tr key={index}>
-                          <td className="p-2">
-                            {(() => {
-                              const scopedProducts = getProductsForWarehouse(editingOrder.warehouse)
-                              return (
-                                <select
-                                  disabled={!editingOrder.warehouse}
-                                  value={item.productId}
-                                  onChange={(e) => handleOrderItemChange(index, "productId", e.target.value, true)}
-                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold disabled:cursor-not-allowed disabled:bg-zinc-100"
-                                >
-                                  <option value="">{editingOrder.warehouse ? "Select item" : "Select warehouse first"}</option>
-                                  {scopedProducts.map((prod) => (
-                                    <option key={prod.id} value={prod.id}>{prod.name}</option>
-                                  ))}
-                                </select>
-                              )
-                            })()}
+                          <td className="p-2 align-top">
+                            <div className="px-2.5 py-1.5 rounded-lg bg-zinc-100 border border-zinc-200 text-xs font-bold text-zinc-800 flex items-center justify-between" title={whDisplay}>
+                              <span className="font-mono text-[11px] font-black text-emerald-700">{whInfo?.code || itemWh}</span>
+                              {whInfo?.name && <span className="text-[10px] text-zinc-500 font-medium truncate max-w-[80px]">{whInfo.name}</span>}
+                            </div>
+                          </td>
+                          <td className="p-2 align-top">
+                            <select
+                              value={item.productId}
+                              onChange={(e) => handleOrderItemChange(index, "productId", e.target.value, true)}
+                              className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold focus:border-emerald-600 focus:outline-none"
+                            >
+                              <option value="">Select item</option>
+                              {scopedProducts.map((prod) => (
+                                <option key={prod.id} value={prod.id}>{prod.name}</option>
+                              ))}
+                            </select>
                             <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
-                              <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail}{isWh1Editing ? ` ${item.unit}` : ""}</span></span>
+                              <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail}{isWh1Item ? ` ${item.unit}` : ""}</span></span>
                               {isOver && (
                                 <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md mt-0.5">
                                   <AlertTriangle className="size-3 text-amber-600 shrink-0" />
@@ -2412,15 +2472,16 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                               onChange={(e) => handleOrderItemChange(index, "unit", e.target.value, true)}
                               className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-center"
                             >
-                              {availableEditUnits.map((unit) => (
+                              {availableUnits.map((unit) => (
                                 <option key={unit} value={unit}>{unit}</option>
                               ))}
                             </select>
                           </td>
-                          <td className="p-2 align-top">
+                          <td className="p-2 align-top text-right">
                             <input
                               type="number"
                               min="0"
+                              step="0.01"
                               value={item.unitPrice === 0 ? "" : item.unitPrice}
                               onChange={(e) => handleOrderItemChange(index, "unitPrice", e.target.value, true)}
                               className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-mono font-bold text-right"
@@ -2431,7 +2492,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                               <button
                                 type="button"
                                 onClick={() => handleRemoveOrderItemRow(index, true)}
-                                className="p-1 text-zinc-400 hover:text-rose-600 transition-colors"
+                                className="p-1 text-zinc-400 hover:text-rose-600 transition-colors cursor-pointer"
                               >
                                 <Trash2 className="size-3.5" />
                               </button>

@@ -76,14 +76,17 @@ export async function listSalesIssues(query = {}) {
       const issueItems = itemsByIssueId.get(issue.id) || itemsByIssueId.get(issue.issue_number) || itemsByIssueId.get(issue.fs_no) || issue.items || []
       const fs_no = issue.fs_no || issue.fsNo || issue.issue_number || issue.issueNumber || String(issue.id)
       const primaryId = fs_no || String(issue.id)
-      const reference_no = issue.reference_no || issue.referenceNo || issue.sales_order_id || issue.salesOrderId || ""
+      const rawSalesOrderId = rawIssue.sales_order_id || rawIssue.salesOrderId || rawIssue.salesOrder || null
+      const rawReferenceNo = rawIssue.reference_no || rawIssue.referenceNo || ""
+      const sales_order_id = rawSalesOrderId || (rawReferenceNo && String(rawReferenceNo).startsWith("SO-") ? rawReferenceNo : null)
+      const reference_no = rawReferenceNo
       let rawDate = issue.sale_date || issue.issueDate || issue.issue_date || issue.created_at || new Date()
       let sale_date = typeof rawDate === "string" 
         ? (rawDate.includes("T") ? rawDate.split("T")[0] : rawDate)
         : (rawDate instanceof Date ? rawDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
 
       const matchedCust = customerMap.get(issue.customer_id)
-      const matchedOrder = orderMap.get(issue.sales_order_id) || orderMap.get(reference_no)
+      const matchedOrder = (sales_order_id && orderMap.get(sales_order_id)) || (reference_no && orderMap.get(reference_no))
       const firstItem = issueItems[0]
       const matchedProd = firstItem ? (productMap.get(firstItem.product_id) || productMap.get(firstItem.item_id)) : null
 
@@ -96,8 +99,8 @@ export async function listSalesIssues(query = {}) {
       const status = issue.status || "Draft"
 
       const subtotal = Number(issue.subtotal_amount || issue.subtotal || issueItems.reduce((s, i) => s + (i.amount || 0), 0) || 0)
-      const vat_amount = Number(issue.tax_amount || issue.vat_amount || 0)
-      const vat_rate = Number(issue.vat_rate !== undefined ? issue.vat_rate : (vat_amount > 0 && subtotal > 0 ? Math.round((vat_amount / subtotal) * 100) : (isWh1 ? 0 : 15)))
+      const vat_amount = Number(issue.tax_amount !== undefined ? issue.tax_amount : (issue.vat_amount !== undefined ? issue.vat_amount : 0))
+      const vat_rate = Number(issue.vat_rate !== undefined ? issue.vat_rate : (issue.tax_rate !== undefined ? issue.tax_rate : (vat_amount > 0 && subtotal > 0 ? Math.round((vat_amount / subtotal) * 100) : 0)))
       const total_amount = Number(issue.total_amount || issue.totalAmount || (subtotal + vat_amount) || 0)
       const total_quantity = Number(issue.total_quantity || issue.totalQuantity || issueItems.reduce((s, i) => s + (i.quantity || 0), 0) || 0)
       const amount_paid = Number(issue.amount_paid || issue.amountPaid || 0)
@@ -110,10 +113,10 @@ export async function listSalesIssues(query = {}) {
         fsNo: fs_no,
         issue_number: fs_no,
         issueNumber: fs_no,
-        reference_no,
-        referenceNo: reference_no,
-        sales_order_id: reference_no,
-        salesOrderId: reference_no,
+        reference_no: reference_no || null,
+        referenceNo: reference_no || null,
+        sales_order_id: sales_order_id || null,
+        salesOrderId: sales_order_id || null,
         sale_date,
         issue_date: sale_date,
         issueDate: sale_date,
@@ -279,14 +282,17 @@ export async function getSalesIssue(id) {
         }
       })
 
-    const reference_no = issue.reference_no || issue.referenceNo || issue.sales_order_id || issue.salesOrderId || ""
+    const rawSalesOrderId = issue.sales_order_id || issue.salesOrderId || issue.salesOrder || null
+    const rawReferenceNo = issue.reference_no || issue.referenceNo || ""
+    const sales_order_id = rawSalesOrderId || (rawReferenceNo && String(rawReferenceNo).startsWith("SO-") ? rawReferenceNo : null)
+    const reference_no = rawReferenceNo
     let rawDate = issue.sale_date || issue.issueDate || issue.issue_date || issue.created_at || new Date()
     let sale_date = typeof rawDate === "string" 
       ? (rawDate.includes("T") ? rawDate.split("T")[0] : rawDate)
       : (rawDate instanceof Date ? rawDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
 
     const matchedCust = customerMap.get(issue.customer_id)
-    const matchedOrder = orderMap.get(issue.sales_order_id) || orderMap.get(reference_no)
+    const matchedOrder = (sales_order_id && orderMap.get(sales_order_id)) || (reference_no && orderMap.get(reference_no))
     const firstItem = items[0]
     const matchedProd = firstItem ? (productMap.get(firstItem.product_id) || productMap.get(firstItem.item_id)) : null
 
@@ -299,8 +305,8 @@ export async function getSalesIssue(id) {
     const status = issue.status || "Draft"
 
     const subtotal = Number(issue.subtotal_amount || issue.subtotal || items.reduce((s, i) => s + (i.amount || 0), 0) || 0)
-    const vat_amount = Number(issue.tax_amount || issue.vat_amount || 0)
-    const vat_rate = Number(issue.vat_rate !== undefined ? issue.vat_rate : (vat_amount > 0 && subtotal > 0 ? Math.round((vat_amount / subtotal) * 100) : (isWh1 ? 0 : 15)))
+    const vat_amount = Number(issue.tax_amount !== undefined ? issue.tax_amount : (issue.vat_amount !== undefined ? issue.vat_amount : 0))
+    const vat_rate = Number(issue.vat_rate !== undefined ? issue.vat_rate : (issue.tax_rate !== undefined ? issue.tax_rate : (vat_amount > 0 && subtotal > 0 ? Math.round((vat_amount / subtotal) * 100) : 0)))
     const total_amount = Number(issue.total_amount || issue.totalAmount || (subtotal + vat_amount) || 0)
     const total_quantity = Number(issue.total_quantity || issue.totalQuantity || items.reduce((s, i) => s + (i.quantity || 0), 0) || 0)
     const amount_paid = Number(issue.amount_paid || issue.amountPaid || 0)
@@ -315,10 +321,10 @@ export async function getSalesIssue(id) {
         fsNo: fs_no,
         issue_number: fs_no,
         issueNumber: fs_no,
-        reference_no,
-        referenceNo: reference_no,
-        sales_order_id: reference_no,
-        salesOrderId: reference_no,
+        reference_no: reference_no || null,
+        referenceNo: reference_no || null,
+        sales_order_id: sales_order_id || null,
+        salesOrderId: sales_order_id || null,
         sale_date,
         issue_date: sale_date,
         issueDate: sale_date,
@@ -358,7 +364,10 @@ export async function getSalesIssue(id) {
 export async function createSalesIssue(input, existingId = null) {
   const fs_no = input?.fs_no || input?.fsNo || input?.issue_number || input?.issueNumber || `FS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
   const id = existingId || input?.id || fs_no
-  const reference_no = input?.reference_no || input?.referenceNo || `REF-${fs_no}`
+  const rawSalesOrderId = input?.sales_order_id || input?.salesOrderId || input?.salesOrder || null
+  const rawReferenceNo = input?.reference_no || input?.referenceNo || ""
+  const sales_order_id = rawSalesOrderId || (rawReferenceNo && String(rawReferenceNo).startsWith("SO-") ? rawReferenceNo : null)
+  const reference_no = rawReferenceNo || null
   const sale_date = input?.sale_date || input?.issueDate || new Date().toISOString().split("T")[0]
   const customer_name = input?.customer_name || input?.customer || input?.customer_id || "Walk-in Customer"
   const customer_id = input?.customer_id || input?.customerId || customer_name
@@ -371,8 +380,8 @@ export async function createSalesIssue(input, existingId = null) {
 
   const isWh1 = isExportWarehouse(warehouse_id)
   const subtotal = input?.subtotal !== undefined ? Number(input.subtotal) : itemTotal
-  const vat_rate = input?.vat_rate !== undefined ? Number(input.vat_rate) : (isWh1 ? 0 : 15)
-  const vat_amount = input?.vat_amount !== undefined ? Number(input.vat_amount) : (vat_rate > 0 ? Math.round(subtotal * (vat_rate / 100)) : 0)
+  const vat_rate = input?.vat_rate !== undefined ? Number(input.vat_rate) : (input?.tax_rate !== undefined ? Number(input.tax_rate) : 0)
+  const vat_amount = input?.vat_amount !== undefined ? Number(input.vat_amount) : (input?.tax_amount !== undefined ? Number(input.tax_amount) : (vat_rate > 0 ? Math.round(subtotal * (vat_rate / 100)) : 0))
   const finalTotalAmount = input?.total_amount !== undefined ? Number(input.total_amount) : (subtotal + vat_amount)
 
   const doc = {
@@ -382,6 +391,8 @@ export async function createSalesIssue(input, existingId = null) {
     fsNo: fs_no,
     reference_no,
     referenceNo: reference_no,
+    sales_order_id,
+    salesOrderId: sales_order_id,
     sale_date,
     issueDate: sale_date,
     customer_id,
@@ -417,8 +428,8 @@ export async function createSalesIssue(input, existingId = null) {
     issueNumber: fs_no,
     reference_no: reference_no || null,
     referenceNo: reference_no || null,
-    sales_order_id: reference_no || null,
-    salesOrderId: reference_no || null,
+    sales_order_id: sales_order_id || null,
+    salesOrderId: sales_order_id || null,
     customer_id: customer_id || null,
     customerId: customer_id || null,
     customer_name: customer_name || null,
@@ -526,26 +537,30 @@ export async function updateSalesIssue(input, id) {
   const warehouse_id = input?.warehouse_id || existing.warehouse_id
   const isWh1 = isExportWarehouse(warehouse_id)
   const subtotal = input?.subtotal !== undefined ? Number(input.subtotal) : itemTotal
-  const vat_rate = input?.vat_rate !== undefined ? Number(input.vat_rate) : (isWh1 ? 0 : 15)
-  const vat_amount = input?.vat_amount !== undefined ? Number(input.vat_amount) : (vat_rate > 0 ? Math.round(subtotal * (vat_rate / 100)) : 0)
+  const vat_rate = input?.vat_rate !== undefined ? Number(input.vat_rate) : (input?.tax_rate !== undefined ? Number(input.tax_rate) : Number(existing.vat_rate || 0))
+  const vat_amount = input?.vat_amount !== undefined ? Number(input.vat_amount) : (input?.tax_amount !== undefined ? Number(input.tax_amount) : (vat_rate > 0 ? Math.round(subtotal * (vat_rate / 100)) : 0))
   const finalTotalAmount = input?.total_amount !== undefined ? Number(input.total_amount) : (subtotal + vat_amount)
 
-  const updateHeader = {
-    fs_no: input?.fs_no || existing.fs_no || cleanId,
-    fsNo: input?.fs_no || existing.fs_no || cleanId,
-    issue_number: input?.fs_no || existing.fs_no || cleanId,
-    issueNumber: input?.fs_no || existing.fs_no || cleanId,
-    reference_no: (input?.reference_no || existing.reference_no) || null,
-    referenceNo: (input?.reference_no || existing.reference_no) || null,
-    sales_order_id: (input?.reference_no || existing.reference_no) || null,
-    salesOrderId: (input?.reference_no || existing.reference_no) || null,
-    customer_id: (input?.customer_id || existing.customer_id) || null,
-    customerId: (input?.customer_id || existing.customer_id) || null,
-    customer_name: (input?.customer_name || existing.customer_name) || null,
-    customer: (input?.customer_name || existing.customer_name) || null,
-    warehouse_id: warehouse_id || null,
-    warehouseId: warehouse_id || null,
-    warehouse: warehouse_id || null,
+    const incomingSoId = input?.sales_order_id !== undefined ? input.sales_order_id : (input?.salesOrderId !== undefined ? input.salesOrderId : existing.sales_order_id)
+    const incomingRef = input?.reference_no !== undefined ? input.reference_no : (input?.referenceNo !== undefined ? input.referenceNo : existing.reference_no)
+    const resolvedSoId = incomingSoId || (incomingRef && String(incomingRef).startsWith("SO-") ? incomingRef : null)
+
+    const updateHeader = {
+      fs_no: input?.fs_no || existing.fs_no || cleanId,
+      fsNo: input?.fs_no || existing.fs_no || cleanId,
+      issue_number: input?.fs_no || existing.fs_no || cleanId,
+      issueNumber: input?.fs_no || existing.fs_no || cleanId,
+      reference_no: incomingRef || null,
+      referenceNo: incomingRef || null,
+      sales_order_id: resolvedSoId || null,
+      salesOrderId: resolvedSoId || null,
+      customer_id: (input?.customer_id || existing.customer_id) || null,
+      customerId: (input?.customer_id || existing.customer_id) || null,
+      customer_name: (input?.customer_name || existing.customer_name) || null,
+      customer: (input?.customer_name || existing.customer_name) || null,
+      warehouse_id: warehouse_id || null,
+      warehouseId: warehouse_id || null,
+      warehouse: warehouse_id || null,
     sale_date: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
     issue_date: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
     issueDate: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
@@ -982,9 +997,9 @@ export async function postSalesIssue(arg1, arg2) {
 
   // 2. Update status in sales_issues while strictly preserving payment integrity
   const isWh1 = isExportWarehouse(existing.warehouse_id)
-  const issueSubtotal = totalAmount || Number(existing.subtotal || existing.total_amount || 0)
-  const issueVatRate = isWh1 ? 0 : Number(existing.vat_rate !== undefined ? existing.vat_rate : 15)
-  const issueVatAmount = issueVatRate > 0 ? Number(existing.vat_amount || Math.round(issueSubtotal * (issueVatRate / 100))) : 0
+  const issueSubtotal = totalAmount || Number(existing.subtotal || existing.subtotal_amount || existing.total_amount || 0)
+  const issueVatRate = Number(existing.vat_rate !== undefined ? existing.vat_rate : (existing.tax_rate !== undefined ? existing.tax_rate : 0))
+  const issueVatAmount = issueVatRate > 0 ? Number(existing.vat_amount !== undefined ? existing.vat_amount : (existing.tax_amount !== undefined ? existing.tax_amount : Math.round(issueSubtotal * (issueVatRate / 100)))) : 0
   const grandTotal = issueSubtotal + issueVatAmount
 
   const isCash = (existing.payment_type || "").toString().toLowerCase() === "cash"
@@ -1163,10 +1178,10 @@ export async function postSalesIssue(arg1, arg2) {
     }
 
     // 4. Update Sales Order if referenced
-    if (existing.sales_order_id || existing.reference_no) {
-      const soId = existing.sales_order_id || existing.reference_no
+    const targetSoId = existing.sales_order_id || (existing.reference_no && String(existing.reference_no).startsWith("SO-") ? existing.reference_no : null)
+    if (targetSoId) {
       try {
-        const soRes = await drizzleGetRow({ resource: getResource("sales_orders"), id: soId })
+        const soRes = await drizzleGetRow({ resource: getResource("sales_orders"), id: targetSoId })
         if (soRes.status === 200 && soRes.body) {
           const soData = soRes.body
           const updatedSo = {
@@ -1177,7 +1192,7 @@ export async function postSalesIssue(arg1, arg2) {
             billingStatus: existing.payment_type === "Cash" ? "Fully Billed" : (soData.billingStatus || "Fully Billed"),
             updatedAt: new Date().toISOString(),
           }
-          await drizzleUpdateRow({ resource: getResource("sales_orders"), id: soId, body: updatedSo })
+          await drizzleUpdateRow({ resource: getResource("sales_orders"), id: targetSoId, body: updatedSo })
         }
       } catch (soErr) {
         console.warn("SO sync warning:", soErr.message)

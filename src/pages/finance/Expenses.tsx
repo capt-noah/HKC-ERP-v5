@@ -17,6 +17,7 @@ import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useFinanceStore, type OneOffExpense } from "@/lib/financeStore"
+import { erpStore } from "@/lib/erpStore"
 import { useAuthStore } from "@/lib/authStore"
 import { exportToExcel } from "@/lib/exportUtils"
 import { isDateInPreset } from "@/lib/peachtreeExportUtils"
@@ -530,7 +531,7 @@ export default function Expenses() {
                 },
               ]}
               onReload={async () => {
-                await store.reloadFromApi()
+                await Promise.all([store.reloadFromApi(), erpStore.reloadFromApi()])
               }}
               isReloading={isLoading}
               reloadTooltip="Reload expense claims from server"

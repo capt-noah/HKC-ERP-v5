@@ -13,7 +13,6 @@ import { useFinanceStore } from "@/lib/financeStore"
 import { useAuthStore } from "@/lib/authStore"
 import { isWH1, matchesWarehouse, getUserPermittedWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
-import { sortNewestFirst } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { EditModalHeader } from "@/components/EditModalHeader"
@@ -55,6 +54,15 @@ const salesIssueColumns: TableColumn[] = [
   { key: "unit_price", label: "Unit Price", align: "right" },
   { key: "total_amount", label: "Total (ETB)", align: "right" },
   { key: "_actions", label: "Actions", align: "center", noSort: true },
+]
+
+export const TAX_TYPE_OPTIONS = [
+  { id: "TAX-ZERO", label: "No Tax / Zero-Rated (0%)", rate: 0 },
+  { id: "TAX-VAT-15", label: "Standard VAT (15%)", rate: 15 },
+  { id: "TAX-TOT-2", label: "Turnover Tax (2% TOT)", rate: 2 },
+  { id: "TAX-WHT-2", label: "Withholding Tax (2% WHT)", rate: 2 },
+  { id: "TAX-WHT-3", label: "Withholding Tax (3% WHT)", rate: 3 },
+  { id: "CUSTOM", label: "Custom Tax Rate (%)", rate: -1 },
 ]
 
 function money(value: number) {
@@ -171,6 +179,28 @@ export default function SalesIssued() {
   const [warehouseId, setWarehouseId] = useState("")
   const [paymentType, setPaymentType] = useState<PaymentType>("Cash")
   const [items, setItems] = useState<SalesIssueItem[]>([blankItem()])
+  const [taxRate, setTaxRate] = useState<number>(0)
+  const [taxRuleType, setTaxRuleType] = useState<string>("TAX-ZERO")
+  const [customTaxRateInput, setCustomTaxRateInput] = useState<string>("0")
+
+  const handleTaxTypeChange = (selectedId: string) => {
+    setTaxRuleType(selectedId)
+    if (selectedId === "CUSTOM") {
+      const parsed = Math.max(0, parseFloat(customTaxRateInput) || 0)
+      setTaxRate(parsed)
+    } else {
+      const opt = TAX_TYPE_OPTIONS.find((o) => o.id === selectedId)
+      const r = opt ? opt.rate : 0
+      setTaxRate(r)
+      setCustomTaxRateInput(String(r))
+    }
+  }
+
+  const handleCustomTaxChange = (val: string) => {
+    setCustomTaxRateInput(val)
+    const parsed = Math.max(0, parseFloat(val) || 0)
+    setTaxRate(parsed)
+  }
 
   // Staged documentation & payment advice
   const [stagedPaymentAdviceName, setStagedPaymentAdviceName] = useState("")
@@ -196,7 +226,7 @@ export default function SalesIssued() {
   const evaluatedPendingSalesOrders = useMemo(() => {
     const customers = erp.getCustomers()
     return salesOrders.map((so) => {
-      const alreadyIssued = rows.some((row) => (row.reference_no || "").includes(so.id))
+      const alreadyIssued = rows.some((row) => (row.sales_order_id && row.sales_order_id === so.id) || (row.reference_no && (row.reference_no === so.id || row.reference_no.includes(so.id))))
       const isFullyDelivered = so.deliveryStatus === "Fully Delivered"
 
       if (isFullyDelivered || alreadyIssued) {
@@ -262,7 +292,7 @@ export default function SalesIssued() {
     const explicitPaymentType = (so.paymentType || so.payment_type || so.payment_method || so.paymentMethod || "").toString().trim().toLowerCase()
     const targetIsCash = explicitPaymentType === "cash" || (!explicitPaymentType && (so.payment_terms || so.paymentTerms || "").toString().toLowerCase() === "cash")
     setPaymentType(targetIsCash ? "Cash" : "Credit")
-    setReferenceNo(so.id)
+    setReferenceNo("")
     if (!saleDate) setSaleDate(getLocalDateString())
     setIssueFormErrors({})
 
@@ -340,19 +370,15 @@ export default function SalesIssued() {
     setLoading(true)
     setError("")
     try {
-      const params = new URLSearchParams()
-      params.set("page", String(page))
-      params.set("pageSize", String(pageSize))
-      if (batchFilter !== "ALL") params.set("batch", batchFilter)
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+      })
+      if (batchFilter && batchFilter !== "ALL") params.set("batch", batchFilter)
       if (search.trim()) params.set("search", search.trim())
-
-      const [result] = await Promise.all([
-        listSalesIssues(params),
-        financeStore.reloadFromApi().catch(() => {}),
-      ])
-      const sorted = sortNewestFirst(result.rows)
-      setRows(sorted)
-      setTotal(result.total)
+      const res = await listSalesIssues(params)
+      setRows(res.rows)
+      setTotal(res.total)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load sales issues")
       setRows([])
@@ -369,8 +395,11 @@ export default function SalesIssued() {
   const openCreate = (preselectedSo?: any) => {
     setEditing(null)
     setIssueFormErrors({})
-    const nextFs = `FS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
-    setFsNo(nextFs)
+    setTaxRate(0)
+    setTaxRuleType("TAX-ZERO")
+    setCustomTaxRateInput("0")
+    setFsNo("")
+    setReferenceNo("")
     setSaleDate(getLocalDateString())
     setStagedTradePaperName("")
     setStagedTradePaperUrl("")
@@ -387,7 +416,7 @@ export default function SalesIssued() {
       const explicitPaymentType = (preselectedSo.paymentType || preselectedSo.payment_type || preselectedSo.payment_method || preselectedSo.paymentMethod || "").toString().trim().toLowerCase()
       const targetIsCash = explicitPaymentType === "cash" || (!explicitPaymentType && (preselectedSo.payment_terms || preselectedSo.paymentTerms || "").toString().toLowerCase() === "cash")
       setPaymentType(targetIsCash ? "Cash" : "Credit")
-      setReferenceNo(preselectedSo.id)
+      setReferenceNo("")
       const allProducts = erp.getProducts()
 
       if (Array.isArray(preselectedSo.items) && preselectedSo.items.length > 0) {
@@ -467,6 +496,17 @@ export default function SalesIssued() {
       const canonicalWh = canonicalWarehouseId(full.warehouse_id || "")
       setWarehouseId(canonicalWh)
       setPaymentType(((full.payment_type || (full as any).paymentType || "Cash") === "Credit" ? "Credit" : "Cash") as PaymentType)
+
+      const loadedTaxRate = Number(full.vat_rate !== undefined ? full.vat_rate : (full.tax_rate !== undefined ? full.tax_rate : 0))
+      setTaxRate(loadedTaxRate)
+      const matchingTaxOption = TAX_TYPE_OPTIONS.find((o) => o.rate === loadedTaxRate && o.id !== "CUSTOM")
+      if (matchingTaxOption) {
+        setTaxRuleType(matchingTaxOption.id)
+        setCustomTaxRateInput(String(loadedTaxRate))
+      } else {
+        setTaxRuleType("CUSTOM")
+        setCustomTaxRateInput(String(loadedTaxRate))
+      }
       
       const mappedItems = (full.items && full.items.length > 0 ? full.items : [blankItem()]).map((item: any) => {
         const qty = Number(item.quantity || item.qty || 1)
@@ -603,6 +643,11 @@ export default function SalesIssued() {
       return
     }
 
+    if (!payAdviceFile) {
+      showToast("Payment Advice Required", "warning", "Payment Advice / Bank Deposit Slip must be attached before recording an installment payment.")
+      return
+    }
+
     setIsSubmittingPayment(true)
     try {
       let stagedSlipUrl = ""
@@ -622,10 +667,11 @@ export default function SalesIssued() {
           })
         }
 
+        const linkedSoId = (payingIssue as any).sales_order_id || (payingIssue.reference_no?.startsWith("SO-") ? payingIssue.reference_no : undefined)
         try {
           await savePaymentAdvice({
             salesIssueId: payingIssue.id,
-            salesOrderId: payingIssue.reference_no.trim() || undefined,
+            salesOrderId: linkedSoId || payingIssue.reference_no.trim() || undefined,
             fsNo: payingIssue.fs_no.trim(),
             invoiceId: `INV-SI-${payingIssue.id}`,
             fileName: stagedSlipName,
@@ -637,11 +683,13 @@ export default function SalesIssued() {
         }
       }
 
+      const resolvedSoId = (payingIssue as any).sales_order_id || (payingIssue.reference_no?.startsWith("SO-") ? payingIssue.reference_no : undefined)
+
       // Record payment with auto balanced double entry
       financeStore.recordPayment({
         linked_invoice_id: `INV-SI-${payingIssue.id}`,
         sales_issue_id: payingIssue.id,
-        sales_order_id: payingIssue.reference_no,
+        sales_order_id: resolvedSoId,
         customer_name: payingIssue.customer_name,
         amount: numAmount,
         currency: "ETB",
@@ -669,7 +717,10 @@ export default function SalesIssued() {
 
       // Update linked sales order in ERP store if present
       const refStr = payingIssue.reference_no || ""
-      const linkedOrders = salesOrders.filter((so) => refStr.includes(so.id) || so.id === payingIssue.reference_no)
+      const linkedOrders = salesOrders.filter((so) => 
+        (payingIssue.sales_order_id && payingIssue.sales_order_id === so.id) ||
+        (refStr && (refStr.includes(so.id) || refStr === so.id))
+      )
       linkedOrders.forEach((so) => {
         const soTotal = Number(so.amount || 0)
         const soPaid = Number(((so.paidAmount || 0) + numAmount).toFixed(2))
@@ -729,8 +780,7 @@ export default function SalesIssued() {
 
   const totalQuantity = useMemo(() => items.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [items])
   const subtotal = useMemo(() => items.reduce((sum, item) => sum + Number(item.amount || 0), 0), [items])
-  const isWh1Export = isWH1(warehouseId)
-  const vatRate = isWh1Export ? 0 : 15
+  const vatRate = taxRate
   const vatAmount = useMemo(() => Math.round(subtotal * (vatRate / 100)), [subtotal, vatRate])
   const grandTotal = useMemo(() => subtotal + vatAmount, [subtotal, vatAmount])
 
@@ -757,12 +807,14 @@ export default function SalesIssued() {
       // 2. Check primary product warehouse property
       if (p.warehouse) {
         const prodWhCanon = canonicalWarehouseId(p.warehouse)
-        const prodWhMatches =
+        if (
           p.warehouse === targetWh ||
           prodWhCanon === targetWh ||
           p.warehouse.toUpperCase().startsWith(targetWhBase) ||
           prodWhCanon.toUpperCase().startsWith(targetWhBase)
-        if (prodWhMatches && Number(p.quantity || 0) > 0) return true
+        ) {
+          return true
+        }
       }
 
       // 3. WH1 commodities check
@@ -817,11 +869,13 @@ export default function SalesIssued() {
     try {
       const isPostedEdit = Boolean(editing && (editing.status || "").toLowerCase() === "posted")
       let issueId = editing?.id
+      const resolvedSoId = selectedSoId || (editing as any)?.sales_order_id || (referenceNo.trim().startsWith("SO-") ? referenceNo.trim() : undefined)
 
       if (editing) {
         await updateSalesIssue(editing.id, {
           fs_no: fsNo.trim(),
-          reference_no: referenceNo.trim() || selectedSoId || undefined,
+          reference_no: referenceNo.trim() || undefined,
+          sales_order_id: resolvedSoId,
           sale_date: saleDate,
           customer_name: customerName.trim(),
           warehouse_id: canonicalWarehouseId(warehouseId),
@@ -830,12 +884,14 @@ export default function SalesIssued() {
           subtotal,
           vat_rate: vatRate,
           vat_amount: vatAmount,
+          tax_amount: vatAmount,
           total_amount: grandTotal,
         })
       } else {
         const created = await createSalesIssue({
           fs_no: fsNo.trim(),
-          reference_no: referenceNo.trim() || selectedSoId || undefined,
+          reference_no: referenceNo.trim() || undefined,
+          sales_order_id: resolvedSoId,
           sale_date: saleDate,
           customer_name: customerName.trim(),
           warehouse_id: canonicalWarehouseId(warehouseId),
@@ -844,6 +900,7 @@ export default function SalesIssued() {
           subtotal,
           vat_rate: vatRate,
           vat_amount: vatAmount,
+          tax_amount: vatAmount,
           total_amount: grandTotal,
         })
         issueId = created.id
@@ -853,7 +910,7 @@ export default function SalesIssued() {
         try {
           await saveTradeLicense({
             salesIssueId: issueId,
-            salesOrderId: referenceNo.trim() || undefined,
+            salesOrderId: resolvedSoId || referenceNo.trim() || undefined,
             customerName: customerName.trim() || undefined,
             fileName: stagedTradePaperName,
             fileUrl: stagedTradePaperUrl,
@@ -869,7 +926,7 @@ export default function SalesIssued() {
         try {
           await savePaymentAdvice({
             salesIssueId: issueId,
-            salesOrderId: referenceNo.trim() || undefined,
+            salesOrderId: resolvedSoId || referenceNo.trim() || undefined,
             fsNo: fsNo.trim(),
             invoiceId: `INV-SI-${issueId}`,
             fileName: stagedPaymentAdviceName,
@@ -881,8 +938,8 @@ export default function SalesIssued() {
         }
       }
 
-      if (selectedSoId) {
-        erp.updateSalesOrderStage(selectedSoId, "Shipped")
+      if (resolvedSoId) {
+        erp.updateSalesOrderStage(resolvedSoId, "Shipped")
       }
 
       showToast(
@@ -913,7 +970,10 @@ export default function SalesIssued() {
             throw new Error((res as any)?.error || "Could not post sales issue.")
           }
           const refStr = issue.reference_no || ""
-          const matchingOrders = salesOrders.filter((so) => refStr.includes(so.id))
+          const matchingOrders = salesOrders.filter((so) => 
+            (issue.sales_order_id && issue.sales_order_id === so.id) ||
+            (refStr && (refStr.includes(so.id) || refStr === so.id))
+          )
           matchingOrders.forEach((so) => {
             erp.updateSalesOrderStage(so.id, "Shipped")
           })
@@ -1859,26 +1919,60 @@ export default function SalesIssued() {
                 ))}
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="text-xs font-bold text-zinc-500">
-                  {isPostedEditing ? "Stock balances are already updated in GL ledger." : "Posting deducts the selected batch quantity from inventory in one server transaction."}
+              {/* Tax Selection & Real-Time Calculation Bar */}
+              <div className="mt-4 p-3.5 rounded-2xl bg-zinc-50 border border-zinc-200 grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
+                {/* Left: Tax Rule Selection (5 columns on lg) */}
+                <div className="lg:col-span-5 flex flex-wrap items-center gap-2 min-w-0">
+                  <span className="text-zinc-700 text-xs font-black uppercase tracking-wider shrink-0">Tax:</span>
+                  <div className="flex items-center gap-2 flex-1 min-w-[150px] max-w-full">
+                    <select
+                      value={taxRuleType}
+                      disabled={isPostedEditing}
+                      onChange={(e) => handleTaxTypeChange(e.target.value)}
+                      className="h-9 px-3 py-1 bg-white border border-zinc-300 rounded-xl text-xs font-bold text-zinc-900 shadow-2xs focus:border-emerald-600 focus:outline-none cursor-pointer disabled:bg-zinc-100 disabled:cursor-not-allowed flex-1 min-w-0 truncate"
+                    >
+                      {TAX_TYPE_OPTIONS.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    {taxRuleType === "CUSTOM" && (
+                      <div className="flex items-center gap-1 bg-white border border-zinc-300 rounded-xl px-2.5 h-9 shrink-0">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          disabled={isPostedEditing}
+                          value={customTaxRateInput}
+                          onChange={(e) => handleCustomTaxChange(e.target.value)}
+                          className="w-12 text-right text-xs font-black font-mono focus:outline-none"
+                          placeholder="0"
+                        />
+                        <span className="text-xs font-bold text-zinc-500">%</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="px-3 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200">
-                    <span className="text-zinc-400 text-[9px] uppercase font-black block">Total Qty</span>
-                    <span className="font-mono font-black text-zinc-800 text-xs">{totalQuantity.toLocaleString()}</span>
+
+                {/* Right: 4-Column Summary Cards (7 columns on lg) */}
+                <div className="lg:col-span-7 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className="px-2.5 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200 text-center">
+                    <span className="text-zinc-400 text-[9px] uppercase font-black block tracking-wider">Total Qty</span>
+                    <span className="font-mono font-black text-zinc-800 text-xs truncate block">{totalQuantity.toLocaleString()}</span>
                   </div>
-                  <div className="px-3 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200">
-                    <span className="text-zinc-400 text-[9px] uppercase font-black block">Subtotal (Net)</span>
-                    <span className="font-mono font-black text-zinc-800 text-xs">ETB {money(subtotal)}</span>
+                  <div className="px-2.5 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200 text-center">
+                    <span className="text-zinc-400 text-[9px] uppercase font-black block tracking-wider">Subtotal</span>
+                    <span className="font-mono font-black text-zinc-800 text-xs truncate block">ETB {money(subtotal)}</span>
                   </div>
-                  <div className="px-3 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200">
-                    <span className="text-zinc-400 text-[9px] uppercase font-black block">VAT ({vatRate}%)</span>
-                    <span className="font-mono font-black text-zinc-800 text-xs">ETB {money(vatAmount)}</span>
+                  <div className="px-2.5 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200 text-center">
+                    <span className="text-zinc-400 text-[9px] uppercase font-black block tracking-wider">{taxRate > 0 ? `Tax (${taxRate}%)` : "Tax (0%)"}</span>
+                    <span className="font-mono font-black text-zinc-800 text-xs truncate block">ETB {money(vatAmount)}</span>
                   </div>
-                  <div className="px-3.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 shadow-2xs">
-                    <span className="text-emerald-700 text-[9px] uppercase font-black block">Total Payable</span>
-                    <span className="font-mono font-black text-emerald-800 text-sm">ETB {money(grandTotal)}</span>
+                  <div className="px-2.5 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 shadow-2xs text-center">
+                    <span className="text-emerald-700 text-[9px] uppercase font-black block tracking-wider">Total Payable</span>
+                    <span className="font-mono font-black text-emerald-800 text-xs truncate block">ETB {money(grandTotal)}</span>
                   </div>
                 </div>
               </div>
@@ -2050,11 +2144,22 @@ export default function SalesIssued() {
 
                     {/* Payment Advice Receipt Attachment */}
                     <div>
-                      <label className="font-bold text-zinc-700 mb-1 block">Attach Payment Advice / Deposit Slip</label>
-                      <label className="flex flex-col items-center justify-center p-3.5 border-2 border-dashed border-zinc-300 hover:border-zinc-400 rounded-xl cursor-pointer bg-zinc-50/60 hover:bg-zinc-50 transition-colors">
-                        <Upload className="size-4 text-zinc-400 mb-1" />
-                        <span className="text-xs font-bold text-zinc-700">
-                          {payAdviceFile ? payAdviceFile.name : "Choose bank slip (PDF, PNG, JPG)"}
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="font-bold text-zinc-700">Attach Payment Advice / Deposit Slip *</label>
+                        {payAdviceFile && (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                            Attached
+                          </span>
+                        )}
+                      </div>
+                      <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
+                        payAdviceFile
+                          ? "border-emerald-400 bg-emerald-50/40 hover:bg-emerald-50/70"
+                          : "border-amber-300 bg-amber-50/30 hover:bg-amber-50/60"
+                      }`}>
+                        <Upload className={`size-4 mb-1 ${payAdviceFile ? "text-emerald-600" : "text-amber-500"}`} />
+                        <span className={`text-xs font-bold ${payAdviceFile ? "text-emerald-800" : "text-amber-900"}`}>
+                          {payAdviceFile ? payAdviceFile.name : "Choose bank slip (PDF, PNG, JPG) *"}
                         </span>
                         <input
                           type="file"
@@ -2067,6 +2172,9 @@ export default function SalesIssued() {
                           }}
                         />
                       </label>
+                      <span className="text-[10px] text-zinc-500 mt-1 block">
+                        Payment Advice / bank deposit receipt is mandatory when recording an installment payment.
+                      </span>
                     </div>
 
                     <div>

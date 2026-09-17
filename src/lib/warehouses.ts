@@ -255,12 +255,6 @@ export function getUserPermittedWarehouses(
     if (filtered.length > 0) return filtered
   }
 
-  // Fallback for sales_manager role: strictly pharmaceutical warehouses
-  if (roles.includes("sales_manager") || roles.includes("hkc_docs_manager")) {
-    const pharmaWhs = list.filter((w) => isPharmaWarehouse(w, list))
-    if (pharmaWhs.length > 0) return pharmaWhs
-  }
-
   return list
 }
 

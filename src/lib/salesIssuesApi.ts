@@ -20,6 +20,7 @@ export interface SalesIssueItem {
 export interface SalesIssue {
   id: string
   fs_no: string
+  sales_order_id?: string
   reference_no: string
   sale_date: string
   customer_id: string
@@ -31,6 +32,8 @@ export interface SalesIssue {
   subtotal?: number
   vat_rate?: number
   vat_amount?: number
+  tax_rate?: number
+  tax_amount?: number
   total_amount: number
   amount_paid?: number
   balance_due?: number

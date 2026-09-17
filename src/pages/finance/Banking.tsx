@@ -21,6 +21,7 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useFinanceStore } from "@/lib/financeStore"
+import { erpStore } from "@/lib/erpStore"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { exportToExcel } from "@/lib/exportUtils"
@@ -464,7 +465,7 @@ export default function Banking() {
                     },
                   ]}
                   onReload={async () => {
-                    await store.reloadFromApi()
+                    await Promise.all([store.reloadFromApi(), erpStore.reloadFromApi()])
                   }}
                   isReloading={isLoading}
                   reloadTooltip="Reload bank statement lines from server"

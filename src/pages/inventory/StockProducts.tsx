@@ -1104,7 +1104,7 @@ export default function StockProducts() {
                           const pharmaTotalReceived = binEntries.reduce((sum, e) => sum + Number(e.qtyReceived || 0), 0)
                           const pharmaTotalIssued = binEntries.reduce((sum, e) => sum + Number(e.qtyIssued || 0), 0)
                           const pharmaBalance = binEntries.length > 0
-                            ? Number(binEntries[binEntries.length - 1].balance ?? 0)
+                            ? Math.max(0, pharmaTotalReceived - pharmaTotalIssued)
                             : (Array.isArray(prod.batches) && prod.batches.length > 0)
                               ? prod.batches.reduce((sum, b) => sum + Number(b.qty ?? (b as any).quantity ?? 0), 0)
                               : Number(prod.quantity ?? 0)

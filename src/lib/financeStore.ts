@@ -3,7 +3,6 @@ import { deleteResource, loadResource, persistResources } from "./apiPersistence
 import { useAuthStore } from "./authStore"
 import { validateJournalVoucher } from "../core/finance/ledgerEngine"
 import { sortNewestFirst } from "./utils"
-import { isExportWarehouse } from "./warehouses"
 import { COMPANY_CHART_OF_ACCOUNTS, DEFAULT_COMPANY_SETTINGS_COA, type GlAccountMapping, DEFAULT_GL_ACCOUNT_MAPPINGS } from "./companyCOA"
 import {
   type TaxRule,
@@ -577,6 +576,7 @@ class FinanceStore {
 
     if (!useAuthStore.getState().token || !isAuthorized) {
       this._isLoading = false
+      this._loadInProgress = false
       return
     }
 
@@ -584,7 +584,7 @@ class FinanceStore {
     if (this._loadInProgress) return
 
     this._loadInProgress = true
-    if (!this._isLoaded) {
+    if (!this._isLoaded || force) {
       this._isLoading = true
       this._loadError = null
       this.listeners.forEach((l) => l())
@@ -747,6 +747,7 @@ class FinanceStore {
       this._isLoaded = true
     } finally {
       this._isLoading = false
+      this._loadInProgress = false
       this.notify(false)
     }
   }
@@ -791,13 +792,13 @@ class FinanceStore {
                 })
               : [{ description: `Sales Issue ${si.fs_no || si.id}`, quantity: 1, unit_price: Number(si.total_amount || 0), line_total: Number(si.total_amount || 0) }]
 
-            const matchedOrder = soMap.get(si.sales_order_id || si.reference_no)
+            const targetSoId = si.sales_order_id || (si.reference_no && String(si.reference_no).startsWith("SO-") ? si.reference_no : undefined)
+            const matchedOrder = targetSoId ? soMap.get(targetSoId) : (si.reference_no ? soMap.get(si.reference_no) : undefined)
             const matchedCustName = custMap.get(si.customer_id) || matchedOrder?.customer || (si.customer_name && si.customer_name !== "Customer" ? si.customer_name : null) || si.customer || "Customer"
 
             const subtotal = Number(si.subtotal_amount || si.subtotal || lineItems.reduce((sum, item) => sum + item.line_total, 0))
-            const isExport = isExportWarehouse(si.warehouse_id || matchedOrder?.warehouse)
-            const vatAmount = Number(si.tax_amount !== undefined ? si.tax_amount : (si.vat_amount !== undefined ? si.vat_amount : (isExport ? 0 : Math.round(subtotal * 0.15))))
-            const taxRate = Number(si.vat_rate !== undefined ? si.vat_rate : (vatAmount > 0 && subtotal > 0 ? Math.round((vatAmount / subtotal) * 100) : (isExport ? 0 : 15)))
+            const taxRate = Number(si.vat_rate !== undefined ? si.vat_rate : (si.tax_rate !== undefined ? si.tax_rate : (si.vat_amount && subtotal > 0 ? Math.round((Number(si.vat_amount) / subtotal) * 100) : 0)))
+            const vatAmount = Number(si.tax_amount !== undefined ? si.tax_amount : (si.vat_amount !== undefined ? si.vat_amount : (taxRate > 0 ? Math.round(subtotal * (taxRate / 100)) : 0)))
             const discountAmount = Number(si.discount_amount || 0)
             const whtAmount = Number(si.wht_amount || 0)
             const invoiceTotal = Number(si.total_amount || (subtotal + vatAmount - discountAmount))
@@ -947,17 +948,19 @@ class FinanceStore {
 
             // ── Invoices record sync ──
             const invId = `INV-SI-${si.id}`
+            const linkedSoId = si.sales_order_id || (si.reference_no && String(si.reference_no).startsWith("SO-") ? si.reference_no : undefined)
             const isMatchingInvoice = (inv: Invoice) => {
               if (inv.id === invId || inv.sales_issue_id === si.id || inv.id === si.id) return true
               if (si.fs_no && (inv.fs_no === si.fs_no || inv.invoice_number === `INV-${si.fs_no}` || inv.invoice_number?.includes(si.fs_no))) return true
-              if (si.reference_no && (inv.sales_order_id === si.reference_no || inv.id === `INV-SO-${si.reference_no}` || inv.invoice_number === si.reference_no || inv.invoice_number?.includes(si.reference_no))) return true
+              if (linkedSoId && (inv.sales_order_id === linkedSoId || inv.id === `INV-SO-${linkedSoId}`)) return true
+              if (si.reference_no && (inv.invoice_number === si.reference_no || inv.invoice_number?.includes(si.reference_no))) return true
               if (inv.customer_name?.toLowerCase() === si.customer_name?.toLowerCase() && (Math.abs((inv.total || 0) - invoiceTotal) < 0.01 || Math.abs((inv.subtotal || 0) - subtotal) < 0.01) && invoiceTotal > 0) return true
               return false
             }
 
             const existingInvIdx = this.invoices.findIndex(isMatchingInvoice)
 
-            const paymentsForThisIssue = this.payments.filter((p) => (p.sales_issue_id && p.sales_issue_id === si.id) || p.linked_invoice_id === invId || (si.fs_no && p.reference?.includes(si.fs_no)) || (si.reference_no && p.reference?.includes(si.reference_no)))
+            const paymentsForThisIssue = this.payments.filter((p) => (p.sales_issue_id && p.sales_issue_id === si.id) || p.linked_invoice_id === invId || (si.fs_no && p.reference?.includes(si.fs_no)) || (si.reference_no && p.reference?.includes(si.reference_no)) || (linkedSoId && p.sales_order_id === linkedSoId))
             const totalPaidFromPayments = paymentsForThisIssue.reduce((s, p) => s + Number(p.amount || 0), 0)
             const actualAmountPaid = isCash ? invoiceTotal : Math.max(Number(si.amount_paid || 0), totalPaidFromPayments)
             const actualBalanceDue = isCash ? 0 : Math.max(0, invoiceTotal - actualAmountPaid)
@@ -984,7 +987,7 @@ class FinanceStore {
               status: actualStatus,
               settlement_status: actualSettlement,
               sales_issue_id: si.id,
-              sales_order_id: si.reference_no || undefined,
+              sales_order_id: linkedSoId,
               fs_no: si.fs_no,
             }
 
@@ -1331,6 +1334,7 @@ class FinanceStore {
 
   public async reloadFromApi() {
     this._isLoaded = false
+    this._loadInProgress = false
     await this.loadFromApi(true)
   }
 

@@ -36,6 +36,7 @@ import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useFinanceStore } from "@/lib/financeStore"
+import { erpStore } from "@/lib/erpStore"
 import { exportToExcel } from "@/lib/exportUtils"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
@@ -523,6 +524,11 @@ export default function FinancialReports() {
                         variant: "emeraldLight",
                       },
                     ]}
+                    onReload={async () => {
+                      await Promise.all([store.reloadFromApi(), erpStore.reloadFromApi()])
+                    }}
+                    isReloading={isLoading}
+                    reloadTooltip="Reload general ledger entries from server"
                   />
                 </div>
 
@@ -787,6 +793,11 @@ export default function FinancialReports() {
                         variant: "emeraldLight",
                       },
                     ]}
+                    onReload={async () => {
+                      await Promise.all([store.reloadFromApi(), erpStore.reloadFromApi()])
+                    }}
+                    isReloading={isLoading}
+                    reloadTooltip="Reload trial balance from server"
                   />
                 </div>
 

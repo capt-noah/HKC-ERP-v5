@@ -220,6 +220,8 @@ export interface SalesOrderItem {
   unit: string
   unitPrice: number
   total: number
+  warehouse?: string
+  warehouse_id?: string
   deliveredQty?: number
 }
 
@@ -687,9 +689,16 @@ class ErpStore {
         })
 
         const targetWh = p.warehouse || p.warehouse_id || "WH2"
-        const totalQty = mappedBatches.length > 0
-          ? mappedBatches.filter(b => b.status === "Released").reduce((acc, b) => acc + (b.qty || 0), 0)
-          : Number(p.quantity || 0)
+        const pharmaBinEntries = mappedPharmaBinEntries.length > 0 ? mappedPharmaBinEntries : p.binCardEntries || []
+        const pharmaMovementsReceived = pharmaBinEntries.reduce((sum: number, e: any) => sum + Number(e.qtyReceived || 0), 0)
+        const pharmaMovementsIssued = pharmaBinEntries.reduce((sum: number, e: any) => sum + Number(e.qtyIssued || 0), 0)
+        const pharmaNetFromMovements = Math.max(0, pharmaMovementsReceived - pharmaMovementsIssued)
+
+        const totalQty = pharmaBinEntries.length > 0
+          ? pharmaNetFromMovements
+          : (mappedBatches.length > 0
+            ? mappedBatches.filter(b => b.status === "Released").reduce((acc, b) => acc + (b.qty || 0), 0)
+            : Number(p.quantity || 0))
         const latestBatch = mappedBatches[0]?.batchNo || p.batch || p.batch_no || ""
         const latestExpiry = mappedBatches[0]?.expiry || p.expiry || p.expiry_date || ""
 
@@ -966,9 +975,16 @@ class ErpStore {
           }))
 
           const targetWh = p.warehouse || p.warehouse_id || "WH2"
-          const totalQty = mappedBatches.length > 0
-            ? mappedBatches.filter(b => b.status === "Released").reduce((acc, b) => acc + (b.qty || 0), 0)
-            : Number(p.quantity || 0)
+          const pharmaBinEntries = p.binCardEntries || []
+          const pharmaMovementsReceived = pharmaBinEntries.reduce((sum: number, e: any) => sum + Number(e.qtyReceived || 0), 0)
+          const pharmaMovementsIssued = pharmaBinEntries.reduce((sum: number, e: any) => sum + Number(e.qtyIssued || 0), 0)
+          const pharmaNetFromMovements = Math.max(0, pharmaMovementsReceived - pharmaMovementsIssued)
+
+          const totalQty = pharmaBinEntries.length > 0
+            ? pharmaNetFromMovements
+            : (mappedBatches.length > 0
+              ? mappedBatches.filter(b => b.status === "Released").reduce((acc, b) => acc + (b.qty || 0), 0)
+              : Number(p.quantity || 0))
           const latestBatch = mappedBatches[0]?.batchNo || p.batch || p.batch_no || ""
           const latestExpiry = mappedBatches[0]?.expiry || p.expiry || p.expiry_date || ""
 
@@ -1050,8 +1066,8 @@ class ErpStore {
     return () => this.listeners.delete(listener)
   }
 
-  public async reloadFromApi() {
-    await this.loadFromApi("all")
+  public reloadFromApi() {
+    return this.loadFromApi("all")
   }
 
   public isLoading() {
@@ -1075,17 +1091,24 @@ class ErpStore {
   }
 
   private withInventoryValue(product: Product): Product {
-    const quantity = Number(product.quantity || 0)
+    const isWh1 = isWH1(product.warehouse)
+    let quantity = Number(product.quantity || 0)
     const unitCost = Number(product.unitCost || product.sellingPrice || (product as any).unit_price || 0)
 
+    if (!isWh1 && Array.isArray(product.binCardEntries) && product.binCardEntries.length > 0) {
+      const rec = product.binCardEntries.reduce((sum, e) => sum + Number(e.qtyReceived || 0), 0)
+      const iss = product.binCardEntries.reduce((sum, e) => sum + Number(e.qtyIssued || 0), 0)
+      quantity = Math.max(0, rec - iss)
+    }
+
     let totalStockValue = Math.round(quantity * unitCost * 100) / 100
-    if (isWH1(product.warehouse) && Array.isArray(product.wh1Entries) && product.wh1Entries.length > 0) {
+    if (isWh1 && Array.isArray(product.wh1Entries) && product.wh1Entries.length > 0) {
       totalStockValue = product.wh1Entries.reduce(
         (sum, entry) => sum + (Number(entry.quantityRemaining || 0) * Number(entry.unitPrice || unitCost || 0)),
         0
       )
       totalStockValue = Math.round(totalStockValue * 100) / 100
-    } else if (!isWH1(product.warehouse)) {
+    } else if (!isWh1) {
       if (Array.isArray(product.batches) && product.batches.length > 0) {
         const batchSum = product.batches
           .filter((b) => b.status !== "Quarantined")
@@ -1097,8 +1120,7 @@ class ErpStore {
           totalStockValue = Math.round(batchSum * 100) / 100
         }
       } else if (Array.isArray(product.binCardEntries) && product.binCardEntries.length > 0) {
-        const latestBalance = Number(product.binCardEntries[product.binCardEntries.length - 1].balance ?? quantity)
-        totalStockValue = Math.round(latestBalance * unitCost * 100) / 100
+        totalStockValue = Math.round(quantity * unitCost * 100) / 100
       }
     }
 
@@ -1113,6 +1135,7 @@ class ErpStore {
 
     return {
       ...product,
+      quantity,
       stockBreakdown,
       batches,
       wh1Entries,
