@@ -8,6 +8,8 @@ import { updateHkcDocRecord, deleteHkcDocRecord } from "@/lib/hkcDocsApi"
 import { useFeedback } from "@/context/FeedbackContext"
 import { EditModalHeader } from "@/components/EditModalHeader"
 
+import { uploadFile } from "@/lib/fileUpload"
+
 interface HkcDocEditModalProps {
   record: HkcDocRecord | null
   onClose: () => void
@@ -32,10 +34,10 @@ export default function HkcDocEditModal({
 
   useEffect(() => {
     if (record) {
-      setShipmentId(record.shipmentId)
-      setItemsDescription(record.itemsDescription)
-      setType(record.type)
-      setDate(record.date)
+      setShipmentId(record.shipmentId || "")
+      setItemsDescription(record.itemsDescription || "")
+      setType(record.type || "Import")
+      setDate(record.date || "")
       setAttachments(record.attachments || [])
     }
   }, [record])
@@ -56,8 +58,33 @@ export default function HkcDocEditModal({
     setAttachments((prev) => prev.filter((a) => a.attachmentId !== attachmentId))
   }
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const ensureUploadedAttachments = async (items: HkcDocAttachment[]): Promise<HkcDocAttachment[]> => {
+    const processed: HkcDocAttachment[] = []
+    for (const item of items) {
+      if (item.fileUrl.startsWith("data:")) {
+        try {
+          const res = await fetch(item.fileUrl)
+          const blob = await res.blob()
+          const file = new File([blob], item.fileName, { type: blob.type || "image/jpeg" })
+          const upRes = await uploadFile(file, "hkc_docs")
+          processed.push({
+            ...item,
+            fileUrl: upRes.url,
+            fileName: upRes.originalName || item.fileName,
+          })
+        } catch (err) {
+          console.warn("Pre-save upload failed, keeping original:", err)
+          processed.push(item)
+        }
+      } else {
+        processed.push(item)
+      }
+    }
+    return processed
+  }
+
+  const handleSave = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e && "preventDefault" in e) e.preventDefault()
     if (!shipmentId.trim() || !itemsDescription.trim()) {
       showToast("Validation failed", "warning", "Provide a shipment reference ID and items description.")
       return
@@ -65,12 +92,13 @@ export default function HkcDocEditModal({
 
     setIsSaving(true)
     try {
+      const cleanAttachments = await ensureUploadedAttachments(attachments)
       const updated = await updateHkcDocRecord(record.id, {
         shipmentId: shipmentId.trim(),
         itemsDescription: itemsDescription.trim(),
         type,
         date,
-        attachments,
+        attachments: cleanAttachments,
       })
       showToast("Documentation updated", "success", `Record ${updated.shipmentId} updated successfully.`)
       onSaveSuccess(updated)

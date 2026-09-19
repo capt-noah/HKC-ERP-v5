@@ -44,7 +44,8 @@ app.use(
 app.use(logger.requestLogger)
 
 // 3. Parse JSON request bodies before any route handler runs.
-app.use(express.json({ limit: "10mb" }))
+app.use(express.json({ limit: "50mb" }))
+app.use(express.urlencoded({ limit: "50mb", extended: true }))
 
 // Disable ETags on API responses so clients/browsers always receive live fresh database states
 app.set("etag", false)

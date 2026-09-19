@@ -52,9 +52,9 @@ crudRouter.use("/:resource", (req, res, next) => {
     isAllowed = true
   }
 
-  // Allow inventory admin, sales manager, and finance manager to create and update suppliers, customers, and purchase orders
+  // Allow inventory admin, sales manager, and finance manager to create and update suppliers, customers, purchase orders, and documentation
   if (
-    ["suppliers", "customers", "purchase_orders"].includes(req.params.resource) &&
+    ["suppliers", "customers", "purchase_orders", "hkc_doc_records", "shipment_documents"].includes(req.params.resource) &&
     userRoles.some((r) => ["inventory_admin", "sales_manager", "hkc_docs_manager", "finance_manager"].includes(r))
   ) {
     isAllowed = true
@@ -106,12 +106,14 @@ crudRouter.use("/:resource", (req, res, next) => {
       }
     }
 
-    // Sales orders, sales issues, and processing services readable by finance manager for invoicing & AR
+    // Sales orders, sales issues, shipments, HKC compliance docs, and processing services readable by sales, docs, finance, and inventory admins
     if (
       resName === "sales_orders" ||
       resName === "sales_issues" ||
       resName === "sales_issue_items" ||
-      resName === "processing_services"
+      resName === "processing_services" ||
+      resName === "shipment_documents" ||
+      resName === "hkc_doc_records"
     ) {
       if (userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager", "inventory_admin"].includes(r))) {
         isAllowed = true

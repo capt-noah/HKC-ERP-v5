@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { motion } from "framer-motion"
-import { Camera, X, RotateCcw, Check, SwitchCamera, AlertCircle, Upload } from "lucide-react"
+import { Camera, CameraOff, X, RotateCcw, Check, SwitchCamera, Upload } from "lucide-react"
 import { uploadFile } from "@/lib/fileUpload"
 
 interface CameraCaptureModalProps {
@@ -17,6 +17,9 @@ export default function CameraCaptureModal({
   onFallbackFileSelect,
 }: CameraCaptureModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const activeSessionIdRef = useRef(0)
+
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment")
   const [capturedImage, setCapturedImage] = useState<string | null>(null)
@@ -24,16 +27,54 @@ export default function CameraCaptureModal({
   const [isLoadingCamera, setIsLoadingCamera] = useState(true)
   const [isUploading, setIsUploading] = useState(false)
 
-  // Start camera stream
+  // Dedicated helper to immediately and completely stop hardware camera tracks
+  const stopCamera = useCallback(() => {
+    activeSessionIdRef.current++
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop()
+        } catch {}
+      })
+      streamRef.current = null
+    }
+    if (videoRef.current && videoRef.current.srcObject) {
+      const srcStream = videoRef.current.srcObject as MediaStream
+      srcStream.getTracks?.().forEach((track) => {
+        try {
+          track.stop()
+        } catch {}
+      })
+      videoRef.current.srcObject = null
+    }
+    setStream(null)
+  }, [])
+
+  // Start camera stream - always queries getUserMedia freshly
   const startCamera = useCallback(async (mode: "environment" | "user") => {
+    const sessionId = ++activeSessionIdRef.current
     setIsLoadingCamera(true)
     setCameraError(null)
 
     // Stop existing stream first
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop())
-      setStream(null)
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop()
+        } catch {}
+      })
+      streamRef.current = null
     }
+    if (videoRef.current && videoRef.current.srcObject) {
+      const srcStream = videoRef.current.srcObject as MediaStream
+      srcStream.getTracks?.().forEach((track) => {
+        try {
+          track.stop()
+        } catch {}
+      })
+      videoRef.current.srcObject = null
+    }
+    setStream(null)
 
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -60,42 +101,54 @@ export default function CameraCaptureModal({
         })
       }
 
+      // If session changed or modal closed while awaiting permissions/stream, discard immediately
+      if (sessionId !== activeSessionIdRef.current) {
+        mediaStream.getTracks().forEach((track) => {
+          try {
+            track.stop()
+          } catch {}
+        })
+        return
+      }
+
+      streamRef.current = mediaStream
       setStream(mediaStream)
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream
         videoRef.current.play().catch(() => {})
       }
     } catch (err: any) {
+      if (sessionId !== activeSessionIdRef.current) return
       console.warn("Camera access error:", err)
       if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-        setCameraError("Camera permission was denied. Please allow camera access in your browser settings.")
+        setCameraError("Camera permission is blocked or was denied by your browser.")
       } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
         setCameraError("No camera device was found on this system.")
+      } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+        setCameraError("Camera is currently in use by another application or tab.")
       } else {
         setCameraError(err.message || "Failed to start camera viewfinder.")
       }
     } finally {
-      setIsLoadingCamera(false)
+      if (sessionId === activeSessionIdRef.current) {
+        setIsLoadingCamera(false)
+      }
     }
-  }, [stream])
+  }, [])
 
-  // Lifecycle
+  // Lifecycle: Always reset state and request camera whenever modal opens
   useEffect(() => {
     if (isOpen) {
       setCapturedImage(null)
+      setCameraError(null)
       startCamera(facingMode)
     } else {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop())
-        setStream(null)
-      }
+      stopCamera()
     }
     return () => {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop())
-      }
+      stopCamera()
     }
-  }, [isOpen, facingMode])
+  }, [isOpen, facingMode, startCamera, stopCamera])
 
   // Attach video stream when video element renders
   useEffect(() => {
@@ -112,9 +165,25 @@ export default function CameraCaptureModal({
   const handleSnapPhoto = () => {
     if (!videoRef.current) return
     const video = videoRef.current
+    const rawW = video.videoWidth || 1280
+    const rawH = video.videoHeight || 720
+    const maxDim = 1600
+    let width = rawW
+    let height = rawH
+
+    if (width > maxDim || height > maxDim) {
+      if (width > height) {
+        height = Math.round((height * maxDim) / width)
+        width = maxDim
+      } else {
+        width = Math.round((width * maxDim) / height)
+        height = maxDim
+      }
+    }
+
     const canvas = document.createElement("canvas")
-    canvas.width = video.videoWidth || 1280
-    canvas.height = video.videoHeight || 720
+    canvas.width = width
+    canvas.height = height
 
     const ctx = canvas.getContext("2d")
     if (!ctx) return
@@ -125,21 +194,28 @@ export default function CameraCaptureModal({
       ctx.scale(-1, 1)
     }
 
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.92)
+    ctx.drawImage(video, 0, 0, width, height)
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.88)
+
+    // Stop camera hardware stream immediately so green light turns off
+    stopCamera()
+
     setCapturedImage(dataUrl)
   }
 
   const handleRetake = () => {
     setCapturedImage(null)
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream
-      videoRef.current.play().catch(() => {})
-    }
+    startCamera(facingMode)
+  }
+
+  const handleModalClose = () => {
+    stopCamera()
+    onClose()
   }
 
   const handleUsePhoto = async () => {
     if (!capturedImage || isUploading) return
+    stopCamera()
     const now = new Date()
     const timeTag = `${now.getHours()}${now.getMinutes()}${now.getSeconds()}`
     const fileName = `Doc_Photo_${now.toISOString().slice(0, 10)}_${timeTag}.jpg`
@@ -198,7 +274,7 @@ export default function CameraCaptureModal({
             )}
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleModalClose}
               className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors cursor-pointer"
             >
               <X className="size-5" />
@@ -209,21 +285,51 @@ export default function CameraCaptureModal({
         {/* Camera Viewfinder / Preview Body */}
         <div className="relative flex-1 bg-black flex items-center justify-center min-h-[320px] sm:min-h-[420px] overflow-hidden">
           {cameraError ? (
-            <div className="p-6 text-center text-zinc-400 space-y-4 max-w-sm">
-              <AlertCircle className="size-10 text-rose-500 mx-auto" />
-              <p className="text-xs font-semibold text-zinc-300 leading-relaxed">{cameraError}</p>
-              {onFallbackFileSelect && (
+            <div className="p-6 text-center text-zinc-400 space-y-4 max-w-md mx-auto">
+              <div className="size-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mx-auto text-rose-400">
+                <CameraOff className="size-7" />
+              </div>
+
+              <div>
+                <h3 className="text-white font-black text-sm sm:text-base mb-1">Camera Permission Required</h3>
+                <p className="text-xs text-zinc-400 leading-relaxed max-w-sm mx-auto">
+                  {cameraError}
+                </p>
+              </div>
+
+              <div className="bg-zinc-900/90 border border-zinc-800 rounded-xl p-3 text-left space-y-1 text-[11px] text-zinc-400">
+                <p className="font-bold text-zinc-300">To enable your camera:</p>
+                <ol className="list-decimal list-inside space-y-1 text-zinc-400">
+                  <li>Look for the <strong>camera 🎥 or lock 🔒 icon</strong> in your browser address bar.</li>
+                  <li>Set Camera permissions to <strong>Allow</strong>.</li>
+                  <li>Click <strong>Request Permission / Try Again</strong> below.</li>
+                </ol>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => {
-                    onClose()
-                    onFallbackFileSelect()
-                  }}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  onClick={() => startCamera(facingMode)}
+                  disabled={isLoadingCamera}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold inline-flex items-center justify-center gap-2 cursor-pointer shadow-md transition-all active:scale-95"
                 >
-                  <Upload className="size-4" /> Choose from Gallery / Files
+                  <Camera className="size-4" />
+                  {isLoadingCamera ? "Requesting..." : "Request Permission / Try Again"}
                 </button>
-              )}
+
+                {onFallbackFileSelect && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleModalClose()
+                      onFallbackFileSelect()
+                    }}
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                  >
+                    <Upload className="size-4" /> Attach from Gallery
+                  </button>
+                )}
+              </div>
             </div>
           ) : capturedImage ? (
             <div className="relative size-full flex items-center justify-center p-2">

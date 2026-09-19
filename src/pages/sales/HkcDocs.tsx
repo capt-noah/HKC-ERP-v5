@@ -80,6 +80,8 @@ export default function HkcDocs() {
               searchValue={searchQuery}
               onSearchChange={setSearchQuery}
               searchPlaceholder="Search shipment ID, items description..."
+              onReload={fetchRecords}
+              isReloading={isLoading}
               filters={[
                 {
                   value: typeFilter,

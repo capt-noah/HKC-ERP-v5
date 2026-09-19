@@ -1,10 +1,11 @@
 import { useRef, useState } from "react"
 import type { ChangeEvent } from "react"
-import { File, Paperclip, X, Download, Camera, Image as ImageIcon, Eye, Trash2 } from "lucide-react"
+import { File, Paperclip, Download, Camera, Image as ImageIcon, Eye, Trash2, FileText } from "lucide-react"
 import type { HkcDocAttachment } from "@/lib/erpStore"
 import CameraCaptureModal from "./CameraCaptureModal"
 import { useFeedback } from "@/context/FeedbackContext"
 import { uploadFile, resolveFileUrl } from "@/lib/fileUpload"
+import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 
 interface HkcDocAttachmentPanelProps {
   attachments: HkcDocAttachment[]
@@ -22,7 +23,7 @@ export default function HkcDocAttachmentPanel({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isCameraOpen, setIsCameraOpen] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
-  const [previewImage, setPreviewImage] = useState<{ fileName: string; fileUrl: string } | null>(null)
+  const [previewDoc, setPreviewDoc] = useState<{ fileName: string; fileUrl: string } | null>(null)
 
   const handleDeleteAttachment = (file: HkcDocAttachment) => {
     confirm({
@@ -76,8 +77,35 @@ export default function HkcDocAttachmentPanel({
   }
 
   const downloadAttachment = (fileName: string, fileUrl: string) => {
+    const resolved = resolveFileUrl(fileUrl)
+    if (resolved.startsWith("data:")) {
+      try {
+        const arr = resolved.split(",")
+        const mimeMatch = arr[0].match(/:(.*?);/)
+        const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream"
+        const bstr = atob(arr[1])
+        let n = bstr.length
+        const u8arr = new Uint8Array(n)
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n)
+        }
+        const blob = new Blob([u8arr], { type: mime })
+        const blobUrl = URL.createObjectURL(blob)
+        const link = document.createElement("a")
+        link.href = blobUrl
+        link.download = fileName
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+        return
+      } catch (err) {
+        console.warn("Blob conversion failed, fallback to direct link", err)
+      }
+    }
+
     const link = document.createElement("a")
-    link.href = resolveFileUrl(fileUrl)
+    link.href = resolved
     link.download = fileName
     link.target = "_blank"
     document.body.appendChild(link)
@@ -86,7 +114,11 @@ export default function HkcDocAttachmentPanel({
   }
 
   const isImageFile = (fileName: string, fileUrl: string) => {
-    return fileUrl.startsWith("data:image/") || /\.(jpg|jpeg|png|webp|gif|bmp|heic|svg)$/i.test(fileName) || fileUrl.includes("/hkc_docs/")
+    return fileUrl.startsWith("data:image/") || /\.(jpg|jpeg|png|webp|gif|bmp|heic|svg)$/i.test(fileName)
+  }
+
+  const isPdfFile = (fileName: string, fileUrl: string) => {
+    return fileUrl.startsWith("data:application/pdf") || /\.pdf$/i.test(fileName)
   }
 
   return (
@@ -137,53 +169,73 @@ export default function HkcDocAttachmentPanel({
             <Camera className="size-5 text-zinc-400" />
             <File className="size-5 text-zinc-400" />
           </div>
-          <p className="text-zinc-500 font-semibold text-[11px]">No files attached. Use &quot;Snap Photo&quot; to take a picture or &quot;Add File&quot; to upload.</p>
+          <p className="text-zinc-500 font-semibold text-[11px]">No files attached. Use &quot;Snap Photo&quot; to take a picture or &quot;Attach File&quot; to upload PDFs or documents.</p>
         </div>
       ) : (
         <div className="space-y-1.5 max-h-48 overflow-y-auto">
           {attachments.map((file) => {
             const isImg = isImageFile(file.fileName, file.fileUrl)
+            const isPdf = isPdfFile(file.fileName, file.fileUrl)
+
             return (
               <div
                 key={file.attachmentId}
                 className="flex items-center justify-between p-2.5 rounded-xl border border-zinc-150/60 bg-white dark:bg-zinc-900 shadow-xs text-xs font-semibold"
               >
-                <div className="flex items-center gap-2 flex-1 min-w-0">
+                <div className="flex items-center gap-2.5 flex-1 min-w-0">
                   {isImg ? (
                     <div
-                      onClick={() => setPreviewImage({ fileName: file.fileName, fileUrl: file.fileUrl })}
-                      className="size-7 rounded-lg overflow-hidden border border-zinc-200 bg-zinc-100 flex items-center justify-center shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={() => setPreviewDoc({ fileName: file.fileName, fileUrl: file.fileUrl })}
+                      className="size-8 rounded-lg overflow-hidden border border-zinc-200 bg-zinc-100 flex items-center justify-center shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
                       title="Click to preview image"
                     >
                       {file.fileUrl ? (
                         <img src={resolveFileUrl(file.fileUrl)} alt={file.fileName} className="size-full object-cover" />
                       ) : (
-                        <ImageIcon className="size-4 text-blue-500" />
+                        <ImageIcon className="size-4 text-emerald-600" />
                       )}
                     </div>
+                  ) : isPdf ? (
+                    <div
+                      onClick={() => setPreviewDoc({ fileName: file.fileName, fileUrl: file.fileUrl })}
+                      className="size-8 rounded-lg border border-rose-200 bg-rose-50 flex items-center justify-center shrink-0 cursor-pointer hover:bg-rose-100 transition-colors"
+                      title="Click to preview PDF"
+                    >
+                      <FileText className="size-4 text-rose-600" />
+                    </div>
                   ) : (
-                    <File className="size-4 text-zinc-400 shrink-0" />
+                    <div
+                      onClick={() => setPreviewDoc({ fileName: file.fileName, fileUrl: file.fileUrl })}
+                      className="size-8 rounded-lg border border-blue-200 bg-blue-50 flex items-center justify-center shrink-0 cursor-pointer hover:bg-blue-100 transition-colors"
+                      title="Click to view document"
+                    >
+                      <File className="size-4 text-blue-600" />
+                    </div>
                   )}
 
-                  <span className="truncate text-zinc-800 dark:text-zinc-200 pr-2">
-                    {file.fileName}
-                  </span>
-                  <span className="text-[9px] text-zinc-400 font-mono shrink-0">
-                    {file.uploadedAt ? new Date(file.uploadedAt).toLocaleDateString() : ""}
-                  </span>
+                  <div className="flex flex-col min-w-0 pr-2">
+                    <span
+                      onClick={() => setPreviewDoc({ fileName: file.fileName, fileUrl: file.fileUrl })}
+                      className="truncate text-zinc-900 dark:text-zinc-100 font-bold hover:text-emerald-700 dark:hover:text-emerald-400 cursor-pointer transition-colors"
+                      title={file.fileName}
+                    >
+                      {file.fileName}
+                    </span>
+                    <span className="text-[9px] text-zinc-400 font-mono">
+                      {isPdf ? "PDF Document" : isImg ? "Photo / Image" : "Document"} • {file.uploadedAt ? new Date(file.uploadedAt).toLocaleDateString() : "Attached"}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  {isImg && (
-                    <button
-                      type="button"
-                      onClick={() => setPreviewImage({ fileName: file.fileName, fileUrl: file.fileUrl })}
-                      className="p-1.5 hover:bg-emerald-50 text-emerald-700 rounded-lg cursor-pointer transition-colors"
-                      title="Preview photo"
-                    >
-                      <Eye className="size-3.5" />
-                    </button>
-                  )}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewDoc({ fileName: file.fileName, fileUrl: file.fileUrl })}
+                    className="p-1.5 hover:bg-emerald-50 text-emerald-700 rounded-lg cursor-pointer transition-colors"
+                    title="Preview document"
+                  >
+                    <Eye className="size-3.5" />
+                  </button>
                   {file.fileUrl && (
                     <button
                       type="button"
@@ -191,7 +243,7 @@ export default function HkcDocAttachmentPanel({
                       className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-500 rounded-lg cursor-pointer transition-colors"
                       title="Download attached file"
                     >
-                      <Download className="size-3.5 text-emerald-600" />
+                      <Download className="size-3.5 text-zinc-600 dark:text-zinc-300" />
                     </button>
                   )}
                   <button
@@ -209,37 +261,14 @@ export default function HkcDocAttachmentPanel({
         </div>
       )}
 
-      {/* Image Quick Preview Lightbox Modal */}
-      {previewImage && (
-        <div 
-          className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs"
-          onClick={() => setPreviewImage(null)}
-        >
-          <div 
-            className="relative max-w-2xl w-full bg-white dark:bg-zinc-900 rounded-2xl overflow-hidden shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col max-h-[85vh]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-3.5 border-b border-zinc-200 dark:border-zinc-800">
-              <span className="font-bold text-xs truncate pr-3 text-zinc-800 dark:text-zinc-200">
-                {previewImage.fileName}
-              </span>
-              <button
-                type="button"
-                onClick={() => setPreviewImage(null)}
-                className="p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-700 cursor-pointer"
-              >
-                <X className="size-5" />
-              </button>
-            </div>
-            <div className="p-3 bg-zinc-950 flex items-center justify-center overflow-auto max-h-[70vh]">
-              <img 
-                src={resolveFileUrl(previewImage.fileUrl)} 
-                alt={previewImage.fileName} 
-                className="max-h-[65vh] w-auto object-contain rounded-lg"
-              />
-            </div>
-          </div>
-        </div>
+      {/* Universal Document & PDF Preview Modal */}
+      {previewDoc && (
+        <DocumentPreviewModal
+          isOpen={Boolean(previewDoc)}
+          onClose={() => setPreviewDoc(null)}
+          fileName={previewDoc.fileName}
+          fileUrl={previewDoc.fileUrl}
+        />
       )}
 
       {/* Live Camera Viewfinder Modal */}

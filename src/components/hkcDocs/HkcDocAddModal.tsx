@@ -7,6 +7,8 @@ import { LoadingDots } from "@/components/ui/LoadingDots"
 import { createHkcDocRecord } from "@/lib/hkcDocsApi"
 import { useFeedback } from "@/context/FeedbackContext"
 
+import { uploadFile } from "@/lib/fileUpload"
+
 interface HkcDocAddModalProps {
   isOpen: boolean
   onClose: () => void
@@ -42,6 +44,31 @@ export default function HkcDocAddModal({
     setAttachments((prev) => prev.filter((a) => a.attachmentId !== attachmentId))
   }
 
+  const ensureUploadedAttachments = async (items: HkcDocAttachment[]): Promise<HkcDocAttachment[]> => {
+    const processed: HkcDocAttachment[] = []
+    for (const item of items) {
+      if (item.fileUrl.startsWith("data:")) {
+        try {
+          const res = await fetch(item.fileUrl)
+          const blob = await res.blob()
+          const file = new File([blob], item.fileName, { type: blob.type || "image/jpeg" })
+          const upRes = await uploadFile(file, "hkc_docs")
+          processed.push({
+            ...item,
+            fileUrl: upRes.url,
+            fileName: upRes.originalName || item.fileName,
+          })
+        } catch (err) {
+          console.warn("Pre-save upload failed, keeping original:", err)
+          processed.push(item)
+        }
+      } else {
+        processed.push(item)
+      }
+    }
+    return processed
+  }
+
   const handleSave = async () => {
     if (!shipmentId.trim() || !itemsDescription.trim()) {
       showToast("Validation failed", "warning", "Provide a shipment reference ID and items description.")
@@ -50,12 +77,13 @@ export default function HkcDocAddModal({
 
     setIsSaving(true)
     try {
+      const cleanAttachments = await ensureUploadedAttachments(attachments)
       const record = await createHkcDocRecord({
         shipmentId: shipmentId.trim(),
         itemsDescription: itemsDescription.trim(),
         type,
         date,
-        attachments,
+        attachments: cleanAttachments,
       })
       showToast("Documentation saved", "success", `Record ${record.shipmentId} saved.`)
       onSaveSuccess(record)

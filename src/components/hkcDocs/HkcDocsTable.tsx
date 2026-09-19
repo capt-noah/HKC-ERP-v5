@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from "react"
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, Paperclip, FileText, Image as ImageIcon, Eye } from "lucide-react"
 import { ResizableTh, useResizableTable, type TableColumn } from "@/components/ResizableTable"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import type { HkcDocRecord } from "@/lib/erpStore"
 import { HkcDocSkeletonRows } from "./HkcDocSkeletonRows"
+import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 
 interface HkcDocsTableProps {
   records: HkcDocRecord[]
@@ -18,6 +19,7 @@ const columns: TableColumn[] = [
   { key: "itemsDescription", label: "Items Description", align: "left" },
   { key: "type", label: "Type", align: "left" },
   { key: "date", label: "Date", align: "left" },
+  { key: "attachments", label: "Attachments", align: "left", noSort: true },
   { key: "_actions", label: "Action", align: "center", noSort: true },
 ]
 
@@ -28,23 +30,25 @@ export default function HkcDocsTable({
   typeFilter,
   onEditRecord,
 }: HkcDocsTableProps) {
+  const [previewDoc, setPreviewDoc] = useState<{ fileName: string; fileUrl: string } | null>(null)
   
   const filtered = useMemo(() => {
     return records.filter((r) => {
       const matchesSearch =
-        r.shipmentId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.itemsDescription.toLowerCase().includes(searchQuery.toLowerCase())
+        (r.shipmentId || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (r.itemsDescription || "").toLowerCase().includes(searchQuery.toLowerCase())
       const matchesType = typeFilter === "ALL" || r.type === typeFilter
       return matchesSearch && matchesType
     })
   }, [records, searchQuery, typeFilter])
 
   const table = useResizableTable(columns, filtered, {
-    shipmentId: 180,
-    itemsDescription: 350,
-    type: 120,
-    date: 130,
-    _actions: 120,
+    shipmentId: 160,
+    itemsDescription: 320,
+    type: 110,
+    date: 120,
+    attachments: 180,
+    _actions: 130,
   })
 
   const [page, setPage] = useState(1)
@@ -93,6 +97,7 @@ export default function HkcDocsTable({
             ) : (
               displayedRecords.map((record) => {
                 const isImport = record.type === "Import"
+                const attList = Array.isArray(record.attachments) ? record.attachments : []
 
                 return (
                   <tr
@@ -127,11 +132,46 @@ export default function HkcDocsTable({
                       {record.date}
                     </td>
 
+                    {/* Attachments */}
+                    <td className="px-3 py-4 whitespace-nowrap">
+                      {attList.length === 0 ? (
+                        <span className="text-zinc-400 text-[11px] font-normal italic">No files</span>
+                      ) : (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-[10px] font-bold text-zinc-700 dark:text-zinc-300 inline-flex items-center gap-1">
+                            <Paperclip className="size-3 text-zinc-500" />
+                            {attList.length} {attList.length === 1 ? "file" : "files"}
+                          </span>
+
+                          {attList.slice(0, 2).map((att) => {
+                            const isPdf = att.fileName.toLowerCase().endsWith(".pdf") || att.fileUrl.startsWith("data:application/pdf")
+                            const isImg = /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(att.fileName) || att.fileUrl.startsWith("data:image/")
+
+                            return (
+                              <button
+                                key={att.attachmentId}
+                                type="button"
+                                onClick={() => setPreviewDoc({ fileName: att.fileName, fileUrl: att.fileUrl })}
+                                className="px-2 py-0.5 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-extrabold inline-flex items-center gap-1 cursor-pointer transition-colors max-w-[110px] truncate"
+                                title={`Preview ${att.fileName}`}
+                              >
+                                {isPdf ? <FileText className="size-3 text-rose-600 shrink-0" /> : isImg ? <ImageIcon className="size-3 text-emerald-600 shrink-0" /> : <Eye className="size-3 text-emerald-600 shrink-0" />}
+                                <span className="truncate">{att.fileName}</span>
+                              </button>
+                            )
+                          })}
+                          {attList.length > 2 && (
+                            <span className="text-[10px] text-zinc-400 font-bold">+{attList.length - 2} more</span>
+                          )}
+                        </div>
+                      )}
+                    </td>
+
                     {/* Action */}
                     <td className="px-3 py-4 text-center whitespace-nowrap pr-4">
                       <button
                         onClick={() => onEditRecord(record)}
-                        className="px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-extrabold text-[11px] transition-all border border-emerald-200/80 active:scale-95 shadow-xs inline-flex items-center gap-1"
+                        className="px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-extrabold text-[11px] transition-all border border-emerald-200/80 active:scale-95 shadow-xs inline-flex items-center gap-1 cursor-pointer"
                       >
                         Manage Docs <ChevronRight className="size-3.5 text-emerald-600" />
                       </button>
@@ -143,6 +183,16 @@ export default function HkcDocsTable({
           </tbody>
         </table>
       </TableScrollWrapper>
+
+      {/* Universal Document Preview Modal */}
+      {previewDoc && (
+        <DocumentPreviewModal
+          isOpen={Boolean(previewDoc)}
+          onClose={() => setPreviewDoc(null)}
+          fileName={previewDoc.fileName}
+          fileUrl={previewDoc.fileUrl}
+        />
+      )}
 
       {!isLoading && sortedRecords.length > 0 && (
         <div className="flex flex-col sm:flex-row items-center justify-between border-t border-zinc-100 dark:border-zinc-800/60 px-4 sm:px-6 py-3.5 sm:py-4 bg-white/40 dark:bg-white/[0.02] gap-3">
