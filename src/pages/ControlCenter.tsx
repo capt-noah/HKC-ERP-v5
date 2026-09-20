@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { motion, AnimatePresence } from "framer-motion"
 import {
-  ArrowUpRight,
   DollarSign,
   Package,
   Activity,
@@ -113,7 +112,6 @@ const auditLogColumns: TableColumn[] = [
   { key: "resource", label: "Module / Resource" },
   { key: "details", label: "Context Details", noSort: true },
   { key: "created_at", label: "Timestamp" },
-  { key: "_actions", label: "Navigation", align: "center", noSort: true },
 ]
 
 const resourceLabels: Record<string, string> = {
@@ -286,7 +284,6 @@ function AuditLogSkeletonRows() {
           <td className="px-3 py-3"><Skeleton className="h-3.5 w-24 bg-zinc-200/80" /></td>
           <td className="px-3 py-3"><Skeleton className="h-3.5 w-36 bg-zinc-200/80" /></td>
           <td className="px-3 py-3"><Skeleton className="h-3.5 w-28 bg-zinc-200/80" /></td>
-          <td className="px-3 py-3 text-center"><Skeleton className="h-7 w-24 rounded-xl bg-zinc-200/80 mx-auto" /></td>
         </tr>
       ))}
     </>
@@ -741,7 +738,7 @@ export default function ControlCenter() {
   }, [])
 
   // Load audit logs and user context
-  const fetchAuditLogsData = async (notify = false) => {
+  const fetchAuditLogsData = async () => {
     setLogsLoading(true)
     try {
       const [logsData, usersData] = await Promise.all([
@@ -755,21 +752,11 @@ export default function ControlCenter() {
       if (Array.isArray(usersData)) {
         setUsers(usersData)
       }
-      if (notify) {
-        showToast("Audit Logs Refreshed", "success", `Refreshed audit log registry (${sorted.length} total entries).`)
-      }
     } catch (err: any) {
       console.error("[AUDIT LOGS FETCH ERROR]:", err.message)
-      if (notify) {
-        showToast("Refresh Notice", "warning", err.message || "Failed to reload audit logs.")
-      }
     } finally {
       setLogsLoading(false)
     }
-  }
-
-  const handleReloadAuditLogs = async () => {
-    await fetchAuditLogsData(true)
   }
 
   useEffect(() => {
@@ -1125,7 +1112,6 @@ export default function ControlCenter() {
       resource: 170,
       details: 260,
       created_at: 170,
-      _actions: 140,
     }
   )
 
@@ -1136,91 +1122,6 @@ export default function ControlCenter() {
     const start = (auditPage - 1) * auditPageSize
     return sortedAuditLogs.slice(start, start + auditPageSize)
   }, [sortedAuditLogs, auditPage, auditPageSize])
-
-  // View Module routing logic
-  const handleViewModule = (resource: string) => {
-    const normalized = resource.toLowerCase().replace(/_/g, "-")
-    switch (normalized) {
-      case "auth":
-      case "users":
-        navigate("/admin/users")
-        break
-      case "partners":
-        navigate("/admin/partners")
-        break
-      case "settings":
-      case "company-settings":
-        navigate("/admin/settings")
-        break
-      case "employees":
-        navigate("/hr/employees")
-        break
-      case "attendance-records":
-        navigate("/hr/attendance")
-        break
-      case "leave-requests":
-      case "leave-types":
-        navigate("/hr/leave")
-        break
-      case "payroll-runs":
-      case "payroll-periods":
-      case "payroll-records":
-        navigate("/hr/payroll")
-        break
-      case "warehouses":
-      case "inventory-products":
-      case "stock-movements":
-      case "warehouse-stock":
-      case "inventory":
-        navigate("/inventory")
-        break
-      case "sales-orders":
-      case "quotations":
-      case "delivery-notes":
-        navigate("/sales/sales-orders")
-        break
-      case "purchase-orders":
-        navigate("/sales/purchase-orders")
-        break
-      case "sales-issues":
-        navigate("/sales/sales-issued")
-        break
-      case "customers":
-      case "suppliers":
-        navigate("/sales")
-        break
-      case "shipment-documents":
-        navigate("/sales/hkc-docs")
-        break
-      case "chart-of-accounts":
-      case "journal-entries":
-      case "journal-entry-lines":
-        navigate("/finance/ledger")
-        break
-      case "invoices":
-        navigate("/finance/invoices")
-        break
-      case "payments":
-        navigate("/finance/banking")
-        break
-      case "expenses":
-        navigate("/finance/expenses")
-        break
-      case "fixed-assets":
-        navigate("/finance")
-        break
-      case "tax-rules":
-        navigate("/finance/taxes")
-        break
-      default:
-        if (normalized.includes("sales")) navigate("/sales")
-        else if (normalized.includes("inventory")) navigate("/inventory")
-        else if (normalized.includes("finance")) navigate("/finance")
-        else if (normalized.includes("hr")) navigate("/hr")
-        else navigate("/admin")
-        break
-    }
-  }
 
   const getActionBadgeStyle = (action: string) => {
     const norm = action.toLowerCase()
@@ -2581,9 +2482,6 @@ export default function ControlCenter() {
                       variant: "secondary",
                     },
                   ]}
-                  onReload={handleReloadAuditLogs}
-                  isReloading={logsLoading}
-                  reloadTooltip="Refresh audit activity logs"
                 />
               </div>
 
@@ -2687,19 +2585,6 @@ export default function ControlCenter() {
                             {/* Timestamp */}
                             <td style={{ width: `${auditTable.colWidths.created_at}px` }} className="px-3 py-3 font-mono text-xs font-bold text-zinc-600 truncate">
                               {formatDateTime(log.created_at)}
-                            </td>
-
-                            {/* Navigation */}
-                            <td style={{ width: `${auditTable.colWidths._actions}px` }} className="px-3 py-3 text-center whitespace-nowrap overflow-hidden">
-                              <button
-                                type="button"
-                                onClick={() => handleViewModule(log.resource)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                                title="Navigate to module"
-                              >
-                                <span>View Module</span>
-                                <ArrowUpRight className="size-3 text-zinc-700 shrink-0" />
-                              </button>
                             </td>
                           </tr>
                         )

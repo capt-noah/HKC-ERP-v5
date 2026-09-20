@@ -16,7 +16,6 @@ import {
   Globe,
   FileText,
   Eye,
-  RefreshCw,
 } from "lucide-react"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
@@ -429,21 +428,6 @@ export default function PartnersRegistry() {
                   className="w-full pl-9 pr-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-semibold outline-none focus:border-zinc-400"
                 />
               </div>
-
-              <button
-                type="button"
-                onClick={async () => {
-                  await erp.reloadFromApi()
-                }}
-                disabled={isLoading}
-                title="Reload partners from server"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm shadow-emerald-700/20 hover:shadow-md hover:shadow-emerald-700/30 transition-all cursor-pointer shrink-0 disabled:opacity-50 active:scale-95 h-[38px]"
-              >
-                <RefreshCw className={`size-3.5 text-white shrink-0 ${isLoading ? "animate-spin" : ""}`} />
-                <span className="text-xs font-bold text-white tracking-tight">
-                  {isLoading ? "Reloading..." : "Reload"}
-                </span>
-              </button>
 
               <button
                 type="button"
