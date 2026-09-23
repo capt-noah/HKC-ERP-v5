@@ -18,24 +18,24 @@ export const OPERATING_WAREHOUSES: Warehouse[] = [
   {
     id: "WH2",
     code: "WH2-VET-ALEM",
-    name: "WH2 - Alemgena Veterinary Hub",
+    name: "WH2 - Veterinary Import Hub (alem bank)",
     warehouse_type: "PHARMA_WH",
-    type: "Central Warehouse",
+    type: "Import & Distribution Hub",
     status: "Active",
     manager: "Dr. Alemayehu Worku",
-    location: "Addis Ababa Central, Ethiopia",
+    location: "Alem Bank Hub, Addis Ababa, Ethiopia",
     targetMarkets: "Domestic & Regional Dist.",
     specialization: "Veterinary Drugs & Biologicals",
   },
   {
     id: "WH3",
     code: "WH3-VET-LEBU",
-    name: "WH3 - Lebu Veterinary Depot",
+    name: "WH3 - Veterinary Import Hub (LEBU)",
     warehouse_type: "PHARMA_WH",
-    type: "Regional Depot",
+    type: "Import & Distribution Hub",
     status: "Active",
     manager: "Tigist Haile",
-    location: "Bishoftu Regional Hub, Ethiopia",
+    location: "Lebu Commercial Center, Addis Ababa, Ethiopia",
     targetMarkets: "Oromia & Southern Regions",
     specialization: "Veterinary Supplies & Consumables",
   },
@@ -277,8 +277,8 @@ export function resolveWarehouseFullName(warehouseOrId?: string | null, customLi
   if (found && found.name) return found.name
 
   if (raw.toLowerCase() === "warehouse 1" || raw.toLowerCase() === "wh1") return "WH1 - Ethiopia Agricultural Export Hub"
-  if (raw.toLowerCase() === "warehouse 2" || raw.toLowerCase() === "wh2") return "WH2 - Alemgena Veterinary Hub"
-  if (raw.toLowerCase() === "warehouse 3" || raw.toLowerCase() === "wh3") return "WH3 - Lebu Veterinary Depot"
+  if (raw.toLowerCase() === "warehouse 2" || raw.toLowerCase() === "wh2" || raw.toLowerCase().includes("alemgena") || raw.toLowerCase().includes("alem bank")) return "WH2 - Veterinary Import Hub (alem bank)"
+  if (raw.toLowerCase() === "warehouse 3" || raw.toLowerCase() === "wh3" || raw.toLowerCase().includes("lebu")) return "WH3 - Veterinary Import Hub (LEBU)"
 
   return raw
 }

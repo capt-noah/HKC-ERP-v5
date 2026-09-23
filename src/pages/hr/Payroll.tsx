@@ -27,6 +27,7 @@ import { resolveWarehouseFullName, withOperatingWarehouses } from "@/lib/warehou
 import type { Warehouse } from "@/lib/erpStore"
 import {
   PAYMENT_STATUSES,
+  WAREHOUSE_OPTIONS,
   calculatePayroll,
   hrApi,
   loadHRData,
@@ -434,19 +435,25 @@ export default function Payroll() {
     ]
     const seen = new Set<string>()
     warehouses.forEach((w) => {
-      const name = w.name || w.id
-      if (!seen.has(name)) {
-        seen.add(name)
+      const name = resolveWarehouseFullName(w.name || w.id, warehouses)
+      if (name && !seen.has(name.toLowerCase()) && !name.toLowerCase().includes("alemgena")) {
+        seen.add(name.toLowerCase())
         options.push({ value: name, label: name })
       }
     })
     employees.forEach((emp) => {
       if (emp.warehouse_id) {
         const full = resolveWarehouseFullName(emp.warehouse_id, warehouses)
-        if (!seen.has(full)) {
-          seen.add(full)
+        if (full && !seen.has(full.toLowerCase()) && !full.toLowerCase().includes("alemgena")) {
+          seen.add(full.toLowerCase())
           options.push({ value: full, label: full })
         }
+      }
+    })
+    WAREHOUSE_OPTIONS.forEach((opt) => {
+      if (opt && !seen.has(opt.toLowerCase()) && !opt.toLowerCase().includes("alemgena")) {
+        seen.add(opt.toLowerCase())
+        options.push({ value: opt, label: opt })
       }
     })
     return options

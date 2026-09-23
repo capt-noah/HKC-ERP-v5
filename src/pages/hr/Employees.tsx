@@ -69,15 +69,15 @@ export default function Employees() {
     const opts = [{ value: "All", label: "All Warehouses" }]
     const set = new Set<string>()
     warehouses.forEach((w) => {
-      const fullName = w.name || w.id
-      if (!set.has(fullName)) {
-        set.add(fullName)
+      const fullName = resolveWarehouseFullName(w.name || w.id, warehouses)
+      if (fullName && !set.has(fullName.toLowerCase()) && !fullName.toLowerCase().includes("alemgena")) {
+        set.add(fullName.toLowerCase())
         opts.push({ value: fullName, label: fullName })
       }
     })
     WAREHOUSE_OPTIONS.forEach((opt) => {
-      if (!set.has(opt)) {
-        set.add(opt)
+      if (opt && !set.has(opt.toLowerCase()) && !opt.toLowerCase().includes("alemgena")) {
+        set.add(opt.toLowerCase())
         opts.push({ value: opt, label: opt })
       }
     })
@@ -86,12 +86,21 @@ export default function Employees() {
 
   const warehouseFormOptions = useMemo(() => {
     const set = new Set<string>()
+    const opts: string[] = []
     warehouses.forEach((w) => {
-      const fullName = w.name || w.id
-      set.add(fullName)
+      const fullName = resolveWarehouseFullName(w.name || w.id, warehouses)
+      if (fullName && !set.has(fullName.toLowerCase()) && !fullName.toLowerCase().includes("alemgena")) {
+        set.add(fullName.toLowerCase())
+        opts.push(fullName)
+      }
     })
-    WAREHOUSE_OPTIONS.forEach((opt) => set.add(opt))
-    return Array.from(set)
+    WAREHOUSE_OPTIONS.forEach((opt) => {
+      if (opt && !set.has(opt.toLowerCase()) && !opt.toLowerCase().includes("alemgena")) {
+        set.add(opt.toLowerCase())
+        opts.push(opt)
+      }
+    })
+    return opts
   }, [warehouses])
 
   const filteredEmployees = useMemo(() => {

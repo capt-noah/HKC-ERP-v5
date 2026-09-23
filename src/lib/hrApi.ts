@@ -3,8 +3,8 @@ import { sortNewestFirst } from "./utils"
 
 export const WAREHOUSE_OPTIONS = [
   "WH1 - Ethiopia Agricultural Export Hub",
-  "WH2 - Alemgena Veterinary Hub",
-  "WH3 - Lebu Veterinary Depot",
+  "WH2 - Veterinary Import Hub (alem bank)",
+  "WH3 - Veterinary Import Hub (LEBU)",
   "Head Office",
   "Not Assigned",
 ] as const
