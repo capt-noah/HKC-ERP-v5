@@ -68,38 +68,37 @@ export default function Employees() {
   const warehouseFilterOptions = useMemo(() => {
     const opts = [{ value: "All", label: "All Warehouses" }]
     const set = new Set<string>()
-    warehouses.forEach((w) => {
-      const fullName = resolveWarehouseFullName(w.name || w.id, warehouses)
-      if (fullName && !set.has(fullName.toLowerCase()) && !fullName.toLowerCase().includes("alemgena")) {
-        set.add(fullName.toLowerCase())
-        opts.push({ value: fullName, label: fullName })
+    const addOpt = (rawName?: string | null) => {
+      if (!rawName) return
+      const full = resolveWarehouseFullName(rawName, warehouses)
+      const key = full.toLowerCase().trim()
+      if (key && !set.has(key)) {
+        set.add(key)
+        opts.push({ value: full, label: full })
       }
+    }
+    warehouses.forEach((w) => addOpt(w.name || w.id))
+    employees.forEach((emp) => {
+      if (emp.warehouse_id) addOpt(emp.warehouse_id)
     })
-    WAREHOUSE_OPTIONS.forEach((opt) => {
-      if (opt && !set.has(opt.toLowerCase()) && !opt.toLowerCase().includes("alemgena")) {
-        set.add(opt.toLowerCase())
-        opts.push({ value: opt, label: opt })
-      }
-    })
+    WAREHOUSE_OPTIONS.forEach((opt) => addOpt(opt))
     return opts
-  }, [warehouses])
+  }, [warehouses, employees])
 
   const warehouseFormOptions = useMemo(() => {
     const set = new Set<string>()
     const opts: string[] = []
-    warehouses.forEach((w) => {
-      const fullName = resolveWarehouseFullName(w.name || w.id, warehouses)
-      if (fullName && !set.has(fullName.toLowerCase()) && !fullName.toLowerCase().includes("alemgena")) {
-        set.add(fullName.toLowerCase())
-        opts.push(fullName)
+    const addOpt = (rawName?: string | null) => {
+      if (!rawName) return
+      const full = resolveWarehouseFullName(rawName, warehouses)
+      const key = full.toLowerCase().trim()
+      if (key && !set.has(key)) {
+        set.add(key)
+        opts.push(full)
       }
-    })
-    WAREHOUSE_OPTIONS.forEach((opt) => {
-      if (opt && !set.has(opt.toLowerCase()) && !opt.toLowerCase().includes("alemgena")) {
-        set.add(opt.toLowerCase())
-        opts.push(opt)
-      }
-    })
+    }
+    warehouses.forEach((w) => addOpt(w.name || w.id))
+    WAREHOUSE_OPTIONS.forEach((opt) => addOpt(opt))
     return opts
   }, [warehouses])
 

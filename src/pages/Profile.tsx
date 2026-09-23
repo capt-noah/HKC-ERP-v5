@@ -403,8 +403,8 @@ export default function Profile() {
   const userAssignedWarehouses = useMemo(() => {
     const fallbackWarehouses: WarehouseType[] = [
       { id: "WH1", code: "WH1-AGRI-EXP", name: "WH1 - Ethiopia Agricultural Export Hub", warehouse_type: "EXPORT_WH", type: "Export Hub", location: "Modjo Export Terminal, Ethiopia" },
-      { id: "WH2", code: "WH2-VET-IND", name: "WH2 - Veterinary Import Hub (India)", warehouse_type: "PHARMA_WH", type: "Pharmaceutical Warehouse", location: "Kaliti Industrial Zone, Addis Ababa, Ethiopia" },
-      { id: "WH3", code: "WH3-VET-CHN", name: "WH3 - Veterinary Import Hub (China)", warehouse_type: "PHARMA_WH", type: "Pharmaceutical Warehouse", location: "Bishoftu Vet Park, Oromia, Ethiopia" }
+      { id: "WH2", code: "WH2-VET-IND", name: "WH2 - Veterinary Import Hub (alem bank)IND", warehouse_type: "PHARMA_WH", type: "Pharmaceutical Warehouse", location: "Alem Bank Hub, Addis Ababa, Ethiopia" },
+      { id: "WH3", code: "WH3-VET-CHN", name: "WH3 - Veterinary Import Hub (LEBU)CHINA", warehouse_type: "PHARMA_WH", type: "Pharmaceutical Warehouse", location: "Lebu Commercial Center, Addis Ababa, Ethiopia" }
     ]
 
     const sourceWarehouses = warehouses && warehouses.length > 0 ? warehouses : fallbackWarehouses

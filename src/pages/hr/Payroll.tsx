@@ -434,28 +434,21 @@ export default function Payroll() {
       { value: "All", label: "All Warehouses" },
     ]
     const seen = new Set<string>()
-    warehouses.forEach((w) => {
-      const name = resolveWarehouseFullName(w.name || w.id, warehouses)
-      if (name && !seen.has(name.toLowerCase()) && !name.toLowerCase().includes("alemgena")) {
-        seen.add(name.toLowerCase())
-        options.push({ value: name, label: name })
+    const addOpt = (rawName?: string | null) => {
+      if (!rawName) return
+      const full = resolveWarehouseFullName(rawName, warehouses)
+      const key = full.toLowerCase().trim()
+      if (key && !seen.has(key)) {
+        seen.add(key)
+        options.push({ value: full, label: full })
       }
-    })
+    }
+
+    warehouses.forEach((w) => addOpt(w.name || w.id))
     employees.forEach((emp) => {
-      if (emp.warehouse_id) {
-        const full = resolveWarehouseFullName(emp.warehouse_id, warehouses)
-        if (full && !seen.has(full.toLowerCase()) && !full.toLowerCase().includes("alemgena")) {
-          seen.add(full.toLowerCase())
-          options.push({ value: full, label: full })
-        }
-      }
+      if (emp.warehouse_id) addOpt(emp.warehouse_id)
     })
-    WAREHOUSE_OPTIONS.forEach((opt) => {
-      if (opt && !seen.has(opt.toLowerCase()) && !opt.toLowerCase().includes("alemgena")) {
-        seen.add(opt.toLowerCase())
-        options.push({ value: opt, label: opt })
-      }
-    })
+    WAREHOUSE_OPTIONS.forEach((opt) => addOpt(opt))
     return options
   }, [warehouses, employees])
 

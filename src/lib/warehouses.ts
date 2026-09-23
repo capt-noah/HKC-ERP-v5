@@ -18,7 +18,7 @@ export const OPERATING_WAREHOUSES: Warehouse[] = [
   {
     id: "WH2",
     code: "WH2-VET-ALEM",
-    name: "WH2 - Veterinary Import Hub (alem bank)",
+    name: "WH2 - Veterinary Import Hub (alem bank)IND",
     warehouse_type: "PHARMA_WH",
     type: "Import & Distribution Hub",
     status: "Active",
@@ -30,7 +30,7 @@ export const OPERATING_WAREHOUSES: Warehouse[] = [
   {
     id: "WH3",
     code: "WH3-VET-LEBU",
-    name: "WH3 - Veterinary Import Hub (LEBU)",
+    name: "WH3 - Veterinary Import Hub (LEBU)CHINA",
     warehouse_type: "PHARMA_WH",
     type: "Import & Distribution Hub",
     status: "Active",
@@ -70,9 +70,32 @@ export function withOperatingWarehouses(warehouses: Warehouse[] = []): Warehouse
     const key = warehouse.id || warehouse.code
     if (key) {
       const existing = byKey.get(key) || byKey.get(warehouse.id) || byKey.get(warehouse.code)
+      let resolvedName = warehouse.name || existing?.name || ""
+      if (
+        warehouse.id === "WH2" ||
+        warehouse.code?.includes("WH2") ||
+        (resolvedName.toLowerCase().includes("alem bank") && !resolvedName.toLowerCase().includes("ind")) ||
+        resolvedName.toLowerCase().includes("alemgena")
+      ) {
+        resolvedName = "WH2 - Veterinary Import Hub (alem bank)IND"
+      } else if (
+        warehouse.id === "WH3" ||
+        warehouse.code?.includes("WH3") ||
+        (resolvedName.toLowerCase().includes("lebu") && !resolvedName.toLowerCase().includes("china"))
+      ) {
+        resolvedName = "WH3 - Veterinary Import Hub (LEBU)CHINA"
+      } else if (
+        warehouse.id === "WH1" ||
+        warehouse.code?.includes("WH1") ||
+        resolvedName.toLowerCase().includes("modjo")
+      ) {
+        resolvedName = "WH1 - Ethiopia Agricultural Export Hub"
+      }
+
       const mergedWh: Warehouse = {
         ...existing,
         ...warehouse,
+        name: resolvedName || existing?.name || warehouse.name || key,
         manager:
           warehouse.manager !== undefined && warehouse.manager !== null
             ? warehouse.manager
@@ -262,23 +285,59 @@ export function resolveWarehouseFullName(warehouseOrId?: string | null, customLi
   if (!warehouseOrId) return "Not Assigned"
   const raw = String(warehouseOrId).trim()
   if (!raw || raw === "Not Assigned") return "Not Assigned"
-  if (raw === "Head Office") return "Head Office"
+  if (raw === "Head Office" || raw.toLowerCase() === "head office") return "Head Office"
+
+  const lower = raw.toLowerCase()
+
+  // Match WH1 / Modjo Export Hub
+  if (
+    lower === "wh1" ||
+    lower === "warehouse 1" ||
+    lower.includes("wh1-agri") ||
+    lower.includes("ethiopia agricultural") ||
+    lower.includes("export hub") ||
+    lower.includes("modjo")
+  ) {
+    return "WH1 - Ethiopia Agricultural Export Hub"
+  }
+
+  // Match WH2 / Alem Bank / India
+  if (
+    lower === "wh2" ||
+    lower === "warehouse 2" ||
+    lower.includes("wh2-vet") ||
+    lower.includes("alem bank") ||
+    lower.includes("alemgena") ||
+    lower.includes("india") ||
+    lower.includes("(ind)") ||
+    lower.includes(")ind")
+  ) {
+    return "WH2 - Veterinary Import Hub (alem bank)IND"
+  }
+
+  // Match WH3 / Lebu / China
+  if (
+    lower === "wh3" ||
+    lower === "warehouse 3" ||
+    lower.includes("wh3-vet") ||
+    lower.includes("lebu") ||
+    lower.includes("china") ||
+    lower.includes("(chn)") ||
+    lower.includes(")china")
+  ) {
+    return "WH3 - Veterinary Import Hub (LEBU)CHINA"
+  }
 
   const all = withOperatingWarehouses(customList)
   const found = all.find(
     (w) =>
-      w.id?.toLowerCase() === raw.toLowerCase() ||
-      w.code?.toLowerCase() === raw.toLowerCase() ||
-      w.name?.toLowerCase() === raw.toLowerCase() ||
-      (raw.toLowerCase().includes("warehouse 1") && (w.id === "WH1" || w.code?.includes("WH1"))) ||
-      (raw.toLowerCase().includes("warehouse 2") && (w.id === "WH2" || w.code?.includes("WH2"))) ||
-      (raw.toLowerCase().includes("warehouse 3") && (w.id === "WH3" || w.code?.includes("WH3")))
+      w.id?.toLowerCase() === lower ||
+      w.code?.toLowerCase() === lower ||
+      w.name?.toLowerCase() === lower
   )
-  if (found && found.name) return found.name
-
-  if (raw.toLowerCase() === "warehouse 1" || raw.toLowerCase() === "wh1") return "WH1 - Ethiopia Agricultural Export Hub"
-  if (raw.toLowerCase() === "warehouse 2" || raw.toLowerCase() === "wh2" || raw.toLowerCase().includes("alemgena") || raw.toLowerCase().includes("alem bank")) return "WH2 - Veterinary Import Hub (alem bank)"
-  if (raw.toLowerCase() === "warehouse 3" || raw.toLowerCase() === "wh3" || raw.toLowerCase().includes("lebu")) return "WH3 - Veterinary Import Hub (LEBU)"
+  if (found && found.name) {
+    return found.name
+  }
 
   return raw
 }
