@@ -4,8 +4,6 @@ import {
   BadgeCheck,
   Calendar,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   Eye,
   FileSpreadsheet,
   MoreHorizontal,
@@ -46,11 +44,6 @@ import {
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"
-] as const
-
-const MONTH_SHORT = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 ] as const
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
@@ -107,7 +100,7 @@ export default function Payroll() {
   const { showToast, confirm } = useFeedback()
   const now = new Date()
 
-  // Primary Month/Year Selection State
+  // Primary Month/Year State (controlled by dropdowns in toolbar)
   const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth() + 1)
   const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear())
 
@@ -219,11 +212,11 @@ export default function Payroll() {
   )
 
   /**
-   * Flow: HR manager selects Month/Year -> clicks "+ Load Active Employees".
-   * Auto-ensures payroll_periods record exists in MySQL DB for the selected month/year.
-   * Auto-creates statutory payroll records for all active employees missing in this period.
+   * Flow: HR manager chooses Month/Year from dropdown -> clicks "+ Load Active Employees".
+   * Auto-ensures payroll_periods record exists in MySQL DB for the chosen month/year.
+   * Auto-creates statutory payroll records for active employees in MySQL DB.
    * Auto-syncs salary changes from employee profiles for pending records.
-   * 100% DB persistence guaranteed.
+   * 100% DB persistence.
    */
   const loadActiveEmployees = async () => {
     try {
@@ -421,6 +414,20 @@ export default function Payroll() {
     window.setTimeout(() => window.print(), 120)
   }
 
+  // Available year options centered around selected year
+  const yearOptions = useMemo(() => {
+    const startYear = now.getFullYear() - 3
+    const years: number[] = []
+    for (let y = startYear; y <= now.getFullYear() + 2; y++) {
+      years.push(y)
+    }
+    if (!years.includes(selectedYear)) {
+      years.push(selectedYear)
+      years.sort((a, b) => a - b)
+    }
+    return years
+  }, [selectedYear])
+
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
@@ -434,7 +441,7 @@ export default function Payroll() {
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight mt-1">Payroll Management</h1>
             <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">
-              Select any month (Jan–Dec), load active employees, manage Ethiopian statutory tax &amp; pension, and print official payslips &amp; payroll registers.
+              Select any Month &amp; Year from the dropdowns below, load active employees, manage Ethiopian statutory tax &amp; pension, and print official payslips &amp; payroll registers.
             </p>
           </div>
           <SubPageNav items={getSectionChildren("/hr")} />
@@ -445,149 +452,6 @@ export default function Payroll() {
             {error}
           </GlassCard>
         )}
-
-        {/* ========================================================================= */}
-        {/* MONTH & YEAR SELECTOR BAR + CALENDAR INDICATOR                            */}
-        {/* ========================================================================= */}
-        <motion.div variants={fade} className="mb-6 space-y-3">
-          <GlassCard className="p-4 rounded-3xl border border-black/5 shadow-sm bg-white/80">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              
-              {/* Year Navigation Stepper */}
-              <div className="flex items-center gap-2 shrink-0">
-                <div className="flex items-center bg-zinc-100 dark:bg-zinc-800/80 rounded-2xl p-1 border border-zinc-200/80">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedYear((y) => y - 1)}
-                    className="p-1.5 rounded-xl hover:bg-white dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 transition-all cursor-pointer shadow-2xs"
-                    title="Previous Year"
-                  >
-                    <ChevronLeft className="size-4" />
-                  </button>
-                  <span className="px-3 text-sm font-black text-zinc-950 dark:text-white font-mono">
-                    {selectedYear}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedYear((y) => y + 1)}
-                    className="p-1.5 rounded-xl hover:bg-white dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 transition-all cursor-pointer shadow-2xs"
-                    title="Next Year"
-                  >
-                    <ChevronRight className="size-4" />
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedYear(now.getFullYear())
-                    setSelectedMonth(now.getMonth() + 1)
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold transition-all border border-zinc-200/80 cursor-pointer"
-                  title="Jump to Current Month"
-                >
-                  Current Month
-                </button>
-              </div>
-
-              {/* 12 Months Pills (Jan - Dec) */}
-              <div className="flex-1 overflow-x-auto no-scrollbar py-1">
-                <div className="flex items-center gap-1.5 min-w-max">
-                  {MONTH_SHORT.map((mShort, index) => {
-                    const mNum = index + 1
-                    const isSelected = selectedMonth === mNum
-                    const hasPeriod = periods.some((p) => Number(p.month) === mNum && Number(p.year) === selectedYear)
-                    const monthPeriod = periods.find((p) => Number(p.month) === mNum && Number(p.year) === selectedYear)
-                    const isPaid = monthPeriod?.status === "Paid"
-                    const isApproved = monthPeriod?.status === "Approved"
-
-                    return (
-                      <button
-                        key={mShort}
-                        type="button"
-                        onClick={() => setSelectedMonth(mNum)}
-                        className={`relative px-3.5 py-2 rounded-2xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
-                          isSelected
-                            ? "bg-zinc-950 text-white shadow-md scale-102"
-                            : "bg-zinc-100/80 hover:bg-zinc-200/80 text-zinc-700 border border-zinc-200/60"
-                        }`}
-                      >
-                        <span>{mShort}</span>
-                        {hasPeriod && (
-                          <span
-                            className={`size-1.5 rounded-full ${
-                              isPaid
-                                ? "bg-emerald-400"
-                                : isApproved
-                                ? "bg-blue-400"
-                                : "bg-amber-400"
-                            }`}
-                            title={`${MONTH_NAMES[index]} ${selectedYear}: ${monthPeriod?.status || "Draft"}`}
-                          />
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Calendar Indicator Sub-Banner */}
-            <div className="mt-3.5 pt-3.5 border-t border-zinc-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-2xl bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 shrink-0">
-                  <Calendar className="size-4.5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-black text-sm text-zinc-950">
-                      {MONTH_NAMES[selectedMonth - 1]} {selectedYear} Payroll Period
-                    </span>
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                        currentPeriod?.status === "Paid"
-                          ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                          : currentPeriod?.status === "Approved"
-                          ? "bg-blue-100 text-blue-800 border border-blue-200"
-                          : currentPeriod
-                          ? "bg-amber-100 text-amber-800 border border-amber-200"
-                          : "bg-zinc-100 text-zinc-600 border border-zinc-200"
-                      }`}
-                    >
-                      {currentPeriod ? currentPeriod.status : "Not Initialized"}
-                    </span>
-                  </div>
-                  <span className="text-[11px] font-medium text-zinc-500">
-                    {currentPeriod
-                      ? `${currentPeriod.start_date} to ${currentPeriod.end_date} • ${currentRecords.length} Employee Records`
-                      : `Click "+ Load Active Employees" below to initialize and compute statutory payroll.`}
-                  </span>
-                </div>
-              </div>
-
-              {/* Action Buttons: Load Active Employees & Print Register */}
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={loadActiveEmployees}
-                  className="px-4 py-2 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
-                >
-                  <UserCheck className="size-3.5" /> + Load Active Employees
-                </button>
-                {currentRecords.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowRegisterPrint(true)}
-                    className="px-3.5 py-2 rounded-2xl bg-zinc-900 hover:bg-black text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
-                    title="Print Full Month Payroll Register Sheet"
-                  >
-                    <Printer className="size-3.5" /> Print Register
-                  </button>
-                )}
-              </div>
-            </div>
-          </GlassCard>
-        </motion.div>
 
         {loading ? (
           <HRPageSkeleton rows={7} cards={7} />
@@ -672,19 +536,35 @@ export default function Payroll() {
               </GlassCard>
             </div>
 
-            {/* PAYROLL TABLE & STATUS BUTTONS */}
+            {/* PAYROLL RECORDS SECTION WITH MONTH & YEAR DROPDOWNS IN TOOLBAR */}
             <GlassCard className="p-0 overflow-hidden border border-black/5 shadow-xs">
               <HRTableToolbar
                 title="Payroll Records"
                 subtitle={
                   currentPeriod
-                    ? `${currentPeriod.name} (${currentPeriod.status})`
-                    : `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear} (Not Initialized)`
+                    ? `📅 ${currentPeriod.name} (${currentPeriod.status}) • ${currentPeriod.start_date} to ${currentPeriod.end_date}`
+                    : `📅 ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear} (Not Initialized — Click "+ Load Active Employees")`
                 }
                 searchValue={search}
                 onSearchChange={setSearch}
                 searchPlaceholder="Search employee name, number, warehouse..."
                 filters={[
+                  {
+                    value: String(selectedMonth),
+                    onChange: (val) => setSelectedMonth(Number(val)),
+                    options: MONTH_NAMES.map((monthName, idx) => ({
+                      value: String(idx + 1),
+                      label: `${monthName}`,
+                    })),
+                  },
+                  {
+                    value: String(selectedYear),
+                    onChange: (val) => setSelectedYear(Number(val)),
+                    options: yearOptions.map((yearVal) => ({
+                      value: String(yearVal),
+                      label: `Year: ${yearVal}`,
+                    })),
+                  },
                   {
                     value: warehouse,
                     onChange: setWarehouse,
