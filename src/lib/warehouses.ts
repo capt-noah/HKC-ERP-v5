@@ -258,3 +258,29 @@ export function getUserPermittedWarehouses(
   return list
 }
 
+export function resolveWarehouseFullName(warehouseOrId?: string | null, customList: Warehouse[] = []): string {
+  if (!warehouseOrId) return "Not Assigned"
+  const raw = String(warehouseOrId).trim()
+  if (!raw || raw === "Not Assigned") return "Not Assigned"
+  if (raw === "Head Office") return "Head Office"
+
+  const all = withOperatingWarehouses(customList)
+  const found = all.find(
+    (w) =>
+      w.id?.toLowerCase() === raw.toLowerCase() ||
+      w.code?.toLowerCase() === raw.toLowerCase() ||
+      w.name?.toLowerCase() === raw.toLowerCase() ||
+      (raw.toLowerCase().includes("warehouse 1") && (w.id === "WH1" || w.code?.includes("WH1"))) ||
+      (raw.toLowerCase().includes("warehouse 2") && (w.id === "WH2" || w.code?.includes("WH2"))) ||
+      (raw.toLowerCase().includes("warehouse 3") && (w.id === "WH3" || w.code?.includes("WH3")))
+  )
+  if (found && found.name) return found.name
+
+  if (raw.toLowerCase() === "warehouse 1" || raw.toLowerCase() === "wh1") return "WH1 - Ethiopia Agricultural Export Hub"
+  if (raw.toLowerCase() === "warehouse 2" || raw.toLowerCase() === "wh2") return "WH2 - Alemgena Veterinary Hub"
+  if (raw.toLowerCase() === "warehouse 3" || raw.toLowerCase() === "wh3") return "WH3 - Lebu Veterinary Depot"
+
+  return raw
+}
+
+

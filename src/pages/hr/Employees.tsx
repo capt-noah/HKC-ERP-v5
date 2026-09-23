@@ -11,6 +11,9 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
+import { loadResource } from "@/lib/apiPersistence"
+import { resolveWarehouseFullName, withOperatingWarehouses } from "@/lib/warehouses"
+import type { Warehouse } from "@/lib/erpStore"
 import { EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, WAREHOUSE_OPTIONS, employeeDuplicateKey, emptyEmployee, hrApi, initials, loadHRData, makeId, money, type AttendanceRecord, type Employee, type LeaveRequest, type PayrollRecord } from "@/lib/hrApi"
 import { uploadFile, resolveFileUrl } from "@/lib/fileUpload"
 
@@ -25,6 +28,7 @@ export default function Employees() {
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([])
   const [leaves, setLeaves] = useState<LeaveRequest[]>([])
   const [payroll, setPayroll] = useState<PayrollRecord[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [search, setSearch] = useState("")
@@ -41,11 +45,15 @@ export default function Employees() {
     setLoading(true)
     setError("")
     try {
-      const data = await loadHRData()
+      const [data, whData] = await Promise.all([
+        loadHRData(),
+        loadResource<Warehouse>("warehouses").catch(() => []),
+      ])
       setEmployees(data.employees)
       setAttendance(data.attendance)
       setLeaves(data.leaves)
       setPayroll(data.payrollRecords)
+      setWarehouses(withOperatingWarehouses(whData))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load employees.")
     } finally {
@@ -57,16 +65,54 @@ export default function Employees() {
     void refresh()
   }, [])
 
+  const warehouseFilterOptions = useMemo(() => {
+    const opts = [{ value: "All", label: "All Warehouses" }]
+    const set = new Set<string>()
+    warehouses.forEach((w) => {
+      const fullName = w.name || w.id
+      if (!set.has(fullName)) {
+        set.add(fullName)
+        opts.push({ value: fullName, label: fullName })
+      }
+    })
+    WAREHOUSE_OPTIONS.forEach((opt) => {
+      if (!set.has(opt)) {
+        set.add(opt)
+        opts.push({ value: opt, label: opt })
+      }
+    })
+    return opts
+  }, [warehouses])
+
+  const warehouseFormOptions = useMemo(() => {
+    const set = new Set<string>()
+    warehouses.forEach((w) => {
+      const fullName = w.name || w.id
+      set.add(fullName)
+    })
+    WAREHOUSE_OPTIONS.forEach((opt) => set.add(opt))
+    return Array.from(set)
+  }, [warehouses])
+
   const filteredEmployees = useMemo(() => {
     const query = search.trim().toLowerCase()
     return employees.filter((employee) => {
-      const matchesSearch = !query || [employee.employee_number, employee.full_name, employee.phone, employee.email].some((value) => String(value || "").toLowerCase().includes(query))
+      const empWhFull = resolveWarehouseFullName(employee.warehouse_id, warehouses)
+      const matchesSearch =
+        !query ||
+        [employee.employee_number, employee.full_name, employee.phone, employee.email, employee.warehouse_id, empWhFull].some(
+          (value) => String(value || "").toLowerCase().includes(query)
+        )
       const matchesStatus = status === "All" || employee.status === status
-      const matchesWarehouse = warehouse === "All" || employee.warehouse_id === warehouse
+      const matchesWarehouse =
+        warehouse === "All" ||
+        employee.warehouse_id === warehouse ||
+        empWhFull === warehouse ||
+        empWhFull === resolveWarehouseFullName(warehouse, warehouses)
       const matchesType = employmentType === "All" || employee.employment_type === employmentType
       return matchesSearch && matchesStatus && matchesWarehouse && matchesType
     })
-  }, [employees, employmentType, search, status, warehouse])
+  }, [employees, employmentType, search, status, warehouse, warehouses])
 
   const { sortKey, sortDir, handleSort, handleClearSort, sortItems } = useTableSort()
   const sortedEmployees = sortItems(filteredEmployees)
@@ -204,7 +250,7 @@ export default function Employees() {
               searchPlaceholder="Search name, phone, or email..."
               filters={[
                 { value: status, onChange: setStatus, options: ["All", ...EMPLOYEE_STATUSES].map((item) => ({ value: item, label: item })) },
-                { value: warehouse, onChange: setWarehouse, options: ["All", ...WAREHOUSE_OPTIONS].map((item) => ({ value: item, label: item })) },
+                { value: warehouse, onChange: setWarehouse, options: warehouseFilterOptions },
                 { value: employmentType, onChange: setEmploymentType, options: ["All", ...EMPLOYMENT_TYPES].map((item) => ({ value: item, label: item })) },
               ]}
               actions={[{ label: "Add Employee", onClick: openAdd }]}
@@ -223,7 +269,7 @@ export default function Employees() {
                       <Cell width={colWidths.full_name}><div className="flex items-center gap-2"><span className="size-7 rounded-full bg-zinc-900 text-white flex items-center justify-center text-[10px] font-black">{initials(employee.full_name)}</span><span className="truncate">{employee.full_name}</span></div></Cell>
                       <Cell width={colWidths.phone}>{employee.phone || "-"}</Cell>
                       <Cell width={colWidths.email}>{employee.email || "-"}</Cell>
-                      <Cell width={colWidths.warehouse_id}>{employee.warehouse_id}</Cell>
+                      <Cell width={colWidths.warehouse_id}>{resolveWarehouseFullName(employee.warehouse_id, warehouses)}</Cell>
                       <Cell width={colWidths.employment_type}>{employee.employment_type}</Cell>
                       <Cell width={colWidths.start_date}>{employee.start_date}</Cell>
                       <Cell width={colWidths.basic_salary} align="right">ETB {money(employee.basic_salary)}</Cell>
@@ -352,9 +398,27 @@ export default function Employees() {
       </motion.div>
 
       {showForm && (
-        <EmployeeForm form={form} setForm={setForm} title={editing ? "Edit Employee" : "Add Employee"} saving={saving} onClose={closeForm} onSubmit={saveEmployee} />
+        <EmployeeForm
+          form={form}
+          setForm={setForm}
+          title={editing ? "Edit Employee" : "Add Employee"}
+          saving={saving}
+          warehouseOptions={warehouseFormOptions}
+          warehouses={warehouses}
+          onClose={closeForm}
+          onSubmit={saveEmployee}
+        />
       )}
-      {viewing && <EmployeeDetails employee={viewing} attendance={attendance} leaves={leaves} payroll={payroll} onClose={() => setViewing(null)} />}
+      {viewing && (
+        <EmployeeDetails
+          employee={viewing}
+          attendance={attendance}
+          leaves={leaves}
+          payroll={payroll}
+          warehouses={warehouses}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </div>
   )
 }
@@ -368,7 +432,25 @@ function StatusPill({ status }: { status: string }) {
   return <span className={`inline-flex px-2.5 py-0.5 rounded-full border text-[10px] font-extrabold uppercase ${tone}`}>{status}</span>
 }
 
-function EmployeeForm({ form, setForm, title, saving, onClose, onSubmit }: { form: FormState; setForm: (form: FormState) => void; title: string; saving: boolean; onClose: () => void; onSubmit: (event: React.FormEvent) => void }) {
+function EmployeeForm({
+  form,
+  setForm,
+  title,
+  saving,
+  warehouseOptions,
+  warehouses = [],
+  onClose,
+  onSubmit,
+}: {
+  form: FormState
+  setForm: (form: FormState) => void
+  title: string
+  saving: boolean
+  warehouseOptions: string[]
+  warehouses?: Warehouse[]
+  onClose: () => void
+  onSubmit: (event: React.FormEvent) => void
+}) {
   const field = (key: keyof FormState, value: string | number) => setForm({ ...form, [key]: value })
   const handleNationalIdImage = async (file: File | undefined) => {
     if (!file) return
@@ -397,7 +479,12 @@ function EmployeeForm({ form, setForm, title, saving, onClose, onSubmit }: { for
           <Input label="Email" type="email" value={form.email} onChange={(v) => field("email", v)} />
           <Input label="Address" required value={form.address} onChange={(v) => field("address", v)} />
           <Input label="Gender" required value={form.gender} onChange={(v) => field("gender", v)} />
-          <Select label="Office" value={form.warehouse_id} options={WAREHOUSE_OPTIONS} onChange={(v) => field("warehouse_id", v)} />
+          <Select
+            label="Warehouse / Office"
+            value={resolveWarehouseFullName(form.warehouse_id, warehouses) || form.warehouse_id}
+            options={warehouseOptions}
+            onChange={(v) => field("warehouse_id", v)}
+          />
           <Select label="Employment Type" value={form.employment_type} options={EMPLOYMENT_TYPES} onChange={(v) => field("employment_type", v)} />
           <Select label="Status" value={form.status} options={EMPLOYEE_STATUSES} onChange={(v) => field("status", v)} />
           <Input label="Start Date" type="date" required value={form.start_date} onChange={(v) => field("start_date", v)} />
@@ -442,7 +529,21 @@ function Select({ label, value, options, onChange }: { label: string; value: str
   return <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">{label}<select value={value} onChange={(e) => onChange(e.target.value)} className="mt-1 w-full rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 text-xs font-bold text-black outline-none focus:border-emerald-700">{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
 }
 
-function EmployeeDetails({ employee, attendance, leaves, payroll, onClose }: { employee: Employee; attendance: AttendanceRecord[]; leaves: LeaveRequest[]; payroll: PayrollRecord[]; onClose: () => void }) {
+function EmployeeDetails({
+  employee,
+  attendance,
+  leaves,
+  payroll,
+  warehouses = [],
+  onClose,
+}: {
+  employee: Employee
+  attendance: AttendanceRecord[]
+  leaves: LeaveRequest[]
+  payroll: PayrollRecord[]
+  warehouses?: Warehouse[]
+  onClose: () => void
+}) {
   const [showNationalId, setShowNationalId] = useState(false)
   const employeeAttendance = attendance.filter((record) => record.employee_id === employee.id)
   const employeeLeaves = leaves.filter((request) => request.employee_id === employee.id)
@@ -453,7 +554,7 @@ function EmployeeDetails({ employee, attendance, leaves, payroll, onClose }: { e
         <div className="flex items-center justify-between mb-5"><h3 className="text-lg font-black text-black">{employee.full_name}</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Detail title="Personal Information" rows={[["Phone", employee.phone], ["Email", employee.email || "-"], ["Address", employee.address], ["Gender", employee.gender], ["National ID", employee.national_id_image ? "Uploaded" : "Not uploaded"]]} />
-          <Detail title="Employment Information" rows={[["Office", employee.warehouse_id], ["Employment Type", employee.employment_type], ["Start Date", employee.start_date], ["Status", employee.status]]} />
+          <Detail title="Employment Information" rows={[["Warehouse / Office", resolveWarehouseFullName(employee.warehouse_id, warehouses)], ["Employment Type", employee.employment_type], ["Start Date", employee.start_date], ["Status", employee.status]]} />
           <Detail title="Salary Information" rows={[["Gross Salary", `ETB ${money(employee.basic_salary)}`], ["Bank Account", employee.bank_account], ["Emergency Contact", employee.emergency_contact_name], ["Emergency Phone", employee.emergency_contact_phone]]} />
         </div>
         {employee.national_id_image && (

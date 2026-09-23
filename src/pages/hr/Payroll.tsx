@@ -10,7 +10,6 @@ import {
   Pencil,
   Printer,
   Trash2,
-  UserCheck,
   X,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
@@ -23,9 +22,11 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { financeStore } from "@/lib/financeStore"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
+import { loadResource } from "@/lib/apiPersistence"
+import { resolveWarehouseFullName, withOperatingWarehouses } from "@/lib/warehouses"
+import type { Warehouse } from "@/lib/erpStore"
 import {
   PAYMENT_STATUSES,
-  PAYROLL_PERIOD_STATUSES,
   calculatePayroll,
   hrApi,
   loadHRData,
@@ -107,6 +108,7 @@ export default function Payroll() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [periods, setPeriods] = useState<PayrollPeriod[]>([])
   const [records, setRecords] = useState<PayrollRecord[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -121,10 +123,14 @@ export default function Payroll() {
     setLoading(true)
     setError("")
     try {
-      const data = await loadHRData()
+      const [data, whData] = await Promise.all([
+        loadHRData(),
+        loadResource<Warehouse>("warehouses").catch(() => []),
+      ])
       setEmployees(data.employees)
       setPeriods(data.payrollPeriods)
       setRecords(data.payrollRecords)
+      setWarehouses(withOperatingWarehouses(whData))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load payroll.")
     } finally {
@@ -156,6 +162,7 @@ export default function Payroll() {
     return currentRecords.filter((record) => {
       const employee = employeeById.get(record.employee_id)
       const period = periodById.get(record.payroll_period_id)
+      const empWhFull = resolveWarehouseFullName(employee?.warehouse_id, warehouses)
       const matchesSearch =
         !query ||
         [
@@ -163,14 +170,19 @@ export default function Payroll() {
           employee?.employee_number,
           period?.name,
           employee?.warehouse_id,
+          empWhFull,
           employee?.status,
           record.payment_status,
         ].some((value) => String(value || "").toLowerCase().includes(query))
       const matchesPaymentStatus = paymentStatus === "All" || record.payment_status === paymentStatus
-      const matchesWarehouse = warehouse === "All" || employee?.warehouse_id === warehouse
+      const matchesWarehouse =
+        warehouse === "All" ||
+        employee?.warehouse_id === warehouse ||
+        empWhFull === warehouse ||
+        empWhFull === resolveWarehouseFullName(warehouse, warehouses)
       return matchesSearch && matchesPaymentStatus && matchesWarehouse
     })
-  }, [currentRecords, employeeById, periodById, paymentStatus, search, warehouse])
+  }, [currentRecords, employeeById, periodById, paymentStatus, search, warehouse, warehouses])
 
   const totals = useMemo(() => ({
     employees: currentRecords.length,
@@ -320,17 +332,6 @@ export default function Payroll() {
     }
   }
 
-  const updatePeriodStatus = async (nextStatus: string) => {
-    if (!currentPeriod) return
-    try {
-      await hrApi.updatePayrollPeriod(currentPeriod.id, { status: nextStatus })
-      showToast("Payroll Status Updated", "success", `Payroll period marked ${nextStatus}.`)
-      await refresh()
-    } catch (err) {
-      showToast("Status Update Failed", "warning", err instanceof Error ? err.message : "Could not update payroll status.")
-    }
-  }
-
   const updateRecord = async (record: PayrollRecord, changes: Partial<PayrollRecord>) => {
     const editable = record.payment_status === "Pending"
     if ("payment_status" in changes) {
@@ -414,11 +415,10 @@ export default function Payroll() {
     window.setTimeout(() => window.print(), 120)
   }
 
-  // Available year options centered around selected year
+  // Available year options (wide range from 2020 to 2040)
   const yearOptions = useMemo(() => {
-    const startYear = now.getFullYear() - 3
     const years: number[] = []
-    for (let y = startYear; y <= now.getFullYear() + 2; y++) {
+    for (let y = 2020; y <= 2040; y++) {
       years.push(y)
     }
     if (!years.includes(selectedYear)) {
@@ -427,6 +427,30 @@ export default function Payroll() {
     }
     return years
   }, [selectedYear])
+
+  const warehouseFilterOptions = useMemo(() => {
+    const options: Array<{ value: string; label: string }> = [
+      { value: "All", label: "All Warehouses" },
+    ]
+    const seen = new Set<string>()
+    warehouses.forEach((w) => {
+      const name = w.name || w.id
+      if (!seen.has(name)) {
+        seen.add(name)
+        options.push({ value: name, label: name })
+      }
+    })
+    employees.forEach((emp) => {
+      if (emp.warehouse_id) {
+        const full = resolveWarehouseFullName(emp.warehouse_id, warehouses)
+        if (!seen.has(full)) {
+          seen.add(full)
+          options.push({ value: full, label: full })
+        }
+      }
+    })
+    return options
+  }, [warehouses, employees])
 
   return (
     <div className="min-h-screen page-gradient">
@@ -542,7 +566,7 @@ export default function Payroll() {
                 title="Payroll Records"
                 subtitle={
                   currentPeriod
-                    ? `📅 ${currentPeriod.name} (${currentPeriod.status}) • ${currentPeriod.start_date} to ${currentPeriod.end_date}`
+                    ? `📅 ${currentPeriod.name} • ${currentPeriod.start_date} to ${currentPeriod.end_date}`
                     : `📅 ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear} (Not Initialized — Click "+ Load Active Employees")`
                 }
                 searchValue={search}
@@ -568,10 +592,7 @@ export default function Payroll() {
                   {
                     value: warehouse,
                     onChange: setWarehouse,
-                    options: [
-                      "All",
-                      ...Array.from(new Set(employees.map((employee) => employee.warehouse_id).filter(Boolean))),
-                    ].map((item) => ({ value: item, label: item === "All" ? "All Warehouses" : item })),
+                    options: warehouseFilterOptions,
                   },
                 ]}
                 actions={[
@@ -608,23 +629,6 @@ export default function Payroll() {
                         </button>
                       ))}
                     </div>
-
-                    {/* Period Status Transition Buttons */}
-                    {currentPeriod && (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-black uppercase text-zinc-400">Period Workflow:</span>
-                        {PAYROLL_PERIOD_STATUSES.filter((item) => item !== currentPeriod.status).map((item) => (
-                          <button
-                            key={item}
-                            type="button"
-                            onClick={() => updatePeriodStatus(item)}
-                            className="rounded-xl bg-zinc-100 hover:bg-zinc-200 border border-zinc-200/80 px-2.5 py-1 text-[11px] font-black uppercase text-zinc-800 transition-colors cursor-pointer shadow-2xs active:scale-95"
-                          >
-                            Mark {item}
-                          </button>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 }
               />
@@ -673,7 +677,7 @@ export default function Payroll() {
                             <Cell width={colWidths.employee}>
                               {employee ? `${employee.full_name} (${employee.employee_number})` : "Unknown employee"}
                             </Cell>
-                            <Cell width={colWidths.warehouse}>{employee?.warehouse_id || "-"}</Cell>
+                            <Cell width={colWidths.warehouse}>{resolveWarehouseFullName(employee?.warehouse_id, warehouses)}</Cell>
                             <Cell width={colWidths.employment_status} align="center">
                               {employee?.status || "-"}
                             </Cell>
@@ -883,6 +887,7 @@ export default function Payroll() {
           record={payslip}
           employee={employeeById.get(payslip.employee_id)}
           period={periods.find((period) => period.id === payslip.payroll_period_id)}
+          warehouses={warehouses}
           onClose={() => setPayslip(null)}
         />
       )}
@@ -893,6 +898,7 @@ export default function Payroll() {
           period={currentPeriod}
           records={currentRecords}
           employeeById={employeeById}
+          warehouses={warehouses}
           onClose={() => setShowRegisterPrint(false)}
         />
       )}
@@ -1287,11 +1293,13 @@ function Payslip({
   record,
   employee,
   period,
+  warehouses = [],
   onClose,
 }: {
   record: PayrollRecord
   employee?: Employee
   period?: PayrollPeriod
+  warehouses?: Warehouse[]
   onClose: () => void
 }) {
   const taxAllow = Number(record.taxable_allowances ?? record.allowances ?? 0)
@@ -1360,7 +1368,7 @@ function Payslip({
           </div>
           <div>
             <span className="block text-[9px] font-bold uppercase text-zinc-400">Warehouse / Dept</span>
-            <span className="font-bold text-zinc-900">{employee?.warehouse_id || "-"}</span>
+            <span className="font-bold text-zinc-900">{resolveWarehouseFullName(employee?.warehouse_id, warehouses)}</span>
           </div>
           <div>
             <span className="block text-[9px] font-bold uppercase text-zinc-400">Payment Status</span>
@@ -1455,11 +1463,13 @@ function PayrollRegisterPrintModal({
   period,
   records,
   employeeById,
+  warehouses = [],
   onClose,
 }: {
   period: PayrollPeriod
   records: PayrollRecord[]
   employeeById: Map<string, Employee>
+  warehouses?: Warehouse[]
   onClose: () => void
 }) {
   const totals = {
@@ -1550,7 +1560,7 @@ function PayrollRegisterPrintModal({
                       {emp ? emp.full_name : rec.employee_id}
                       <span className="block text-[9.5px] font-normal text-zinc-500 font-mono">{emp?.employee_number}</span>
                     </td>
-                    <td className="p-2 border-r border-zinc-200 text-zinc-600">{emp?.warehouse_id || "-"}</td>
+                    <td className="p-2 border-r border-zinc-200 text-zinc-600">{resolveWarehouseFullName(emp?.warehouse_id, warehouses)}</td>
                     <td className="p-2 border-r border-zinc-200 text-right font-mono">{money(rec.basic_salary)}</td>
                     <td className="p-2 border-r border-zinc-200 text-right font-mono">{money(allow)}</td>
                     <td className="p-2 border-r border-zinc-200 text-right font-mono font-bold text-zinc-950">{money(rec.gross_pay)}</td>

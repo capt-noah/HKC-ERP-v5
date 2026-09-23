@@ -1,7 +1,13 @@
 import { createResource, deleteResource, loadResource, updateResource, API_BASE } from "./apiPersistence"
 import { sortNewestFirst } from "./utils"
 
-export const WAREHOUSE_OPTIONS = ["Warehouse 1", "Warehouse 2", "Warehouse 3", "Head Office", "Not Assigned"] as const
+export const WAREHOUSE_OPTIONS = [
+  "WH1 - Ethiopia Agricultural Export Hub",
+  "WH2 - Alemgena Veterinary Hub",
+  "WH3 - Lebu Veterinary Depot",
+  "Head Office",
+  "Not Assigned",
+] as const
 export const EMPLOYMENT_TYPES = ["Permanent", "Temporary", "Contract", "Probation", "Intern", "Part-Time"] as const
 export const EMPLOYEE_STATUSES = ["Active", "Inactive", "On Leave", "Suspended", "Resigned", "Terminated"] as const
 export const ATTENDANCE_STATUSES = ["Present", "Absent", "Late", "Half Day", "On Leave", "Holiday", "Weekend"] as const
