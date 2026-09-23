@@ -50,23 +50,23 @@ export default function HRDashboard() {
     const empty: HRData = { employees: [], attendance: [], leaves: [], payrollPeriods: [], payrollRecords: [] }
     const hr = data || empty
     const activeEmployees = hr.employees.filter((employee) => employee.status === "Active")
-    const todayAttendance = hr.attendance.filter((record) => record.attendance_date === today)
     const approvedLeavesToday = hr.leaves.filter((request) => request.status === "Approved" && request.start_date <= today && request.end_date >= today)
+    const pendingLeaves = hr.leaves.filter((request) => request.status === "Pending")
+    const approvedLeaves = hr.leaves.filter((request) => request.status === "Approved")
     const currentPeriod = [...hr.payrollPeriods].sort((a, b) => `${b.year}-${b.month}`.localeCompare(`${a.year}-${a.month}`))[0]
     const currentPayroll = currentPeriod ? hr.payrollRecords.filter((record) => record.payroll_period_id === currentPeriod.id) : []
 
     return {
       totalEmployees: hr.employees.length,
       activeEmployees: activeEmployees.length,
-      presentToday: todayAttendance.filter((record) => record.status === "Present" || record.status === "Late").length,
-      absentToday: todayAttendance.filter((record) => record.status === "Absent").length,
-      onLeaveToday: approvedLeavesToday.length + todayAttendance.filter((record) => record.status === "On Leave").length,
-      pendingLeave: hr.leaves.filter((request) => request.status === "Pending").length,
+      onLeaveToday: approvedLeavesToday.length,
+      pendingLeave: pendingLeaves.length,
+      approvedLeave: approvedLeaves.length,
+      totalLeave: hr.leaves.length,
       payrollTotal: currentPayroll.reduce((sum, record) => sum + Number(record.net_pay || 0), 0),
       pendingPayroll: currentPayroll.filter((record) => record.payment_status === "Pending").length,
       approvedPayroll: currentPayroll.filter((record) => record.payment_status === "Approved").length,
       paidPayroll: currentPayroll.filter((record) => record.payment_status === "Paid").length,
-      attendanceByStatus: countBy(todayAttendance, (record) => record.status),
       employeesByWarehouse: countBy(hr.employees, (employee) => employee.warehouse_id),
       employeesByStatus: countBy(hr.employees, (employee) => employee.status),
       leaveByStatus: countBy(hr.leaves, (request) => request.status),
@@ -78,12 +78,10 @@ export default function HRDashboard() {
         net: currentPayroll.reduce((sum, record) => sum + Number(record.net_pay || 0), 0),
       },
       recentEmployees: latest(hr.employees),
-      recentAttendance: latest(hr.attendance),
       recentLeaves: latest(hr.leaves),
       recentPayroll: latest(hr.payrollRecords),
       activityGraph: [
         { label: "Employees", value: latest(hr.employees).length, total: hr.employees.length },
-        { label: "Attendance", value: latest(hr.attendance).length, total: hr.attendance.length },
         { label: "Leave", value: latest(hr.leaves).length, total: hr.leaves.length },
         { label: "Payroll", value: latest(hr.payrollRecords).length, total: hr.payrollRecords.length },
       ],
@@ -97,7 +95,7 @@ export default function HRDashboard() {
         <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight mt-1">HR Dashboard</h1>
-            <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">Workforce, attendance, leave, and payroll summary overview.</p>
+            <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">Workforce, leave, and payroll summary overview.</p>
           </div>
           <SubPageNav items={getSectionChildren("/hr")} />
         </motion.div>
@@ -110,7 +108,7 @@ export default function HRDashboard() {
 
         <motion.div variants={fade} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
           <GlassCard className="p-4">
-            <div className="flex items-center justify-between border-b border-black/5 pb-2mb-3">
+            <div className="flex items-center justify-between border-b border-black/5 pb-2 mb-3">
               <span className="text-xs font-black text-zinc-900 uppercase tracking-tight flex items-center gap-1.5">
                 <Users className="size-4 text-zinc-500" /> Workforce Overview
               </span>
@@ -130,25 +128,21 @@ export default function HRDashboard() {
           <GlassCard className="p-4">
             <div className="flex items-center justify-between border-b border-black/5 pb-2 mb-3">
               <span className="text-xs font-black text-zinc-900 uppercase tracking-tight flex items-center gap-1.5">
-                <CalendarClock className="size-4 text-zinc-500" /> Today's Attendance & Leave
+                <CalendarClock className="size-4 text-zinc-500" /> Leave Management
               </span>
             </div>
-            <div className="grid grid-cols-4 gap-1.5 mt-3">
-              <div className="bg-black/[0.02] p-2 rounded-xl text-center">
-                <span className="block text-[8px] font-black text-zinc-400 uppercase">Present</span>
-                <span className="text-base font-black text-zinc-950 mt-0.5 block">{summary.presentToday}</span>
-              </div>
-              <div className="bg-black/[0.02] p-2 rounded-xl text-center">
-                <span className="block text-[8px] font-black text-zinc-400 uppercase">Absent</span>
-                <span className="text-base font-black text-rose-600 mt-0.5 block">{summary.absentToday}</span>
-              </div>
-              <div className="bg-black/[0.02] p-2 rounded-xl text-center">
-                <span className="block text-[8px] font-black text-zinc-400 uppercase">On Leave</span>
+            <div className="grid grid-cols-3 gap-2 mt-3">
+              <div className="bg-black/[0.02] p-2.5 rounded-xl text-center">
+                <span className="block text-[8px] font-black text-zinc-400 uppercase tracking-wider">On Leave Today</span>
                 <span className="text-base font-black text-blue-600 mt-0.5 block">{summary.onLeaveToday}</span>
               </div>
-              <div className="bg-black/[0.02] p-2 rounded-xl text-center">
-                <span className="block text-[8px] font-black text-zinc-400 uppercase">Pending</span>
+              <div className="bg-black/[0.02] p-2.5 rounded-xl text-center">
+                <span className="block text-[8px] font-black text-zinc-400 uppercase tracking-wider">Pending</span>
                 <span className="text-base font-black text-amber-600 mt-0.5 block">{summary.pendingLeave}</span>
+              </div>
+              <div className="bg-black/[0.02] p-2.5 rounded-xl text-center">
+                <span className="block text-[8px] font-black text-zinc-400 uppercase tracking-wider">Approved</span>
+                <span className="text-base font-black text-emerald-600 mt-0.5 block">{summary.approvedLeave}</span>
               </div>
             </div>
           </GlassCard>
@@ -176,8 +170,7 @@ export default function HRDashboard() {
           </GlassCard>
         </motion.div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-          <SummaryCard title="Attendance Summary" rows={["Present", "Absent", "Late", "On Leave"].map((key) => [key, summary.attendanceByStatus[key] || 0])} empty="No attendance has been recorded for today." />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           <SummaryCard title="Employee Summary" rows={[...Object.entries(summary.employeesByWarehouse), ...Object.entries(summary.employeesByStatus)]} empty="No employees have been registered yet." />
           <SummaryCard title="Leave Summary" rows={["Pending", "Approved", "Rejected"].map((key) => [key, summary.leaveByStatus[key] || 0])} empty="No leave requests have been recorded yet." />
           <SummaryCard title="Payroll Summary" rows={[["Current payroll period", summary.payroll.period], ["Total gross salary", `ETB ${money(summary.payroll.gross)}`], ["Total deductions", `ETB ${money(summary.payroll.deductions)}`], ["Total net salary", `ETB ${money(summary.payroll.net)}`], ["Pending payroll", summary.pendingPayroll], ["Approved payroll", summary.approvedPayroll], ["Paid payroll", summary.paidPayroll], ["Payroll status", summary.payroll.status]]} empty="No payroll period has been created yet." />
@@ -185,7 +178,6 @@ export default function HRDashboard() {
 
         <ActivityGraph
           employees={summary.recentEmployees.map((employee) => `${employee.full_name} (${employee.employee_number})`)}
-          attendance={summary.recentAttendance.map((record) => `${record.attendance_date} - ${record.status}`)}
           leave={summary.recentLeaves.map((request) => `${request.leave_type} - ${request.status}`)}
           payroll={summary.recentPayroll.map((record) => `${record.payment_status} - ETB ${money(record.net_pay)}`)}
           graph={summary.activityGraph}
@@ -220,20 +212,17 @@ function SummaryCard({ title, rows, empty }: { title: string; rows: Array<[strin
 
 function ActivityGraph({
   employees,
-  attendance,
   leave,
   payroll,
   graph,
 }: {
   employees: string[]
-  attendance: string[]
   leave: string[]
   payroll: string[]
   graph: Array<{ label: string; value: number; total: number }>
 }) {
   const events = [
     ...employees.map((label) => ({ type: "Employees", label })),
-    ...attendance.map((label) => ({ type: "Attendance", label })),
     ...leave.map((label) => ({ type: "Leave", label })),
     ...payroll.map((label) => ({ type: "Payroll", label })),
   ].slice(0, 8)

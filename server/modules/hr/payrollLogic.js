@@ -197,3 +197,65 @@ export async function updatePayrollRecord(id, updates = {}) {
 
   return { status: 200, body: merged }
 }
+
+export async function updatePayrollPeriod(id, updates = {}) {
+  const cleanId = String(id).trim()
+  const [rows] = await pool.query("SELECT * FROM `payroll_periods` WHERE id = ?", [cleanId])
+  if (rows.length === 0) return { status: 404, body: { error: `Payroll period '${cleanId}' not found.` } }
+
+  const current = unwrapRow(rows[0], "jsonb_document")
+  const merged = {
+    ...current,
+    ...updates,
+    id: cleanId,
+    updated_at: new Date().toISOString(),
+  }
+
+  await pool.query(
+    "UPDATE `payroll_periods` SET payload = ?, updated_at = NOW(3) WHERE id = ?",
+    [JSON.stringify(merged), cleanId]
+  )
+
+  return { status: 200, body: merged }
+}
+
+export async function deletePayrollPeriod(id) {
+  const cleanId = String(id).trim()
+  await pool.query(
+    "DELETE FROM `payroll_records` WHERE JSON_UNQUOTE(JSON_EXTRACT(payload, '$.payroll_period_id')) = ? OR id LIKE ?",
+    [cleanId, `%${cleanId}%`]
+  )
+  const [res] = await pool.query("DELETE FROM `payroll_periods` WHERE id = ?", [cleanId])
+  if (res.affectedRows === 0) {
+    return { status: 404, body: { error: `Payroll period '${cleanId}' not found.` } }
+  }
+  return { status: 200, body: { message: `Payroll period '${cleanId}' deleted successfully.` } }
+}
+
+export async function createPayrollRecord(body = {}) {
+  const recordId = body.id || `PAY-${Date.now()}`
+  const record = {
+    ...body,
+    id: recordId,
+    payment_status: body.payment_status || "Pending",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+
+  await pool.query(
+    "INSERT INTO `payroll_records` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3))",
+    [recordId, JSON.stringify(record)]
+  )
+
+  return { status: 201, body: record }
+}
+
+export async function deletePayrollRecord(id) {
+  const cleanId = String(id).trim()
+  const [res] = await pool.query("DELETE FROM `payroll_records` WHERE id = ?", [cleanId])
+  if (res.affectedRows === 0) {
+    return { status: 404, body: { error: `Payroll record '${cleanId}' not found.` } }
+  }
+  return { status: 200, body: { message: `Payroll record '${cleanId}' deleted successfully.` } }
+}
+

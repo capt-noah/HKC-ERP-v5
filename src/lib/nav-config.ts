@@ -44,7 +44,6 @@ export const navSections: NavSection[] = [
     children: [
       { label: "Dashboard", path: "/hr" },
       { label: "Employees", path: "/hr/employees" },
-      { label: "Attendance", path: "/hr/attendance" },
       { label: "Leave", path: "/hr/leave" },
       { label: "Payroll", path: "/hr/payroll" },
     ],

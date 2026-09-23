@@ -40,7 +40,6 @@ import FinancialReports from "@/pages/finance/FinancialReports"
 import FinanceExport from "@/pages/finance/FinanceExport"
 import Employees from "@/pages/hr/Employees"
 import Payroll from "@/pages/hr/Payroll"
-import Attendance from "@/pages/hr/Attendance"
 import Leave from "@/pages/hr/Leave"
 import UserManagement from "@/pages/admin/UserManagement"
 import PartnersRegistry from "@/pages/admin/PartnersRegistry"
@@ -122,10 +121,10 @@ export function App() {
         {/* HR section */}
         <Route path="/hr" element={<ProtectedRoute allowedRoles={["superadmin", "hr_manager"]}><HRDashboard /></ProtectedRoute>} />
         <Route path="/hr/employees" element={<ProtectedRoute allowedRoles={["superadmin", "hr_manager"]}><Employees /></ProtectedRoute>} />
-        <Route path="/hr/attendance" element={<ProtectedRoute allowedRoles={["superadmin", "hr_manager"]}><Attendance /></ProtectedRoute>} />
+        <Route path="/hr/attendance" element={<Navigate to="/hr" replace />} />
         <Route path="/hr/leave" element={<ProtectedRoute allowedRoles={["superadmin", "hr_manager"]}><Leave /></ProtectedRoute>} />
         <Route path="/hr/payroll" element={<ProtectedRoute allowedRoles={["superadmin", "hr_manager"]}><Payroll /></ProtectedRoute>} />
-        <Route path="/hr/attendance-leave" element={<Navigate to="/hr/attendance" replace />} />
+        <Route path="/hr/attendance-leave" element={<Navigate to="/hr/leave" replace />} />
         <Route path="/hr/recruitment" element={<Navigate to="/hr" replace />} />
         <Route path="/hr/onboarding-separation" element={<Navigate to="/hr" replace />} />
 

@@ -12,7 +12,6 @@ import {
   Loader2,
   ArrowLeft,
   BadgeCheck,
-  Sparkles,
   Warehouse,
   UserCheck,
   Eye,
@@ -541,10 +540,6 @@ export default function Profile() {
     .join("")
     .toUpperCase()
 
-  // Collect all unique capabilities across user's assigned roles
-  const allCapabilities = Array.from(
-    new Set(userRoles.flatMap((r) => roleDescriptions[r]?.capabilities || []))
-  )
 
   return (
     <div className="min-h-screen page-gradient select-none font-sans text-zinc-900 dark:text-zinc-100 relative pb-20">
@@ -1049,25 +1044,7 @@ export default function Profile() {
                   </GlassCard>
                 )}
 
-                {/* Role Capabilities Overview Card */}
-                <GlassCard className="p-6 rounded-3xl border border-white/80 shadow-md bg-white/75">
-                  <h3 className="text-sm font-black text-zinc-950 uppercase tracking-wider mb-4 flex items-center gap-2">
-                    <Sparkles className="size-4 text-emerald-700" />
-                    <span>Authorized Operations & Capabilities</span>
-                  </h3>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {allCapabilities.map((cap) => (
-                      <div
-                        key={cap}
-                        className="p-3 rounded-2xl bg-white border border-zinc-200/80 shadow-xs flex items-center gap-2.5 text-xs"
-                      >
-                        <span className="size-2 rounded-full bg-emerald-600 shrink-0" />
-                        <span className="font-bold text-zinc-800">{cap}</span>
-                      </div>
-                    ))}
-                  </div>
-                </GlassCard>
               </div>
             </div>
           </motion.div>

@@ -649,14 +649,24 @@ body.modal-open {
 }
 
 @media print {
-  /* 1. Hide background page layout and navigation chrome */
-  .min-h-screen,
+  /* 1. Hide navigation chrome and print-hidden elements */
   header,
   nav,
   .floating-nav,
   .subpage-nav,
   .print\:hidden {
     display: none !important;
+  }
+
+  /* Reset layout containers for print */
+  body, html, #root {
+    background: #ffffff !important;
+    color: #000000 !important;
+    min-height: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   /* 2. Reset modal backdrop & overlays to clean white static layout */
@@ -673,7 +683,8 @@ body.modal-open {
   /* 3. Render printable sheet full width on white paper */
   .printable-document,
   #printable-document-sheet,
-  .credit-attachment-sheet {
+  .credit-attachment-sheet,
+  .printable-area {
     display: block !important;
     position: static !important;
     width: 100% !important;
@@ -685,11 +696,5 @@ body.modal-open {
     box-shadow: none !important;
     border: none !important;
   }
-
-  body, html {
-    background: #ffffff !important;
-    color: #000000 !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
 }
+

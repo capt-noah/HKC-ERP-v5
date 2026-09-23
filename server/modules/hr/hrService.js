@@ -29,11 +29,15 @@ import {
   listPayrollPeriods,
   getPayrollPeriod,
   createPayrollPeriod,
+  updatePayrollPeriod,
+  deletePayrollPeriod,
   calculatePayrollForPeriod,
   approvePayrollPeriod,
   listPayrollRecords,
   getPayrollRecord,
+  createPayrollRecord,
   updatePayrollRecord,
+  deletePayrollRecord,
 } from "./payrollLogic.js"
 
 export const hrService = {
@@ -68,12 +72,16 @@ export const hrService = {
   listPayrollPeriods,
   getPayrollPeriod,
   createPayrollPeriod,
+  updatePayrollPeriod,
+  deletePayrollPeriod,
   calculatePayrollForPeriod,
   calculatePayroll: calculatePayrollForPeriod,
   approvePayrollPeriod,
   listPayrollRecords,
   getPayrollRecord,
+  createPayrollRecord,
   updatePayrollRecord,
+  deletePayrollRecord,
 }
 
 export default hrService

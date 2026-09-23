@@ -264,6 +264,24 @@ hrRouter.get(periodRoutes.map((r) => `${r}/:id`), async (req, res, next) => {
   }
 })
 
+hrRouter.patch(periodRoutes.map((r) => `${r}/:id`), async (req, res, next) => {
+  try {
+    const result = await hrService.updatePayrollPeriod(req.params.id, req.body)
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
+hrRouter.delete(periodRoutes.map((r) => `${r}/:id`), async (req, res, next) => {
+  try {
+    const result = await hrService.deletePayrollPeriod(req.params.id)
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
 hrRouter.post(periodRoutes.map((r) => `${r}/:id/calculate`), async (req, res, next) => {
   try {
     const result = await hrService.calculatePayrollForPeriod(req.params.id)
@@ -298,6 +316,15 @@ hrRouter.get(payrollRecordRoutes, async (req, res, next) => {
   }
 })
 
+hrRouter.post(payrollRecordRoutes, async (req, res, next) => {
+  try {
+    const result = await hrService.createPayrollRecord(req.body)
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
 hrRouter.get(payrollRecordRoutes.map((r) => `${r}/:id`), async (req, res, next) => {
   try {
     const result = await hrService.getPayrollRecord(req.params.id)
@@ -315,3 +342,13 @@ hrRouter.patch(payrollRecordRoutes.map((r) => `${r}/:id`), async (req, res, next
     next(err)
   }
 })
+
+hrRouter.delete(payrollRecordRoutes.map((r) => `${r}/:id`), async (req, res, next) => {
+  try {
+    const result = await hrService.deletePayrollRecord(req.params.id)
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
