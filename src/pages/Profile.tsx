@@ -227,7 +227,7 @@ export default function Profile() {
   const [logPageSize, setLogPageSize] = useState(10)
 
   const fetchSessions = useCallback(async () => {
-    const currentToken = token || useAuthStore.getState().token
+    const currentToken = useAuthStore.getState().token
     if (!currentToken) return
     setLoadingSessions(true)
     try {
@@ -243,11 +243,11 @@ export default function Profile() {
     } finally {
       setLoadingSessions(false)
     }
-  }, [token])
+  }, [])
 
-  const fetchActivityLogs = useCallback(async () => {
-    const effectiveUser = profileData || authUser || useAuthStore.getState().user
-    const effectiveToken = token || useAuthStore.getState().token
+  const fetchActivityLogs = useCallback(async (overrideUser?: any) => {
+    const effectiveUser = overrideUser || useAuthStore.getState().user
+    const effectiveToken = useAuthStore.getState().token
     if (!effectiveUser?.id && !effectiveToken) return
 
     setLoadingLogs(true)
@@ -273,7 +273,7 @@ export default function Profile() {
     } finally {
       setLoadingLogs(false)
     }
-  }, [profileData, authUser, token])
+  }, [])
 
   const handleRevokeSession = async (sessionId: string) => {
     const currentToken = token || useAuthStore.getState().token
@@ -366,10 +366,13 @@ export default function Profile() {
     let isMounted = true
 
     async function loadProfile() {
-      const effectiveUser = authUser || useAuthStore.getState().user
-      const effectiveToken = token || useAuthStore.getState().token
+      const effectiveUser = useAuthStore.getState().user
+      const effectiveToken = useAuthStore.getState().token
 
-      if (!effectiveUser?.id && !effectiveToken) return
+      if (!effectiveUser?.id && !effectiveToken) {
+        setLoading(false)
+        return
+      }
 
       setLoading(true)
       try {
@@ -409,6 +412,9 @@ export default function Profile() {
             setWarehouses(whData)
           }
         } catch {}
+
+        // 4. Asynchronously fetch activity logs with current user info
+        fetchActivityLogs(current)
       } catch (err) {
         console.error("Failed to load profile:", err)
       } finally {
@@ -420,12 +426,11 @@ export default function Profile() {
 
     loadProfile()
     fetchSessions()
-    fetchActivityLogs()
 
     return () => {
       isMounted = false
     }
-  }, [authUser, token, fetchSessions, fetchActivityLogs])
+  }, [authUser?.id, token, fetchSessions, fetchActivityLogs])
 
   // Also ensure sessions and activity logs are re-fetched whenever window regains focus
   useEffect(() => {
