@@ -22,6 +22,13 @@ import {
   Smartphone,
   Tablet,
   RefreshCw,
+  Activity,
+  Search,
+  Download,
+  Clock,
+  MapPin,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { GlassCard } from "@/components/GlassCard"
@@ -31,6 +38,8 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { loadResource, API_BASE } from "@/lib/apiPersistence"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { cn } from "@/lib/utils"
+import { resolveActivityDetails, getActionBadgeStyle, type UserActivityLog } from "@/lib/activityUtils"
+import { formatDateTimeDisplay, parseSafeDate } from "@/lib/dateUtils"
 
 interface PasswordStrength {
   score: number
@@ -208,6 +217,15 @@ export default function Profile() {
   const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null)
   const [revokingAllOthers, setRevokingAllOthers] = useState(false)
 
+  // Personal Action Performed / Activity Logs State
+  const [activityLogs, setActivityLogs] = useState<UserActivityLog[]>([])
+  const [loadingLogs, setLoadingLogs] = useState(false)
+  const [logSearchQuery, setLogSearchQuery] = useState("")
+  const [selectedLogOperation, setSelectedLogOperation] = useState("All")
+  const [selectedLogTimeframe, setSelectedLogTimeframe] = useState("All")
+  const [logPage, setLogPage] = useState(1)
+  const [logPageSize, setLogPageSize] = useState(10)
+
   const fetchSessions = useCallback(async () => {
     const currentToken = token || useAuthStore.getState().token
     if (!currentToken) return
@@ -226,6 +244,36 @@ export default function Profile() {
       setLoadingSessions(false)
     }
   }, [token])
+
+  const fetchActivityLogs = useCallback(async () => {
+    const effectiveUser = profileData || authUser || useAuthStore.getState().user
+    const effectiveToken = token || useAuthStore.getState().token
+    if (!effectiveUser?.id && !effectiveToken) return
+
+    setLoadingLogs(true)
+    try {
+      const logs = await loadResource<UserActivityLog>("user_activity_logs")
+      if (Array.isArray(logs)) {
+        const uid = effectiveUser?.id
+        const uname = effectiveUser?.username
+        const myLogs = logs.filter(
+          (l) =>
+            (uid && (l.user_id === uid || String(l.user_id).toLowerCase() === String(uid).toLowerCase())) ||
+            (uname && (l.username === uname || String(l.username).toLowerCase() === String(uname).toLowerCase()))
+        )
+        myLogs.sort((a, b) => {
+          const tA = parseSafeDate(a.created_at)?.getTime() || 0
+          const tB = parseSafeDate(b.created_at)?.getTime() || 0
+          return tB - tA
+        })
+        setActivityLogs(myLogs)
+      }
+    } catch (err) {
+      console.warn("Could not load user activity logs:", err)
+    } finally {
+      setLoadingLogs(false)
+    }
+  }, [profileData, authUser, token])
 
   const handleRevokeSession = async (sessionId: string) => {
     const currentToken = token || useAuthStore.getState().token
@@ -372,20 +420,22 @@ export default function Profile() {
 
     loadProfile()
     fetchSessions()
+    fetchActivityLogs()
 
     return () => {
       isMounted = false
     }
-  }, [authUser, token, fetchSessions])
+  }, [authUser, token, fetchSessions, fetchActivityLogs])
 
-  // Also ensure sessions are re-fetched whenever window regains focus
+  // Also ensure sessions and activity logs are re-fetched whenever window regains focus
   useEffect(() => {
     const handleFocus = () => {
       fetchSessions()
+      fetchActivityLogs()
     }
     window.addEventListener("focus", handleFocus)
     return () => window.removeEventListener("focus", handleFocus)
-  }, [fetchSessions])
+  }, [fetchSessions, fetchActivityLogs])
 
   const userRoles: Role[] = profileData?.roles || authUser?.roles || []
   const isSuperAdmin = userRoles.includes("superadmin")
@@ -517,6 +567,139 @@ export default function Profile() {
     } finally {
       setSavingPassword(false)
     }
+  }
+
+  // Memoized resolution of activity log action text and badges
+  const resolvedLogs = useMemo(() => {
+    return activityLogs.map((log) => {
+      const resolved = resolveActivityDetails(log)
+      return {
+        ...log,
+        activityType: resolved.activityType,
+        description: resolved.description,
+        targetName: resolved.targetName,
+      }
+    })
+  }, [activityLogs])
+
+  // Filter user's activity logs by Search, Operation type, and Timeframe
+  const filteredLogs = useMemo(() => {
+    return resolvedLogs.filter((log) => {
+      const q = logSearchQuery.toLowerCase().trim()
+      const matchesSearch =
+        !q ||
+        (log.activityType && log.activityType.toLowerCase().includes(q)) ||
+        (log.description && log.description.toLowerCase().includes(q)) ||
+        (log.action && log.action.toLowerCase().includes(q)) ||
+        (log.resource && log.resource.toLowerCase().includes(q)) ||
+        (log.entity_id && log.entity_id.toLowerCase().includes(q)) ||
+        (log.details && JSON.stringify(log.details).toLowerCase().includes(q))
+
+      const matchesOperation = (() => {
+        if (selectedLogOperation === "All") return true
+        const op = (log.activityType || "").toLowerCase()
+        const act = (log.action || "").toLowerCase()
+        const desc = (log.description || "").toLowerCase()
+        const res = (log.resource || log.module || "").toLowerCase()
+
+        switch (selectedLogOperation) {
+          case "Stock":
+            return (
+              op.includes("stock") ||
+              op.includes("transfer") ||
+              res.includes("product") ||
+              res.includes("stock") ||
+              res.includes("transfer") ||
+              res.includes("warehouse") ||
+              desc.includes("stock") ||
+              desc.includes("product") ||
+              desc.includes("price")
+            )
+          case "Ordered":
+            return op.includes("order") || act.includes("order") || res.includes("sales_order") || res.includes("purchase_order") || desc.includes("order")
+          case "Issued":
+            return op.includes("issue") || act.includes("issue") || res.includes("sales_issue") || desc.includes("issue") || desc.includes("dispatch")
+          case "Sale":
+            return op.includes("sale") || op.includes("invoice") || op.includes("payment") || res.includes("invoice") || res.includes("payment") || desc.includes("invoice") || desc.includes("payment")
+          case "HR":
+            return op.includes("payroll") || op.includes("employee") || op.includes("attendance") || op.includes("leave") || res.includes("employee") || res.includes("payroll") || res.includes("attendance") || res.includes("leave")
+          case "Docs":
+            return op.includes("dossier") || op.includes("export") || op.includes("shipment") || res.includes("hkc_doc") || res.includes("shipment") || res.includes("processing")
+          case "Finance":
+            return op.includes("expense") || op.includes("journal") || res.includes("expense") || res.includes("journal")
+          case "Registered":
+            return op.includes("register") || act.includes("create") || desc.includes("registered") || desc.includes("created")
+          case "Edited":
+            return op.includes("edit") || op.includes("update") || act.includes("update") || desc.includes("updated") || desc.includes("edited")
+          case "Auth":
+            return op.includes("auth") || op.includes("login") || op.includes("security") || op.includes("logout") || act.includes("login") || act.includes("logout") || res.includes("auth")
+          default:
+            return op === selectedLogOperation.toLowerCase() || act === selectedLogOperation.toLowerCase()
+        }
+      })()
+
+      const matchesTimeframe = (() => {
+        if (selectedLogTimeframe === "All") return true
+        const logDate = parseSafeDate(log.created_at)
+        if (!logDate) return false
+        const now = new Date()
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+
+        switch (selectedLogTimeframe) {
+          case "Today":
+            return logDate >= startOfDay
+          case "Yesterday": {
+            const yesterdayStart = new Date(startOfDay.getTime() - 24 * 60 * 60 * 1000)
+            return logDate >= yesterdayStart && logDate < startOfDay
+          }
+          case "7Days": {
+            const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+            return logDate >= sevenDaysAgo
+          }
+          case "30Days": {
+            const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+            return logDate >= thirtyDaysAgo
+          }
+          default:
+            return true
+        }
+      })()
+
+      return matchesSearch && matchesOperation && matchesTimeframe
+    })
+  }, [resolvedLogs, logSearchQuery, selectedLogOperation, selectedLogTimeframe])
+
+  const totalLogPages = Math.max(1, Math.ceil(filteredLogs.length / logPageSize))
+  const paginatedLogs = useMemo(() => {
+    const start = (logPage - 1) * logPageSize
+    return filteredLogs.slice(start, start + logPageSize)
+  }, [filteredLogs, logPage, logPageSize])
+
+  const handleExportUserLogs = () => {
+    if (filteredLogs.length === 0) {
+      showToast("No Logs to Export", "warning", "Current filters returned 0 activity records.")
+      return
+    }
+
+    const headers = ["Timestamp", "Operation Type", "Action Performed (What Was Done)", "Item ID / Reference", "IP Address", "Path"]
+    const rows = filteredLogs.map((l) => [
+      `"${formatDateTimeDisplay(l.created_at)}"`,
+      `"${(l.activityType || "").replace(/"/g, '""')}"`,
+      `"${(l.description || "").replace(/"/g, '""')}"`,
+      `"${(l.details?.itemId || l.entity_id || "").replace(/"/g, '""')}"`,
+      `"${(l.details?.ip || "").replace(/"/g, '""')}"`,
+      `"${(l.details?.path || "").replace(/"/g, '""')}"`,
+    ])
+
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n")
+    const encodedUri = encodeURI(csvContent)
+    const link = document.createElement("a")
+    link.setAttribute("href", encodedUri)
+    link.setAttribute("download", `my_activity_trail_${profileData?.username || authUser?.username || "user"}_${new Date().toISOString().split("T")[0]}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    showToast("Activity Trail Exported", "success", `Exported ${filteredLogs.length} activity records to CSV.`)
   }
 
   const handleLogoutConfirm = () => {
@@ -1047,6 +1230,274 @@ export default function Profile() {
 
               </div>
             </div>
+
+            {/* 3. Action Performed (What Was Done) - Personal Operational History */}
+            <GlassCard className="p-0 rounded-3xl border border-white/80 shadow-xl bg-white/80 overflow-hidden backdrop-blur-md">
+              {/* Header banner */}
+              <div className="p-5 sm:p-6 border-b border-zinc-100 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="size-11 rounded-2xl bg-gradient-to-tr from-emerald-800 to-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-950/15 shrink-0">
+                    <Activity className="size-5.5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <h2 className="text-base sm:text-lg font-black text-zinc-950 tracking-tight">
+                        Action Performed (What Was Done)
+                      </h2>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200">
+                        {filteredLogs.length} {filteredLogs.length === 1 ? "Action" : "Actions"} Logged
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      Your personal live audit history of all operational tasks, inventory actions, price changes, orders, and system events.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-start md:self-auto">
+                  <button
+                    onClick={fetchActivityLogs}
+                    disabled={loadingLogs}
+                    title="Refresh activity logs"
+                    className="h-9 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={cn("size-3.5 text-zinc-600", loadingLogs && "animate-spin")} />
+                    <span>Refresh</span>
+                  </button>
+
+                  <button
+                    onClick={handleExportUserLogs}
+                    disabled={filteredLogs.length === 0}
+                    className="h-9 px-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                  >
+                    <Download className="size-3.5" />
+                    <span>Export CSV</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Search & Filters Strip */}
+              <div className="p-4 sm:p-5 bg-zinc-50/70 border-b border-zinc-100 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+                {/* Search Input */}
+                <div className="relative flex-1">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
+                  <input
+                    type="text"
+                    value={logSearchQuery}
+                    onChange={(e) => {
+                      setLogSearchQuery(e.target.value)
+                      setLogPage(1)
+                    }}
+                    placeholder="Search action performed (e.g. stock, order, price, invoice, login, payroll)..."
+                    className="w-full bg-white border border-zinc-200 rounded-xl pl-9 pr-8 py-2 text-xs font-medium text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/15 transition-all"
+                  />
+                  {logSearchQuery && (
+                    <button
+                      onClick={() => {
+                        setLogSearchQuery("")
+                        setLogPage(1)
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Dropdown Filters */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Operation Filter */}
+                  <select
+                    value={selectedLogOperation}
+                    onChange={(e) => {
+                      setSelectedLogOperation(e.target.value)
+                      setLogPage(1)
+                    }}
+                    aria-label="Filter by Operation"
+                    className="h-9 px-3 text-xs font-bold rounded-xl border border-zinc-200 bg-white text-zinc-800 outline-none hover:border-zinc-300 focus:border-emerald-600 cursor-pointer transition-all"
+                  >
+                    <option value="All">All Operations</option>
+                    <option value="Stock">Stock & Inventory (Add, Edit, Move, Transfer)</option>
+                    <option value="Ordered">Ordered (Sales & Purchase Orders)</option>
+                    <option value="Issued">Issued Goods (Dispatch & Picking)</option>
+                    <option value="Sale">Sale (Invoices & Payments)</option>
+                    <option value="HR">HR & Payroll (Records, Staff, Attendance)</option>
+                    <option value="Docs">HKC Export Docs & Dossiers</option>
+                    <option value="Finance">Finance & Expenses</option>
+                    <option value="Registered">Registered (New Records)</option>
+                    <option value="Edited">Edited / Updated Records</option>
+                    <option value="Auth">Authentication & Logins</option>
+                  </select>
+
+                  {/* Timeframe Filter */}
+                  <select
+                    value={selectedLogTimeframe}
+                    onChange={(e) => {
+                      setSelectedLogTimeframe(e.target.value)
+                      setLogPage(1)
+                    }}
+                    aria-label="Filter by Timeframe"
+                    className="h-9 px-3 text-xs font-bold rounded-xl border border-zinc-200 bg-white text-zinc-800 outline-none hover:border-zinc-300 focus:border-emerald-600 cursor-pointer transition-all"
+                  >
+                    <option value="All">All Time</option>
+                    <option value="Today">Today</option>
+                    <option value="Yesterday">Yesterday</option>
+                    <option value="7Days">Last 7 Days</option>
+                    <option value="30Days">Last 30 Days</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Activity Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-zinc-100/60 border-b border-zinc-200/80 text-[10px] font-black tracking-wider text-zinc-500 uppercase">
+                      <th className="px-4 py-3 w-[160px]">Operation</th>
+                      <th className="px-4 py-3 min-w-[280px]">Action Performed (What Was Done)</th>
+                      <th className="px-4 py-3 w-[200px]">Context / Item</th>
+                      <th className="px-4 py-3 w-[180px]">Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100 text-xs">
+                    {loadingLogs ? (
+                      Array.from({ length: 5 }).map((_, idx) => (
+                        <tr key={idx} className="animate-pulse">
+                          <td className="px-4 py-3.5">
+                            <div className="h-5 bg-zinc-200/70 rounded-full w-24" />
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <div className="h-4 bg-zinc-200/70 rounded-md w-3/4" />
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <div className="h-4 bg-zinc-200/60 rounded-md w-24" />
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <div className="h-4 bg-zinc-200/60 rounded-md w-28" />
+                          </td>
+                        </tr>
+                      ))
+                    ) : paginatedLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-12 text-center text-zinc-400">
+                          <div className="flex flex-col items-center justify-center gap-2">
+                            <Activity className="size-8 text-zinc-300" />
+                            <p className="text-xs font-bold text-zinc-600">No actions performed match your filters.</p>
+                            <p className="text-[11px] text-zinc-400">Try changing your search term, operation filter, or timeframe.</p>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      paginatedLogs.map((log) => (
+                        <tr key={log.id} className="hover:bg-zinc-50/80 transition-colors">
+                          {/* Operation Badge */}
+                          <td className="px-4 py-3.5 align-top">
+                            <span
+                              className={cn(
+                                "inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border shrink-0",
+                                getActionBadgeStyle(log.activityType)
+                              )}
+                            >
+                              {log.activityType}
+                            </span>
+                          </td>
+
+                          {/* Action Performed Description */}
+                          <td className="px-4 py-3.5 align-top">
+                            <p className="font-bold text-zinc-900 leading-snug break-words text-xs">
+                              {log.description}
+                            </p>
+                            {log.details?.note && (
+                              <p className="text-[10px] text-zinc-400 mt-0.5">{log.details.note}</p>
+                            )}
+                          </td>
+
+                          {/* Context Details / Item ID */}
+                          <td className="px-4 py-3.5 align-top">
+                            <div className="flex flex-col gap-1 text-[10px]">
+                              {(log.details?.itemId || log.entity_id) && (
+                                <span className="text-zinc-700 font-extrabold font-mono bg-zinc-100 px-2 py-0.5 rounded border border-zinc-200 shrink-0 w-fit">
+                                  ID: {log.details?.itemId || log.entity_id}
+                                </span>
+                              )}
+                              {log.details?.ip && (
+                                <span className="text-zinc-400 font-medium font-mono flex items-center gap-1 shrink-0">
+                                  <MapPin className="size-2.5" /> {log.details.ip}
+                                </span>
+                              )}
+                              {log.details?.path && (
+                                <span className="text-zinc-400 font-mono truncate max-w-[190px]" title={log.details.path}>
+                                  {log.details.path}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Timestamp */}
+                          <td className="px-4 py-3.5 align-top">
+                            <div className="flex items-center gap-1.5 text-zinc-600 font-bold font-mono text-[11px] whitespace-nowrap">
+                              <Clock className="size-3 text-zinc-400 shrink-0" />
+                              <span>{formatDateTimeDisplay(log.created_at)}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination Bar */}
+              {filteredLogs.length > 0 && (
+                <div className="p-4 bg-zinc-50/80 border-t border-zinc-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2 text-zinc-500 font-medium">
+                    <span>
+                      Showing <span className="font-bold text-zinc-900">{Math.min(filteredLogs.length, (logPage - 1) * logPageSize + 1)}</span> to{" "}
+                      <span className="font-bold text-zinc-900">{Math.min(filteredLogs.length, logPage * logPageSize)}</span> of{" "}
+                      <span className="font-bold text-zinc-900">{filteredLogs.length}</span> actions
+                    </span>
+                    <span className="text-zinc-300">•</span>
+                    <select
+                      value={logPageSize}
+                      onChange={(e) => {
+                        setLogPageSize(Number(e.target.value))
+                        setLogPage(1)
+                      }}
+                      aria-label="Items per page"
+                      className="px-2 py-1 text-xs font-bold rounded-lg border border-zinc-200 bg-white text-zinc-700 outline-none hover:border-zinc-300 cursor-pointer"
+                    >
+                      <option value={10}>10 / page</option>
+                      <option value={25}>25 / page</option>
+                      <option value={50}>50 / page</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setLogPage((p) => Math.max(1, p - 1))}
+                      disabled={logPage === 1}
+                      className="px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition-all"
+                    >
+                      <ChevronLeft className="size-3.5" />
+                      <span>Prev</span>
+                    </button>
+
+                    <span className="px-3 py-1 font-bold text-zinc-700 text-xs">
+                      Page {logPage} of {totalLogPages}
+                    </span>
+
+                    <button
+                      onClick={() => setLogPage((p) => Math.min(totalLogPages, p + 1))}
+                      disabled={logPage >= totalLogPages}
+                      className="px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-700 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition-all"
+                    >
+                      <span>Next</span>
+                      <ChevronRight className="size-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </GlassCard>
           </motion.div>
         )}
       </main>

@@ -42,9 +42,11 @@ crudRouter.use("/:resource", (req, res, next) => {
     if ((req.method === "PATCH" || req.method === "PUT") && req.params.id === user.id) isAllowed = true
   }
 
-  // Allow all authenticated users to record activity logs in user_activity_logs
-  if (req.params.resource === "user_activity_logs" && req.method === "POST") {
-    isAllowed = true
+  // Allow all authenticated users to read and record activity logs in user_activity_logs
+  if (req.params.resource === "user_activity_logs") {
+    if (req.method === "POST" || req.method === "GET") {
+      isAllowed = true
+    }
   }
 
   // Allow sales manager and finance manager to record customer payments
@@ -149,6 +151,21 @@ crudRouter.get("/:resource", async (req, res, next) => {
     let responseBody = result.body
     if (req.params.resource === "users" && Array.isArray(responseBody)) {
       responseBody = responseBody.map(sanitizeUser)
+    }
+
+    // If non-superadmin queries user_activity_logs, scope the response strictly to their own activities
+    if (req.params.resource === "user_activity_logs" && Array.isArray(responseBody)) {
+      const user = req.user
+      const userRoles = user?.roles || (user?.role ? [user.role] : [])
+      if (!userRoles.includes("superadmin") && user) {
+        responseBody = responseBody.filter(
+          (log) =>
+            log.user_id === user.id ||
+            log.username === user.username ||
+            (log.user_id && user.id && String(log.user_id).toLowerCase() === String(user.id).toLowerCase()) ||
+            (log.username && user.username && String(log.username).toLowerCase() === String(user.username).toLowerCase())
+        )
+      }
     }
 
     res.status(result.status).json(responseBody)
