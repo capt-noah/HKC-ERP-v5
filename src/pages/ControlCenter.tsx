@@ -64,6 +64,7 @@ import { listSalesIssues, type SalesIssue } from "@/lib/salesIssuesApi"
 import { isExportWarehouse, isPharmaWarehouse } from "@/lib/warehouses"
 import { computeWH1SupplierQuality } from "@/lib/wh1QualityAnalytics"
 import { getExpiringItemsSummary } from "@/lib/expiryUtils"
+import { formatDateTimeDisplay, parseSafeDate } from "@/lib/dateUtils"
 import { cn } from "@/lib/utils"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
@@ -1045,7 +1046,7 @@ export default function ControlCenter() {
         loadResource<UserAccount>("users"),
       ])
       const sorted = (Array.isArray(logsData) ? logsData : []).sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        (a, b) => (parseSafeDate(b.created_at)?.getTime() || 0) - (parseSafeDate(a.created_at)?.getTime() || 0)
       )
       setLogs(sorted)
       if (Array.isArray(usersData)) {
@@ -1384,7 +1385,8 @@ export default function ControlCenter() {
 
       const matchesTimeframe = (() => {
         if (selectedTimeframe === "All") return true
-        const logDate = new Date(log.created_at)
+        const logDate = parseSafeDate(log.created_at)
+        if (!logDate) return false
         const now = new Date()
         const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
@@ -1455,17 +1457,8 @@ export default function ControlCenter() {
     return "bg-zinc-100 text-zinc-800 border-zinc-200"
   }
 
-  const formatDateTime = (isoString: string) => {
-    if (!isoString) return "-"
-    const d = new Date(isoString)
-    return d.toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    })
+  const formatDateTime = (isoString?: string) => {
+    return formatDateTimeDisplay(isoString)
   }
 
   const handleExportAuditLogs = () => {
@@ -1476,7 +1469,7 @@ export default function ControlCenter() {
 
     const headers = ["Timestamp", "Operator Name", "Username", "Role", "Operation Type", "Action Performed", "Item ID", "IP Address", "Path"]
     const rows = filteredLogs.map((l) => [
-      `"${l.created_at || ""}"`,
+      `"${formatDateTimeDisplay(l.created_at)}"`,
       `"${(l.resolvedName || "").replace(/"/g, '""')}"`,
       `"${(l.username || "").replace(/"/g, '""')}"`,
       `"${(l.roleDisplay || "").replace(/"/g, '""')}"`,
