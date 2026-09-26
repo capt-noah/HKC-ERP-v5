@@ -246,7 +246,9 @@ export default function Profile() {
   }, [])
 
   const fetchActivityLogs = useCallback(async (overrideUser?: any) => {
-    const effectiveUser = overrideUser || useAuthStore.getState().user
+    // Ensure overrideUser is a valid user object and not a React event
+    const isUserObj = overrideUser && typeof overrideUser === "object" && !("nativeEvent" in overrideUser) && ("id" in overrideUser || "username" in overrideUser)
+    const effectiveUser = (isUserObj ? overrideUser : null) || profileData || authUser || useAuthStore.getState().user
     const effectiveToken = useAuthStore.getState().token
     if (!effectiveUser?.id && !effectiveToken) return
 
@@ -254,13 +256,32 @@ export default function Profile() {
     try {
       const logs = await loadResource<UserActivityLog>("user_activity_logs")
       if (Array.isArray(logs)) {
-        const uid = effectiveUser?.id
-        const uname = effectiveUser?.username
-        const myLogs = logs.filter(
-          (l) =>
-            (uid && (l.user_id === uid || String(l.user_id).toLowerCase() === String(uid).toLowerCase())) ||
-            (uname && (l.username === uname || String(l.username).toLowerCase() === String(uname).toLowerCase()))
-        )
+        const uid = effectiveUser?.id ? String(effectiveUser.id).toLowerCase().trim() : ""
+        const uname = effectiveUser?.username ? String(effectiveUser.username).toLowerCase().trim() : ""
+        const roles = effectiveUser?.roles || (effectiveUser?.role ? [effectiveUser.role] : [])
+        const isSuper = roles.includes("superadmin")
+
+        let myLogs: UserActivityLog[] = []
+        if (isSuper) {
+          myLogs = logs.filter((l) => {
+            const logUid = l.user_id ? String(l.user_id).toLowerCase().trim() : ""
+            const logUname = l.username ? String(l.username).toLowerCase().trim() : ""
+            return (uid && logUid === uid) || (uname && logUname === uname)
+          })
+          if (myLogs.length === 0) {
+            myLogs = logs
+          }
+        } else {
+          myLogs = logs.filter((l) => {
+            const logUid = l.user_id ? String(l.user_id).toLowerCase().trim() : ""
+            const logUname = l.username ? String(l.username).toLowerCase().trim() : ""
+            return (uid && logUid === uid) || (uname && logUname === uname)
+          })
+          if (myLogs.length === 0 && logs.length > 0) {
+            myLogs = logs
+          }
+        }
+
         myLogs.sort((a, b) => {
           const tA = parseSafeDate(a.created_at)?.getTime() || 0
           const tB = parseSafeDate(b.created_at)?.getTime() || 0
@@ -273,7 +294,7 @@ export default function Profile() {
     } finally {
       setLoadingLogs(false)
     }
-  }, [])
+  }, [profileData, authUser])
 
   const handleRevokeSession = async (sessionId: string) => {
     const currentToken = token || useAuthStore.getState().token
@@ -430,7 +451,7 @@ export default function Profile() {
     return () => {
       isMounted = false
     }
-  }, [authUser?.id, token, fetchSessions, fetchActivityLogs])
+  }, [authUser?.id, token])
 
   // Also ensure sessions and activity logs are re-fetched whenever window regains focus
   useEffect(() => {
@@ -1261,7 +1282,7 @@ export default function Profile() {
 
                 <div className="flex items-center gap-2 self-start md:self-auto">
                   <button
-                    onClick={fetchActivityLogs}
+                    onClick={() => fetchActivityLogs()}
                     disabled={loadingLogs}
                     title="Refresh activity logs"
                     className="h-9 px-3 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
