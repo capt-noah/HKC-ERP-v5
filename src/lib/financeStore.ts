@@ -616,11 +616,8 @@ class FinanceStore {
         loadResource<GlAccountMapping>("gl_account_mappings").catch(() => []),
       ])
 
-      if (!Array.isArray(accounts) || accounts.length === 0 || accounts.some((a) => a.id?.startsWith("ACC-1000") || a.code === "1010")) {
+      if (!Array.isArray(accounts) || accounts.length === 0) {
         this.accounts = COMPANY_CHART_OF_ACCOUNTS
-        if (isFullFinance) {
-          void persistResources([{ resource: "chart_of_accounts", items: COMPANY_CHART_OF_ACCOUNTS }])
-        }
       } else {
         this.accounts = accounts
       }
@@ -689,7 +686,7 @@ class FinanceStore {
       this.vehicles = sortNewestFirst(vehicles)
       const { id: _settingsId, ...companySettings } = companySettingsRows[0] || { id: "default", ...emptyCompanySettings }
       this.companySettings = companySettings as CompanySettings
-      if (Array.isArray(taxRules) && taxRules.length > 0 && !taxRules.some((t: any) => t.id === "TAX-01" || t.id === "TAX-001")) {
+      if (Array.isArray(taxRules) && taxRules.length > 0) {
         this.taxRules = sortNewestFirst(taxRules.map((t: any) => ({
           ...t,
           id: t.id,
@@ -705,7 +702,6 @@ class FinanceStore {
         })))
       } else {
         this.taxRules = INITIAL_TAX_RULES
-        void persistResources([{ resource: "tax_rules", items: INITIAL_TAX_RULES }])
       }
 
       this.taxSchedules = INITIAL_TAX_SCHEDULES
@@ -727,7 +723,6 @@ class FinanceStore {
         }))
       } else {
         this.glMappings = [...DEFAULT_GL_ACCOUNT_MAPPINGS]
-        void persistResources([{ resource: "gl_account_mappings", items: DEFAULT_GL_ACCOUNT_MAPPINGS }])
       }
 
       // Trigger cross-module live finance sync

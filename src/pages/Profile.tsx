@@ -38,8 +38,9 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { loadResource, API_BASE } from "@/lib/apiPersistence"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { cn } from "@/lib/utils"
-import { resolveActivityDetails, getActionBadgeStyle, type UserActivityLog } from "@/lib/activityUtils"
+import { resolveActivityDetails, getActionBadgeStyle, isAutoSyncActivityLog, type UserActivityLog } from "@/lib/activityUtils"
 import { formatDateTimeDisplay, parseSafeDate } from "@/lib/dateUtils"
+
 
 interface PasswordStrength {
   score: number
@@ -195,6 +196,7 @@ export default function Profile() {
   const [loading, setLoading] = useState(true)
   const [profileData, setProfileData] = useState<UserAccount | null>(null)
   const [linkedEmployee, setLinkedEmployee] = useState<LinkedEmployee | null>(null)
+  const [allEmployees, setAllEmployees] = useState<LinkedEmployee[]>([])
   const [warehouses, setWarehouses] = useState<WarehouseType[]>([])
 
   // Edit Name State
@@ -417,14 +419,18 @@ export default function Profile() {
         setProfileData(current)
         setNewName(current.fullname || effectiveUser?.fullname || "")
 
-        // 2. Fetch linked employee details if employee_id is set
-        if (current.employee_id) {
-          try {
-            const employees = await loadResource<LinkedEmployee>("employees")
-            const emp = employees.find((e) => e.id === current.employee_id)
-            if (emp && isMounted) setLinkedEmployee(emp)
-          } catch {}
-        }
+        // 2. Fetch employee records for name resolutions and linked employee profile
+        try {
+          const employees = await loadResource<LinkedEmployee>("employees")
+          if (Array.isArray(employees) && isMounted) {
+            setAllEmployees(employees)
+            if (current.employee_id) {
+              const emp = employees.find((e) => e.id === current.employee_id)
+              if (emp) setLinkedEmployee(emp)
+            }
+          }
+        } catch {}
+
 
         // 3. Fetch warehouses from API for warehouse-operating roles
         try {
@@ -598,7 +604,7 @@ export default function Profile() {
   // Memoized resolution of activity log action text and badges
   const resolvedLogs = useMemo(() => {
     return activityLogs.map((log) => {
-      const resolved = resolveActivityDetails(log)
+      const resolved = resolveActivityDetails(log, allEmployees)
       return {
         ...log,
         activityType: resolved.activityType,
@@ -606,12 +612,15 @@ export default function Profile() {
         targetName: resolved.targetName,
       }
     })
-  }, [activityLogs])
+  }, [activityLogs, allEmployees])
 
   // Filter user's activity logs by Search, Operation type, and Timeframe
   const filteredLogs = useMemo(() => {
-    return resolvedLogs.filter((log) => {
-      const q = logSearchQuery.toLowerCase().trim()
+    return resolvedLogs
+      .filter((log) => !isAutoSyncActivityLog(log))
+      .filter((log) => {
+        const q = logSearchQuery.toLowerCase().trim()
+
       const matchesSearch =
         !q ||
         (log.activityType && log.activityType.toLowerCase().includes(q)) ||

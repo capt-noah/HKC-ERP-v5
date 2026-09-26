@@ -36,19 +36,85 @@ export interface UserActivityLog {
   created_at: string
 }
 
-export function resolveActivityDetails(log: UserActivityLog): {
+export interface EmployeeLookupItem {
+  id: string
+  full_name?: string
+  fullname?: string
+  name?: string
+  first_name?: string
+  last_name?: string
+  employee_number?: string
+}
+
+export function isAutoSyncActivityLog(log: UserActivityLog): boolean {
+  const res = (log.resource || log.module || "").toLowerCase().replace(/-/g, "_")
+  const path = (log.details?.path || "").toLowerCase()
+  const desc = (log.details?.description || "").toLowerCase()
+
+  // Automated table seeding / bulk sync on initial load
+  if (
+    (res === "chart_of_accounts" || res === "tax_rules" || res === "gl_account_mappings" || res === "tax_types") &&
+    (!log.entity_id && !log.details?.itemId) &&
+    (path === "/api/chart_of_accounts" || path === "/api/tax_rules" || path === "/api/gl_account_mappings" || path === "/api/tax_types") &&
+    (desc === "updated chart of accounts" || desc === "updated tax rules" || desc === "updated gl account mappings" || desc === "updated tax types" || !desc)
+  ) {
+    return true
+  }
+
+  return false
+}
+
+export function resolveActivityDetails(
+  log: UserActivityLog,
+  employees?: EmployeeLookupItem[]
+): {
   activityType: string
   description: string
   targetName?: string
 } {
+  // Helper to replace any employee UUID with their full name
+  const resolveEmpName = (text: string): string => {
+    if (!text) return text
+    let updated = text
+    if (employees && employees.length > 0) {
+      for (const emp of employees) {
+        if (!emp) continue
+        const empName =
+          emp.full_name ||
+          emp.fullname ||
+          emp.name ||
+          [emp.first_name, emp.last_name].filter(Boolean).join(" ") ||
+          emp.employee_number
+        if (!empName) continue
+
+        if (emp.id) {
+          const idStr = String(emp.id).trim()
+          if (idStr && updated.includes(idStr)) {
+            updated = updated.split(idStr).join(empName)
+          }
+        }
+        if (emp.employee_number) {
+          const numStr = String(emp.employee_number).trim()
+          if (numStr && updated.includes(numStr)) {
+            updated = updated.split(numStr).join(empName)
+          }
+        }
+      }
+    }
+    return updated
+  }
+
   // If already pre-computed and stored by backend
   if (log.details?.description && log.details?.activityType) {
+    const rawDesc = log.details.description
+    const rawTarget = log.details.targetName
     return {
       activityType: log.details.activityType,
-      description: log.details.description,
-      targetName: log.details.targetName,
+      description: resolveEmpName(rawDesc),
+      targetName: rawTarget ? resolveEmpName(rawTarget) : rawTarget,
     }
   }
+
 
   const rawAction = (log.action || "").trim()
   const rawResource = (log.resource || log.module || "").trim().toLowerCase().replace(/-/g, "_")
@@ -257,7 +323,8 @@ export function resolveActivityDetails(log: UserActivityLog): {
 
   // 7. HR & Personnel
   if (rawResource === "employees" || rawResource === "employee") {
-    const name = d.full_name || d.employee_name || itemId || ""
+    let name = d.full_name || d.fullname || d.employee_name || itemId || ""
+    name = resolveEmpName(name)
     if (normAction.includes("create")) {
       return {
         activityType: "Registered Employee",
@@ -282,7 +349,7 @@ export function resolveActivityDetails(log: UserActivityLog): {
   if (rawResource === "leave_requests" || rawResource === "leave_types") {
     return {
       activityType: "Leave Request",
-      description: `Leave request ${itemId ? `#${itemId}` : "entry"}`,
+      description: resolveEmpName(`Leave request ${itemId ? `#${itemId}` : "entry"}`),
     }
   }
 
@@ -376,8 +443,8 @@ export function resolveActivityDetails(log: UserActivityLog): {
   // Fallback
   return {
     activityType: rawAction || "Activity",
-    description: d.description || `${rawAction} on ${rawResource.replace(/_/g, " ")}${itemId ? ` #${itemId}` : ""}`,
-    targetName: itemId,
+    description: resolveEmpName(d.description || `${rawAction} on ${rawResource.replace(/_/g, " ")}${itemId ? ` #${itemId}` : ""}`),
+    targetName: itemId ? resolveEmpName(itemId) : itemId,
   }
 }
 

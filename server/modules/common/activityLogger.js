@@ -1,6 +1,9 @@
 import { drizzleCreateRow } from "../../db/drizzleCrud.js"
 import { getResource } from "../../db/resourceRegistry.js"
+import { pool } from "../../db/client.js"
+import { unwrapRow } from "../../db/dbUtils.js"
 import crypto from "node:crypto"
+
 
 /**
  * Normalizes request paths to extract clean resource names and action types.
@@ -427,7 +430,12 @@ export function activityLoggerMiddleware(req, res, next) {
     return next()
   }
 
-  const onFinish = () => {
+  // Explicit skip flag
+  if (req.headers["x-skip-activity-log"] === "true" || req.headers["x-sync-init"] === "true") {
+    return next()
+  }
+
+  const onFinish = async () => {
     res.removeListener("finish", onFinish)
     res.removeListener("close", onFinish)
 
@@ -452,6 +460,32 @@ export function activityLoggerMiddleware(req, res, next) {
         details.itemId = idMatch[1]
       }
 
+      // Filter out automated bulk resource synchronizations (e.g. initial loads of chart_of_accounts, tax_rules, gl_mappings)
+      if (
+        Array.isArray(req.body) &&
+        !details.itemId &&
+        ["chart_of_accounts", "tax_rules", "gl_account_mappings", "tax_types"].includes(resource)
+      ) {
+        return
+      }
+
+      let bodyToUse = typeof req.body === "object" && req.body !== null ? { ...req.body } : {}
+
+      // If employee resource is updated without full_name in body, look up full_name from database
+      if (resource === "employees" && details.itemId && !bodyToUse.full_name && !bodyToUse.fullname) {
+        try {
+          const [rows] = await pool.query("SELECT * FROM `employees` WHERE id = ?", [details.itemId])
+          if (rows && rows.length > 0) {
+            const emp = unwrapRow(rows[0], "jsonb_document")
+            if (emp?.full_name || emp?.fullname) {
+              bodyToUse.full_name = emp.full_name || emp.fullname
+            }
+          }
+        } catch {
+          // ignore error
+        }
+      }
+
       const fullname = req.user.fullname || req.user.username || ""
 
       // Generate business-oriented operation description
@@ -459,7 +493,7 @@ export function activityLoggerMiddleware(req, res, next) {
         method: req.method,
         resource,
         action,
-        body: req.body,
+        body: bodyToUse,
         details,
       })
 
@@ -478,3 +512,4 @@ export function activityLoggerMiddleware(req, res, next) {
 
   next()
 }
+
