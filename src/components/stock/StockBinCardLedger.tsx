@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { Edit3 } from "lucide-react"
 import type { BinCardMovementEntry, Product } from "@/lib/erpStore"
+import { getDaysUntilExpiry } from "@/lib/expiryUtils"
 
 interface StockBinCardLedgerProps {
   product: Product
@@ -141,7 +142,20 @@ export default function StockBinCardLedger({
                       )}
                     </td>
                     <td className="py-2.5 px-4 font-mono text-zinc-600 border-r border-zinc-100">{rec.mfgDate || "-"}</td>
-                    <td className="py-2.5 px-4 font-mono text-zinc-600 border-r border-zinc-100">{rec.expiryDate || "-"}</td>
+                    <td className="py-2.5 px-4 font-mono text-zinc-600 border-r border-zinc-100">
+                      <div>{rec.expiryDate || "-"}</div>
+                      {(() => {
+                        const daysStatus = getDaysUntilExpiry(rec.expiryDate)
+                        if (!daysStatus) return null
+                        return (
+                          <div className="pt-0.5 font-sans">
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] border ${daysStatus.badgeClass}`}>
+                              {daysStatus.text}
+                            </span>
+                          </div>
+                        )
+                      })()}
+                    </td>
                     <td className="py-2.5 px-4 font-semibold text-zinc-800 border-r border-zinc-100">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {isQuarantine && (

@@ -28,8 +28,8 @@ import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { numberToBirrWords } from "@/lib/numberToWords"
 import PurchaseOrderPrintModal from "@/components/purchase/PurchaseOrderPrintModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
-import { ETHIOPIAN_BANKS } from "@/lib/ethiopianBanks"
 import { uploadFile } from "@/lib/fileUpload"
+import COAAccountSelector from "@/components/finance/COAAccountSelector"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
@@ -88,12 +88,17 @@ export default function PurchaseOrders() {
   })
   const [status, setStatus] = useState<"PAID" | "DRAFT">("PAID")
 
+  // COA Ledger Routing State
+  const [debitAccountCode, setDebitAccountCode] = useState("1410-01")
+  const [debitAccountName, setDebitAccountName] = useState("Stock of Green Mung")
+  const [debitAccountId, setDebitAccountId] = useState("ACC-1410-01")
+
+  const [creditAccountCode, setCreditAccountCode] = useState("1000-02-26")
+  const [creditAccountName, setCreditAccountName] = useState("CBE ECB - 1000006734589")
+  const [creditAccountId, setCreditAccountId] = useState("ACC-1000-02-26")
+
   // Combobox Dropdown States & Refs
-  const [showCreateBankDropdown, setShowCreateBankDropdown] = useState(false)
-  const [showEditBankDropdown, setShowEditBankDropdown] = useState(false)
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
-  const createBankRef = useRef<HTMLDivElement>(null)
-  const editBankRef = useRef<HTMLDivElement>(null)
   const supplierRef = useRef<HTMLDivElement>(null)
 
   // Dedicated Payment Advice (Mandatory for PAID status)
@@ -102,15 +107,9 @@ export default function PurchaseOrders() {
   // Optional Supporting Attachments
   const [attachments, setAttachments] = useState<PurchaseOrderAttachment[]>([])
 
-  // Close bank dropdown on click outside
+  // Close supplier dropdown on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (createBankRef.current && !createBankRef.current.contains(e.target as Node)) {
-        setShowCreateBankDropdown(false)
-      }
-      if (editBankRef.current && !editBankRef.current.contains(e.target as Node)) {
-        setShowEditBankDropdown(false)
-      }
       if (supplierRef.current && !supplierRef.current.contains(e.target as Node)) {
         setShowSupplierDropdown(false)
       }
@@ -132,10 +131,12 @@ export default function PurchaseOrders() {
   }
 
   // Table Columns
+  // Table Columns
   const defaultColWidths: Record<string, number> = {
     voucherNo: 160,
     date: 100,
     paidTo: 170,
+    coaAccounts: 160,
     bankName: 150,
     paymentMethod: 110,
     chequeNo: 120,
@@ -150,7 +151,8 @@ export default function PurchaseOrders() {
     { key: "voucherNo", label: "Voucher / PO Ref", align: "left" },
     { key: "date", label: "Date", align: "left" },
     { key: "paidTo", label: "Supplier / Paid To", align: "left" },
-    { key: "bankName", label: "Bank", align: "left" },
+    { key: "coaAccounts", label: "COA Routing", align: "left" },
+    { key: "bankName", label: "Bank / Source", align: "left" },
     { key: "paymentMethod", label: "Method", align: "left" },
     { key: "chequeNo", label: "Cheque / Ref", align: "left" },
     { key: "amount", label: "Amount (ETB)", align: "right" },
@@ -181,14 +183,35 @@ export default function PurchaseOrders() {
         const matchPaidTo = (po.paidTo || po.supplier || "").toLowerCase().includes(query)
         const matchReason = (po.reasonForPayment || po.category || "").toLowerCase().includes(query)
         const matchCheque = (po.chequeNo || "").toLowerCase().includes(query)
-        const matchBank = (po.bankName || "").toLowerCase().includes(query)
+        const matchBank = (po.bankName || po.creditAccountName || "").toLowerCase().includes(query)
         const matchMethod = (po.paymentMethod || "").toLowerCase().includes(query)
-        if (!matchVoucher && !matchPaidTo && !matchReason && !matchCheque && !matchBank && !matchMethod) return false
+        const matchDebitCoa = (po.targetAccountCode || po.targetAccountName || "").toLowerCase().includes(query)
+        const matchCreditCoa = (po.creditAccountCode || po.creditAccountName || "").toLowerCase().includes(query)
+        if (!matchVoucher && !matchPaidTo && !matchReason && !matchCheque && !matchBank && !matchMethod && !matchDebitCoa && !matchCreditCoa) return false
       }
 
       return true
     })
   }, [purchaseOrders, filterTab, searchQuery])
+
+  // Handle Payment Type Toggle
+  const handlePaymentTypeChange = (newType: "Cash" | "Credit") => {
+    setPaymentType(newType)
+    if (newType === "Cash") {
+      if (creditAccountCode.startsWith("2100")) {
+        setCreditAccountCode("1000-02-26")
+        setCreditAccountName("CBE ECB - 1000006734589")
+        setCreditAccountId("ACC-1000-02-26")
+        setBankName("CBE ECB - 1000006734589")
+      }
+    } else {
+      if (creditAccountCode.startsWith("1000")) {
+        setCreditAccountCode("2100-06")
+        setCreditAccountName("Other Accruals & Payables")
+        setCreditAccountId("ACC-2100-06")
+      }
+    }
+  }
 
   // Open Create Modal
   const handleOpenCreateModal = () => {
@@ -196,7 +219,13 @@ export default function PurchaseOrders() {
     setVoucherDate(new Date().toISOString().split("T")[0])
     setPaidTo("")
     setReasonForPayment("")
-    setBankName("Commercial Bank of Ethiopia (CBE)")
+    setDebitAccountCode("1410-01")
+    setDebitAccountName("Stock of Green Mung")
+    setDebitAccountId("ACC-1410-01")
+    setCreditAccountCode("1000-02-26")
+    setCreditAccountName("CBE ECB - 1000006734589")
+    setCreditAccountId("ACC-1000-02-26")
+    setBankName("CBE ECB - 1000006734589")
     setPaymentMethod("Cheque")
     setChequeNo("")
     setPaidAmount("")
@@ -219,11 +248,31 @@ export default function PurchaseOrders() {
     setVoucherDate(po.date || new Date().toISOString().split("T")[0])
     setPaidTo(po.paidTo || po.supplier || "")
     setReasonForPayment(po.reasonForPayment || po.category || "")
-    setBankName(po.bankName || "Commercial Bank of Ethiopia (CBE)")
+
+    // Extract Debit Account
+    const drRow = po.accountEntries?.find((e) => Number(e.debit) > 0)
+    const drCode = drRow?.accountCode || po.targetAccountCode || "1410-01"
+    const drName = drRow?.accountName || po.targetAccountName || "Stock of Green Mung"
+    const drId = drRow?.accountId || po.targetAccountId || `ACC-${drCode}`
+    setDebitAccountCode(drCode)
+    setDebitAccountName(drName)
+    setDebitAccountId(drId)
+
+    // Extract Credit Account
+    const crRow = po.accountEntries?.find((e) => Number(e.credit) > 0)
+    const isCreditPo = (po.paymentType || po.payment_type) === "Credit"
+    const crCode = crRow?.accountCode || po.creditAccountCode || (isCreditPo ? "2100-06" : "1000-02-26")
+    const crName = crRow?.accountName || po.creditAccountName || po.bankName || (isCreditPo ? "Other Accruals & Payables" : "CBE ECB - 1000006734589")
+    const crId = crRow?.accountId || po.creditAccountId || `ACC-${crCode}`
+    setCreditAccountCode(crCode)
+    setCreditAccountName(crName)
+    setCreditAccountId(crId)
+
+    setBankName(po.bankName || crName)
     setPaymentMethod((po.paymentMethod as any) || "Cheque")
     setChequeNo(po.chequeNo || "")
     setPaidAmount(po.amount || "")
-    setPaymentType((po.paymentType || po.payment_type) === "Credit" ? "Credit" : "Cash")
+    setPaymentType(isCreditPo ? "Credit" : "Cash")
     setPaymentTerms(po.paymentTerms || po.payment_terms || "Net 30")
     setDueDate(po.dueDate || po.due_date || new Date().toISOString().split("T")[0])
     setStatus((po.status === "PAID" || po.status === "COMPLETED") ? "PAID" : "DRAFT")
@@ -267,7 +316,7 @@ export default function PurchaseOrders() {
     setPayingPo(po)
     setPayAmount(dueVal > 0 ? String(dueVal) : "")
     setPayDate(new Date().toISOString().split("T")[0])
-    setPayBank(po.bankName || "1000-02-26")
+    setPayBank(po.creditAccountCode || "1000-02-26")
     setPayMethod("Bank Transfer")
     setPayRef(`PAY-PO-${Date.now().toString().slice(-4)}`)
     setPayNotes("")
@@ -420,11 +469,6 @@ export default function PurchaseOrders() {
       return
     }
 
-    if (paymentType === "Cash" && !bankName.trim()) {
-      showToast("Missing Information", "warning", "Please select or enter the issuing Bank.")
-      return
-    }
-
     const numericAmount = Number(paidAmount)
     if (isNaN(numericAmount) || numericAmount <= 0) {
       showToast("Invalid Amount", "warning", "Please enter a valid purchase amount.")
@@ -439,6 +483,25 @@ export default function PurchaseOrders() {
     const isCredit = paymentType === "Credit"
     const amountInWords = numberToBirrWords(numericAmount)
 
+    const accountEntries = [
+      {
+        accountId: debitAccountId,
+        accountCode: debitAccountCode,
+        accountName: debitAccountName,
+        description: reasonForPayment.trim() || "Procurement / Purchase",
+        debit: numericAmount,
+        credit: 0,
+      },
+      {
+        accountId: creditAccountId,
+        accountCode: creditAccountCode,
+        accountName: creditAccountName,
+        description: reasonForPayment.trim() || (isCredit ? "Supplier Credit Settlement" : "Payment Disbursement"),
+        debit: 0,
+        credit: numericAmount,
+      },
+    ]
+
     const newPo: PurchaseOrder = {
       id: `PO-${Date.now().toString().slice(-4)}`,
       poNumber: voucherNo.trim(),
@@ -447,7 +510,7 @@ export default function PurchaseOrders() {
       paidTo: paidTo.trim(),
       supplier: paidTo.trim(),
       reasonForPayment: reasonForPayment.trim(),
-      bankName: bankName.trim(),
+      bankName: (creditAccountName || bankName || "").trim(),
       paymentMethod,
       chequeNo: chequeNo.trim(),
       amount: numericAmount,
@@ -463,6 +526,13 @@ export default function PurchaseOrders() {
       payment_terms: isCredit ? paymentTerms : undefined,
       dueDate: isCredit ? dueDate : undefined,
       due_date: isCredit ? dueDate : undefined,
+      targetAccountId: debitAccountId,
+      targetAccountCode: debitAccountCode,
+      targetAccountName: debitAccountName,
+      creditAccountId: creditAccountId,
+      creditAccountCode: creditAccountCode,
+      creditAccountName: creditAccountName,
+      accountEntries,
       amountInWords,
       currency: "ETB",
       status: isCredit ? "PAID" : status,
@@ -479,7 +549,7 @@ export default function PurchaseOrders() {
         "success",
         isCredit
           ? `Purchase Credit Voucher ${voucherNo} for ${paidTo} created with ${paymentTerms} terms.`
-          : `Payment Voucher ${voucherNo} registered and posted.`
+          : `Payment Voucher ${voucherNo} registered and posted to GL.`
       )
       setIsCreateModalOpen(false)
     } catch (err) {
@@ -521,6 +591,25 @@ export default function PurchaseOrders() {
     const newDue = isCredit ? Number(Math.max(0, numericAmount - prevPaid).toFixed(2)) : 0
     const settlement = isCredit ? (newDue <= 0.01 ? "Fully Settled" : (prevPaid > 0 ? "Ongoing" : "Unpaid")) : "Fully Settled"
 
+    const accountEntries = [
+      {
+        accountId: debitAccountId,
+        accountCode: debitAccountCode,
+        accountName: debitAccountName,
+        description: reasonForPayment.trim() || "Procurement / Purchase",
+        debit: numericAmount,
+        credit: 0,
+      },
+      {
+        accountId: creditAccountId,
+        accountCode: creditAccountCode,
+        accountName: creditAccountName,
+        description: reasonForPayment.trim() || (isCredit ? "Supplier Credit Settlement" : "Payment Disbursement"),
+        debit: 0,
+        credit: numericAmount,
+      },
+    ]
+
     try {
       setIsSavingEditVoucher(true)
       erp.updatePurchaseOrder(editingPo.id, {
@@ -530,7 +619,7 @@ export default function PurchaseOrders() {
         paidTo: paidTo.trim(),
         supplier: paidTo.trim(),
         reasonForPayment: reasonForPayment.trim(),
-        bankName: bankName.trim(),
+        bankName: (creditAccountName || bankName || "").trim(),
         paymentMethod,
         chequeNo: chequeNo.trim(),
         amount: numericAmount,
@@ -546,6 +635,13 @@ export default function PurchaseOrders() {
         payment_terms: isCredit ? paymentTerms : undefined,
         dueDate: isCredit ? dueDate : undefined,
         due_date: isCredit ? dueDate : undefined,
+        targetAccountId: debitAccountId,
+        targetAccountCode: debitAccountCode,
+        targetAccountName: debitAccountName,
+        creditAccountId: creditAccountId,
+        creditAccountCode: creditAccountCode,
+        creditAccountName: creditAccountName,
+        accountEntries,
         amountInWords,
         status: isCredit ? (settlement === "Fully Settled" ? "PAID" : "PAID") : status,
         paymentAdviceAttachment: paymentAdvice,
@@ -671,6 +767,28 @@ export default function PurchaseOrders() {
                       {po.reasonForPayment}
                     </div>
                   )}
+                </td>
+
+                {/* COA Routing */}
+                <td style={{ width: `${colWidths.coaAccounts}px` }} className="py-4 px-4 overflow-hidden">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-1.5 min-w-0" title={`Debit: ${po.targetAccountName || po.targetAccountCode || "1410-01"}`}>
+                      <span className="text-[9px] font-black uppercase px-1 py-0.2 rounded bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                        DR
+                      </span>
+                      <span className="font-mono text-xs font-bold text-zinc-900 truncate">
+                        {po.targetAccountCode || "1410-01"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 min-w-0" title={`Credit: ${po.creditAccountName || po.creditAccountCode || (isCredit ? "2100-06" : "1000-02-26")}`}>
+                      <span className="text-[9px] font-black uppercase px-1 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-200 shrink-0">
+                        CR
+                      </span>
+                      <span className="font-mono text-xs font-bold text-zinc-900 truncate">
+                        {po.creditAccountCode || (isCredit ? "2100-06" : "1000-02-26")}
+                      </span>
+                    </div>
+                  </div>
                 </td>
 
                 {/* Bank */}
@@ -920,15 +1038,16 @@ export default function PurchaseOrders() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Bank / Cash Account *</label>
-                    <input
-                      type="text"
+                    <COAAccountSelector
+                      label="Disbursing Bank / Cash Account"
                       value={payBank}
-                      onChange={(e) => setPayBank(e.target.value)}
-                      placeholder="e.g. Commercial Bank of Ethiopia (CBE)"
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                      onChange={(acc) => setPayBank(acc.code)}
+                      suggestedCodes={["1000-02-26", "1000-01-01", "1000-02-01", "1000-02-14", "1000-02-17"]}
+                      placeholder="Select bank/cash..."
+                      helperText="Funding ledger account"
+                      required
                     />
                   </div>
 
@@ -1059,11 +1178,11 @@ export default function PurchaseOrders() {
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Payment Method *</label>
                     <select
                       value={paymentType}
-                      onChange={(e) => setPaymentType(e.target.value as "Cash" | "Credit")}
+                      onChange={(e) => handlePaymentTypeChange(e.target.value as "Cash" | "Credit")}
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
                     >
-                      <option value="Cash">Cash</option>
-                      <option value="Credit">Credit</option>
+                      <option value="Cash">Cash (Immediate Payment)</option>
+                      <option value="Credit">Credit (Accounts Payable)</option>
                     </select>
                   </div>
 
@@ -1156,76 +1275,64 @@ export default function PurchaseOrders() {
                   )}
                 </div>
 
-                {/* BANK & PAYMENT DETAILS */}
+                {/* CHART OF ACCOUNTS (COA) ROUTING & PAYMENT DETAILS */}
                 <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/70 space-y-3.5">
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="font-black text-xs text-zinc-900 uppercase tracking-wider flex items-center gap-1.5">
                         <Building2 className="size-3.5 text-zinc-600" />
-                        {paymentType === "Credit" ? "Credit Value & Bank Details" : "Bank & Payment Information"}
+                        Accounting & Chart of Accounts (COA) Routing
                       </h4>
                       <p className="text-[10px] text-zinc-500">
-                        {paymentType === "Credit" 
-                          ? "Enter the total supplier credit amount and primary bank for future installment payouts."
-                          : "Select issuing bank in Ethiopia, payment method, amount paid, and cheque/ref number."}
+                        Explicitly select the debit asset/expense account and credit funding source or liability account for General Ledger double-entry posting.
                       </p>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                    {/* Bank Selection */}
-                    <div className="md:col-span-6 relative" ref={createBankRef}>
-                      <label className="block text-xs font-bold text-zinc-700 mb-1">
-                        Bank (Which Bank) *
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          required
-                          placeholder="Search or type bank name..."
-                          value={bankName}
-                          onFocus={() => setShowCreateBankDropdown(true)}
-                          onChange={(e) => {
-                            setBankName(e.target.value)
-                            setShowCreateBankDropdown(true)
-                          }}
-                          className="w-full pl-3 pr-8 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-bold outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowCreateBankDropdown((prev) => !prev)}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 cursor-pointer"
-                        >
-                          <ChevronDown className="size-4" />
-                        </button>
-                      </div>
+                    {/* Debit Account Selector */}
+                    <div className="md:col-span-6">
+                      <COAAccountSelector
+                        label="Debit Account (Inventory / Expense / Asset)"
+                        value={debitAccountCode}
+                        onChange={(acc) => {
+                          setDebitAccountCode(acc.code)
+                          setDebitAccountName(acc.name)
+                          setDebitAccountId(acc.id)
+                        }}
+                        suggestedCodes={["1410-01", "1400-01", "1410-03", "1600-01", "6000-17", "8000-02"]}
+                        placeholder="Select debit account..."
+                        helperText="Asset or Expense being purchased"
+                        required
+                      />
+                    </div>
 
-                      {showCreateBankDropdown && (
-                        <div className="absolute left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-white border border-zinc-200 rounded-xl shadow-xl z-30 py-1 divide-y divide-zinc-50">
-                          {ETHIOPIAN_BANKS.filter((b) =>
-                            b.toLowerCase().includes((bankName || "").toLowerCase())
-                          ).map((bank) => (
-                            <button
-                              key={bank}
-                              type="button"
-                              onClick={() => {
-                                setBankName(bank)
-                                setShowCreateBankDropdown(false)
-                              }}
-                              className="w-full text-left px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-emerald-50 hover:text-emerald-900 transition-colors flex items-center justify-between cursor-pointer"
-                            >
-                              <span>{bank}</span>
-                              {bankName === bank && <Check className="size-3.5 text-emerald-600 shrink-0" />}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                    {/* Credit Account Selector */}
+                    <div className="md:col-span-6">
+                      <COAAccountSelector
+                        label={paymentType === "Cash" ? "Credit Account (Bank / Cash Source)" : "Credit Account (Accounts Payable Liability)"}
+                        value={creditAccountCode}
+                        onChange={(acc) => {
+                          setCreditAccountCode(acc.code)
+                          setCreditAccountName(acc.name)
+                          setCreditAccountId(acc.id)
+                          setBankName(acc.name)
+                        }}
+                        suggestedCodes={
+                          paymentType === "Cash"
+                            ? ["1000-02-26", "1000-01-01", "1000-02-01", "1000-02-14", "1000-02-17"]
+                            : ["2100-06", "2100-01", "2100-02", "2100-08"]
+                        }
+                        placeholder="Select credit account..."
+                        helperText={paymentType === "Cash" ? "Bank or Cash account disbursing funds" : "AP liability account credited"}
+                        required
+                      />
                     </div>
 
                     {/* Payment Method Dropdown */}
-                    <div className="md:col-span-6">
+                    <div className="md:col-span-4">
                       <label className="block text-xs font-bold text-zinc-700 mb-1">
-                        Payment Method *
+                        Payment Instrument *
                       </label>
                       <select
                         value={paymentMethod}
@@ -1240,7 +1347,7 @@ export default function PurchaseOrders() {
                     </div>
 
                     {/* Total Amount */}
-                    <div className="md:col-span-6">
+                    <div className="md:col-span-4">
                       <label className="block text-xs font-bold text-zinc-700 mb-1">
                         {paymentType === "Credit" ? "Total Credit Amount (ETB) *" : "Amount Paid in figure (ETB) *"}
                       </label>
@@ -1255,16 +1362,16 @@ export default function PurchaseOrders() {
                         className="w-full px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-mono font-black text-zinc-950 outline-none"
                       />
                       {Number(paidAmount) > 0 && (
-                        <div className="mt-1 text-[11px] text-emerald-800 font-semibold italic truncate">
+                        <div className="mt-1 text-[10px] text-emerald-800 font-semibold italic truncate">
                           {numberToBirrWords(Number(paidAmount))}
                         </div>
                       )}
                     </div>
 
                     {/* Cheque / Reference Number */}
-                    <div className="md:col-span-6">
+                    <div className="md:col-span-4">
                       <label className="block text-xs font-bold text-zinc-700 mb-1">
-                        {paymentType === "Credit" ? "Supplier Invoice / PO Ref" : (paymentMethod === "Cheque" ? "Cheque Number *" : `${paymentMethod} Reference Number *`)}
+                        {paymentType === "Credit" ? "Supplier Invoice / PO Ref" : (paymentMethod === "Cheque" ? "Cheque Number *" : `${paymentMethod} Ref *`)}
                       </label>
                       <input
                         type="text"
@@ -1531,11 +1638,11 @@ export default function PurchaseOrders() {
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Payment Method *</label>
                     <select
                       value={paymentType}
-                      onChange={(e) => setPaymentType(e.target.value as "Cash" | "Credit")}
+                      onChange={(e) => handlePaymentTypeChange(e.target.value as "Cash" | "Credit")}
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
                     >
-                      <option value="Cash">Cash</option>
-                      <option value="Credit">Credit</option>
+                      <option value="Cash">Cash (Immediate Payment)</option>
+                      <option value="Credit">Credit (Accounts Payable)</option>
                     </select>
                   </div>
 
@@ -1628,84 +1735,64 @@ export default function PurchaseOrders() {
                   )}
                 </div>
 
-                {/* BANK & PAYMENT DETAILS */}
+                {/* CHART OF ACCOUNTS (COA) ROUTING & PAYMENT DETAILS */}
                 <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/70 space-y-3.5">
                   <div className="flex items-center justify-between">
                     <div>
                       <h4 className="font-black text-xs text-zinc-900 uppercase tracking-wider flex items-center gap-1.5">
                         <Building2 className="size-3.5 text-zinc-600" />
-                        {paymentType === "Credit" ? "Credit Value & Bank Details" : "Bank & Payment Information"}
+                        Accounting & Chart of Accounts (COA) Routing
                       </h4>
                       <p className="text-[10px] text-zinc-500">
-                        {paymentType === "Credit" 
-                          ? "Enter the total supplier credit amount and primary bank for future installment payouts."
-                          : "Select issuing bank in Ethiopia, payment method, amount paid, and cheque/ref number."}
+                        Explicitly select the debit asset/expense account and credit funding source or liability account for General Ledger double-entry posting.
                       </p>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                    {/* Bank Selection (Combobox: Searchable Dropdown + Typed Input) */}
-                    <div className="md:col-span-6 relative" ref={editBankRef}>
-                      <label className="block text-xs font-bold text-zinc-700 mb-1">
-                        Bank (Which Bank) *
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          required
-                          placeholder="Search or type bank name..."
-                          value={bankName}
-                          onFocus={() => setShowEditBankDropdown(true)}
-                          onChange={(e) => {
-                            setBankName(e.target.value)
-                            setShowEditBankDropdown(true)
-                          }}
-                          className="w-full pl-3 pr-8 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-bold outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowEditBankDropdown((prev) => !prev)}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 cursor-pointer"
-                        >
-                          <ChevronDown className="size-4" />
-                        </button>
-                      </div>
+                    {/* Debit Account Selector */}
+                    <div className="md:col-span-6">
+                      <COAAccountSelector
+                        label="Debit Account (Inventory / Expense / Asset)"
+                        value={debitAccountCode}
+                        onChange={(acc) => {
+                          setDebitAccountCode(acc.code)
+                          setDebitAccountName(acc.name)
+                          setDebitAccountId(acc.id)
+                        }}
+                        suggestedCodes={["1410-01", "1400-01", "1410-03", "1600-01", "6000-17", "8000-02"]}
+                        placeholder="Select debit account..."
+                        helperText="Asset or Expense being purchased"
+                        required
+                      />
+                    </div>
 
-                      {/* Matching Ethiopian Banks Dropdown */}
-                      {showEditBankDropdown && (
-                        <div className="absolute left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-white border border-zinc-200 rounded-xl shadow-xl z-30 py-1 divide-y divide-zinc-50">
-                          {ETHIOPIAN_BANKS.filter((b) =>
-                            b.toLowerCase().includes((bankName || "").toLowerCase())
-                          ).map((bank) => (
-                            <button
-                              key={bank}
-                              type="button"
-                              onClick={() => {
-                                setBankName(bank)
-                                setShowEditBankDropdown(false)
-                              }}
-                              className="w-full text-left px-3 py-1.5 text-xs font-semibold text-zinc-800 hover:bg-emerald-50 hover:text-emerald-900 transition-colors flex items-center justify-between cursor-pointer"
-                            >
-                              <span>{bank}</span>
-                              {bankName === bank && <Check className="size-3.5 text-emerald-600 shrink-0" />}
-                            </button>
-                          ))}
-                          {ETHIOPIAN_BANKS.filter((b) =>
-                            b.toLowerCase().includes((bankName || "").toLowerCase())
-                          ).length === 0 && (
-                            <div className="px-3 py-2 text-xs text-zinc-400 italic">
-                              Custom bank name "{bankName}" will be used.
-                            </div>
-                          )}
-                        </div>
-                      )}
+                    {/* Credit Account Selector */}
+                    <div className="md:col-span-6">
+                      <COAAccountSelector
+                        label={paymentType === "Cash" ? "Credit Account (Bank / Cash Source)" : "Credit Account (Accounts Payable Liability)"}
+                        value={creditAccountCode}
+                        onChange={(acc) => {
+                          setCreditAccountCode(acc.code)
+                          setCreditAccountName(acc.name)
+                          setCreditAccountId(acc.id)
+                          setBankName(acc.name)
+                        }}
+                        suggestedCodes={
+                          paymentType === "Cash"
+                            ? ["1000-02-26", "1000-01-01", "1000-02-01", "1000-02-14", "1000-02-17"]
+                            : ["2100-06", "2100-01", "2100-02", "2100-08"]
+                        }
+                        placeholder="Select credit account..."
+                        helperText={paymentType === "Cash" ? "Bank or Cash account disbursing funds" : "AP liability account credited"}
+                        required
+                      />
                     </div>
 
                     {/* Payment Method Dropdown */}
-                    <div className="md:col-span-6">
+                    <div className="md:col-span-4">
                       <label className="block text-xs font-bold text-zinc-700 mb-1">
-                        Payment Method *
+                        Payment Instrument *
                       </label>
                       <select
                         value={paymentMethod}
@@ -1719,8 +1806,8 @@ export default function PurchaseOrders() {
                       </select>
                     </div>
 
-                    {/* Amount Paid / Total Amount */}
-                    <div className="md:col-span-6">
+                    {/* Total Amount */}
+                    <div className="md:col-span-4">
                       <label className="block text-xs font-bold text-zinc-700 mb-1">
                         {paymentType === "Credit" ? "Total Credit Amount (ETB) *" : "Amount Paid in figure (ETB) *"}
                       </label>
@@ -1735,16 +1822,16 @@ export default function PurchaseOrders() {
                         className="w-full px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-mono font-black text-zinc-950 outline-none"
                       />
                       {Number(paidAmount) > 0 && (
-                        <div className="mt-1 text-[11px] text-emerald-800 font-semibold italic truncate">
+                        <div className="mt-1 text-[10px] text-emerald-800 font-semibold italic truncate">
                           {numberToBirrWords(Number(paidAmount))}
                         </div>
                       )}
                     </div>
 
                     {/* Cheque / Reference Number */}
-                    <div className="md:col-span-6">
+                    <div className="md:col-span-4">
                       <label className="block text-xs font-bold text-zinc-700 mb-1">
-                        {paymentType === "Credit" ? "Supplier Invoice / PO Ref" : (paymentMethod === "Cheque" ? "Cheque Number *" : `${paymentMethod} Reference Number *`)}
+                        {paymentType === "Credit" ? "Supplier Invoice / PO Ref" : (paymentMethod === "Cheque" ? "Cheque Number *" : `${paymentMethod} Ref *`)}
                       </label>
                       <input
                         type="text"

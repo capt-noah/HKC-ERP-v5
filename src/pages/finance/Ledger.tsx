@@ -51,6 +51,13 @@ const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 export default function Ledger() {
   const { showToast } = useFeedback()
   const store = useFinanceStore()
+
+  useEffect(() => {
+    void store.loadFromApi()
+    void erpStore.loadInventoryData()
+    void erpStore.loadSalesData()
+  }, [])
+
   const isLoading = store.isLoading()
 
   const [activeTab, setActiveTab] = useState<"Entries" | "Periods" | "Chart" | "Mappings">("Entries")

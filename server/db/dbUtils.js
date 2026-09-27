@@ -287,6 +287,10 @@ export function unwrapRow(row, storage) {
     out.unitCost = Number(out.unit_cost)
     out.unit_cost = Number(out.unit_cost)
   }
+  if (out.unitCost !== undefined && out.unit_cost === undefined) {
+    out.unit_cost = Number(out.unitCost)
+    out.unitCost = Number(out.unitCost)
+  }
   if (out.unit_price !== undefined) {
     out.unitPrice = Number(out.unit_price)
     out.unit_price = Number(out.unit_price)
@@ -297,6 +301,10 @@ export function unwrapRow(row, storage) {
   if (out.selling_price !== undefined) {
     out.sellingPrice = Number(out.selling_price)
     out.selling_price = Number(out.selling_price)
+  }
+  if (out.sellingPrice !== undefined && out.selling_price === undefined) {
+    out.selling_price = Number(out.sellingPrice)
+    out.sellingPrice = Number(out.sellingPrice)
   }
   if (out.quantity !== undefined) out.quantity = Number(out.quantity)
   if (out.quantity_sold !== undefined) {

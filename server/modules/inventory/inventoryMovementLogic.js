@@ -103,12 +103,16 @@ export async function recordMovement(body = {}, tableName = "stock_movements") {
     )
 
     // Decrement export product net stock on reject deduction
-    if (tableName === "export_warehouse_movements" && normalized.product_id && normalized.net_quantity) {
-      if (normalized.movement_type === "REJECT_DEDUCTION" || String(normalized.movement_type).toUpperCase().includes("REJECT")) {
-        await conn.query(
-          "UPDATE export_products SET quantity = GREATEST(0, quantity - ?), updated_at = NOW(3) WHERE id = ?",
-          [Number(normalized.net_quantity), normalized.product_id]
-        )
+    if (tableName === "export_warehouse_movements" && normalized.product_id) {
+      const isReject = normalized.movement_type === "REJECT_DEDUCTION" || String(normalized.movement_type).toUpperCase().includes("REJECT")
+      if (isReject) {
+        const absRejectQty = Math.abs(Number(normalized.reject_quantity || normalized.net_quantity || 0))
+        if (absRejectQty > 0) {
+          await conn.query(
+            "UPDATE export_products SET quantity = GREATEST(0, quantity - ?), updated_at = NOW(3) WHERE id = ?",
+            [absRejectQty, normalized.product_id]
+          )
+        }
       }
     }
 
@@ -165,12 +169,16 @@ export async function deleteMovement(id, tableName = "stock_movements") {
 
     const row = existing[0]
     // Restore quantity if an export reject deduction is deleted
-    if (tableName === "export_warehouse_movements" && row.product_id && row.net_quantity) {
-      if (row.movement_type === "REJECT_DEDUCTION" || String(row.movement_type).toUpperCase().includes("REJECT")) {
-        await conn.query(
-          "UPDATE export_products SET quantity = quantity + ?, updated_at = NOW(3) WHERE id = ?",
-          [Number(row.net_quantity), row.product_id]
-        )
+    if (tableName === "export_warehouse_movements" && row.product_id) {
+      const isReject = row.movement_type === "REJECT_DEDUCTION" || String(row.movement_type).toUpperCase().includes("REJECT")
+      if (isReject) {
+        const absRestoreQty = Math.abs(Number(row.reject_quantity || row.net_quantity || 0))
+        if (absRestoreQty > 0) {
+          await conn.query(
+            "UPDATE export_products SET quantity = quantity + ?, updated_at = NOW(3) WHERE id = ?",
+            [absRestoreQty, row.product_id]
+          )
+        }
       }
     }
 

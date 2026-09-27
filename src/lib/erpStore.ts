@@ -53,6 +53,7 @@ export interface WH1Entry {
   quantityRemaining: number
   rejectQuantity?: number
   unitPrice: number
+  sellingPrice?: number
   notes?: string
   createdAt?: string
 }
@@ -190,7 +191,7 @@ export interface QuarantineRecord {
   quarantineDate: string
   quantity: number
   unit: string
-  proposedReleaseDate: string
+  proposedReleaseDate?: string
   reason?: string
   status: "Quarantined" | "Released" | "Disposed"
   binCardEntryId?: string
@@ -374,6 +375,9 @@ export interface PurchaseOrder {
   targetAccountId?: string
   targetAccountCode?: string
   targetAccountName?: string
+  creditAccountId?: string
+  creditAccountCode?: string
+  creditAccountName?: string
   paymentType?: "Cash" | "Credit"
   payment_type?: "Cash" | "Credit"
   paymentTerms?: string
@@ -582,15 +586,31 @@ class ErpStore {
           rejectQuantity: Number(em.reject_quantity || em.rejectQuantity || 0),
           quantityRemaining: Number(em.net_quantity ?? em.netQuantity ?? em.gross_quantity ?? em.grossQuantity ?? 0),
           unitPrice: Number(em.unit_price ?? em.unitPrice ?? p.unitCost ?? 0),
+          sellingPrice: (em.selling_price != null || em.sellingPrice != null) ? Number(em.selling_price ?? em.sellingPrice) : undefined,
           notes: em.reason || undefined,
         }))
 
-        // Build binCardEntries (All movements: Inbound, Rejection, Outbound Dispatch)
-        const mappedBinEntries: BinCardMovementEntry[] = prodMovements.map((em: any) => {
+        // Build binCardEntries (All movements: Inbound, Rejection, Outbound Dispatch) with chronological running balance
+        const sortedProdMovements = [...prodMovements].sort((a: any, b: any) => {
+          const dateA = a.movement_date || a.movementDate || a.created_at || ""
+          const dateB = b.movement_date || b.movementDate || b.created_at || ""
+          const diff = dateA.localeCompare(dateB)
+          if (diff !== 0) return diff
+          return String(a.created_at || "").localeCompare(String(b.created_at || ""))
+        })
+
+        let exportRunningBal = 0
+        const mappedBinEntries: BinCardMovementEntry[] = sortedProdMovements.map((em: any) => {
           const isReject = em.movement_type === "reject" || em.movement_type === "REJECT_DEDUCTION" || (em.reason && /reject|loss|cleaning/i.test(em.reason))
           const isEntry = !isReject && (em.movement_type === "entry" || em.movement_type === "GRV_ENTRY")
           const qtyReceived = isEntry ? Number(em.gross_quantity || em.grossQuantity || em.net_quantity || em.netQuantity || 0) : 0
-          const qtyIssued = isReject ? Number(em.reject_quantity || em.rejectQuantity || em.gross_quantity || em.grossQuantity || 0) : isEntry ? 0 : Number(em.gross_quantity || em.grossQuantity || em.net_quantity || em.netQuantity || 0)
+          const qtyIssued = isReject 
+            ? Math.abs(Number(em.reject_quantity || em.rejectQuantity || em.gross_quantity || em.grossQuantity || em.net_quantity || 0)) 
+            : isEntry 
+              ? 0 
+              : Math.abs(Number(em.gross_quantity || em.grossQuantity || em.net_quantity || em.netQuantity || 0))
+
+          exportRunningBal = Math.max(0, exportRunningBal + qtyReceived - qtyIssued)
 
           return {
             id: em.id,
@@ -601,11 +621,11 @@ class ErpStore {
             plateNumber: em.plate_number || em.plateNumber || undefined,
             qtyReceived,
             qtyIssued,
-            balance: Number(p.quantity || 0),
+            balance: exportRunningBal,
             expiryDate: "",
             party: em.party_name || em.partyName || (isReject ? "Cleaning Loss Deduction" : isEntry ? "Supplier Arrival" : "Customer Dispatch"),
             unitPrice: Number(em.unit_price ?? em.unitPrice ?? p.unitCost ?? 0),
-            sellingPrice: !isReject && !isEntry && (em.selling_price != null || em.sellingPrice != null) ? Number(em.selling_price ?? em.sellingPrice) : undefined,
+            sellingPrice: (em.selling_price != null || em.sellingPrice != null) ? Number(em.selling_price ?? em.sellingPrice) : undefined,
             remark: em.reason ? (isReject ? `Reject Loss: ${em.reason}` : em.reason) : em.voucher_no ? `GRV Voucher ${em.voucher_no}` : isEntry ? "Goods Receipt" : "Export Dispatch",
             reason: em.reason || undefined,
             createdAt: em.created_at || em.createdAt || new Date().toISOString(),
@@ -690,30 +710,36 @@ class ErpStore {
 
         const targetWh = p.warehouse || p.warehouse_id || "WH2"
         const pharmaBinEntries = mappedPharmaBinEntries.length > 0 ? mappedPharmaBinEntries : p.binCardEntries || []
-        const pharmaMovementsReceived = pharmaBinEntries.reduce((sum: number, e: any) => sum + Number(e.qtyReceived || 0), 0)
-        const pharmaMovementsIssued = pharmaBinEntries.reduce((sum: number, e: any) => sum + Number(e.qtyIssued || 0), 0)
-        const pharmaNetFromMovements = Math.max(0, pharmaMovementsReceived - pharmaMovementsIssued)
-
-        const totalQty = pharmaBinEntries.length > 0
-          ? pharmaNetFromMovements
-          : (mappedBatches.length > 0
-            ? mappedBatches.filter(b => b.status === "Released").reduce((acc, b) => acc + (b.qty || 0), 0)
-            : Number(p.quantity || 0))
+        
+        // For pharma warehouses, authoritative physical stock is the released batches in pharma_product_batches
+        const releasedBatchQty = mappedBatches.length > 0
+          ? mappedBatches.filter(b => b.status === "Released").reduce((acc, b) => acc + Number(b.qty || 0), 0)
+          : Number(p.quantity || 0)
+        const totalQty = releasedBatchQty
         const latestBatch = mappedBatches[0]?.batchNo || p.batch || p.batch_no || ""
         const latestExpiry = mappedBatches[0]?.expiry || p.expiry || p.expiry_date || ""
+        const latestMfg = mappedBatches[0]?.mfgDate || p.manufacturingDate || p.mfgDate || p.mfg_date || ""
+        const pUnitCost = Number(p.unitCost ?? p.unit_cost ?? 0)
+        const pSellingPrice = Number(p.sellingPrice ?? p.selling_price ?? 0)
 
         return {
           ...p,
           warehouse: targetWh,
           quantity: totalQty,
+          unitCost: pUnitCost,
+          sellingPrice: pSellingPrice,
+          totalStockValue: Math.round(totalQty * pUnitCost * 100) / 100,
           dosage: p.dosage || p.strength || p.dosage_form || "",
           shelfNo: p.shelfNo || p.shelf_number || p.shelf_no || "",
           quantityPerPack: Number(p.quantityPerPack || p.quantity_per_pack || 1),
           numberOfCartons: Number(p.numberOfCartons || p.number_of_cartons || 0),
           batch: latestBatch,
           expiry: latestExpiry,
+          expiryDate: latestExpiry,
+          manufacturingDate: latestMfg,
+          mfgDate: latestMfg,
           batches: mappedBatches.length > 0 ? mappedBatches : p.batches || [],
-          binCardEntries: mappedPharmaBinEntries.length > 0 ? mappedPharmaBinEntries : p.binCardEntries || [],
+          binCardEntries: pharmaBinEntries,
           stockBreakdown: Array.isArray(p.stockBreakdown) && p.stockBreakdown.length > 0
             ? p.stockBreakdown
             : [{ warehouse: targetWh, qty: totalQty }],
@@ -1093,12 +1119,14 @@ class ErpStore {
   private withInventoryValue(product: Product): Product {
     const isWh1 = isWH1(product.warehouse)
     let quantity = Number(product.quantity || 0)
-    const unitCost = Number(product.unitCost || product.sellingPrice || (product as any).unit_price || 0)
+    const unitCost = Number(product.unitCost ?? (product as any).unit_cost ?? (product as any).unit_price ?? product.sellingPrice ?? 0)
+    const sellingPrice = Number(product.sellingPrice ?? (product as any).selling_price ?? 0)
 
-    if (!isWh1 && Array.isArray(product.binCardEntries) && product.binCardEntries.length > 0) {
-      const rec = product.binCardEntries.reduce((sum, e) => sum + Number(e.qtyReceived || 0), 0)
-      const iss = product.binCardEntries.reduce((sum, e) => sum + Number(e.qtyIssued || 0), 0)
-      quantity = Math.max(0, rec - iss)
+    if (!isWh1 && Array.isArray(product.batches) && product.batches.length > 0) {
+      const releasedQty = product.batches
+        .filter((b) => b.status === "Released")
+        .reduce((sum, b) => sum + Number(b.qty ?? (b as any).quantity ?? 0), 0)
+      quantity = releasedQty
     }
 
     let totalStockValue = Math.round(quantity * unitCost * 100) / 100
@@ -1136,6 +1164,8 @@ class ErpStore {
     return {
       ...product,
       quantity,
+      unitCost,
+      sellingPrice,
       stockBreakdown,
       batches,
       wh1Entries,
@@ -1246,7 +1276,7 @@ class ErpStore {
     nameEntered: string
     quarantineDate: string
     quantity: number
-    proposedReleaseDate: string
+    proposedReleaseDate?: string
     reason?: string
   }): Promise<QuarantineRecord> {
     const prod = this.products.find((p) => p.id === input.productId)
@@ -1324,7 +1354,7 @@ class ErpStore {
       expiryDate,
       party: "Quarantine Hold - Broken/Damaged",
       unitPrice: batchUnitCost,
-      remark: `Quarantined by ${input.nameEntered}: ${input.reason || "Broken/Damaged Medicine"} (Release Date: ${input.proposedReleaseDate})`.trim(),
+      remark: `Quarantined by ${input.nameEntered}: ${input.reason || "Broken/Damaged Medicine"}${input.proposedReleaseDate ? ` (Release Date: ${input.proposedReleaseDate})` : ""}`.trim(),
       createdAt: new Date().toISOString(),
     }
 
@@ -1434,7 +1464,7 @@ class ErpStore {
           if (b.id === existing.binCardEntryId) {
             return {
               ...b,
-              remark: `Quarantined by ${updated.nameEntered}: ${updated.reason || "Broken/Damaged Medicine"} (Release Date: ${updated.proposedReleaseDate})`.trim(),
+              remark: `Quarantined by ${updated.nameEntered}: ${updated.reason || "Broken/Damaged Medicine"}${updated.proposedReleaseDate ? ` (Release Date: ${updated.proposedReleaseDate})` : ""}`.trim(),
             }
           }
           return b
@@ -2169,6 +2199,9 @@ class ErpStore {
     const entryId = `EWM-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
     const qtyReceived = Number(entry.quantityReceived || entry.quantity || 0)
     const unitPrice = Number(entry.unitPrice ?? prod.unitCost ?? 0)
+    const effectiveSellingPrice = (entry.sellingPrice !== undefined && Number(entry.sellingPrice) > 0)
+      ? Number(entry.sellingPrice)
+      : (Number(prod.sellingPrice || 0) > 0 ? Number(prod.sellingPrice) : undefined)
 
     const newEntry: WH1Entry = {
       ...entry,
@@ -2177,6 +2210,7 @@ class ErpStore {
       quantityReceived: qtyReceived,
       quantityRemaining: qtyReceived,
       unitPrice,
+      sellingPrice: effectiveSellingPrice,
     }
 
     const currentEntries = prod.wh1Entries || []
@@ -2203,6 +2237,7 @@ class ErpStore {
       expiryDate: "",
       party: entry.customer || "Supplier Arrival",
       unitPrice,
+      sellingPrice: effectiveSellingPrice,
       remark: entry.notes || `Goods Received Voucher ${entry.voucherNo ? `No. ${entry.voucherNo}` : ""}`.trim(),
       createdAt: new Date().toISOString(),
     }
@@ -2224,6 +2259,7 @@ class ErpStore {
         net_quantity: qtyReceived,
         uom: prod.unit || "Quintal",
         unit_price: unitPrice,
+        selling_price: effectiveSellingPrice || null,
         movement_date: entry.entryDate || new Date().toISOString().slice(0, 10),
         reason: entry.notes || null,
         created_by: useAuthStore.getState().user?.fullname || "Warehouse Officer",
@@ -2237,7 +2273,7 @@ class ErpStore {
       quantity: nextQty,
       totalQuantity: nextQty + (prod.quantitySold || 0),
       unitCost: weightedCost,
-      sellingPrice: prod.sellingPrice || weightedCost,
+      sellingPrice: effectiveSellingPrice || (Number(prod.sellingPrice || 0) > 0 ? Number(prod.sellingPrice) : weightedCost),
       totalStockValue: nextVal,
       stockBreakdown: updatedBreakdown,
       batches: updatedBatches,
@@ -2402,12 +2438,14 @@ class ErpStore {
       const quantityReceived = patch.quantityReceived !== undefined ? Number(patch.quantityReceived) : e.quantityReceived
       const quantityRemaining = patch.quantityRemaining !== undefined ? Number(patch.quantityRemaining) : e.quantityRemaining
       const unitPrice = patch.unitPrice !== undefined ? Number(patch.unitPrice) : e.unitPrice
+      const sellingPrice = patch.sellingPrice !== undefined ? (Number(patch.sellingPrice) > 0 ? Number(patch.sellingPrice) : undefined) : e.sellingPrice
       const updated: WH1Entry = {
         ...e,
         ...patch,
         quantityReceived,
         quantityRemaining: Math.min(quantityReceived, quantityRemaining),
         unitPrice,
+        sellingPrice,
       }
       targetUpdatedEntry = updated
       return updated
@@ -2430,6 +2468,7 @@ class ErpStore {
           party: patch.customer !== undefined ? (patch.customer || "Supplier Arrival") : b.party,
           qtyReceived: patch.quantityReceived !== undefined ? Number(patch.quantityReceived) : b.qtyReceived,
           unitPrice: patch.unitPrice !== undefined ? Number(patch.unitPrice) : b.unitPrice,
+          sellingPrice: patch.sellingPrice !== undefined ? Number(patch.sellingPrice) : b.sellingPrice,
           remark: patch.notes !== undefined ? patch.notes : b.remark,
         }
       }
@@ -2447,6 +2486,7 @@ class ErpStore {
           gross_quantity: u.quantityReceived,
           net_quantity: u.quantityRemaining,
           unit_price: u.unitPrice,
+          selling_price: u.sellingPrice || null,
           movement_date: u.entryDate || new Date().toISOString().slice(0, 10),
           reason: u.notes || null,
         })
@@ -2460,7 +2500,9 @@ class ErpStore {
       quantity: nextQty,
       totalQuantity: nextQty + (prod.quantitySold || 0),
       unitCost: weightedCost,
-      sellingPrice: weightedCost,
+      sellingPrice: (patch.sellingPrice !== undefined && Number(patch.sellingPrice) > 0)
+        ? Number(patch.sellingPrice)
+        : (Number(prod.sellingPrice || 0) > 0 ? Number(prod.sellingPrice) : weightedCost),
       totalStockValue: nextVal,
       stockBreakdown: updatedBreakdown,
       batches: updatedBatches,
@@ -2708,7 +2750,9 @@ class ErpStore {
       qtyReceived: isRec ? Number(entry.qtyReceived || 0) : 0,
       qtyIssued: !isRec ? Number(entry.qtyIssued || 0) : 0,
       balance: 0,
-      sellingPrice: !isRec ? (entry.sellingPrice !== undefined ? Number(entry.sellingPrice) : undefined) : undefined,
+      sellingPrice: (entry.sellingPrice !== undefined && Number(entry.sellingPrice) > 0)
+        ? Number(entry.sellingPrice)
+        : (Number(prod.sellingPrice || 0) > 0 ? Number(prod.sellingPrice) : undefined),
       createdAt: new Date().toISOString(),
     }
 
@@ -2804,7 +2848,7 @@ class ErpStore {
         quantity: Number(entry.qtyReceived || entry.qtyIssued || 0),
         unit_cost: unitCost,
         unit_price: isRec ? unitCost : sellingPrice,
-        selling_price: !isRec ? sellingPrice : null,
+        selling_price: (entry.sellingPrice !== undefined && Number(entry.sellingPrice) > 0) ? Number(entry.sellingPrice) : (sellingPrice || null),
         balance_after: totalQuantity,
         batch_no: entry.batchNo || "BATCH-001",
         mfg_date: entry.mfgDate || null,
@@ -2832,7 +2876,7 @@ class ErpStore {
         net_quantity: entry.type === "entry" ? Number(entry.qtyReceived || 0) : -Number(entry.qtyIssued || 0),
         uom: prod.unit || "Quintal",
         unit_price: unitCost,
-        selling_price: !isRec && entry.type !== "reject" ? (sellingPrice || prod.sellingPrice || null) : null,
+        selling_price: (entry.sellingPrice !== undefined && Number(entry.sellingPrice) > 0) ? Number(entry.sellingPrice) : (sellingPrice || prod.sellingPrice || null),
         movement_date: entry.date || new Date().toISOString().slice(0, 10),
         reason: entry.remark || null,
         created_by: useAuthStore.getState().user?.fullname || "Warehouse Officer",
@@ -2842,6 +2886,8 @@ class ErpStore {
     return await this.updateProductDetails(productId, {
       quantity: totalQuantity,
       totalQuantity: totalQuantity + (prod.quantitySold || 0),
+      unitCost: unitCost,
+      sellingPrice: (entry.sellingPrice !== undefined && Number(entry.sellingPrice) > 0) ? Number(entry.sellingPrice) : (Number(prod.sellingPrice || 0) > 0 ? Number(prod.sellingPrice) : unitCost),
       numberOfCartons: nextCartons,
       totalStockValue: nextVal,
       batch: latestBatch || prod.batch,
@@ -2898,6 +2944,10 @@ class ErpStore {
     return await this.updateProductDetails(productId, {
       quantity: totalQuantity,
       totalQuantity: totalQuantity + (prod.quantitySold || 0),
+      unitCost: patch.unitPrice !== undefined ? Number(patch.unitPrice) : prod.unitCost,
+      sellingPrice: (patch.sellingPrice !== undefined && Number(patch.sellingPrice) > 0)
+        ? Number(patch.sellingPrice)
+        : (Number(prod.sellingPrice || 0) > 0 ? Number(prod.sellingPrice) : prod.unitCost),
       numberOfCartons: nextCartons,
       totalStockValue: nextVal,
       batch: latestBatch || prod.batch,
@@ -3612,7 +3662,11 @@ class ErpStore {
     const totalDebit = rawLines.reduce((sum, l) => sum + (Number(l.debit_amount) || 0), 0)
     const totalCredit = rawLines.reduce((sum, l) => sum + (Number(l.credit_amount) || 0), 0)
 
-    const bankAcc = accounts.find((a) => a.code === "1010" || a.name.toLowerCase().includes("bank") || a.name.toLowerCase().includes("cash"))
+    const bankAcc = (po.creditAccountId && accounts.find((a) => a.id === po.creditAccountId))
+      || (po.creditAccountCode && accounts.find((a) => a.code === po.creditAccountCode))
+      || (po.bankName && accounts.find((a) => a.name.toLowerCase().includes(po.bankName!.toLowerCase()) || a.code === po.bankName))
+      || accounts.find((a) => a.code === "1000-02-26")
+      || accounts.find((a) => a.code === "1010" || a.name.toLowerCase().includes("bank") || a.name.toLowerCase().includes("cash"))
       || accounts.find((a) => a.account_type === "Asset" && !a.is_group)
 
     if (totalDebit > totalCredit) {

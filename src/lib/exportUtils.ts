@@ -608,6 +608,9 @@ export interface PrintPurchaseOrderOptions {
     credit?: number
   }>
   targetAccountCode?: string
+  targetAccountName?: string
+  creditAccountCode?: string
+  creditAccountName?: string
   company?: {
     name?: string
     address?: string
@@ -630,7 +633,20 @@ export function printPurchaseOrderDocument(po: PrintPurchaseOrderOptions): void 
   const words = po.amountInWords || numberToWords(po.amount)
   const entries = Array.isArray(po.accountEntries) && po.accountEntries.length > 0
     ? po.accountEntries
-    : [{ accountCode: po.targetAccountCode || "1410", description: po.reasonForPayment || "Payment", debit: po.amount, credit: 0 }]
+    : [
+        {
+          accountCode: po.targetAccountCode || "1410",
+          description: po.targetAccountName || po.reasonForPayment || "Purchase / Inventory",
+          debit: Number(po.amount || 0),
+          credit: 0
+        },
+        {
+          accountCode: po.creditAccountCode || "1000",
+          description: po.creditAccountName || po.bankName || "Payment / Cash / Bank",
+          debit: 0,
+          credit: Number(po.amount || 0)
+        }
+      ]
 
   const totalDebit = entries.reduce((s, r) => s + (Number(r.debit) || 0), 0)
   const totalCredit = entries.reduce((s, r) => s + (Number(r.credit) || 0), 0)
@@ -749,7 +765,20 @@ export function exportPurchaseOrderToExcel(po: PrintPurchaseOrderOptions): void 
   const headers = ["Account No", "Description", "Debit (ETB)", "Credit (ETB)"]
   const entries = Array.isArray(po.accountEntries) && po.accountEntries.length > 0
     ? po.accountEntries
-    : [{ accountCode: po.targetAccountCode || "1410", description: po.reasonForPayment || "Payment", debit: po.amount, credit: 0 }]
+    : [
+        {
+          accountCode: po.targetAccountCode || "1410",
+          description: po.targetAccountName || po.reasonForPayment || "Purchase / Inventory",
+          debit: Number(po.amount || 0),
+          credit: 0
+        },
+        {
+          accountCode: po.creditAccountCode || "1000",
+          description: po.creditAccountName || po.bankName || "Payment / Cash / Bank",
+          debit: 0,
+          credit: Number(po.amount || 0)
+        }
+      ]
 
   const rows = entries.map(e => [
     e.accountCode,

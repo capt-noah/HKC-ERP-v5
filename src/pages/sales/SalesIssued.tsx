@@ -754,11 +754,15 @@ export default function SalesIssued() {
     const targetIsWh1 = isWH1(warehouseId)
 
     if (patch.item_id && patch.item_id !== current.item_id && warehouseId) {
+      const prod = products.find((p) => p.id === patch.item_id)
+      const defaultSellingPrice = Number(prod?.sellingPrice || 0) > 0 ? Number(prod?.sellingPrice) : Number(prod?.unitCost || 0)
+      if (defaultSellingPrice > 0) {
+        updated.unit_price = defaultSellingPrice
+      }
       if (targetIsWh1) {
         updated.batch_no = "N/A"
         updated.batch_id = "N/A"
       } else {
-        const prod = products.find((p) => p.id === patch.item_id)
         const activeBatch = prod?.batches?.[0]?.batchNo || prod?.batch || ""
         updated.batch_no = activeBatch
         updated.batch_id = activeBatch
@@ -865,96 +869,144 @@ export default function SalesIssued() {
     }
     setIssueFormErrors({})
 
-    setIsSaving(true)
-    try {
-      const isPostedEdit = Boolean(editing && (editing.status || "").toLowerCase() === "posted")
-      let issueId = editing?.id
-      const resolvedSoId = selectedSoId || (editing as any)?.sales_order_id || (referenceNo.trim().startsWith("SO-") ? referenceNo.trim() : undefined)
+    const executeSave = async (autoPost: boolean = false) => {
+      setIsSaving(true)
+      try {
+        const isPostedEdit = Boolean(editing && (editing.status || "").toLowerCase() === "posted")
+        let issueId = editing?.id
+        const resolvedSoId = selectedSoId || (editing as any)?.sales_order_id || (referenceNo.trim().startsWith("SO-") ? referenceNo.trim() : undefined)
 
-      if (editing) {
-        await updateSalesIssue(editing.id, {
-          fs_no: fsNo.trim(),
-          reference_no: referenceNo.trim() || undefined,
-          sales_order_id: resolvedSoId,
-          sale_date: saleDate,
-          customer_name: customerName.trim(),
-          warehouse_id: canonicalWarehouseId(warehouseId),
-          payment_type: paymentType,
-          items: validItems,
-          subtotal,
-          vat_rate: vatRate,
-          vat_amount: vatAmount,
-          tax_amount: vatAmount,
-          total_amount: grandTotal,
-        })
-      } else {
-        const created = await createSalesIssue({
-          fs_no: fsNo.trim(),
-          reference_no: referenceNo.trim() || undefined,
-          sales_order_id: resolvedSoId,
-          sale_date: saleDate,
-          customer_name: customerName.trim(),
-          warehouse_id: canonicalWarehouseId(warehouseId),
-          payment_type: paymentType,
-          items: validItems,
-          subtotal,
-          vat_rate: vatRate,
-          vat_amount: vatAmount,
-          tax_amount: vatAmount,
-          total_amount: grandTotal,
-        })
-        issueId = created.id
-      }
-
-      if (issueId && stagedTradePaperName && stagedTradePaperUrl) {
-        try {
-          await saveTradeLicense({
-            salesIssueId: issueId,
-            salesOrderId: resolvedSoId || referenceNo.trim() || undefined,
-            customerName: customerName.trim() || undefined,
-            fileName: stagedTradePaperName,
-            fileUrl: stagedTradePaperUrl,
-            documentType: isWh1Active ? "Bank Permit" : "Trade License",
-            uploadedBy: "Sales Officer",
+        if (editing) {
+          await updateSalesIssue(editing.id, {
+            fs_no: fsNo.trim(),
+            reference_no: referenceNo.trim() || undefined,
+            sales_order_id: resolvedSoId,
+            sale_date: saleDate,
+            customer_name: customerName.trim(),
+            warehouse_id: canonicalWarehouseId(warehouseId),
+            payment_type: paymentType,
+            items: validItems,
+            subtotal,
+            vat_rate: vatRate,
+            vat_amount: vatAmount,
+            tax_amount: vatAmount,
+            total_amount: grandTotal,
           })
-        } catch (docErr) {
-          console.warn("Trade document upload notice:", docErr)
-        }
-      }
-
-      if (issueId && stagedPaymentAdviceName && stagedPaymentAdviceUrl) {
-        try {
-          await savePaymentAdvice({
-            salesIssueId: issueId,
-            salesOrderId: resolvedSoId || referenceNo.trim() || undefined,
-            fsNo: fsNo.trim(),
-            invoiceId: `INV-SI-${issueId}`,
-            fileName: stagedPaymentAdviceName,
-            fileUrl: stagedPaymentAdviceUrl,
-            uploadedBy: "Sales Officer",
+        } else {
+          const created = await createSalesIssue({
+            fs_no: fsNo.trim(),
+            reference_no: referenceNo.trim() || undefined,
+            sales_order_id: resolvedSoId,
+            sale_date: saleDate,
+            customer_name: customerName.trim(),
+            warehouse_id: canonicalWarehouseId(warehouseId),
+            payment_type: paymentType,
+            items: validItems,
+            subtotal,
+            vat_rate: vatRate,
+            vat_amount: vatAmount,
+            tax_amount: vatAmount,
+            total_amount: grandTotal,
           })
-        } catch (docErr) {
-          console.warn("Payment advice upload notice:", docErr)
+          issueId = created.id
         }
-      }
 
-      if (resolvedSoId) {
-        erp.updateSalesOrderStage(resolvedSoId, "Shipped")
-      }
+        if (issueId && stagedTradePaperName && stagedTradePaperUrl) {
+          try {
+            await saveTradeLicense({
+              salesIssueId: issueId,
+              salesOrderId: resolvedSoId || referenceNo.trim() || undefined,
+              customerName: customerName.trim() || undefined,
+              fileName: stagedTradePaperName,
+              fileUrl: stagedTradePaperUrl,
+              documentType: isWh1Active ? "Bank Permit" : "Trade License",
+              uploadedBy: "Sales Officer",
+            })
+          } catch (docErr) {
+            console.warn("Trade document upload notice:", docErr)
+          }
+        }
 
-      showToast(
-        "Sales Issue Saved",
-        "success",
-        isPostedEdit
-          ? `Sales issue ${fsNo} terms updated to ${paymentType}.`
-          : `Sales issue ${fsNo} saved successfully.`
-      )
-      setFormOpen(false)
-      await load()
-    } catch (err) {
-      showToast("Save failed", "warning", err instanceof Error ? err.message : "Could not save sales issue.")
-    } finally {
-      setIsSaving(false)
+        if (issueId && stagedPaymentAdviceName && stagedPaymentAdviceUrl) {
+          try {
+            await savePaymentAdvice({
+              salesIssueId: issueId,
+              salesOrderId: resolvedSoId || referenceNo.trim() || undefined,
+              fsNo: fsNo.trim(),
+              invoiceId: `INV-SI-${issueId}`,
+              fileName: stagedPaymentAdviceName,
+              fileUrl: stagedPaymentAdviceUrl,
+              uploadedBy: "Sales Officer",
+            })
+          } catch (docErr) {
+            console.warn("Payment advice upload notice:", docErr)
+          }
+        }
+
+        if (autoPost && issueId) {
+          let postSucceeded = false
+          try {
+            const res = await postSalesIssue(issueId)
+            if ((res as any)?.status >= 400 || (res as any)?.error) {
+              throw new Error((res as any)?.error || "Could not auto-post sales issue.")
+            }
+            postSucceeded = true
+          } catch (postErr) {
+            showToast(
+              "Saved as Draft (Posting Notice)",
+              "warning",
+              postErr instanceof Error ? postErr.message : "Sales issue saved, but posting encountered an issue."
+            )
+          }
+
+          if (postSucceeded) {
+            try {
+              if (resolvedSoId) {
+                erp.updateSalesOrderStage(resolvedSoId, "Shipped")
+              }
+              await erp.reloadFromApi()
+              await financeStore.reloadFromApi()
+            } catch (reloadErr) {
+              console.warn("Background sync warning after post:", reloadErr)
+            }
+            showToast(
+              "Sales Issue Created & Posted",
+              "success",
+              `Sales issue ${fsNo.trim()} created and posted. Stock deducted and balanced journals generated.`
+            )
+          }
+        } else {
+          if (resolvedSoId) {
+            erp.updateSalesOrderStage(resolvedSoId, "Shipped")
+          }
+          showToast(
+            "Sales Issue Saved",
+            "success",
+            isPostedEdit
+              ? `Sales issue ${fsNo} terms updated to ${paymentType}.`
+              : `Sales issue ${fsNo} saved successfully.`
+          )
+        }
+
+        setFormOpen(false)
+        await load()
+      } catch (err) {
+        showToast("Save failed", "warning", err instanceof Error ? err.message : "Could not save sales issue.")
+      } finally {
+        setIsSaving(false)
+      }
+    }
+
+    if (!editing) {
+      if (isSaving) return
+      confirm({
+        title: `Create & Post Sales Issue ${fsNo.trim()}?`,
+        message: `Are you sure you want to create and immediately post Sales Issue ${fsNo.trim()} for ${customerName.trim()} (Total: ETB ${grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})? This will deduct batch stock from the warehouse, fulfill sales orders, and post balanced journal entries.`,
+        confirmLabel: "Create & Post",
+        onConfirm: () => executeSave(true),
+      })
+    } else {
+      executeSave(false)
     }
   }
 
@@ -1804,11 +1856,12 @@ export default function SalesIssued() {
                               const product = selectableProducts.find((p) => p.id === e.target.value); 
                               const isWh1 = isWH1(warehouseId);
                               const autoBatch = isWh1 ? "N/A" : (product?.batches?.[0]?.batchNo || product?.batch || "");
+                              const defaultSellingPrice = Number(product?.sellingPrice || 0) > 0 ? Number(product?.sellingPrice) : Number(product?.unitCost || 0);
                               void updateItem(index, { 
                                 item_id: e.target.value, 
                                 item_name: product?.name || "", 
                                 packaging_unit: product?.unit || (isWh1 ? "Quintal" : "Box"), 
-                                unit_price: product?.sellingPrice || 0, 
+                                unit_price: defaultSellingPrice, 
                                 batch_id: autoBatch, 
                                 batch_no: autoBatch, 
                                 available_quantity: product?.quantity || 0 
@@ -1899,7 +1952,25 @@ export default function SalesIssued() {
 
                       {/* Unit Price: 2 cols */}
                       <label className="md:col-span-2">
-                        <span className="mb-1 block text-[10px] font-black uppercase text-zinc-400">Unit Price</span>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="block text-[10px] font-black uppercase text-zinc-400">Unit Price</span>
+                          {(() => {
+                            const prod = products.find((p) => p.id === item.item_id)
+                            const cost = Number(prod?.unitCost || 0)
+                            if (cost > 0 && Number(item.unit_price) > 0) {
+                              const pct = Math.round(((Number(item.unit_price) - cost) / cost) * 100)
+                              return (
+                                <span
+                                  className={`text-[10px] font-black font-mono ${pct >= 0 ? "text-emerald-600" : "text-rose-600"}`}
+                                  title={`Cost Price: ${money(cost)}`}
+                                >
+                                  {pct >= 0 ? `+${pct}%` : `${pct}%`}
+                                </span>
+                              )
+                            }
+                            return null
+                          })()}
+                        </div>
                         {isPostedEditing ? (
                           <div className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-100 px-2 text-right font-mono text-xs font-bold text-zinc-700 flex items-center justify-end">
                             {money(item.unit_price)}
