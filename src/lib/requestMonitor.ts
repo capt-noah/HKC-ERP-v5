@@ -56,6 +56,9 @@ export function evaluateRoleScoping(resourceName: string, userRoles: Role[]): "A
   if (!userRoles || userRoles.length === 0) return "UNAUTHENTICATED"
   if (userRoles.includes("superadmin")) return "AUTHORIZED"
 
+  if (resourceName === "user_activity_logs") return "AUTHORIZED"
+  if (resourceName === "users") return "AUTHORIZED"
+
   const mod = RESOURCE_MODULE_MAP[resourceName]
   if (!mod) return "AUTHORIZED"
 

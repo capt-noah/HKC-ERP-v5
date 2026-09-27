@@ -4,8 +4,10 @@ import {
   BadgeCheck,
   Calendar,
   CheckCircle2,
+  CreditCard,
   Eye,
   FileSpreadsheet,
+  Loader2,
   MoreHorizontal,
   Pencil,
   Printer,
@@ -119,6 +121,9 @@ export default function Payroll() {
   const [editing, setEditing] = useState<PayrollRecord | null>(null)
   const [payslip, setPayslip] = useState<PayrollRecord | null>(null)
   const [showRegisterPrint, setShowRegisterPrint] = useState(false)
+  const [selectedRecordIds, setSelectedRecordIds] = useState<Set<string>>(new Set())
+  const [paymentModalRecords, setPaymentModalRecords] = useState<PayrollRecord[] | null>(null)
+  const [isPaying, setIsPaying] = useState(false)
 
   const refresh = async () => {
     setLoading(true)
@@ -185,6 +190,53 @@ export default function Payroll() {
     })
   }, [currentRecords, employeeById, periodById, paymentStatus, search, warehouse, warehouses])
 
+  // Approved records in current view eligible for payment
+  const approvedRecordsInView = useMemo(
+    () => filtered.filter((r) => r.payment_status === "Approved"),
+    [filtered]
+  )
+
+  const selectedApprovedRecords = useMemo(
+    () => filtered.filter((r) => selectedRecordIds.has(r.id) && r.payment_status === "Approved"),
+    [filtered, selectedRecordIds]
+  )
+
+  const isAllApprovedSelected =
+    approvedRecordsInView.length > 0 &&
+    approvedRecordsInView.every((r) => selectedRecordIds.has(r.id))
+
+  const isPartiallyApprovedSelected =
+    approvedRecordsInView.some((r) => selectedRecordIds.has(r.id)) && !isAllApprovedSelected
+
+  const toggleSelectRecord = (id: string, isApproved: boolean) => {
+    if (!isApproved) return
+    setSelectedRecordIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  const toggleSelectAllApproved = () => {
+    if (isAllApprovedSelected) {
+      setSelectedRecordIds((prev) => {
+        const next = new Set(prev)
+        approvedRecordsInView.forEach((r) => next.delete(r.id))
+        return next
+      })
+    } else {
+      setSelectedRecordIds((prev) => {
+        const next = new Set(prev)
+        approvedRecordsInView.forEach((r) => next.add(r.id))
+        return next
+      })
+    }
+  }
+
   const totals = useMemo(() => ({
     employees: currentRecords.length,
     gross: currentRecords.reduce((sum, record) => sum + Number(record.gross_pay || 0), 0),
@@ -209,6 +261,36 @@ export default function Payroll() {
   const displayedRecords = sorted.slice((page - 1) * pageSize, page * pageSize)
 
   const columns: TableColumn[] = [
+    {
+      key: "select",
+      label: "",
+      align: "center",
+      sortable: false,
+      initialWidth: 46,
+      headerRender: () => (
+        <div className="flex items-center justify-center">
+          <input
+            type="checkbox"
+            checked={isAllApprovedSelected}
+            ref={(input) => {
+              if (input) {
+                input.indeterminate = isPartiallyApprovedSelected
+              }
+            }}
+            disabled={approvedRecordsInView.length === 0}
+            onChange={toggleSelectAllApproved}
+            title={
+              approvedRecordsInView.length === 0
+                ? "No approved records to select"
+                : isAllApprovedSelected
+                ? "Deselect all approved records"
+                : `Select all ${approvedRecordsInView.length} approved records`
+            }
+            className="size-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 cursor-pointer accent-zinc-900 disabled:opacity-30 disabled:cursor-not-allowed"
+          />
+        </div>
+      ),
+    },
     { key: "employee", label: "Employee", initialWidth: 220 },
     { key: "warehouse", label: "Warehouse", initialWidth: 150 },
     { key: "employment_status", label: "Employment Status", align: "center", initialWidth: 160 },
@@ -389,6 +471,52 @@ export default function Payroll() {
     }
   }
 
+  const handleConfirmPayments = async () => {
+    if (!paymentModalRecords || paymentModalRecords.length === 0) return
+    setIsPaying(true)
+    const recordsToPay = paymentModalRecords
+    try {
+      const results = await Promise.allSettled(
+        recordsToPay.map((rec) => hrApi.payPayrollRecord(rec.id))
+      )
+      const succeeded = results.filter((r) => r.status === "fulfilled").length
+      const failed = results.filter((r) => r.status === "rejected").length
+
+      await financeStore.reloadFromApi()
+      await refresh()
+
+      setSelectedRecordIds((prev) => {
+        const next = new Set(prev)
+        recordsToPay.forEach((r) => next.delete(r.id))
+        return next
+      })
+
+      setPaymentModalRecords(null)
+
+      if (failed === 0) {
+        showToast(
+          "Payroll Paid",
+          "success",
+          `Successfully paid ${succeeded} employee payroll record${succeeded > 1 ? "s" : ""} and posted balanced Finance transactions.`
+        )
+      } else {
+        showToast(
+          "Payroll Payment Partial Success",
+          "warning",
+          `Paid ${succeeded} record${succeeded > 1 ? "s" : ""}, but ${failed} record${failed > 1 ? "s" : ""} encountered an error.`
+        )
+      }
+    } catch (err) {
+      showToast(
+        "Payroll Payment Failed",
+        "warning",
+        err instanceof Error ? err.message : "Could not complete payroll payments."
+      )
+    } finally {
+      setIsPaying(false)
+    }
+  }
+
   const transitionPaymentStatus = async (record: PayrollRecord, nextStatus: PayrollRecord["payment_status"]) => {
     if (nextStatus === "Approved" && record.payment_status !== "Pending") {
       return showToast("Payroll Not Editable", "warning", "Only pending payroll records can be approved.")
@@ -398,14 +526,7 @@ export default function Payroll() {
     }
     if (nextStatus === record.payment_status) return
     if (nextStatus === "Paid") {
-      try {
-        await hrApi.payPayrollRecord(record.id)
-        showToast("Payroll Paid", "success", "Salary payment and its balanced Finance journal entry were posted.")
-        await financeStore.reloadFromApi()
-        await refresh()
-      } catch (err) {
-        showToast("Payroll Payment Failed", "warning", err instanceof Error ? err.message : "Could not post payroll payment.")
-      }
+      setPaymentModalRecords([record])
       return
     }
     await updateRecord(record, { payment_status: nextStatus })
@@ -597,6 +718,23 @@ export default function Payroll() {
                 ]}
                 actions={[
                   { label: "Load Active Employees", onClick: loadActiveEmployees },
+                  ...(selectedApprovedRecords.length > 0
+                    ? [
+                        {
+                          label: `Pay Selected (${selectedApprovedRecords.length})`,
+                          onClick: () => setPaymentModalRecords(selectedApprovedRecords),
+                          variant: "emerald" as const,
+                        },
+                      ]
+                    : approvedRecordsInView.length > 0
+                    ? [
+                        {
+                          label: `Select All Approved (${approvedRecordsInView.length})`,
+                          onClick: toggleSelectAllApproved,
+                          variant: "secondary" as const,
+                        },
+                      ]
+                    : []),
                   ...(currentRecords.length > 0
                     ? [{ label: "Print Register", onClick: () => setShowRegisterPrint(true), variant: "secondary" as const }]
                     : []),
@@ -605,29 +743,64 @@ export default function Payroll() {
                 isReloading={loading}
                 reloadTooltip="Reload payroll records from database"
                 secondary={
-                  <div className="flex flex-wrap items-center justify-between gap-3 w-full">
-                    {/* Payment Status Filter Buttons */}
-                    <div className="flex items-center gap-1 bg-black/[0.03] p-1 rounded-2xl border border-black/5">
-                      <span className="text-[10px] font-black uppercase text-zinc-400 px-2">Status:</span>
-                      {[
-                        { id: "All", label: `All (${totals.employees})` },
-                        { id: "Pending", label: `Pending (${totals.pending})`, color: "text-amber-700" },
-                        { id: "Approved", label: `Approved (${totals.approved})`, color: "text-blue-700" },
-                        { id: "Paid", label: `Paid (${totals.paid})`, color: "text-emerald-700" },
-                      ].map((tab) => (
-                        <button
-                          key={tab.id}
-                          type="button"
-                          onClick={() => setPaymentStatus(tab.id)}
-                          className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                            paymentStatus === tab.id
-                              ? "bg-white text-zinc-950 shadow-2xs font-extrabold"
-                              : "text-zinc-600 hover:text-zinc-950"
-                          }`}
-                        >
-                          {tab.label}
-                        </button>
-                      ))}
+                  <div className="flex flex-col gap-3 w-full">
+                    {selectedApprovedRecords.length > 0 && (
+                      <div className="flex items-center justify-between bg-zinc-950 text-white px-4 py-2.5 rounded-2xl shadow-md gap-4">
+                        <div className="flex items-center gap-2.5 text-xs font-bold flex-wrap">
+                          <CheckCircle2 className="size-4 text-emerald-400 shrink-0" />
+                          <span>
+                            <strong className="text-white font-extrabold">{selectedApprovedRecords.length}</strong> of{" "}
+                            <span className="text-zinc-300">{approvedRecordsInView.length}</span> approved records selected
+                          </span>
+                          <span className="text-zinc-600">•</span>
+                          <span className="text-emerald-400 font-mono font-black">
+                            Total Net: ETB {money(selectedApprovedRecords.reduce((sum, r) => sum + Number(r.net_pay || 0), 0))}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedRecordIds(new Set())}
+                            className="px-3 py-1 text-[11px] font-bold text-zinc-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                          >
+                            Clear Selection
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPaymentModalRecords(selectedApprovedRecords)}
+                            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black text-xs transition-all active:scale-95 shadow-sm cursor-pointer"
+                          >
+                            <CreditCard className="size-3.5 text-zinc-950" />
+                            Pay Selected ({selectedApprovedRecords.length})
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center justify-between gap-3 w-full">
+                      {/* Payment Status Filter Buttons */}
+                      <div className="flex items-center gap-1 bg-black/[0.03] p-1 rounded-2xl border border-black/5">
+                        <span className="text-[10px] font-black uppercase text-zinc-400 px-2">Status:</span>
+                        {[
+                          { id: "All", label: `All (${totals.employees})` },
+                          { id: "Pending", label: `Pending (${totals.pending})`, color: "text-amber-700" },
+                          { id: "Approved", label: `Approved (${totals.approved})`, color: "text-blue-700" },
+                          { id: "Paid", label: `Paid (${totals.paid})`, color: "text-emerald-700" },
+                        ].map((tab) => (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setPaymentStatus(tab.id)}
+                            className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                              paymentStatus === tab.id
+                                ? "bg-white text-zinc-950 shadow-2xs font-extrabold"
+                                : "text-zinc-600 hover:text-zinc-950"
+                            }`}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 }
@@ -647,7 +820,7 @@ export default function Payroll() {
                   <tbody className="divide-y divide-black/5 text-xs">
                     {!loading && sorted.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="py-14 text-center text-zinc-400 font-medium">
+                        <td colSpan={11} className="py-14 text-center text-zinc-400 font-medium">
                           {currentRecords.length === 0 ? (
                             <div className="flex flex-col items-center justify-center gap-2">
                               <Calendar className="size-8 text-zinc-300" />
@@ -667,6 +840,8 @@ export default function Payroll() {
                       displayedRecords.map((record) => {
                         const employee = employeeById.get(record.employee_id)
                         const period = periodById.get(record.payroll_period_id)
+                        const isApproved = record.payment_status === "Approved"
+                        const isSelected = selectedRecordIds.has(record.id)
                         const canApprove = record.payment_status === "Pending"
                         const canMarkPaid = record.payment_status === "Approved"
                         const canEdit = record.payment_status === "Pending"
@@ -674,6 +849,29 @@ export default function Payroll() {
 
                         return (
                           <tr key={record.id} className="hover:bg-black/[0.02] transition-colors">
+                            <Cell width={colWidths.select} align="center">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                disabled={!isApproved}
+                                onChange={(e) => {
+                                  e.stopPropagation()
+                                  toggleSelectRecord(record.id, isApproved)
+                                }}
+                                title={
+                                  isApproved
+                                    ? isSelected
+                                      ? "Deselect for payment"
+                                      : "Select for payment"
+                                    : record.payment_status === "Paid"
+                                    ? "Already Paid"
+                                    : "Record must be approved before payment"
+                                }
+                                className={`size-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 accent-zinc-900 ${
+                                  isApproved ? "cursor-pointer" : "opacity-25 cursor-not-allowed"
+                                }`}
+                              />
+                            </Cell>
                             <Cell width={colWidths.employee}>
                               {employee ? `${employee.full_name} (${employee.employee_number})` : "Unknown employee"}
                             </Cell>
@@ -742,9 +940,9 @@ export default function Payroll() {
                                 {canMarkPaid && (
                                   <button
                                     type="button"
-                                    onClick={() => transitionPaymentStatus(record, "Paid")}
+                                    onClick={() => setPaymentModalRecords([record])}
                                     className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-black text-white font-extrabold text-[11px] transition-all active:scale-95 shadow-2xs cursor-pointer"
-                                    title="Mark as Paid"
+                                    title="Review & Confirm Payment"
                                   >
                                     <CheckCircle2 className="size-3 text-emerald-400" /> Paid
                                   </button>
@@ -900,6 +1098,26 @@ export default function Payroll() {
           employeeById={employeeById}
           warehouses={warehouses}
           onClose={() => setShowRegisterPrint(false)}
+        />
+      )}
+
+      {/* PRE-PAYMENT BREAKDOWN CONFIRMATION DIALOG MODAL */}
+      {paymentModalRecords && paymentModalRecords.length > 0 && (
+        <PayrollPaymentConfirmationModal
+          records={paymentModalRecords}
+          employeeById={employeeById}
+          warehouses={warehouses}
+          period={
+            currentPeriod ||
+            (paymentModalRecords[0]?.payroll_period_id
+              ? periodById.get(paymentModalRecords[0].payroll_period_id)
+              : undefined)
+          }
+          isProcessing={isPaying}
+          onClose={() => {
+            if (!isPaying) setPaymentModalRecords(null)
+          }}
+          onConfirm={handleConfirmPayments}
         />
       )}
     </div>
@@ -1723,6 +1941,287 @@ function Line({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl bg-black/[0.03] px-3 py-2 flex justify-between gap-3">
       <span className="font-bold text-zinc-500">{label}</span>
       <span className="font-black text-zinc-900 text-right">{value}</span>
+    </div>
+  )
+}
+
+interface PayrollPaymentConfirmationModalProps {
+  records: PayrollRecord[]
+  employeeById: Map<string, Employee>
+  warehouses?: Warehouse[]
+  period?: PayrollPeriod
+  isProcessing: boolean
+  onClose: () => void
+  onConfirm: () => Promise<void>
+}
+
+function PayrollPaymentConfirmationModal({
+  records,
+  employeeById,
+  warehouses = [],
+  period,
+  isProcessing,
+  onClose,
+  onConfirm,
+}: PayrollPaymentConfirmationModalProps) {
+  const totals = useMemo(() => {
+    return {
+      grossBasic: records.reduce((sum, r) => sum + Number(r.basic_salary || 0), 0),
+      allowances: records.reduce(
+        (sum, r) =>
+          sum +
+          Number(
+            r.allowances ||
+              Number(r.taxable_allowances || 0) + Number(r.non_taxable_allowances || 0)
+          ) +
+          Number(r.bonus || 0) +
+          Number(r.overtime_pay || 0) +
+          Number(r.other_earnings || 0),
+        0
+      ),
+      grossPay: records.reduce((sum, r) => sum + Number(r.gross_pay || 0), 0),
+      pension: records.reduce((sum, r) => sum + Number(r.pension || 0), 0),
+      tax: records.reduce((sum, r) => sum + Number(r.tax || 0), 0),
+      deductions: records.reduce((sum, r) => sum + Number(r.total_deductions || 0), 0),
+      netPay: records.reduce((sum, r) => sum + Number(r.net_pay || 0), 0),
+    }
+  }, [records])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-6xl bg-white dark:bg-zinc-900 rounded-3xl p-6 md:p-8 shadow-2xl border border-black/10 dark:border-white/10 my-8"
+      >
+        {/* Modal Header */}
+        <div className="flex items-start justify-between pb-4 mb-4 border-b border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-2xl border border-emerald-200 dark:border-emerald-800/50">
+              <CreditCard className="size-6 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg md:text-xl font-black text-zinc-950 dark:text-white tracking-tight">
+                  Payroll Disbursement Confirmation
+                </h3>
+                {period && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-[11px] font-extrabold text-zinc-700 dark:text-zinc-300">
+                    {period.name}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-zinc-500 font-semibold mt-0.5">
+                Review salary breakdowns, statutory deductions, and net take-home pay before executing payment and posting balanced journal entries to Finance.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={isProcessing}
+            className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer disabled:opacity-40"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+
+        {/* Summary KPI Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <div className="bg-zinc-50 dark:bg-zinc-800/50 p-3.5 rounded-2xl border border-zinc-200/60 dark:border-zinc-700/50">
+            <span className="block text-[9px] font-black text-zinc-400 uppercase tracking-wider">
+              Employees To Pay
+            </span>
+            <span className="text-xl font-black text-zinc-950 dark:text-white mt-1 block">
+              {records.length}
+            </span>
+          </div>
+          <div className="bg-zinc-50 dark:bg-zinc-800/50 p-3.5 rounded-2xl border border-zinc-200/60 dark:border-zinc-700/50">
+            <span className="block text-[9px] font-black text-zinc-400 uppercase tracking-wider">
+              Total Gross Pay
+            </span>
+            <span className="text-xl font-black text-zinc-950 dark:text-white mt-1 block">
+              ETB {money(totals.grossPay)}
+            </span>
+          </div>
+          <div className="bg-zinc-50 dark:bg-zinc-800/50 p-3.5 rounded-2xl border border-zinc-200/60 dark:border-zinc-700/50">
+            <span className="block text-[9px] font-black text-zinc-400 uppercase tracking-wider">
+              Total Deductions (Tax &amp; Pension)
+            </span>
+            <span className="text-xl font-black text-rose-600 dark:text-rose-400 mt-1 block">
+              ETB {money(totals.deductions)}
+            </span>
+          </div>
+          <div className="bg-emerald-50 dark:bg-emerald-950/30 p-3.5 rounded-2xl border border-emerald-200 dark:border-emerald-800/50">
+            <span className="block text-[9px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
+              Total Net Disbursement
+            </span>
+            <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 mt-1 block font-mono">
+              ETB {money(totals.netPay)}
+            </span>
+          </div>
+        </div>
+
+        {/* Breakdown Table matching the user's provided design */}
+        <div className="overflow-x-auto rounded-2xl border border-zinc-200 dark:border-zinc-700 mb-5 max-h-[50vh] no-scrollbar">
+          <table className="w-full text-left border-collapse text-[11px]">
+            <thead className="sticky top-0 z-10 bg-zinc-100 dark:bg-zinc-800 border-b border-zinc-300 dark:border-zinc-700">
+              <tr className="text-zinc-900 dark:text-zinc-100 font-black">
+                <th className="p-2.5 border-r border-zinc-300 dark:border-zinc-700 text-center w-10">#</th>
+                <th className="p-2.5 border-r border-zinc-300 dark:border-zinc-700 min-w-[180px]">Employee ID &amp; Name</th>
+                <th className="p-2.5 border-r border-zinc-300 dark:border-zinc-700 min-w-[140px]">Warehouse</th>
+                <th className="p-2.5 border-r border-zinc-300 dark:border-zinc-700 text-right min-w-[100px]">Gross Salary</th>
+                <th className="p-2.5 border-r border-zinc-300 dark:border-zinc-700 text-right min-w-[90px]">Allowances</th>
+                <th className="p-2.5 border-r border-zinc-300 dark:border-zinc-700 text-right min-w-[100px]">Gross Pay</th>
+                <th className="p-2.5 border-r border-zinc-300 dark:border-zinc-700 text-right min-w-[90px]">Pension (7%)</th>
+                <th className="p-2.5 border-r border-zinc-300 dark:border-zinc-700 text-right min-w-[90px]">Income Tax</th>
+                <th className="p-2.5 border-r border-zinc-300 dark:border-zinc-700 text-right min-w-[90px]">Total Ded.</th>
+                <th className="p-2.5 border-r border-zinc-300 dark:border-zinc-700 text-right min-w-[105px] font-black">Net Pay</th>
+                <th className="p-2.5 text-center min-w-[100px]">Disbursement</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800 bg-white dark:bg-zinc-900">
+              {records.map((rec, idx) => {
+                const emp = employeeById.get(rec.employee_id)
+                const allow =
+                  Number(
+                    rec.allowances ||
+                      Number(rec.taxable_allowances || 0) + Number(rec.non_taxable_allowances || 0)
+                  ) +
+                  Number(rec.bonus || 0) +
+                  Number(rec.overtime_pay || 0) +
+                  Number(rec.other_earnings || 0)
+
+                return (
+                  <tr key={rec.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                    <td className="p-2.5 border-r border-zinc-200 dark:border-zinc-800 text-center text-zinc-500 font-mono">
+                      {idx + 1}
+                    </td>
+                    <td className="p-2.5 border-r border-zinc-200 dark:border-zinc-800">
+                      <div className="font-extrabold text-zinc-950 dark:text-zinc-100">
+                        {emp ? emp.full_name : rec.employee_id}
+                      </div>
+                      <span className="block text-[9.5px] font-normal text-zinc-500 font-mono">
+                        {emp?.employee_number || rec.employee_id}
+                      </span>
+                    </td>
+                    <td className="p-2.5 border-r border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400">
+                      {resolveWarehouseFullName(emp?.warehouse_id, warehouses)}
+                    </td>
+                    <td className="p-2.5 border-r border-zinc-200 dark:border-zinc-800 text-right font-mono text-zinc-800 dark:text-zinc-200">
+                      {money(rec.basic_salary)}
+                    </td>
+                    <td className="p-2.5 border-r border-zinc-200 dark:border-zinc-800 text-right font-mono text-zinc-800 dark:text-zinc-200">
+                      {money(allow)}
+                    </td>
+                    <td className="p-2.5 border-r border-zinc-200 dark:border-zinc-800 text-right font-mono font-bold text-zinc-950 dark:text-zinc-100">
+                      {money(rec.gross_pay)}
+                    </td>
+                    <td className="p-2.5 border-r border-zinc-200 dark:border-zinc-800 text-right font-mono text-amber-700 dark:text-amber-400 font-semibold">
+                      {money(rec.pension)}
+                    </td>
+                    <td className="p-2.5 border-r border-zinc-200 dark:border-zinc-800 text-right font-mono text-rose-700 dark:text-rose-400 font-semibold">
+                      {money(rec.tax)}
+                    </td>
+                    <td className="p-2.5 border-r border-zinc-200 dark:border-zinc-800 text-right font-mono text-rose-700 dark:text-rose-400 font-bold">
+                      {money(rec.total_deductions)}
+                    </td>
+                    <td className="p-2.5 border-r border-zinc-200 dark:border-zinc-800 text-right font-mono font-black text-emerald-700 dark:text-emerald-400">
+                      {money(rec.net_pay)}
+                    </td>
+                    <td className="p-2.5 text-center">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50">
+                        {emp?.bank_account ? "Bank Transfer" : "Direct Pay"}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+            <tfoot className="sticky bottom-0 z-10 bg-zinc-100 dark:bg-zinc-800 border-t-2 border-zinc-300 dark:border-zinc-600 font-black text-zinc-950 dark:text-zinc-100">
+              <tr>
+                <td
+                  colSpan={3}
+                  className="p-3 border-r border-zinc-300 dark:border-zinc-700 text-center uppercase tracking-wider text-xs font-black"
+                >
+                  GRAND TOTALS ({records.length} {records.length === 1 ? "EMPLOYEE" : "EMPLOYEES"})
+                </td>
+                <td className="p-3 border-r border-zinc-300 dark:border-zinc-700 text-right font-mono">
+                  {money(totals.grossBasic)}
+                </td>
+                <td className="p-3 border-r border-zinc-300 dark:border-zinc-700 text-right font-mono">
+                  {money(totals.allowances)}
+                </td>
+                <td className="p-3 border-r border-zinc-300 dark:border-zinc-700 text-right font-mono font-bold text-zinc-950 dark:text-white">
+                  {money(totals.grossPay)}
+                </td>
+                <td className="p-3 border-r border-zinc-300 dark:border-zinc-700 text-right font-mono text-amber-700 dark:text-amber-400">
+                  {money(totals.pension)}
+                </td>
+                <td className="p-3 border-r border-zinc-300 dark:border-zinc-700 text-right font-mono text-rose-700 dark:text-rose-400">
+                  {money(totals.tax)}
+                </td>
+                <td className="p-3 border-r border-zinc-300 dark:border-zinc-700 text-right font-mono text-rose-700 dark:text-rose-400 font-bold">
+                  {money(totals.deductions)}
+                </td>
+                <td className="p-3 border-r border-zinc-300 dark:border-zinc-700 text-right font-mono text-emerald-700 dark:text-emerald-400 text-xs font-black">
+                  {money(totals.netPay)}
+                </td>
+                <td className="p-3 text-center text-[10px] text-zinc-400">
+                  Ready
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        {/* Finance Transaction Notice */}
+        <div className="rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 p-4 border border-zinc-200 dark:border-zinc-700/60 mb-6 flex items-start gap-3">
+          <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+          <div className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
+            <span className="font-extrabold text-zinc-900 dark:text-white block mb-0.5">
+              Automated General Ledger &amp; Finance Transaction Posting
+            </span>
+            Clicking <strong className="text-zinc-900 dark:text-white font-bold">Confirm &amp; Pay</strong> will immediately mark the selected record(s) as <strong className="text-emerald-600 dark:text-emerald-400 font-bold">Paid</strong> in the database and post balanced debit/credit journal vouchers in the Finance module for Salaries Expense, Income Tax Payable, Pension Payable, and Cash/Bank accounts.
+          </div>
+        </div>
+
+        {/* Bottom Actions */}
+        <div className="flex items-center justify-between pt-2 border-t border-zinc-200 dark:border-zinc-800 gap-4">
+          <div className="text-xs font-bold text-zinc-500">
+            Disbursement Amount: <strong className="text-emerald-700 dark:text-emerald-400 font-mono text-sm">ETB {money(totals.netPay)}</strong>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isProcessing}
+              className="px-5 py-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-bold text-xs transition-all cursor-pointer disabled:opacity-40"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={isProcessing}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-600/25 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  <span>Processing Payments...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="size-4" />
+                  <span>
+                    Confirm &amp; Pay {records.length > 1 ? `(${records.length} Employees)` : ""}
+                  </span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </motion.div>
     </div>
   )
 }

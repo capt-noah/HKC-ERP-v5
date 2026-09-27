@@ -8,6 +8,7 @@ export interface TableColumn {
   align?: "left" | "right" | "center"
   sortable?: boolean
   initialWidth?: number
+  headerRender?: () => ReactNode
 }
 
 export interface HRTableFilterOption {
@@ -201,7 +202,11 @@ export function ResizableTableHeader({
                     : ""
                 }`}
               >
-                <span className="truncate">{col.label}</span>
+                {col.headerRender ? (
+                  col.headerRender()
+                ) : (
+                  <span className="truncate">{col.label}</span>
+                )}
 
                 {sortable && (
                   <div className="relative flex items-center shrink-0">

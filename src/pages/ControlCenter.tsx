@@ -65,6 +65,8 @@ import { listSalesIssues, type SalesIssue } from "@/lib/salesIssuesApi"
 import { isExportWarehouse, isPharmaWarehouse } from "@/lib/warehouses"
 import { computeWH1RejectAnalysis } from "@/lib/wh1QualityAnalytics"
 import { getExpiringItemsSummary } from "@/lib/expiryUtils"
+import { formatDateTimeDisplay, parseSafeDate } from "@/lib/dateUtils"
+import { resolveActivityDetails, isAutoSyncActivityLog, type UserActivityLog } from "@/lib/activityUtils"
 import { cn } from "@/lib/utils"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
@@ -82,21 +84,6 @@ export interface UserAccount {
   warehouse_ids?: string[]
 }
 
-export interface UserActivityLog {
-  id: string
-  user_id: string | null
-  username: string
-  fullname?: string
-  action: string
-  resource: string
-  details?: {
-    path?: string
-    ip?: string
-    itemId?: string
-  }
-  created_at: string
-}
-
 const roleLabels: Record<string, string> = {
   superadmin: "Super Admin",
   sales_manager: "Sales Manager",
@@ -108,39 +95,13 @@ const roleLabels: Record<string, string> = {
 }
 
 const auditLogColumns: TableColumn[] = [
-  { key: "resolvedName", label: "Operator Name" },
-  { key: "action", label: "Action" },
-  { key: "resource", label: "Module / Resource" },
+  { key: "resolvedName", label: "Operator / User" },
+  { key: "activityType", label: "Operation" },
+  { key: "description", label: "Action Performed (What Was Done)" },
   { key: "details", label: "Context Details", noSort: true },
   { key: "created_at", label: "Timestamp" },
 ]
 
-const resourceLabels: Record<string, string> = {
-  auth: "Authentication",
-  users: "User Accounts",
-  partners: "Partners Directory",
-  employees: "Employee Profiles",
-  attendance_records: "Attendance Log",
-  leave_requests: "Leave Management",
-  payroll_records: "Payroll Records",
-  warehouses: "Warehouses Scope",
-  inventory_products: "Products Registry",
-  stock_movements: "Stock Ledger",
-  store_transfers: "Store Transfers",
-  sales_orders: "Sales Orders",
-  purchase_orders: "Purchase Orders",
-  sales_issues: "Issued Sales",
-  customers: "Customers Directory",
-  suppliers: "Suppliers Directory",
-  shipment_documents: "HKC Documents",
-  chart_of_accounts: "Chart of Accounts",
-  journal_entries: "General Journal",
-  invoices: "Accounts Receivable Invoices",
-  payments: "Cash Accounts / Banking",
-  expenses: "Audit Expenses Claims",
-  tax_rules: "Tax Settings",
-  company_settings: "System Configuration",
-}
 
 // Custom Skeleton Components (Zero Spinners)
 function StatCardSkeleton() {
@@ -349,8 +310,7 @@ export default function ControlCenter() {
   // Filters state
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedUser, setSelectedUser] = useState("All")
-  const [selectedModule, setSelectedModule] = useState("All")
-  const [selectedAction, setSelectedAction] = useState("All")
+  const [selectedOperation, setSelectedOperation] = useState("All")
   const [selectedTimeframe, setSelectedTimeframe] = useState("All")
   const [auditPage, setAuditPage] = useState(1)
   const [auditPageSize, setAuditPageSize] = useState(10)
@@ -747,7 +707,7 @@ export default function ControlCenter() {
         loadResource<UserAccount>("users"),
       ])
       const sorted = (Array.isArray(logsData) ? logsData : []).sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        (a, b) => (parseSafeDate(b.created_at)?.getTime() || 0) - (parseSafeDate(a.created_at)?.getTime() || 0)
       )
       setLogs(sorted)
       if (Array.isArray(usersData)) {
@@ -1015,7 +975,7 @@ export default function ControlCenter() {
     })
   }, [erp, erp.getProducts(), adminExpiryWarehouse, adminExpiryTier])
 
-  // Resolve user identity against employees and user profiles
+  // Resolve user identity against employees and user profiles, and resolve business activity details
   const logsWithUserInfo = useMemo(() => {
     return logs.map((log) => {
       const user = users.find((u) => u.id === log.user_id || u.username === log.username)
@@ -1041,31 +1001,70 @@ export default function ControlCenter() {
         personName = log.username || "System"
       }
 
+      const activityInfo = resolveActivityDetails(log, hrData.employees)
+
       return {
         ...log,
         resolvedName: personName,
         roleDisplay,
+        activityType: activityInfo.activityType,
+        description: activityInfo.description,
       }
     })
   }, [logs, users, hrData.employees])
 
   // Filters calculation
   const filteredLogs = useMemo(() => {
-    return logsWithUserInfo.filter((log) => {
+    return logsWithUserInfo
+      .filter((log) => !isAutoSyncActivityLog(log))
+      .filter((log) => {
+        const q = searchQuery.toLowerCase().trim()
+
       const matchesSearch =
-        log.resolvedName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.resource.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (log.details && JSON.stringify(log.details).toLowerCase().includes(searchQuery.toLowerCase()))
+        !q ||
+        log.resolvedName.toLowerCase().includes(q) ||
+        log.username.toLowerCase().includes(q) ||
+        log.activityType.toLowerCase().includes(q) ||
+        log.description.toLowerCase().includes(q) ||
+        (log.action && log.action.toLowerCase().includes(q)) ||
+        (log.resource && log.resource.toLowerCase().includes(q)) ||
+        (log.details && JSON.stringify(log.details).toLowerCase().includes(q))
 
       const matchesUser = selectedUser === "All" || log.username === selectedUser
-      const matchesModule = selectedModule === "All" || log.resource === selectedModule
-      const matchesAction = selectedAction === "All" || log.action === selectedAction
+
+      const matchesOperation = (() => {
+        if (selectedOperation === "All") return true
+        const op = (log.activityType || "").toLowerCase()
+        const act = (log.action || "").toLowerCase()
+        const desc = (log.description || "").toLowerCase()
+        const res = (log.resource || log.module || "").toLowerCase()
+
+        switch (selectedOperation) {
+          case "Ordered":
+            return op.includes("order") || act.includes("order") || res.includes("sales_order") || res.includes("purchase_order") || desc.includes("order")
+          case "Issued":
+            return op.includes("issue") || act.includes("issue") || res.includes("sales_issue") || desc.includes("issue") || desc.includes("dispatch")
+          case "Sale":
+            return op.includes("sale") || op.includes("invoice") || op.includes("payment") || res.includes("invoice") || res.includes("payment") || desc.includes("invoice") || desc.includes("payment")
+          case "Stock":
+            return op.includes("stock") || op.includes("transfer") || res.includes("product") || res.includes("stock") || res.includes("transfer") || desc.includes("stock")
+          case "Registered":
+            return op.includes("register") || act.includes("create") || desc.includes("registered") || desc.includes("created")
+          case "Edited":
+            return op.includes("edit") || op.includes("update") || act.includes("update") || desc.includes("updated") || desc.includes("edited")
+          case "Finance":
+            return op.includes("expense") || op.includes("payroll") || op.includes("journal") || res.includes("expense") || res.includes("payroll") || res.includes("journal")
+          case "Auth":
+            return op.includes("auth") || op.includes("login") || act.includes("login") || res.includes("auth")
+          default:
+            return op === selectedOperation.toLowerCase() || act === selectedOperation.toLowerCase()
+        }
+      })()
 
       const matchesTimeframe = (() => {
         if (selectedTimeframe === "All") return true
-        const logDate = new Date(log.created_at)
+        const logDate = parseSafeDate(log.created_at)
+        if (!logDate) return false
         const now = new Date()
         const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
@@ -1089,9 +1088,9 @@ export default function ControlCenter() {
         }
       })()
 
-      return matchesSearch && matchesUser && matchesModule && matchesAction && matchesTimeframe
+      return matchesSearch && matchesUser && matchesOperation && matchesTimeframe
     })
-  }, [logsWithUserInfo, searchQuery, selectedUser, selectedModule, selectedAction, selectedTimeframe])
+  }, [logsWithUserInfo, searchQuery, selectedUser, selectedOperation, selectedTimeframe])
 
   const uniqueUsernames = useMemo(() => {
     const set = new Set<string>()
@@ -1101,32 +1100,16 @@ export default function ControlCenter() {
     return Array.from(set).sort()
   }, [logs])
 
-  const uniqueResources = useMemo(() => {
-    const set = new Set<string>()
-    logs.forEach((log) => {
-      if (log.resource) set.add(log.resource)
-    })
-    return Array.from(set).sort()
-  }, [logs])
-
-  const uniqueActions = useMemo(() => {
-    const set = new Set<string>()
-    logs.forEach((log) => {
-      if (log.action) set.add(log.action)
-    })
-    return Array.from(set).sort()
-  }, [logs])
-
   // Table sorting & resizing hook for Audit Logs
   const auditTable = useResizableTable<typeof logsWithUserInfo[0]>(
     auditLogColumns,
     filteredLogs,
     {
-      resolvedName: 200,
-      action: 130,
-      resource: 170,
-      details: 260,
-      created_at: 170,
+      resolvedName: 190,
+      activityType: 140,
+      description: 340,
+      details: 200,
+      created_at: 165,
     }
   )
 
@@ -1138,28 +1121,22 @@ export default function ControlCenter() {
     return sortedAuditLogs.slice(start, start + auditPageSize)
   }, [sortedAuditLogs, auditPage, auditPageSize])
 
-  const getActionBadgeStyle = (action: string) => {
-    const norm = action.toLowerCase()
-    if (norm.includes("create")) return "bg-green-50 text-green-700 border-green-200/50"
-    if (norm.includes("update") || norm.includes("edit")) return "bg-sky-50 text-sky-700 border-sky-200/50"
-    if (norm.includes("delete") || norm.includes("remove")) return "bg-rose-50 text-rose-700 border-rose-200/50"
-    if (norm.includes("login")) return "bg-purple-50 text-purple-700 border-purple-200/50"
-    if (norm.includes("post")) return "bg-emerald-50 text-emerald-700 border-emerald-200/50"
-    if (norm.includes("cancel")) return "bg-amber-50 text-amber-700 border-amber-200/50"
-    return "bg-zinc-50 text-zinc-700 border-zinc-200/50"
+  const getActionBadgeStyle = (activityType: string) => {
+    const norm = (activityType || "").toLowerCase()
+    if (norm.includes("order")) return "bg-amber-50 text-amber-800 border-amber-300/80"
+    if (norm.includes("issue")) return "bg-sky-50 text-sky-800 border-sky-300/80"
+    if (norm.includes("sale") || norm.includes("invoice") || norm.includes("payment")) return "bg-emerald-50 text-emerald-800 border-emerald-300/80"
+    if (norm.includes("stock") || norm.includes("transfer")) return "bg-teal-50 text-teal-800 border-teal-300/80"
+    if (norm.includes("register") || norm.includes("create")) return "bg-indigo-50 text-indigo-800 border-indigo-300/80"
+    if (norm.includes("edit") || norm.includes("update")) return "bg-blue-50 text-blue-800 border-blue-300/80"
+    if (norm.includes("payroll") || norm.includes("expense") || norm.includes("journal")) return "bg-violet-50 text-violet-800 border-violet-300/80"
+    if (norm.includes("auth") || norm.includes("login")) return "bg-purple-50 text-purple-800 border-purple-300/80"
+    if (norm.includes("cancel") || norm.includes("delete")) return "bg-rose-50 text-rose-800 border-rose-300/80"
+    return "bg-zinc-100 text-zinc-800 border-zinc-200"
   }
 
-  const formatDateTime = (isoString: string) => {
-    if (!isoString) return "-"
-    const d = new Date(isoString)
-    return d.toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    })
+  const formatDateTime = (isoString?: string) => {
+    return formatDateTimeDisplay(isoString)
   }
 
   const handleExportAuditLogs = () => {
@@ -1168,16 +1145,16 @@ export default function ControlCenter() {
       return
     }
 
-    const headers = ["Timestamp", "Operator Name", "Username", "Role", "Action", "Module / Resource", "IP Address", "Item ID", "Path"]
+    const headers = ["Timestamp", "Operator Name", "Username", "Role", "Operation Type", "Action Performed", "Item ID", "IP Address", "Path"]
     const rows = filteredLogs.map((l) => [
-      `"${l.created_at || ""}"`,
+      `"${formatDateTimeDisplay(l.created_at)}"`,
       `"${(l.resolvedName || "").replace(/"/g, '""')}"`,
       `"${(l.username || "").replace(/"/g, '""')}"`,
       `"${(l.roleDisplay || "").replace(/"/g, '""')}"`,
-      `"${(l.action || "").replace(/"/g, '""')}"`,
-      `"${(resourceLabels[l.resource] || l.resource || "").replace(/"/g, '""')}"`,
+      `"${(l.activityType || "").replace(/"/g, '""')}"`,
+      `"${(l.description || "").replace(/"/g, '""')}"`,
+      `"${(l.details?.itemId || l.entity_id || "").replace(/"/g, '""')}"`,
       `"${(l.details?.ip || "").replace(/"/g, '""')}"`,
-      `"${(l.details?.itemId || "").replace(/"/g, '""')}"`,
       `"${(l.details?.path || "").replace(/"/g, '""')}"`,
     ])
 
@@ -2507,13 +2484,13 @@ export default function ControlCenter() {
               <div className="px-6 pt-6">
                 <FinanceTableToolbar
                   title="Audit Activity Logs"
-                  subtitle={`${totalAuditLogs} records from the audit activity log`}
+                  subtitle={`${totalAuditLogs} operational activity records`}
                   searchValue={searchQuery}
                   onSearchChange={(value) => {
                     setSearchQuery(value)
                     setAuditPage(1)
                   }}
-                  searchPlaceholder="Search operator, username, action, module, details..."
+                  searchPlaceholder="Search operator, username, operation (e.g. ordered, issued, sale, registered), details..."
                   filters={[
                     {
                       value: selectedUser,
@@ -2528,27 +2505,22 @@ export default function ControlCenter() {
                       ],
                     },
                     {
-                      value: selectedModule,
+                      value: selectedOperation,
                       onChange: (v) => {
-                        setSelectedModule(v)
+                        setSelectedOperation(v)
                         setAuditPage(1)
                       },
-                      ariaLabel: "Module",
+                      ariaLabel: "Operation",
                       options: [
-                        { value: "All", label: "All Modules" },
-                        ...uniqueResources.map((r) => ({ value: r, label: resourceLabels[r] || r })),
-                      ],
-                    },
-                    {
-                      value: selectedAction,
-                      onChange: (v) => {
-                        setSelectedAction(v)
-                        setAuditPage(1)
-                      },
-                      ariaLabel: "Action",
-                      options: [
-                        { value: "All", label: "All Actions" },
-                        ...uniqueActions.map((a) => ({ value: a, label: a })),
+                        { value: "All", label: "All Operations" },
+                        { value: "Ordered", label: "Ordered (Sales & PO)" },
+                        { value: "Issued", label: "Issued Goods (Sales Dispatch)" },
+                        { value: "Sale", label: "Sale (Invoices & Payments)" },
+                        { value: "Stock", label: "Stock & Inventory (Add, Transfer, Move)" },
+                        { value: "Registered", label: "Registered (Employees, Customers, Partners, Users)" },
+                        { value: "Edited", label: "Edited / Updated Records" },
+                        { value: "Finance", label: "Finance & Payroll" },
+                        { value: "Auth", label: "Authentication & Logins" },
                       ],
                     },
                     {
@@ -2635,30 +2607,32 @@ export default function ControlCenter() {
                               </div>
                             </td>
 
-                            {/* Action */}
-                            <td style={{ width: `${auditTable.colWidths.action}px` }} className="px-3 py-3">
+                            {/* Operation Type */}
+                            <td style={{ width: `${auditTable.colWidths.activityType}px` }} className="px-3 py-3">
                               <span
                                 className={cn(
-                                  "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border",
-                                  getActionBadgeStyle(log.action)
+                                  "inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border",
+                                  getActionBadgeStyle(log.activityType)
                                 )}
                               >
-                                {log.action}
+                                {log.activityType}
                               </span>
                             </td>
 
-                            {/* Module / Resource */}
-                            <td style={{ width: `${auditTable.colWidths.resource}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">
-                              {resourceLabels[log.resource] || log.resource}
+                            {/* Action Performed (What Was Done) */}
+                            <td style={{ width: `${auditTable.colWidths.description}px` }} className="px-3 py-3">
+                              <p className="text-xs font-bold text-zinc-800 leading-snug break-words">
+                                {log.description}
+                              </p>
                             </td>
 
                             {/* Context Details */}
                             <td style={{ width: `${auditTable.colWidths.details}px` }} className="px-3 py-3">
                               <div className="flex flex-col gap-1 text-[10px] min-w-0">
                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                  {log.details?.itemId && (
+                                  {(log.details?.itemId || log.entity_id) && (
                                     <span className="text-zinc-700 font-extrabold font-mono bg-zinc-100 px-1.5 py-0.5 rounded border border-zinc-200/80 shrink-0">
-                                      ID: {log.details.itemId}
+                                      ID: {log.details?.itemId || log.entity_id}
                                     </span>
                                   )}
                                   {log.details?.ip && (
@@ -2668,7 +2642,7 @@ export default function ControlCenter() {
                                   )}
                                 </div>
                                 {log.details?.path && (
-                                  <span className="text-zinc-400 truncate max-w-[220px] font-medium" title={log.details.path}>
+                                  <span className="text-zinc-400 truncate max-w-[200px] font-medium" title={log.details.path}>
                                     {log.details.path}
                                   </span>
                                 )}

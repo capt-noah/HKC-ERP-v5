@@ -616,11 +616,8 @@ class FinanceStore {
         loadResource<GlAccountMapping>("gl_account_mappings").catch(() => []),
       ])
 
-      if (!Array.isArray(accounts) || accounts.length === 0 || accounts.some((a) => a.id?.startsWith("ACC-1000") || a.code === "1010")) {
+      if (!Array.isArray(accounts) || accounts.length === 0) {
         this.accounts = COMPANY_CHART_OF_ACCOUNTS
-        if (isFullFinance) {
-          void persistResources([{ resource: "chart_of_accounts", items: COMPANY_CHART_OF_ACCOUNTS }])
-        }
       } else {
         this.accounts = accounts
       }
@@ -689,7 +686,7 @@ class FinanceStore {
       this.vehicles = sortNewestFirst(vehicles)
       const { id: _settingsId, ...companySettings } = companySettingsRows[0] || { id: "default", ...emptyCompanySettings }
       this.companySettings = companySettings as CompanySettings
-      if (Array.isArray(taxRules) && taxRules.length > 0 && !taxRules.some((t: any) => t.id === "TAX-01" || t.id === "TAX-001")) {
+      if (Array.isArray(taxRules) && taxRules.length > 0) {
         this.taxRules = sortNewestFirst(taxRules.map((t: any) => ({
           ...t,
           id: t.id,
@@ -705,7 +702,6 @@ class FinanceStore {
         })))
       } else {
         this.taxRules = INITIAL_TAX_RULES
-        void persistResources([{ resource: "tax_rules", items: INITIAL_TAX_RULES }])
       }
 
       this.taxSchedules = INITIAL_TAX_SCHEDULES
@@ -727,7 +723,6 @@ class FinanceStore {
         }))
       } else {
         this.glMappings = [...DEFAULT_GL_ACCOUNT_MAPPINGS]
-        void persistResources([{ resource: "gl_account_mappings", items: DEFAULT_GL_ACCOUNT_MAPPINGS }])
       }
 
       // Trigger cross-module live finance sync
@@ -757,16 +752,18 @@ class FinanceStore {
    */
   public async syncCrossModule(customSalesIssues?: any[], customPurchaseOrders?: any[]) {
     try {
-      const [fetchedSI, fetchedSO, fetchedPO, fetchedCust, fetchedPS] = await Promise.all([
+      const [fetchedSI, fetchedSO, fetchedPO, fetchedPR, fetchedCust, fetchedPS] = await Promise.all([
         loadResource<any>("sales_issues").catch(() => []),
         loadResource<any>("sales_orders").catch(() => []),
         loadResource<any>("purchase_orders").catch(() => []),
+        loadResource<any>("payroll_records").catch(() => []),
         loadResource<any>("customers").catch(() => []),
         loadResource<any>("processing_services").catch(() => []),
       ])
 
       const salesIssues = customSalesIssues || fetchedSI
       const purchaseOrders = customPurchaseOrders || fetchedPO
+      const payrollRecords = fetchedPR
 
       const custMap = new Map((fetchedCust || []).map((c: any) => [c.id, (c.payload ? c.payload.name : c.name) || c.id]))
       const soMap = new Map((fetchedSO || []).map((so: any) => [so.id, so.payload ? { ...so.payload, ...so } : so]))
@@ -1256,6 +1253,45 @@ class FinanceStore {
               })
 
               hasNewSync = true
+            }
+          });
+
+          // D. Sync Payroll Records → Salary Expense & Cash GL Entries
+          (payrollRecords || []).forEach((pr: any, idx: number) => {
+            const jeId = `JE-PAY-${pr.id || idx + 1}`
+            const payAmt = Number(pr.net_salary || pr.net_pay || pr.amount || 0)
+            if (payAmt <= 0) return  // Skip zero or undefined amounts — never fabricate
+
+            const hasPayEntry = this.entries.some((e) => e.id === jeId || e.source_id === pr.id)
+            const hasPayLines = this.lines.some((l) => l.journal_entry_id === jeId)
+
+            if (!hasPayEntry || !hasPayLines) {
+              this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== pr.id)
+              this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
+
+              const salaryAcc = this.getMappedAccount("payroll_gross_salary_expense", "8000-01")
+              const cashAcc = this.getMappedAccount("supplier_payment_bank", "1000-02-26")
+
+              if (!salaryAcc || !cashAcc) {
+                console.warn(`[FinanceSync] Missing accounts for Payroll Record ${pr.id} — skipping.`)
+              } else {
+                this.entries.push({
+                  id: jeId,
+                  entry_date: pr.payment_date || new Date().toISOString().split("T")[0],
+                  source_type: "Payroll Payment",
+                  source_id: pr.id,
+                  created_by: "System Synced",
+                  currency: "ETB",
+                  exchange_rate: 1.0,
+                  description: `Payroll — ${pr.employee_name || "Employee"}`,
+                  is_reversal_of: null,
+                })
+                this.lines.push(
+                  { id: `${jeId}-1`, journal_entry_id: jeId, account_id: salaryAcc.id, debit_amount: payAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
+                  { id: `${jeId}-2`, journal_entry_id: jeId, account_id: cashAcc.id, debit_amount: 0, credit_amount: payAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Employee", party_id: pr.employee_id || null, party_name: pr.employee_name || null }
+                )
+                hasNewSync = true
+              }
             }
           });
 
