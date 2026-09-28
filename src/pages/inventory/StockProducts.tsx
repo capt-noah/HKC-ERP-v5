@@ -411,7 +411,6 @@ export default function StockProducts() {
     if (selectedWarehouse === "ALL") {
       cols.push(
         { key: "warehouse", label: "Warehouse", align: "left" },
-        { key: "details", label: "Supplier / Dosage", align: "left" },
         { key: "cartons", label: "Cartons / Plate", align: "left" },
         { key: "quantity", label: "Total Quantity", align: "right" },
         { key: "unit", label: "UOM / Unit", align: "left" },
@@ -419,8 +418,6 @@ export default function StockProducts() {
       )
     } else if (isWH1(selectedWarehouse)) {
       cols.push(
-        { key: "voucherNo", label: "Voucher No", align: "left" },
-        { key: "customer", label: "Supplier", align: "left" },
         { key: "plateNumber", label: "Plate No", align: "left" },
         { key: "quantity", label: "Total Quantity", align: "right" },
         { key: "unit", label: "UOM", align: "left" },
@@ -1209,20 +1206,6 @@ export default function StockProducts() {
                                     </span>
                                   </td>
 
-                                  {/* Supplier / Dosage */}
-                                  <td className="py-4 px-4 font-bold text-zinc-700 truncate max-w-[150px]" title={isWH1Item ? (prod.customer || wh1Entries[0]?.customer || "—") : (prod.dosage || "—")}>
-                                    {isWH1Item ? (
-                                      <div>
-                                        <div className="truncate text-zinc-900">{prod.customer || wh1Entries[0]?.customer || "—"}</div>
-                                        {prod.voucherNo && <div className="text-[9px] font-mono text-rose-700">No. {prod.voucherNo}</div>}
-                                      </div>
-                                    ) : (
-                                      <div>
-                                        <div className="truncate text-zinc-800">{prod.dosage || "—"}</div>
-                                        {prod.shelfNo && <div className="text-[9px] font-mono text-zinc-400">Shelf {prod.shelfNo}</div>}
-                                      </div>
-                                    )}
-                                  </td>
 
                                   {/* Cartons / Plate */}
                                   <td className="py-4 px-4 font-mono text-[11px] text-zinc-600">
@@ -1363,15 +1346,6 @@ export default function StockProducts() {
                                     </div>
                                   </td>
 
-                                  {/* Voucher No */}
-                                  <td className="py-4 px-4 font-mono text-[11px] font-black text-rose-700">
-                                    {prod.voucherNo || (wh1Entries[0]?.voucherNo ? `No. ${wh1Entries[0].voucherNo}` : "—")}
-                                  </td>
-
-                                  {/* Supplier */}
-                                  <td className="py-4 px-4 font-bold text-zinc-900 truncate max-w-[130px]" title={prod.customer || wh1Entries[0]?.customer || "—"}>
-                                    {prod.customer || (wh1Entries[0]?.customer || "—")}
-                                  </td>
 
                                   {/* Plate Number */}
                                   <td className="py-4 px-4 font-mono text-[11px] text-zinc-600">
