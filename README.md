@@ -2,8 +2,6 @@
 
 Enterprise Resource Planning system tailored for Ethiopian Agricultural Commodity Export (WH1) and Pharmaceutical/Veterinary Import Hubs (WH2/WH3).
 
-> 📖 **Full System Architecture & Context**: See [SYSTEM_CONTEXT_V5.md](./SYSTEM_CONTEXT_V5.md) for complete details on the architecture, 38 MySQL database tables, FIFO COGS calculations, sub-entry pricing, and RBAC rules.
-
 ---
 
 ## Quick Start
