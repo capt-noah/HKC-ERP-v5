@@ -219,6 +219,7 @@ export async function createProduct(body = {}) {
         const plateNumber = clientEntry?.plateNumber || body.plate_number || body.plateNumber || body.truck_plate || body.truckPlate || normalized.plate_number || null
         const partyName = clientEntry?.customer || body.party_name || body.supplier_name || body.supplierName || body.driver_name || body.driverName || body.customer || normalized.supplier_name || "Supplier Arrival"
         const entryUnitPrice = (clientEntry?.unitPrice != null && Number(clientEntry.unitPrice) >= 0) ? Number(clientEntry.unitPrice) : unitCost
+        const entrySellingPrice = (clientEntry?.sellingPrice != null && Number(clientEntry.sellingPrice) >= 0) ? Number(clientEntry.sellingPrice) : (sellingPrice > 0 ? sellingPrice : null)
         const entryReason = clientEntry?.notes || body.reason || body.notes || "Initial Stock Registration"
         const entryDate = clientEntry?.entryDate || body.entryDate || todayStr
         const batchNo = voucherNo ? `GRV-${voucherNo}` : "COMMODITY-WH1"
@@ -226,8 +227,8 @@ export async function createProduct(body = {}) {
           `INSERT INTO export_warehouse_movements (
             id, warehouse_id, product_id, movement_type, voucher_no, batch_no,
             party_name, plate_number, gross_quantity, reject_quantity, net_quantity,
-            uom, unit_price, movement_date, reason, created_by
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            uom, unit_price, selling_price, movement_date, reason, created_by
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             movementId,
             warehouseId,
@@ -242,6 +243,7 @@ export async function createProduct(body = {}) {
             qty,
             normalized.unit || "Quintal",
             entryUnitPrice,
+            entrySellingPrice,
             entryDate,
             entryReason,
             body.createdBy || body.performedBy || "Warehouse Officer",
@@ -254,8 +256,8 @@ export async function createProduct(body = {}) {
         const batchId = `PB-${prodId}-${Date.now()}`
         await conn.query(
           `INSERT INTO pharma_product_batches (
-            id, product_id, warehouse_id, batch_no, mfg_date, expiry_date, quantity, unit_cost, qa_status, location, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            id, product_id, warehouse_id, batch_no, mfg_date, expiry_date, quantity, unit_cost, selling_price, qa_status, location, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             batchId,
             prodId,
@@ -265,6 +267,7 @@ export async function createProduct(body = {}) {
             normalized.expiry_date || defaultExpiryStr,
             qty,
             unitCost,
+            sellingPrice,
             "Released",
             normalized.shelf_number || null,
             "Initial Stock Registration",
@@ -423,6 +426,14 @@ export async function updateProduct(id, updates = {}) {
           syncBatchClauses.push("unit_cost = ?")
           syncBatchVals.push(newUnitCost)
         }
+        if (normalized.selling_price !== undefined && normalized.selling_price !== null) {
+          syncBatchClauses.push("selling_price = ?")
+          syncBatchVals.push(Number(normalized.selling_price))
+        }
+        if (normalized.quantity !== undefined && normalized.quantity !== null) {
+          syncBatchClauses.push("quantity = ?")
+          syncBatchVals.push(Number(normalized.quantity))
+        }
         if (normalized.batch_no && String(normalized.batch_no).trim() !== "") {
           syncBatchClauses.push("batch_no = ?")
           syncBatchVals.push(normalized.batch_no)
@@ -452,6 +463,14 @@ export async function updateProduct(id, updates = {}) {
           syncSmClauses.push("unit_price = ?", "unit_cost = ?")
           syncSmVals.push(newUnitCost, newUnitCost)
         }
+        if (normalized.selling_price !== undefined && normalized.selling_price !== null) {
+          syncSmClauses.push("selling_price = ?")
+          syncSmVals.push(Number(normalized.selling_price))
+        }
+        if (normalized.quantity !== undefined && normalized.quantity !== null) {
+          syncSmClauses.push("quantity = ?", "balance_after = ?")
+          syncSmVals.push(Number(normalized.quantity), Number(normalized.quantity))
+        }
         if (normalized.batch_no && String(normalized.batch_no).trim() !== "") {
           syncSmClauses.push("batch_no = ?")
           syncSmVals.push(normalized.batch_no)
@@ -463,10 +482,6 @@ export async function updateProduct(id, updates = {}) {
         if (normalized.mfg_date && String(normalized.mfg_date).trim() !== "") {
           syncSmClauses.push("mfg_date = ?")
           syncSmVals.push(normalized.mfg_date)
-        }
-        if (normalized.selling_price !== undefined) {
-          syncSmClauses.push("selling_price = ?")
-          syncSmVals.push(Number(normalized.selling_price))
         }
 
         if (syncSmClauses.length > 0) {

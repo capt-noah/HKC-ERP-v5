@@ -37,6 +37,7 @@ export interface BatchInfo {
   status: "Released" | "Pending QA" | "Quarantined"
   unitPrice?: number
   costPrice?: number
+  sellingPrice?: number
   notes?: string
 }
 
@@ -683,6 +684,7 @@ class ErpStore {
           expiry: b.expiry_date || b.expiryDate || "",
           mfgDate: b.mfg_date || b.mfgDate,
           unitPrice: Number(b.unit_cost || b.unitPrice || p.unitCost || 0),
+          sellingPrice: Number(b.selling_price || b.sellingPrice || p.sellingPrice || 0),
           status: b.qa_status === "Released" ? ("Released" as const) : b.qa_status === "Quarantined" ? ("Quarantined" as const) : ("Released" as const),
           notes: b.notes,
         }))
@@ -702,9 +704,8 @@ class ErpStore {
           const batchMatch = matchingBatches.find((b: any) => (b.batch_no || b.batchNo) === (sm.batch_no || sm.batchNo))
           const mfgDate = sm.mfg_date || sm.mfgDate || batchMatch?.mfgDate || batchMatch?.mfg_date || p.mfg_date || p.manufacturingDate || ""
           const expiryDate = sm.expiry_date || sm.expiryDate || batchMatch?.expiry || batchMatch?.expiry_date || p.expiry_date || p.expiry || ""
-          const sellingPrice = (mType === "leave")
-            ? (sm.selling_price != null ? Number(sm.selling_price) : (sm.sellingPrice != null ? Number(sm.sellingPrice) : (p.sellingPrice != null ? Number(p.sellingPrice) : undefined)))
-            : undefined
+          const rawSellingPrice = sm.selling_price != null ? Number(sm.selling_price) : (sm.sellingPrice != null ? Number(sm.sellingPrice) : (batchMatch?.selling_price != null ? Number(batchMatch.selling_price) : (batchMatch?.sellingPrice != null ? Number(batchMatch.sellingPrice) : (p.sellingPrice != null ? Number(p.sellingPrice) : undefined))))
+          const sellingPrice = (rawSellingPrice !== undefined && !isNaN(rawSellingPrice) && rawSellingPrice > 0) ? rawSellingPrice : undefined
           const unitPrice = sm.unit_cost != null ? Number(sm.unit_cost) : (sm.unit_price != null ? Number(sm.unit_price) : (p.unitCost != null ? Number(p.unitCost) : 0))
 
           return {
@@ -737,8 +738,8 @@ class ErpStore {
         const latestBatch = mappedBatches[0]?.batchNo || p.batch || p.batch_no || ""
         const latestExpiry = mappedBatches[0]?.expiry || p.expiry || p.expiry_date || ""
         const latestMfg = mappedBatches[0]?.mfgDate || p.manufacturingDate || p.mfgDate || p.mfg_date || ""
-        const pUnitCost = Number(p.unitCost ?? p.unit_cost ?? 0)
-        const pSellingPrice = Number(p.sellingPrice ?? p.selling_price ?? 0)
+        const pUnitCost = (mappedBatches[0]?.unitPrice != null && mappedBatches[0].unitPrice > 0) ? mappedBatches[0].unitPrice : Number(p.unitCost ?? p.unit_cost ?? 0)
+        const pSellingPrice = (mappedBatches[0]?.sellingPrice != null && mappedBatches[0].sellingPrice > 0) ? mappedBatches[0].sellingPrice : Number(p.sellingPrice ?? p.selling_price ?? 0)
 
         return {
           ...p,
@@ -2864,6 +2865,7 @@ class ErpStore {
             expiry: entry.expiryDate || "",
             mfgDate: entry.mfgDate || undefined,
             unitPrice: unitCost,
+            sellingPrice: sellingPrice,
             status: isQuarantine ? "Quarantined" : "Released",
           })
         }
@@ -2900,6 +2902,7 @@ class ErpStore {
           expiry_date: entry.expiryDate || null,
           quantity: Number(entry.qtyReceived || 0),
           unit_cost: unitCost,
+          selling_price: sellingPrice,
           qa_status: isQuarantine ? "Quarantined" : "Released",
           notes: entry.remark || null,
         }).catch((err) => console.warn("Batch upsert error:", err))
@@ -2984,6 +2987,7 @@ class ErpStore {
     if (!prod) throw new Error("Product not found")
 
     const currentEntries = prod.binCardEntries || []
+    const targetEntry = currentEntries.find((e) => e.id === entryId)
     const rawUpdated = currentEntries.map((e) => {
       if (e.id !== entryId) return e
       return { ...e, ...patch }
@@ -2991,49 +2995,105 @@ class ErpStore {
 
     const { recalculatedEntries, totalQuantity, latestBatch, latestExpiry } = this.recalculateBinCardLedger(rawUpdated)
     const unitCost = patch.unitPrice !== undefined ? Number(patch.unitPrice) : Number(prod.unitCost || 0)
+    const sellingPrice = (patch.sellingPrice !== undefined && Number(patch.sellingPrice) > 0)
+      ? Number(patch.sellingPrice)
+      : (Number(prod.sellingPrice || 0) > 0 ? Number(prod.sellingPrice) : unitCost)
     const nextVal = totalQuantity * unitCost
 
     const updatedBreakdown = [{ warehouse: prod.warehouse, qty: totalQuantity }]
     const packSize = Number(prod.quantityPerPack || 1)
     const nextCartons = packSize > 0 ? Math.floor(totalQuantity / packSize) : (prod.numberOfCartons || 0)
 
+    const isRec = targetEntry ? (targetEntry.type === "entry" || Number(targetEntry.qtyReceived || 0) > 0) : true
+    const entryQty = isRec
+      ? (patch.qtyReceived !== undefined ? Number(patch.qtyReceived) : Number(targetEntry?.qtyReceived || 0))
+      : (patch.qtyIssued !== undefined ? Number(patch.qtyIssued) : Number(targetEntry?.qtyIssued || 0))
+
+    let updatedBatches = [...(prod.batches || [])]
+
     const isExport = isExportWarehouse(prod.warehouse, this.warehouses)
     if (!isExport) {
-      updateResource("stock_movements", entryId, {
-        batch_no: patch.batchNo,
-        mfg_date: patch.mfgDate,
-        expiry_date: patch.expiryDate,
-        party: patch.party,
-        unit_cost: patch.unitPrice,
-        unit_price: patch.unitPrice,
-        selling_price: patch.sellingPrice,
-        notes: patch.remark,
-        movement_date: patch.date,
-      } as any).catch(() => {})
+      // 1. Update stock_movements in MySQL
+      try {
+        await updateResource("stock_movements", entryId, {
+          quantity: entryQty,
+          unit_cost: unitCost,
+          unit_price: unitCost,
+          selling_price: sellingPrice,
+          balance_after: totalQuantity,
+          batch_no: patch.batchNo || targetEntry?.batchNo,
+          mfg_date: patch.mfgDate || targetEntry?.mfgDate,
+          expiry_date: patch.expiryDate || targetEntry?.expiryDate,
+          party: patch.party || targetEntry?.party,
+          notes: patch.remark || targetEntry?.remark,
+          movement_date: patch.date || targetEntry?.date,
+        } as any)
+      } catch (err) {
+        console.warn("Could not sync stock_movements update:", err)
+      }
+
+      // 2. Update pharma_product_batches in MySQL
+      const matchingBatch = (prod.batches || []).find((b) => b.batchNo === (patch.batchNo || targetEntry?.batchNo)) || prod.batches?.[0]
+      if (matchingBatch) {
+        updatedBatches = (prod.batches || []).map((b) => {
+          if (b.id === matchingBatch.id || b.batchNo === matchingBatch.batchNo) {
+            return {
+              ...b,
+              batchNo: patch.batchNo || b.batchNo,
+              qty: totalQuantity,
+              unitPrice: unitCost,
+              sellingPrice: sellingPrice,
+              expiry: patch.expiryDate || b.expiry,
+              mfgDate: patch.mfgDate || b.mfgDate,
+            }
+          }
+          return b
+        })
+
+        if (matchingBatch.id) {
+          try {
+            await updateResource("pharma_product_batches", matchingBatch.id, {
+              quantity: totalQuantity,
+              unit_cost: unitCost,
+              selling_price: sellingPrice,
+              batch_no: patch.batchNo || matchingBatch.batchNo,
+              mfg_date: patch.mfgDate || matchingBatch.mfgDate,
+              expiry_date: patch.expiryDate || matchingBatch.expiry,
+            } as any)
+          } catch (err) {
+            console.warn("Could not sync pharma_product_batches update:", err)
+          }
+        }
+      }
     } else {
-      updateResource("export_warehouse_movements", entryId, {
-        party_name: patch.party,
-        plate_number: patch.plateNumber,
-        voucher_no: patch.voucherNo,
-        unit_price: patch.unitPrice,
-        selling_price: patch.sellingPrice,
-        movement_date: patch.date,
-        reason: patch.remark,
-      } as any).catch(() => {})
+      try {
+        await updateResource("export_warehouse_movements", entryId, {
+          party_name: patch.party,
+          plate_number: patch.plateNumber,
+          voucher_no: patch.voucherNo,
+          gross_quantity: entryQty,
+          net_quantity: isRec ? entryQty : -entryQty,
+          unit_price: unitCost,
+          selling_price: sellingPrice,
+          movement_date: patch.date,
+          reason: patch.remark,
+        } as any)
+      } catch (err) {
+        console.warn("Could not sync export_warehouse_movements update:", err)
+      }
     }
 
     return await this.updateProductDetails(productId, {
       quantity: totalQuantity,
       totalQuantity: totalQuantity + (prod.quantitySold || 0),
-      unitCost: patch.unitPrice !== undefined ? Number(patch.unitPrice) : prod.unitCost,
-      sellingPrice: (patch.sellingPrice !== undefined && Number(patch.sellingPrice) > 0)
-        ? Number(patch.sellingPrice)
-        : (Number(prod.sellingPrice || 0) > 0 ? Number(prod.sellingPrice) : prod.unitCost),
+      unitCost: unitCost,
+      sellingPrice: sellingPrice,
       numberOfCartons: nextCartons,
       totalStockValue: nextVal,
       batch: latestBatch || prod.batch,
       expiry: latestExpiry || prod.expiry,
       stockBreakdown: updatedBreakdown,
+      batches: updatedBatches,
       binCardEntries: recalculatedEntries,
     })
   }
@@ -3056,9 +3116,16 @@ class ErpStore {
     if (!isExport) {
       deleteResource("stock_movements", entryId).catch(() => {})
       this.stockMovements = this.stockMovements.filter((m) => m.id !== entryId && m.reference !== entryId)
+      if (prod.batches?.[0]?.id) {
+        updateResource("pharma_product_batches", prod.batches[0].id, {
+          quantity: totalQuantity,
+        } as any).catch(() => {})
+      }
     } else {
       deleteResource("export_warehouse_movements", entryId).catch(() => {})
     }
+
+    const updatedBatches = (prod.batches || []).map((b, i) => i === 0 ? { ...b, qty: totalQuantity } : b)
 
     return await this.updateProductDetails(productId, {
       quantity: totalQuantity,
@@ -3068,6 +3135,7 @@ class ErpStore {
       batch: latestBatch || prod.batch,
       expiry: latestExpiry || prod.expiry,
       stockBreakdown: updatedBreakdown,
+      batches: updatedBatches,
       binCardEntries: recalculatedEntries,
     })
   }

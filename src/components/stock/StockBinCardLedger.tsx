@@ -130,14 +130,25 @@ export default function StockBinCardLedger({
                     </td>
                     {/* Selling Price / Value (ETB) */}
                     <td className="py-2.5 px-4 text-right font-mono font-bold text-blue-950 border-r border-zinc-100 whitespace-nowrap">
-                      {isLeave && rec.sellingPrice != null && Number(rec.sellingPrice) > 0 ? (
+                      {rec.sellingPrice != null && Number(rec.sellingPrice) > 0 ? (
                         <div>
                           <div className="font-extrabold text-blue-700">
                             ETB {Number(rec.sellingPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                           <div className="text-[9px] text-blue-600/80 font-sans font-semibold">
-                            Invoiced: ETB {(Number(rec.qtyIssued || 0) * Number(rec.sellingPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {isLeave
+                              ? `Invoiced: ETB ${(Number(rec.qtyIssued || 0) * Number(rec.sellingPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : isEntry
+                              ? `Expected: ETB ${(Number(rec.qtyReceived || 0) * Number(rec.sellingPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : "Batch Price"}
                           </div>
+                        </div>
+                      ) : product.sellingPrice != null && Number(product.sellingPrice) > 0 ? (
+                        <div>
+                          <div className="font-extrabold text-blue-700">
+                            ETB {Number(product.sellingPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div className="text-[9px] text-zinc-400 font-sans font-semibold">Catalog Price</div>
                         </div>
                       ) : (
                         <span className="text-zinc-300 font-normal">—</span>

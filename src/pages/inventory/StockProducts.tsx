@@ -415,8 +415,6 @@ export default function StockProducts() {
         { key: "cartons", label: "Cartons / Plate", align: "left" },
         { key: "quantity", label: "Total Quantity", align: "right" },
         { key: "unit", label: "UOM / Unit", align: "left" },
-        { key: "unitCost", label: "Cost Price", align: "right" },
-        { key: "sellingPrice", label: "Selling Price", align: "right" },
         { key: "totalStockValue", label: "Stock Value", align: "right" }
       )
     } else if (isWH1(selectedWarehouse)) {
@@ -426,8 +424,6 @@ export default function StockProducts() {
         { key: "plateNumber", label: "Plate No", align: "left" },
         { key: "quantity", label: "Total Quantity", align: "right" },
         { key: "unit", label: "UOM", align: "left" },
-        { key: "unitCost", label: "Cost Price", align: "right" },
-        { key: "sellingPrice", label: "Selling Price", align: "right" },
         { key: "totalStockValue", label: "Stock Value", align: "right" }
       )
     } else {
@@ -438,8 +434,6 @@ export default function StockProducts() {
         { key: "quantityPerPack", label: "Quantity/Pack", align: "right" },
         { key: "quantity", label: "Total Quantity", align: "right" },
         { key: "unit", label: "Packaging Unit", align: "left" },
-        { key: "unitCost", label: "Cost Price", align: "right" },
-        { key: "sellingPrice", label: "Selling Price", align: "right" },
         { key: "totalStockValue", label: "Stock Value", align: "right" }
       )
     }
@@ -593,7 +587,16 @@ export default function StockProducts() {
           leaveDate: undefined,
           status: addTotalQuantity > 0 ? "In Stock" : "Out of Stock",
           stockBreakdown: [{ warehouse: addWarehouse, qty: addTotalQuantity }],
-          batches: isWH1Form ? [] : [{ batchNo: addBatchNumber, qty: addTotalQuantity, expiry: addExpDate, status: "Released" }],
+          batches: isWH1Form ? [] : [{
+            batchNo: addBatchNumber,
+            qty: addTotalQuantity,
+            expiry: addExpDate,
+            mfgDate: addMfgDate || undefined,
+            status: "Released",
+            unitPrice: Number(addUnitPrice || 0),
+            costPrice: Number(addUnitPrice || 0),
+            sellingPrice: Number(addSellingPrice || 0) > 0 ? Number(addSellingPrice) : undefined,
+          }],
           wh1Entries: isWH1Form ? initialWH1Entries : undefined,
           binCardEntries: (!isWH1Form && addTotalQuantity > 0) ? [{
             id: `BCE-${Date.now()}-init`,
@@ -1142,10 +1145,6 @@ export default function StockProducts() {
 
                           const displayQuantity = isWH1Item ? Number(prod.quantity || 0) : pharmaBalance
                           const displayCostPrice = Number(prod.unitCost ?? (prod as any).unit_cost ?? (prod as any).unit_price ?? 0)
-                          const displaySellingPrice = Number(prod.sellingPrice ?? (prod as any).selling_price ?? 0)
-                          const marginPct = (displayCostPrice > 0 && displaySellingPrice > displayCostPrice)
-                            ? Math.round(((displaySellingPrice - displayCostPrice) / displayCostPrice) * 1000) / 10
-                            : 0
 
                           const computedStockValue = Number(prod.totalStockValue || 0) > 0
                             ? Number(prod.totalStockValue)
@@ -1249,27 +1248,6 @@ export default function StockProducts() {
 
                                   {/* UOM / Unit */}
                                   <td className="py-4 px-4 font-bold text-zinc-500 uppercase">{prod.unit}</td>
-
-                                  {/* Cost Price */}
-                                  <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">
-                                    ETB {money(displayCostPrice)}
-                                  </td>
-
-                                  {/* Selling Price */}
-                                  <td className="py-4 px-4 text-right font-mono font-bold text-blue-900">
-                                    {displaySellingPrice > 0 ? (
-                                      <div>
-                                        <div>ETB {money(displaySellingPrice)}</div>
-                                        {marginPct > 0 && (
-                                          <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
-                                            +{marginPct}%
-                                          </span>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <span className="text-zinc-400 font-normal text-xs">—</span>
-                                    )}
-                                  </td>
 
                                   {/* Stock Value */}
                                   <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
@@ -1409,27 +1387,6 @@ export default function StockProducts() {
                                   {/* UOM */}
                                   <td className="py-4 px-4 font-bold text-zinc-500 uppercase">{prod.unit}</td>
 
-                                  {/* Cost Price */}
-                                  <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">
-                                    ETB {money(displayCostPrice)}
-                                  </td>
-
-                                  {/* Selling Price */}
-                                  <td className="py-4 px-4 text-right font-mono font-bold text-blue-900">
-                                    {displaySellingPrice > 0 ? (
-                                      <div>
-                                        <div>ETB {money(displaySellingPrice)}</div>
-                                        {marginPct > 0 && (
-                                          <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
-                                            +{marginPct}%
-                                          </span>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <span className="text-zinc-400 font-normal text-xs">—</span>
-                                    )}
-                                  </td>
-
                                   {/* Stock Value */}
                                   <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">
                                     <div>ETB {money(computedStockValue || 0)}</div>
@@ -1558,27 +1515,6 @@ export default function StockProducts() {
 
                                 {/* Packaging Unit */}
                                 <td className="py-4 px-4 font-bold text-zinc-600 uppercase">{prod.unit}</td>
-
-                                {/* Cost Price */}
-                                <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">
-                                  ETB {money(displayCostPrice)}
-                                </td>
-
-                                {/* Selling Price */}
-                                <td className="py-4 px-4 text-right font-mono font-bold text-blue-900">
-                                  {displaySellingPrice > 0 ? (
-                                    <div>
-                                      <div>ETB {money(displaySellingPrice)}</div>
-                                      {marginPct > 0 && (
-                                        <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
-                                          +{marginPct}%
-                                        </span>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <span className="text-zinc-400 font-normal text-xs">—</span>
-                                  )}
-                                </td>
 
                                 {/* Total Stock Value */}
                                 <td className="py-4 px-4 text-right font-mono font-black text-zinc-900">

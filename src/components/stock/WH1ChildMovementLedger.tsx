@@ -67,7 +67,7 @@ export default function WH1ChildMovementLedger({
         differenceQty: 0,
         balance: 0,
         unitPrice: Number(e.unitPrice ?? product.unitCost ?? 0),
-        sellingPrice: undefined,
+        sellingPrice: (e.sellingPrice != null && Number(e.sellingPrice) > 0) ? Number(e.sellingPrice) : (product.sellingPrice != null && Number(product.sellingPrice) > 0 ? Number(product.sellingPrice) : undefined),
         remark: e.notes || "",
         createdAt: e.createdAt,
         rawEntry: e,
@@ -352,7 +352,9 @@ export default function WH1ChildMovementLedger({
                             ETB {row.sellingPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                           <div className="text-[10px] text-blue-600/80 font-sans font-semibold">
-                            Invoiced: ETB {(row.qtyOut * row.sellingPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {isEntry
+                              ? `Expected: ETB ${(row.qtyIn * row.sellingPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : `Invoiced: ETB ${(row.qtyOut * row.sellingPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                           </div>
                         </div>
                       ) : (
