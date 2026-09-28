@@ -170,6 +170,24 @@ export async function deleteResource(resource: string, id: string) {
   }
 }
 
+export async function updateExportMovementDifference(movementId: string, differenceQty: number, notes?: string) {
+  const authHeaders = getAuthHeaders()
+  const response = await fetch(`${API_BASE}/api/inventory/export-movements/${encodeURIComponent(movementId)}/difference`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders,
+    },
+    body: JSON.stringify({ differenceQty, notes, reason: notes }),
+  })
+  const body = await parseResponse(response)
+  if (!response.ok) {
+    if (checkAuthResponse(response, body)) throw new Error("Session expired.")
+    throw new Error(errorMessage(body, "Failed to update difference."))
+  }
+  return body
+}
+
 export function persistResources(resources: Array<{ resource: string; items: Identified[] }>) {
   return Promise.all(resources.map(({ resource, items }) => replaceResource(resource, items))).then(() => undefined)
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { createResource, deleteResource, loadResource, updateResource } from "./apiPersistence"
+import { createResource, deleteResource, loadResource, updateResource, updateExportMovementDifference } from "./apiPersistence"
 import { useAuthStore } from "./authStore"
 import { financeStore, calculateMultiTax } from "./financeStore"
 import { evaluateStockStatus } from "../core/inventory/stockEngine"
@@ -60,13 +60,15 @@ export interface WH1Entry {
 
 export interface BinCardMovementEntry {
   id: string
-  type?: "entry" | "leave" | "quarantine" | "reject"
+  type?: "entry" | "leave" | "quarantine" | "reject" | "processed"
   date: string
   batchNo: string
   voucherNo?: string
   plateNumber?: string
   qtyReceived: number
   qtyIssued: number
+  differenceQty?: number
+  qtyProcessed?: number
   balance: number
   expiryDate: string
   mfgDate?: string
@@ -601,32 +603,48 @@ class ErpStore {
 
         let exportRunningBal = 0
         const mappedBinEntries: BinCardMovementEntry[] = sortedProdMovements.map((em: any) => {
-          const isReject = em.movement_type === "reject" || em.movement_type === "REJECT_DEDUCTION" || (em.reason && /reject|loss|cleaning/i.test(em.reason))
-          const isEntry = !isReject && (em.movement_type === "entry" || em.movement_type === "GRV_ENTRY")
-          const qtyReceived = isEntry ? Number(em.gross_quantity || em.grossQuantity || em.net_quantity || em.netQuantity || 0) : 0
-          const qtyIssued = isReject 
-            ? Math.abs(Number(em.reject_quantity || em.rejectQuantity || em.gross_quantity || em.grossQuantity || em.net_quantity || 0)) 
-            : isEntry 
-              ? 0 
-              : Math.abs(Number(em.gross_quantity || em.grossQuantity || em.net_quantity || em.netQuantity || 0))
+          const mType = String(em.movement_type || "").toUpperCase()
+          const isProcessed = mType === "PROCESSED"
+          const isReject = !isProcessed && (mType === "REJECT" || mType === "REJECT_DEDUCTION" || (em.reason && /reject|loss|cleaning/i.test(em.reason)))
+          const isEntry = !isProcessed && !isReject && (mType === "ENTRY" || mType === "GRV_ENTRY")
+          
+          let qtyReceived = 0
+          let qtyIssued = 0
+          let qtyProcessed = 0
+          let differenceQty = 0
 
-          exportRunningBal = Math.max(0, exportRunningBal + qtyReceived - qtyIssued)
+          if (isProcessed) {
+            qtyProcessed = Math.abs(Number(em.gross_quantity || em.grossQuantity || 0))
+          } else if (isEntry) {
+            qtyReceived = Number(em.gross_quantity || em.grossQuantity || em.net_quantity || em.netQuantity || 0)
+          } else if (isReject) {
+            qtyIssued = Math.abs(Number(em.reject_quantity || em.rejectQuantity || em.gross_quantity || em.grossQuantity || em.net_quantity || 0))
+          } else {
+            qtyIssued = Math.abs(Number(em.gross_quantity || em.grossQuantity || 0))
+            differenceQty = Math.max(0, Number(em.reject_quantity || em.rejectQuantity || 0))
+          }
+
+          if (!isProcessed) {
+            exportRunningBal = Math.max(0, exportRunningBal + qtyReceived - (qtyIssued + differenceQty))
+          }
 
           return {
             id: em.id,
-            type: (isReject ? "reject" : isEntry ? "entry" : "leave") as any,
+            type: (isProcessed ? "processed" : isReject ? "reject" : isEntry ? "entry" : "leave") as any,
             date: em.movement_date || em.movementDate || em.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
             batchNo: em.batch_no || em.batchNo || (em.voucher_no ? `GRV-${em.voucher_no}` : "COMMODITY-WH1"),
             voucherNo: em.voucher_no || em.voucherNo || undefined,
             plateNumber: em.plate_number || em.plateNumber || undefined,
             qtyReceived,
             qtyIssued,
+            differenceQty,
+            qtyProcessed,
             balance: exportRunningBal,
             expiryDate: "",
-            party: em.party_name || em.partyName || (isReject ? "Cleaning Loss Deduction" : isEntry ? "Supplier Arrival" : "Customer Dispatch"),
+            party: em.party_name || em.partyName || (isProcessed ? "Internal Processing Line" : isReject ? "Cleaning Loss Deduction" : isEntry ? "Supplier Arrival" : "Customer Dispatch"),
             unitPrice: Number(em.unit_price ?? em.unitPrice ?? p.unitCost ?? 0),
             sellingPrice: (em.selling_price != null || em.sellingPrice != null) ? Number(em.selling_price ?? em.sellingPrice) : undefined,
-            remark: em.reason ? (isReject ? `Reject Loss: ${em.reason}` : em.reason) : em.voucher_no ? `GRV Voucher ${em.voucher_no}` : isEntry ? "Goods Receipt" : "Export Dispatch",
+            remark: em.reason ? (isProcessed ? `Processed: ${em.reason}` : isReject ? `Reject Loss: ${em.reason}` : em.reason) : em.voucher_no ? `GRV Voucher ${em.voucher_no}` : isProcessed ? "Processed Goods" : isEntry ? "Goods Receipt" : "Export Dispatch",
             reason: em.reason || undefined,
             createdAt: em.created_at || em.createdAt || new Date().toISOString(),
           }
@@ -2698,6 +2716,69 @@ class ErpStore {
     this.notify()
   }
 
+  public async updateWH1DispatchDifference(
+    productId: string,
+    movementId: string,
+    differenceQty: number,
+    notes?: string
+  ) {
+    const prod = this.products.find((p) => p.id === productId)
+    if (!prod) throw new Error("Product not found")
+
+    await updateExportMovementDifference(movementId, differenceQty, notes)
+    await this.reloadFromApi()
+    await financeStore.reloadFromApi()
+    this.notify()
+  }
+
+  public async addWH1ProcessedMovement(
+    productId: string,
+    data: {
+      date: string
+      voucherNo?: string
+      quantity: number
+      notes?: string
+      plateNumber?: string
+    }
+  ) {
+    const prod = this.products.find((p) => p.id === productId)
+    if (!prod) throw new Error("Product not found")
+
+    const procQty = Number(data.quantity || 0)
+    if (procQty <= 0) throw new Error("Processed quantity must be greater than 0")
+
+    const movementId = `EWM-PROC-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    await createResource<any>("export_warehouse_movements", {
+      id: movementId,
+      warehouse_id: prod.warehouse || "WH1",
+      product_id: productId,
+      movement_type: "PROCESSED",
+      voucher_no: data.voucherNo || null,
+      batch_no: data.voucherNo || "PROCESSED-WH1",
+      party_name: "Internal Processing Line",
+      plate_number: data.plateNumber || null,
+      gross_quantity: procQty,
+      reject_quantity: 0,
+      net_quantity: 0,
+      uom: prod.unit || "Quintal",
+      unit_price: Number(prod.unitCost || 0),
+      movement_date: data.date || new Date().toISOString().slice(0, 10),
+      reason: data.notes || "Cleaned & processed goods ready for dispatch",
+    })
+
+    await this.reloadFromApi()
+    this.notify()
+  }
+
+  public async deleteWH1ProcessedMovement(productId: string, movementId: string) {
+    const prod = this.products.find((p) => p.id === productId)
+    if (!prod) throw new Error("Product not found")
+
+    await deleteResource("export_warehouse_movements", movementId)
+    await this.reloadFromApi()
+    this.notify()
+  }
+
   public recalculateBinCardLedger(entries: BinCardMovementEntry[] = []) {
     const sorted = [...entries].sort((a, b) => {
       const timeA = new Date(a.createdAt || (a.date && a.date !== "—" ? a.date : 0)).getTime()
@@ -3539,6 +3620,39 @@ class ErpStore {
       return merged
     })
     this.notify()
+  }
+
+  public updatePurchaseOrderGLDistribution(
+    poId: string,
+    accountEntries: VoucherAccountRow[],
+    options?: {
+      targetAccountId?: string
+      targetAccountCode?: string
+      targetAccountName?: string
+      creditAccountId?: string
+      creditAccountCode?: string
+      creditAccountName?: string
+      notes?: string
+    }
+  ): { success: boolean; error?: string } {
+    const target = this.purchaseOrders.find((p) => p.id === poId)
+    if (!target) return { success: false, error: "Purchase Order not found" }
+
+    const firstDebit = accountEntries.find((e) => Number(e.debit) > 0)
+    const firstCredit = accountEntries.find((e) => Number(e.credit) > 0)
+
+    const updates: Partial<PurchaseOrder> = {
+      accountEntries,
+      targetAccountId: options?.targetAccountId || firstDebit?.accountId || target.targetAccountId,
+      targetAccountCode: options?.targetAccountCode || firstDebit?.accountCode || target.targetAccountCode,
+      targetAccountName: options?.targetAccountName || firstDebit?.accountName || target.targetAccountName,
+      creditAccountId: options?.creditAccountId || firstCredit?.accountId || target.creditAccountId,
+      creditAccountCode: options?.creditAccountCode || firstCredit?.accountCode || target.creditAccountCode,
+      creditAccountName: options?.creditAccountName || firstCredit?.accountName || target.creditAccountName,
+    }
+
+    this.updatePurchaseOrder(poId, updates)
+    return { success: true }
   }
 
   public recordPurchaseOrderInstallment(poId: string, installment: {

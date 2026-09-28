@@ -629,15 +629,24 @@ class FinanceStore {
         source_type: e.source_type || "MANUAL",
         currency: e.currency || "ETB",
       })))
-      this.lines = lines.map((l: any) => ({
-        ...l,
-        debit_amount: Number(l.debit_amount ?? l.debit ?? 0),
-        credit_amount: Number(l.credit_amount ?? l.credit ?? 0),
-        currency: l.currency || "ETB",
-        exchange_rate_at_time: Number(l.exchange_rate_at_time || 1.0),
-        is_cleared: Boolean(l.is_cleared),
-        cleared_date: l.cleared_date || (l.is_cleared ? new Date().toISOString().slice(0, 10) : null),
-      }))
+      const seenLineIds = new Set<string>()
+      this.lines = lines
+        .filter((l: any) => {
+          const id = l.id || l.line_id
+          if (!id) return true
+          if (seenLineIds.has(id)) return false
+          seenLineIds.add(id)
+          return true
+        })
+        .map((l: any) => ({
+          ...l,
+          debit_amount: Number(l.debit_amount ?? l.debit ?? 0),
+          credit_amount: Number(l.credit_amount ?? l.credit ?? 0),
+          currency: l.currency || "ETB",
+          exchange_rate_at_time: Number(l.exchange_rate_at_time || 1.0),
+          is_cleared: Boolean(l.is_cleared),
+          cleared_date: l.cleared_date || (l.is_cleared ? new Date().toISOString().slice(0, 10) : null),
+        }))
       this.invoices = sortNewestFirst(invoices.map((inv: any) => {
         const rawItems = Array.isArray(inv.line_items) ? inv.line_items : []
         const line_items: InvoiceLineItem[] = rawItems.map((li: any) => {
@@ -795,151 +804,12 @@ class FinanceStore {
             const taxRate = Number(si.vat_rate !== undefined ? si.vat_rate : (si.tax_rate !== undefined ? si.tax_rate : (si.vat_amount && subtotal > 0 ? Math.round((Number(si.vat_amount) / subtotal) * 100) : 0)))
             const vatAmount = Number(si.tax_amount !== undefined ? si.tax_amount : (si.vat_amount !== undefined ? si.vat_amount : (taxRate > 0 ? Math.round(subtotal * (taxRate / 100)) : 0)))
             const discountAmount = Number(si.discount_amount || 0)
-            const whtAmount = Number(si.wht_amount || 0)
             const invoiceTotal = Number(si.total_amount || (subtotal + vatAmount - discountAmount))
-            const netReceivableDue = Math.max(0, invoiceTotal - whtAmount)
-
             const isCredit = (si.payment_type || si.paymentType || si.payment_method || si.paymentMethod || "").toString().toLowerCase().includes("credit")
             const isCash = !isCredit
-            const isPosted = (si.status || "").toLowerCase() === "posted"
 
-            // ── GL journal entries (only for posted records with valid total) ──
-            if (isPosted && invoiceTotal > 0) {
-              const saleJeId = `JE-SALE-${si.id}`
-              const cogsJeId = `JE-COGS-${si.id}`
-
-              // Sale Revenue entry
-              const hasSaleEntry = this.entries.some((e) => e.id === saleJeId)
-              const hasSaleLines = this.lines.some((l) => l.journal_entry_id === saleJeId)
-
-              if (!hasSaleEntry || !hasSaleLines) {
-                this.entries = this.entries.filter((e) => e.id !== saleJeId)
-                this.lines = this.lines.filter((l) => l.journal_entry_id !== saleJeId)
-                const debitAcc = isCredit
-                  ? this.getMappedAccount("sales_credit_ar", "1300-03")
-                  : this.getMappedAccount("sales_cash_clearing", "1000-02-26")
-                const revenueAcc = this.getMappedAccount("sales_revenue_domestic", "4000-01-01")
-                const vatAcc = this.getMappedAccount("sales_vat_output", "2000-05")
-                const whtAssetAcc = this.getMappedAccount("sales_wht_withheld", "1320-06-01")
-
-                if (debitAcc && revenueAcc) {
-                  this.entries.push({
-                    id: saleJeId,
-                    entry_date: si.sale_date || new Date().toISOString().split("T")[0],
-                    source_type: "Sales Invoice",
-                    source_id: si.id,
-                    created_by: "System Synced",
-                    currency: "ETB",
-                    exchange_rate: 1.0,
-                    description: `Sales Issue ${si.fs_no || si.id} — ${si.customer_name || "Customer"}${whtAmount > 0 ? " (WHT applied)" : ""}`,
-                    is_reversal_of: null,
-                  })
-
-                  const newSaleLines: JournalEntryLine[] = []
-                  let lineIdx = 1
-
-                  // 1. Debit Net Receivable or Cash
-                  newSaleLines.push({
-                    id: `${saleJeId}-${lineIdx++}`,
-                    journal_entry_id: saleJeId,
-                    account_id: debitAcc.id,
-                    debit_amount: netReceivableDue,
-                    credit_amount: 0,
-                    currency: "ETB",
-                    exchange_rate_at_time: 1.0,
-                    warehouse_id: si.warehouse_id || null,
-                    party_type: "Customer",
-                    party_id: si.customer_id || null,
-                    party_name: si.customer_name || null,
-                  })
-
-                  // 2. Debit Withholding Tax Asset (if client withheld tax)
-                  if (whtAmount > 0 && whtAssetAcc) {
-                    newSaleLines.push({
-                      id: `${saleJeId}-${lineIdx++}`,
-                      journal_entry_id: saleJeId,
-                      account_id: whtAssetAcc.id,
-                      debit_amount: whtAmount,
-                      credit_amount: 0,
-                      currency: "ETB",
-                      exchange_rate_at_time: 1.0,
-                      warehouse_id: si.warehouse_id || null,
-                      party_type: "Customer",
-                      party_id: si.customer_id || null,
-                      party_name: si.customer_name || null,
-                    })
-                  }
-
-                  // 3. Credit Base Sales Revenue (Subtotal net of discount)
-                  const baseRevenue = Math.max(0, subtotal - discountAmount)
-                  newSaleLines.push({
-                    id: `${saleJeId}-${lineIdx++}`,
-                    journal_entry_id: saleJeId,
-                    account_id: revenueAcc.id,
-                    debit_amount: 0,
-                    credit_amount: baseRevenue,
-                    currency: "ETB",
-                    exchange_rate_at_time: 1.0,
-                    warehouse_id: si.warehouse_id || null,
-                    party_type: "Customer",
-                    party_id: si.customer_id || null,
-                    party_name: si.customer_name || null,
-                  })
-
-                  // 4. Credit Output VAT Payable (if VAT charged)
-                  if (vatAmount > 0 && vatAcc) {
-                    newSaleLines.push({
-                      id: `${saleJeId}-${lineIdx++}`,
-                      journal_entry_id: saleJeId,
-                      account_id: vatAcc.id,
-                      debit_amount: 0,
-                      credit_amount: vatAmount,
-                      currency: "ETB",
-                      exchange_rate_at_time: 1.0,
-                      warehouse_id: si.warehouse_id || null,
-                      party_type: "Customer",
-                      party_id: si.customer_id || null,
-                      party_name: si.customer_name || null,
-                    })
-                  }
-
-                  this.lines.push(...newSaleLines)
-                  hasNewSync = true
-                }
-              }
-
-              // COGS entry
-              const hasCogsEntry = this.entries.some((e) => e.id === cogsJeId)
-              const hasCogsLines = this.lines.some((l) => l.journal_entry_id === cogsJeId)
-
-              if (!hasCogsEntry || !hasCogsLines) {
-                this.entries = this.entries.filter((e) => e.id !== cogsJeId)
-                this.lines = this.lines.filter((l) => l.journal_entry_id !== cogsJeId)
-
-                const debitAcc = this.getMappedAccount("cogs_stock_fulfillment", "6000-04")
-                const creditAcc = this.getMappedAccount("inventory_stock_in_hand", "1410-01")
-                const estimatedCost = Math.round(subtotal * 0.7)
-
-                if (debitAcc && creditAcc) {
-                  this.entries.push({
-                    id: cogsJeId,
-                    entry_date: si.sale_date || new Date().toISOString().split("T")[0],
-                    source_type: "Sales Invoice",
-                    source_id: si.id,
-                    created_by: "System Synced",
-                    currency: "ETB",
-                    exchange_rate: 1.0,
-                    description: `COGS — Sales Issue ${si.fs_no || si.id}`,
-                    is_reversal_of: null,
-                  })
-                  this.lines.push(
-                    { id: `${cogsJeId}-1`, journal_entry_id: cogsJeId, account_id: debitAcc.id, debit_amount: estimatedCost, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: si.warehouse_id || null },
-                    { id: `${cogsJeId}-2`, journal_entry_id: cogsJeId, account_id: creditAcc.id, debit_amount: 0, credit_amount: estimatedCost, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: si.warehouse_id || null }
-                  )
-                  hasNewSync = true
-                }
-              }
-            }
+            // ── GL journal entries are authoritative from backend posting (server/modules/sales/salesIssues.js) ──
+            // Do not synthesize client-side GL entries to prevent duplicate lines in MySQL.
 
             // ── Invoices record sync ──
             const invId = `INV-SI-${si.id}`

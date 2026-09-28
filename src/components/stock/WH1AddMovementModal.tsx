@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { X, ArrowDownLeft, MinusCircle, ChevronDown } from "lucide-react"
+import { X, ArrowDownLeft, MinusCircle, ChevronDown, CheckCircle2, Info } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useErpStore, type Product, type WH1Entry } from "@/lib/erpStore"
 
@@ -28,6 +28,13 @@ interface WH1AddMovementModalProps {
     reason?: string
     notes?: string
   }) => Promise<void>
+  onSaveProcessed?: (productId: string, processedData: {
+    date: string
+    voucherNo?: string
+    quantity: number
+    notes?: string
+    plateNumber?: string
+  }) => Promise<void>
 }
 
 const TON_TO_QUINTAL = 10
@@ -38,10 +45,11 @@ export default function WH1AddMovementModal({
   onClose,
   onSaveEntry,
   onSaveReject,
+  onSaveProcessed,
 }: WH1AddMovementModalProps) {
   const erp = useErpStore()
   const { showToast } = useFeedback()
-  const [activeTab, setActiveTab] = useState<"entry" | "reject">("entry")
+  const [activeTab, setActiveTab] = useState<"entry" | "processed" | "reject">("entry")
   const [isSaving, setIsSaving] = useState(false)
 
   // Inbound Entry Form State
@@ -63,6 +71,13 @@ export default function WH1AddMovementModal({
   const [rejectParty, setRejectParty] = useState("")
   const [showRejectSupplierDropdown, setShowRejectSupplierDropdown] = useState(false)
   const [rejectNotes, setRejectNotes] = useState("")
+
+  // Processed Goods Form State
+  const [processedDate, setProcessedDate] = useState("")
+  const [processedQuantity, setProcessedQuantity] = useState("")
+  const [processedVoucher, setProcessedVoucher] = useState("")
+  const [processedPlate, setProcessedPlate] = useState("")
+  const [processedNotes, setProcessedNotes] = useState("")
 
   useEffect(() => {
     if (isOpen && product) {
@@ -114,6 +129,13 @@ export default function WH1AddMovementModal({
       setRejectParty(defaultSupplier)
       setShowRejectSupplierDropdown(false)
       setRejectNotes("")
+
+      // Reset Processed fields
+      setProcessedDate(new Date().toISOString().slice(0, 10))
+      setProcessedQuantity("")
+      setProcessedVoucher("")
+      setProcessedPlate(product.plateNumber || "")
+      setProcessedNotes("")
     }
   }, [isOpen, product])
 
@@ -226,6 +248,37 @@ export default function WH1AddMovementModal({
     }
   }
 
+  const handleSaveProcessedSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!product || !onSaveProcessed) return
+    const rawQty = parseFloat(processedQuantity)
+    if (isNaN(rawQty) || rawQty <= 0) {
+      showToast("Validation Error", "warning", "Please specify a valid processed quantity.")
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      await onSaveProcessed(product.id, {
+        date: processedDate || new Date().toISOString().slice(0, 10),
+        voucherNo: processedVoucher.trim() || undefined,
+        quantity: rawQty,
+        notes: processedNotes.trim() || undefined,
+        plateNumber: processedPlate.trim() || undefined,
+      })
+      showToast(
+        "Processed Goods Recorded",
+        "success",
+        `Categorized ${rawQty.toLocaleString()} ${product.unit || "Quintals"} as processed goods.`
+      )
+      onClose()
+    } catch (err: any) {
+      showToast("Save Error", "warning", err.message || "Failed to record processed goods.")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   return (
     <AnimatePresence>
       <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
@@ -252,7 +305,7 @@ export default function WH1AddMovementModal({
             </button>
           </div>
 
-          {/* Segmented Mode Selector with 2 options */}
+          {/* Segmented Mode Selector with 3 options */}
           <div className="flex rounded-xl bg-zinc-100 p-1 mb-5 border border-zinc-200/80 gap-1">
             <button
               type="button"
@@ -265,6 +318,18 @@ export default function WH1AddMovementModal({
             >
               <ArrowDownLeft className="size-3.5 text-emerald-600" />
               Inbound Entry (GRV)
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("processed")}
+              className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                activeTab === "processed"
+                  ? "bg-white text-sky-800 shadow-xs border border-zinc-200/60"
+                  : "text-zinc-500 hover:text-zinc-800"
+              }`}
+            >
+              <CheckCircle2 className="size-3.5 text-sky-600" />
+              Processed Goods
             </button>
             <button
               type="button"
@@ -511,7 +576,102 @@ export default function WH1AddMovementModal({
             </form>
           )}
 
-          {/* TAB 2: REJECT LOSS (CLEANING DEDUCTION) */}
+          {/* TAB 2: PROCESSED GOODS CATEGORIZATION */}
+          {activeTab === "processed" && (
+            <form onSubmit={handleSaveProcessedSubmit} className="space-y-4 text-xs font-semibold">
+              <div className="p-3.5 bg-sky-50 border border-sky-200 rounded-2xl text-sky-950 text-xs flex items-start gap-2.5">
+                <Info className="size-4 text-sky-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-bold text-sky-950">Informational Categorization</p>
+                  <p className="text-[11px] text-sky-800 mt-0.5 leading-relaxed">
+                    Recording processed goods documents cleaned, sorted commodity surplus remaining in the warehouse. It does not alter your physical inventory total or financial stock valuation.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-1 block">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Date Processed</span>
+                  <input
+                    type="date"
+                    value={processedDate}
+                    onChange={(e) => setProcessedDate(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono font-bold"
+                    required
+                  />
+                </label>
+
+                <label className="space-y-1 block">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">
+                    Quantity Processed ({product.unit || "Quintal"})
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="e.g. 485"
+                    value={processedQuantity}
+                    onChange={(e) => setProcessedQuantity(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono font-bold text-sky-900"
+                    required
+                  />
+                </label>
+
+                <label className="space-y-1 block">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Parcel / Batch / Reference (Optional)</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. Surplus from SO-2500 run"
+                    value={processedVoucher}
+                    onChange={(e) => setProcessedVoucher(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                  />
+                </label>
+
+                <label className="space-y-1 block">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Truck Plate / Staging Bay (Optional)</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. Bay 2 / Warehouse Floor"
+                    value={processedPlate}
+                    onChange={(e) => setProcessedPlate(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 uppercase font-mono"
+                  />
+                </label>
+
+                <label className="space-y-1 block md:col-span-2">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Cleaning Line / QC Notes</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. Cleaned & destoned grade-1 mung bean surplus ready in store"
+                    value={processedNotes}
+                    onChange={(e) => setProcessedNotes(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3"
+                  />
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 border-t border-zinc-150 pt-4 mt-6">
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={onClose}
+                  className="px-4 py-2 rounded-xl border border-zinc-200 text-zinc-700 font-bold text-xs hover:bg-zinc-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-sm transition-all cursor-pointer inline-flex items-center gap-1.5"
+                >
+                  <CheckCircle2 className="size-4 text-white" />
+                  {isSaving ? "Saving..." : "Record Processed Goods"}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* TAB 3: REJECT LOSS (CLEANING DEDUCTION) */}
           {activeTab === "reject" && (
             <form onSubmit={handleSaveRejectSubmit} className="space-y-4 text-xs font-semibold">
               {/* Dynamic Live Loss Card */}

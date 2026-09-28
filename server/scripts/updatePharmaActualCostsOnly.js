@@ -64,12 +64,12 @@ async function runCostOnlyUpdate() {
         WHERE product_id = ?
       `, [item.newCost, item.id])
 
-      // Also update unit_cost in stock_movements for initial movements of this product
+      // Also update unit_cost and unit_price in stock_movements for all movements of this product
       await conn.query(`
         UPDATE stock_movements
-        SET unit_cost = ?
-        WHERE product_id = ? AND (movement_type = 'IN' OR movement_type = 'RECEIPT' OR id LIKE 'SM-INIT-%')
-      `, [item.newCost, item.id])
+        SET unit_cost = ?, unit_price = ?
+        WHERE product_id = ?
+      `, [item.newCost, item.newCost, item.id])
     }
 
     await conn.commit()

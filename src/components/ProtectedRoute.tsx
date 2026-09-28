@@ -35,6 +35,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     } else if (pathname.startsWith("/finance")) {
       if (isSuper || roles.includes("finance_manager")) {
         void financeStore.loadFromApi()
+        void erpStore.loadInventoryData()
       }
     } else if (pathname.startsWith("/hr")) {
       if (isSuper || roles.includes("hr_manager")) {
@@ -51,7 +52,10 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
         // Single-role users: load only their assigned domain
         if (roles.includes("inventory_admin")) void erpStore.loadInventoryData()
         if (roles.includes("sales_manager") || roles.includes("hkc_docs_manager")) void erpStore.loadSalesData()
-        if (roles.includes("finance_manager")) void financeStore.loadFromApi()
+        if (roles.includes("finance_manager")) {
+          void financeStore.loadFromApi()
+          void erpStore.loadInventoryData()
+        }
         if (roles.includes("hr_manager")) void hrStore.loadFromApi()
       }
     }

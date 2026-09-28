@@ -25,8 +25,6 @@ export async function migrateWarehousesSchema() {
       await pool.query("ALTER TABLE `warehouses` ADD COLUMN `status` VARCHAR(50) NULL DEFAULT 'Active' AFTER `target_markets`")
       console.log("[DB Migration] Added `status` column to `warehouses` table.")
     }
-
-    console.log("[DB Migration] `warehouses` table columns verified successfully.")
   } catch (err) {
     console.warn("[DB Migration] Warehouses schema check notice:", err.message)
   }

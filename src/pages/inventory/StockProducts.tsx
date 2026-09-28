@@ -673,6 +673,19 @@ export default function StockProducts() {
     await erp.addWH1RejectEntry(productId, rejectData)
   }
 
+  const handleSaveWH1Processed = async (
+    productId: string,
+    procData: {
+      date: string
+      voucherNo?: string
+      quantity: number
+      notes?: string
+      plateNumber?: string
+    }
+  ) => {
+    await erp.addWH1ProcessedMovement(productId, procData)
+  }
+
   // Handle Edit/Delete Sub Entry
   const openEditSubEntry = (product: Product, entry: WH1Entry) => {
     setEditingSubEntry({ product, entry })
@@ -2451,6 +2464,7 @@ export default function StockProducts() {
         onSaveEntry={handleSaveWH1Entry}
         onSaveLeave={handleSaveWH1Leave}
         onSaveReject={handleSaveWH1Reject}
+        onSaveProcessed={handleSaveWH1Processed}
       />
 
       {/* EDIT WH1 SUB ENTRY MODAL */}

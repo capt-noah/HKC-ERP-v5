@@ -21,6 +21,7 @@ import {
   recordMovement,
   updateMovement,
   deleteMovement,
+  recordExportDispatchDifference,
 } from "./inventoryMovementLogic.js"
 
 import {
@@ -61,6 +62,7 @@ export const inventoryService = {
   recordMovement,
   updateMovement,
   deleteMovement,
+  recordExportDispatchDifference,
 
   // Transfer Operations
   listTransfers,

@@ -79,10 +79,10 @@ async function runMigration() {
       WHERE \`id\` = 'P-1789991499832'
     `)
 
-    // Reconcile OXYTONG 20 (60 ctn * 150 = 9,000 opening; sold 1,500 = 7,500 balance)
+    // Reconcile OXYTONG 20 (60 ctn * 150 = 9,000 opening; sold 1,500 = 7,500 balance @ 181.59 cost)
     await conn.query(`
       UPDATE \`pharma_products\`
-      SET \`number_of_cartons\` = 60, \`quantity_per_pack\` = 150, \`total_quantity\` = 9000.00, \`quantity\` = 7500.00, \`total_stock_value\` = 1545000.00
+      SET \`number_of_cartons\` = 60, \`quantity_per_pack\` = 150, \`total_quantity\` = 9000.00, \`quantity\` = 7500.00, \`total_stock_value\` = 1361925.00
       WHERE \`id\` = 'P-1788920860228' OR \`sku\` = 'OXY-260516'
     `)
     await conn.query(`
@@ -101,10 +101,10 @@ async function runMigration() {
       WHERE \`id\` = 'SM-ISSUE-1789715366619-m8lr'
     `)
 
-    // Reconcile TY-VITAMINS (111 ctn * 100 = 11,100 opening; sold 7,120 = 3,980 balance)
+    // Reconcile TY-VITAMINS (111 ctn * 100 = 11,100 opening; sold 7,120 = 3,980 balance @ 128.20 cost)
     await conn.query(`
       UPDATE \`pharma_products\`
-      SET \`number_of_cartons\` = 111, \`quantity_per_pack\` = 100, \`total_quantity\` = 11100.00, \`quantity\` = 3980.00, \`total_stock_value\` = 676600.00
+      SET \`number_of_cartons\` = 111, \`quantity_per_pack\` = 100, \`total_quantity\` = 11100.00, \`quantity\` = 3980.00, \`total_stock_value\` = 510236.00
       WHERE \`id\` = 'P-1788859675153' OR \`sku\` = 'TYSTK-D260392U'
     `)
     await conn.query(`
@@ -118,10 +118,10 @@ async function runMigration() {
       WHERE \`id\` = 'SM-INIT-P-1788859675153'
     `)
 
-    // Reconcile ASHOXY 20% 5GM (21 ctn * 132 = 2,772 opening & balance)
+    // Reconcile ASHOXY 20% 5GM (21 ctn * 132 = 2,772 opening & balance @ 201.63 cost)
     await conn.query(`
       UPDATE \`pharma_products\`
-      SET \`number_of_cartons\` = 21, \`quantity_per_pack\` = 132, \`total_quantity\` = 2772.00, \`quantity\` = 2772.00, \`total_stock_value\` = 632016.00
+      SET \`number_of_cartons\` = 21, \`quantity_per_pack\` = 132, \`total_quantity\` = 2772.00, \`quantity\` = 2772.00, \`total_stock_value\` = 558918.36
       WHERE \`id\` = 'P-1788860444633' OR \`sku\` = 'ASH-ALG26111'
     `)
     await conn.query(`
@@ -135,10 +135,10 @@ async function runMigration() {
       WHERE \`id\` = 'SM-INIT-P-1788860444633'
     `)
 
-    // Reconcile ASHOXY 20% 100GM (133 ctn * 12 = 1,596 opening; sold 84 = 1,512 balance)
+    // Reconcile ASHOXY 20% 100GM (133 ctn * 12 = 1,596 opening; sold 84 = 1,512 balance @ 1713.83 cost)
     await conn.query(`
       UPDATE \`pharma_products\`
-      SET \`number_of_cartons\` = 133, \`quantity_per_pack\` = 12, \`total_quantity\` = 1596.00, \`quantity\` = 1512.00, \`total_stock_value\` = 2925720.00
+      SET \`number_of_cartons\` = 133, \`quantity_per_pack\` = 12, \`total_quantity\` = 1596.00, \`quantity\` = 1512.00, \`total_stock_value\` = 2591310.96
       WHERE \`id\` = 'P-1788861003705' OR \`sku\` = 'ASH-ALG26109'
     `)
     await conn.query(`
@@ -152,10 +152,10 @@ async function runMigration() {
       WHERE \`id\` = 'SM-INIT-P-1788861003705'
     `)
 
-    // Reconcile ASHTYL 20% INJ (5 ctn * 80 = 400 opening & balance)
+    // Reconcile ASHTYL 20% INJ (5 ctn * 80 = 400 opening & balance @ 383.09 cost)
     await conn.query(`
       UPDATE \`pharma_products\`
-      SET \`number_of_cartons\` = 5, \`quantity_per_pack\` = 80, \`total_quantity\` = 400.00, \`quantity\` = 400.00, \`total_stock_value\` = 173200.00
+      SET \`number_of_cartons\` = 5, \`quantity_per_pack\` = 80, \`total_quantity\` = 400.00, \`quantity\` = 400.00, \`total_stock_value\` = 153236.00
       WHERE \`id\` = 'P-1788920432213' OR \`sku\` = 'ASH-ALI26027'
     `)
     await conn.query(`
@@ -169,10 +169,10 @@ async function runMigration() {
       WHERE \`id\` = 'SM-INIT-P-1788920432213'
     `)
 
-    // Reconcile ASHITETRA 2000 (1 ctn * 40 = 40 opening & balance)
+    // Reconcile ASHITETRA 2000 (1 ctn * 40 = 40 opening & balance @ 630.92 cost)
     await conn.query(`
       UPDATE \`pharma_products\`
-      SET \`number_of_cartons\` = 1, \`quantity_per_pack\` = 40, \`total_quantity\` = 40.00, \`quantity\` = 40.00, \`total_stock_value\` = 27600.00
+      SET \`number_of_cartons\` = 1, \`quantity_per_pack\` = 40, \`total_quantity\` = 40.00, \`quantity\` = 40.00, \`total_stock_value\` = 25236.80
       WHERE \`id\` = 'P-1788859302545' OR \`sku\` = 'ASH-ALT25356'
     `)
     await conn.query(`

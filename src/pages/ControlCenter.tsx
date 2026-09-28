@@ -1226,11 +1226,10 @@ export default function ControlCenter() {
         {/* Tab Content 1: Overview */}
         {activeTab === "overview" && (
           <motion.div key="overview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
-            {/* Colored Metric Cards (Posted Revenue, Gross Profit, EBIT & Inventory Value) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {/* Colored Metric Cards (Posted Revenue, Gross Profit & Inventory Value) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               {dataLoading ? (
                 <>
-                  <StatCardSkeleton />
                   <StatCardSkeleton />
                   <StatCardSkeleton />
                   <StatCardSkeleton />
@@ -1310,46 +1309,7 @@ export default function ControlCenter() {
                     </div>
                   </motion.div>
 
-                  {/* Card 3: Net Operating Income (Blue/Indigo Gradient) */}
-                  <motion.div
-                    whileHover={{ scale: 1.01 }}
-                    transition={{ duration: 0.2 }}
-                    className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-blue-500/15 via-indigo-600/5 to-white/70 border border-blue-500/30 backdrop-blur-xl shadow-lg shadow-blue-950/[0.04] flex flex-col justify-between"
-                  >
-                    <div className="absolute top-0 right-0 w-48 h-48 bg-blue-400/20 rounded-full blur-3xl pointer-events-none -mr-12 -mt-12" />
-                    <div>
-                      <div className="flex items-start justify-between relative z-10">
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-700 text-white shadow-sm">
-                              EBIT
-                            </span>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-300 font-mono">
-                              {netMargin.toFixed(1)}%
-                            </span>
-                          </div>
-                          <p className="text-xs text-blue-900 font-extrabold uppercase tracking-wider mt-2.5">Net Operating Income</p>
-                        </div>
-                        <div className="p-3 rounded-2xl bg-blue-500/20 text-blue-800 border border-blue-500/30 shadow-inner">
-                          <BarChart3 className="size-6 text-blue-700" />
-                        </div>
-                      </div>
-                      <div className="mt-4 relative z-10 flex items-baseline gap-1.5 min-w-0 overflow-hidden">
-                        <span className="text-xs sm:text-sm font-extrabold text-blue-950/70 font-sans tracking-wide shrink-0">
-                          ETB
-                        </span>
-                        <span className="text-xl sm:text-2xl xl:text-[22px] font-black text-black tracking-tight font-mono truncate" title={`ETB ${money(netProfit)}`}>
-                          {money(netProfit)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-blue-800 relative z-10">
-                      <CheckCircle2 className="size-4 shrink-0" />
-                      <span className="truncate">Bottom-line operating income</span>
-                    </div>
-                  </motion.div>
-
-                  {/* Card 4: Inventory Value (Indigo/Violet Gradient) */}
+                  {/* Card 3: Inventory Value (Indigo/Violet Gradient) */}
                   <motion.div
                     whileHover={{ scale: 1.01 }}
                     transition={{ duration: 0.2 }}

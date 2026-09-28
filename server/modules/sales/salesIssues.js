@@ -1054,7 +1054,7 @@ export async function postSalesIssue(arg1, arg2) {
     const allAccounts = Array.isArray(coaRes.body) ? coaRes.body.map(a => a?.payload ? { ...a.payload, ...a } : a) : []
     const findAcc = (code) => allAccounts.find(a => (a.code || a.account_code) === code)?.id || null
 
-    const isCredit = existing.payment_type === "Credit"
+    const isCredit = (existing.payment_type || "").toString().toLowerCase().includes("credit")
     const debitAccId = isCredit
       ? (findAcc("1300-03") || findAcc("1200-03") || findAcc("1100-03") || "ACC-1200")
       : (findAcc("1000-02-26") || findAcc("1000-01-01") || findAcc("1000") || "ACC-1000")
