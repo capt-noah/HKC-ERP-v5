@@ -1683,7 +1683,7 @@ class FinanceStore {
     let normalizedParentId: string | null = null
     if (account.parent_account_id) {
       const parentAcc = this.accounts.find(
-        (a) => a.id === account.parent_account_id || a.code === account.parent_account_id || `ACC-${a.code}` === account.parent_account_id
+        (a) => a.id === account.parent_account_id || a.code === account.parent_account_id
       )
       if (parentAcc) {
         normalizedParentId = parentAcc.id
@@ -1691,15 +1691,13 @@ class FinanceStore {
           this.accounts = this.accounts.map((a) => (a.id === parentAcc.id ? { ...a, is_group: true } : a))
         }
       } else {
-        normalizedParentId = account.parent_account_id.startsWith("ACC-")
-          ? account.parent_account_id
-          : `ACC-${account.parent_account_id}`
+        normalizedParentId = account.parent_account_id
       }
     }
 
     const newAcc: AccountItem = {
       ...account,
-      id: `ACC-${account.code}`,
+      id: account.code,
       parent_account_id: normalizedParentId,
     }
     this.accounts = [newAcc, ...this.accounts]
@@ -3623,7 +3621,7 @@ class FinanceStore {
     if (updated.parent_account_id !== undefined) {
       if (updated.parent_account_id) {
         const parentAcc = this.accounts.find(
-          (a) => a.id === updated.parent_account_id || a.code === updated.parent_account_id || `ACC-${a.code}` === updated.parent_account_id
+          (a) => a.id === updated.parent_account_id || a.code === updated.parent_account_id
         )
         if (parentAcc) {
           normalizedParentId = parentAcc.id
@@ -3631,9 +3629,7 @@ class FinanceStore {
             this.accounts = this.accounts.map((a) => (a.id === parentAcc.id ? { ...a, is_group: true } : a))
           }
         } else {
-          normalizedParentId = updated.parent_account_id.startsWith("ACC-")
-            ? updated.parent_account_id
-            : `ACC-${updated.parent_account_id}`
+          normalizedParentId = updated.parent_account_id
         }
       } else {
         normalizedParentId = null
@@ -3646,7 +3642,7 @@ class FinanceStore {
             ...a,
             ...updated,
             ...(normalizedParentId !== undefined ? { parent_account_id: normalizedParentId } : {}),
-            ...(updated.code ? { id: `ACC-${updated.code}` } : {}),
+            ...(updated.code ? { id: updated.code } : {}),
           }
         : a
     )

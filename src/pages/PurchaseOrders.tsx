@@ -98,11 +98,11 @@ export default function PurchaseOrders() {
   // COA Ledger Routing State (for Edit & Reference)
   const [debitAccountCode, setDebitAccountCode] = useState("1410-01")
   const [debitAccountName, setDebitAccountName] = useState("Stock of Green Mung")
-  const [debitAccountId, setDebitAccountId] = useState("ACC-1410-01")
+  const [debitAccountId, setDebitAccountId] = useState("1410-01")
 
   const [creditAccountCode, setCreditAccountCode] = useState("1000-02-26")
   const [creditAccountName, setCreditAccountName] = useState("CBE ECB - 1000006734589")
-  const [creditAccountId, setCreditAccountId] = useState("ACC-1000-02-26")
+  const [creditAccountId, setCreditAccountId] = useState("1000-02-26")
 
   // Combobox Dropdown States & Refs
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
@@ -195,14 +195,14 @@ export default function PurchaseOrders() {
       if (creditAccountCode.startsWith("2100")) {
         setCreditAccountCode("1000-02-26")
         setCreditAccountName("CBE ECB - 1000006734589")
-        setCreditAccountId("ACC-1000-02-26")
+        setCreditAccountId("1000-02-26")
         setBankName("CBE ECB - 1000006734589")
       }
     } else {
       if (creditAccountCode.startsWith("1000")) {
         setCreditAccountCode("2100-06")
         setCreditAccountName("Other Accruals & Payables")
-        setCreditAccountId("ACC-2100-06")
+        setCreditAccountId("2100-06")
       }
     }
   }
@@ -216,10 +216,10 @@ export default function PurchaseOrders() {
     setOperationalCategory("export_commodities")
     setDebitAccountCode("1410-01")
     setDebitAccountName("Stock of Green Mung")
-    setDebitAccountId("ACC-1410-01")
+    setDebitAccountId("1410-01")
     setCreditAccountCode("1000-02-26")
     setCreditAccountName("CBE ECB - 1000006734589")
-    setCreditAccountId("ACC-1000-02-26")
+    setCreditAccountId("1000-02-26")
     setBankName("CBE ECB - 1000006734589")
     setPaymentMethod("Cheque")
     setChequeNo("")
@@ -244,7 +244,7 @@ export default function PurchaseOrders() {
     const drRow = po.accountEntries?.find((e) => Number(e.debit) > 0)
     const drCode = drRow?.accountCode || po.targetAccountCode || "1410-01"
     const drName = drRow?.accountName || po.targetAccountName || "Stock of Green Mung"
-    const drId = drRow?.accountId || po.targetAccountId || `ACC-${drCode}`
+    const drId = drRow?.accountId || po.targetAccountId || drCode
     setDebitAccountCode(drCode)
     setDebitAccountName(drName)
     setDebitAccountId(drId)
@@ -254,7 +254,7 @@ export default function PurchaseOrders() {
     const isCreditPo = (po.paymentType || po.payment_type) === "Credit"
     const crCode = crRow?.accountCode || po.creditAccountCode || (isCreditPo ? "2100-06" : "1000-02-26")
     const crName = crRow?.accountName || po.creditAccountName || po.bankName || (isCreditPo ? "Other Accruals & Payables" : "CBE ECB - 1000006734589")
-    const crId = crRow?.accountId || po.creditAccountId || `ACC-${crCode}`
+    const crId = crRow?.accountId || po.creditAccountId || crCode
     setCreditAccountCode(crCode)
     setCreditAccountName(crName)
     setCreditAccountId(crId)

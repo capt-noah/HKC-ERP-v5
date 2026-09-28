@@ -1056,12 +1056,12 @@ export async function postSalesIssue(arg1, arg2) {
 
     const isCredit = (existing.payment_type || "").toString().toLowerCase().includes("credit")
     const debitAccId = isCredit
-      ? (findAcc("1300-03") || findAcc("1200-03") || findAcc("1100-03") || "ACC-1200")
-      : (findAcc("1000-02-26") || findAcc("1000-01-01") || findAcc("1000") || "ACC-1000")
-    const revenueAccId = findAcc("4000-01-01") || findAcc("4000-03-02") || findAcc("4000") || "ACC-4000"
-    const vatAccId = findAcc("2000-05") || "ACC-2200"
-    const cogsAccId = findAcc("6000-04") || findAcc("6000") || "ACC-5000"
-    const inventoryAccId = findAcc("1410-01") || findAcc("1410-03") || findAcc("1410") || "ACC-1010"
+      ? (findAcc("1300-03") || findAcc("1200-03") || findAcc("1100-03") || "1300-03")
+      : (findAcc("1000-02-26") || findAcc("1000-01-01") || findAcc("1000") || "1000-02-26")
+    const revenueAccId = findAcc("4000-01-01") || findAcc("4000-03-02") || findAcc("4000") || "4000-01-01"
+    const vatAccId = findAcc("2000-05") || "2000-05"
+    const cogsAccId = findAcc("6000-04") || findAcc("6000") || "6000-04"
+    const inventoryAccId = findAcc("1410-01") || findAcc("1410-03") || findAcc("1410") || "1410-01"
 
     const saleJeId = `JE-SALE-${id}`
     const cogsJeId = `JE-COGS-${id}`

@@ -443,11 +443,13 @@ export default function Ledger() {
   // COA Tree Helpers
   const isRootCategoryDummy = (a: any) => {
     return (
-      (a.code === "1000" && a.name.toLowerCase() === "assets") ||
-      (a.code === "2000" && a.name.toLowerCase() === "liabilities") ||
-      (a.code === "3000" && a.name.toLowerCase() === "equity") ||
-      (a.code === "4000" && (a.name.toLowerCase().includes("income") || a.name.toLowerCase().includes("revenue"))) ||
-      (a.code === "5000" && a.name.toLowerCase() === "expenses" && a.is_group === true)
+      Boolean(a.id?.startsWith("ACC-")) && (
+        (a.code === "1000" && a.name.toLowerCase() === "assets") ||
+        (a.code === "2000" && a.name.toLowerCase() === "liabilities") ||
+        (a.code === "3000" && a.name.toLowerCase() === "equity") ||
+        (a.code === "4000" && (a.name.toLowerCase().includes("income") || a.name.toLowerCase().includes("revenue"))) ||
+        (a.code === "5000" && a.name.toLowerCase() === "expenses" && a.is_group === true)
+      )
     )
   }
 

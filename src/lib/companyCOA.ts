@@ -179,6 +179,7 @@ export const COMPANY_CHART_OF_ACCOUNTS: AccountItem[] = [
   { id: "3000-04", code: "3000-04", name: "RETAIND EARNINGS", account_type: "Equity", peachtree_type: "Equity", parent_account_id: "3000", is_active: true, is_group: false },
   { id: "3000-05", code: "3000-05", name: "CUSTOM VALUATION", account_type: "Equity", peachtree_type: "Equity", parent_account_id: "3000", is_active: true, is_group: false },
   { id: "3000-06", code: "3000-06", name: "PRIOR YEAR ADJUSTMENT", account_type: "Equity", peachtree_type: "Equity", parent_account_id: "3000", is_active: true, is_group: false },
+  { id: "3200", code: "3200", name: "RETAINED EARNINGS", account_type: "Equity", peachtree_type: "Equity", parent_account_id: "3000", is_active: true, is_group: false },
   { id: "4000", code: "4000", name: "SALES", account_type: "Revenue", peachtree_type: "Income", parent_account_id: null, is_active: true, is_group: true },
   { id: "4000-01", code: "4000-01", name: "LOCAL SALES", account_type: "Revenue", peachtree_type: "Income", parent_account_id: "4000", is_active: true, is_group: true },
   { id: "4000-01-01", code: "4000-01-01", name: "SALES OF VETERINARY DRUG", account_type: "Revenue", peachtree_type: "Income", parent_account_id: "4000-01", is_active: true, is_group: false },

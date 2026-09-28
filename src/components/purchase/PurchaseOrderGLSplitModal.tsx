@@ -54,7 +54,7 @@ export const PurchaseOrderGLSplitModal: React.FC<PurchaseOrderGLSplitModalProps>
       setDebitLines(
         existingDebits.map((e, idx) => ({
           id: e.id || `dr-${idx}-${Date.now()}`,
-          accountId: e.accountId || `ACC-${e.accountCode}`,
+          accountId: e.accountId || e.accountCode,
           accountCode: e.accountCode,
           accountName: e.accountName || "Account " + e.accountCode,
           description: e.description || purchaseOrder.reasonForPayment || "Purchase Allocation",
@@ -67,7 +67,7 @@ export const PurchaseOrderGLSplitModal: React.FC<PurchaseOrderGLSplitModalProps>
       setDebitLines([
         {
           id: `dr-init-${Date.now()}`,
-          accountId: defaultDrAcc?.id || purchaseOrder.targetAccountId || `ACC-${defaultDrCode}`,
+          accountId: defaultDrAcc?.id || purchaseOrder.targetAccountId || defaultDrCode,
           accountCode: defaultDrAcc?.code || defaultDrCode,
           accountName: defaultDrAcc?.name || purchaseOrder.targetAccountName || "Stock of Green Mung",
           description: purchaseOrder.reasonForPayment || "Procurement Goods Receipt",
@@ -81,7 +81,7 @@ export const PurchaseOrderGLSplitModal: React.FC<PurchaseOrderGLSplitModalProps>
       setCreditLines(
         existingCredits.map((e, idx) => ({
           id: e.id || `cr-${idx}-${Date.now()}`,
-          accountId: e.accountId || `ACC-${e.accountCode}`,
+          accountId: e.accountId || e.accountCode,
           accountCode: e.accountCode,
           accountName: e.accountName || "Account " + e.accountCode,
           description: e.description || (purchaseOrder.paymentType === "Credit" ? "Accounts Payable" : "Bank Disbursement"),
@@ -95,7 +95,7 @@ export const PurchaseOrderGLSplitModal: React.FC<PurchaseOrderGLSplitModalProps>
       setCreditLines([
         {
           id: `cr-init-${Date.now()}`,
-          accountId: defaultCrAcc?.id || purchaseOrder.creditAccountId || `ACC-${defaultCrCode}`,
+          accountId: defaultCrAcc?.id || purchaseOrder.creditAccountId || defaultCrCode,
           accountCode: defaultCrAcc?.code || defaultCrCode,
           accountName: defaultCrAcc?.name || purchaseOrder.creditAccountName || (isCreditPo ? "Other Accruals / AP" : "CBE Bank Operating"),
           description: isCreditPo ? "Accounts Payable Liability" : "Bank Disbursement",
