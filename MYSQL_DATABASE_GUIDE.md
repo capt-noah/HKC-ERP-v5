@@ -240,14 +240,14 @@ npm run test:settings
 
 ### Step 2: Import the SQL Dump File
 The complete pre-built SQL dump file is located at:
-- **[`hkc_erp_production_dump.sql`](file:///Users/menelikalemayehu/Documents/HKC-ERP-V4/hkc_erp_production_dump.sql)** *(2.7 MB, contains all 31 schemas + 1,716 records)*
+- **`hkc_trading_migration_plesk.sql`** *(Contains all 38 schemas with DROP IF EXISTS + current operational records)*
 
 **Import Options**:
-- **Via Plesk GUI**: Click **Import Dump** under your new database in Plesk, upload `hkc_erp_production_dump.sql`, and click **OK**.
-- **Via phpMyAdmin**: Open phpMyAdmin from Plesk, select your database, click **Import**, select `hkc_erp_production_dump.sql`, and click **Go**.
+- **Via Plesk GUI**: Click **Import Dump** under your new database in Plesk, upload `hkc_trading_migration_plesk.sql`, and click **OK**.
+- **Via phpMyAdmin**: Open phpMyAdmin from Plesk, select your database, click **Import**, select `hkc_trading_migration_plesk.sql`, and click **Go**.
 - **Via SSH**:
   ```bash
-  mysql -u hkc_user -p your_database_name < hkc_erp_production_dump.sql
+  mysql -u hkc_user -p your_database_name < hkc_trading_migration_plesk.sql
   ```
 
 ### Step 3: Configure Environment Variables in Plesk Node.js
