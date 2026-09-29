@@ -144,6 +144,8 @@ export async function listSalesIssues(query = {}) {
         settlement_status: issue.settlement_status || (payment_type === "Cash" ? "Fully Settled" : (total_amount > 0 && amount_paid >= total_amount ? "Fully Settled" : amount_paid > 0 ? "Ongoing" : "Unpaid")),
         created_by: issue.created_by || issue.createdBy || "System",
         items: issueItems,
+        account_entries: issue.account_entries || issue.accountEntries || null,
+        accountEntries: issue.account_entries || issue.accountEntries || null,
         savedToDb: true,
       }
     })
@@ -431,6 +433,8 @@ export async function getSalesIssue(id) {
         settlement_status: issue.settlement_status || (payment_type === "Cash" ? "Fully Settled" : (total_amount > 0 && amount_paid >= total_amount ? "Fully Settled" : amount_paid > 0 ? "Ongoing" : "Unpaid")),
         created_by: issue.created_by || issue.createdBy || "System",
         items,
+        account_entries: issue.account_entries || issue.accountEntries || null,
+        accountEntries: issue.account_entries || issue.accountEntries || null,
         savedToDb: true,
       },
     }
@@ -541,6 +545,8 @@ export async function createSalesIssue(input, existingId = null) {
     paymentMethod: payment_type,
     created_by: doc.created_by || "Sales Officer",
     createdBy: doc.created_by || "Sales Officer",
+    account_entries: doc.account_entries || doc.accountEntries || null,
+    accountEntries: doc.account_entries || doc.accountEntries || null,
   }
 
   await drizzleCreateRow({
@@ -677,6 +683,8 @@ export async function updateSalesIssue(input, id) {
     paymentStatus: input?.payment_status || (input?.settlement_status === "Fully Settled" || (input?.payment_type || existing.payment_type) === "Cash" ? "Paid" : (existing.payment_status || "Unpaid")),
     payment_method: input?.payment_type || existing.payment_type || "Cash",
     paymentMethod: input?.payment_type || existing.payment_type || "Cash",
+    account_entries: input?.account_entries !== undefined ? input.account_entries : (input?.accountEntries !== undefined ? input.accountEntries : (existing.account_entries || existing.accountEntries || null)),
+    accountEntries: input?.account_entries !== undefined ? input.account_entries : (input?.accountEntries !== undefined ? input.accountEntries : (existing.account_entries || existing.accountEntries || null)),
   }
 
   await drizzleUpdateRow({
@@ -1157,6 +1165,29 @@ export async function postSalesIssue(arg1, arg2) {
     const saleJeId = `JE-SALE-${id}`
     const cogsJeId = `JE-COGS-${id}`
 
+    // Parse custom account entries if specified on the sales issue
+    const rawCustomEntries = existing.account_entries || existing.accountEntries || null
+    let customEntries = rawCustomEntries
+    if (typeof customEntries === "string") {
+      try { customEntries = JSON.parse(customEntries) } catch { customEntries = null }
+    }
+
+    let customRevLines = []
+    let customCogsLines = []
+
+    if (customEntries && typeof customEntries === "object") {
+      if (Array.isArray(customEntries.revenue_lines)) {
+        customRevLines = customEntries.revenue_lines
+      }
+      if (Array.isArray(customEntries.cogs_lines)) {
+        customCogsLines = customEntries.cogs_lines
+      }
+      if (Array.isArray(customEntries) && customEntries.length > 0) {
+        customRevLines = customEntries.filter(r => !r.is_cogs && r.category !== "cogs")
+        customCogsLines = customEntries.filter(r => r.is_cogs || r.category === "cogs")
+      }
+    }
+
     // A. Sales Journal Entry
     await drizzleCreateRow({
       resource: getResource("journal_entries"),
@@ -1174,52 +1205,40 @@ export async function postSalesIssue(arg1, arg2) {
     })
 
     // B. Sales Journal Entry Lines
-    // 1. Debit Cash (1000) or Accounts Receivable (1300) for Grand Total
-    await drizzleCreateRow({
-      resource: getResource("journal_entry_lines"),
-      body: {
-        id: `${saleJeId}-DR`,
-        journal_entry_id: saleJeId,
-        account_id: debitAccId,
-        debit_amount: grandTotal,
-        credit_amount: 0,
-        currency: "ETB",
-        exchange_rate_at_time: 1.0,
-        warehouse_id: existing.warehouse_id || null,
-        party_type: "Customer",
-        party_id: existing.customer_id || null,
-        party_name: existing.customer_name || existing.customer || null,
-      },
-    })
+    if (customRevLines.length > 0) {
+      for (const [idx, line] of customRevLines.entries()) {
+        const accId = line.accountId || line.account_id || line.accountCode || line.account_code
+        const dAmt = Number(line.debit || line.debit_amount || 0)
+        const cAmt = Number(line.credit || line.credit_amount || 0)
+        if (dAmt <= 0 && cAmt <= 0) continue
 
-    // 2. Credit Sales Revenue (4000) for Net Subtotal
-    await drizzleCreateRow({
-      resource: getResource("journal_entry_lines"),
-      body: {
-        id: `${saleJeId}-CR`,
-        journal_entry_id: saleJeId,
-        account_id: revenueAccId,
-        debit_amount: 0,
-        credit_amount: issueSubtotal,
-        currency: "ETB",
-        exchange_rate_at_time: 1.0,
-        warehouse_id: existing.warehouse_id || null,
-        party_type: "Customer",
-        party_id: existing.customer_id || null,
-        party_name: existing.customer_name || existing.customer || null,
-      },
-    })
-
-    // 3. Credit Output VAT Payable (2000-05) if VAT is charged
-    if (issueVatAmount > 0) {
+        await drizzleCreateRow({
+          resource: getResource("journal_entry_lines"),
+          body: {
+            id: `${saleJeId}-LINE-${idx + 1}`,
+            journal_entry_id: saleJeId,
+            account_id: accId,
+            debit_amount: dAmt,
+            credit_amount: cAmt,
+            currency: "ETB",
+            exchange_rate_at_time: 1.0,
+            warehouse_id: existing.warehouse_id || null,
+            party_type: "Customer",
+            party_id: existing.customer_id || null,
+            party_name: existing.customer_name || existing.customer || null,
+          },
+        })
+      }
+    } else {
+      // 1. Debit Cash (1000) or Accounts Receivable (1300) for Grand Total
       await drizzleCreateRow({
         resource: getResource("journal_entry_lines"),
         body: {
-          id: `${saleJeId}-VAT`,
+          id: `${saleJeId}-DR`,
           journal_entry_id: saleJeId,
-          account_id: vatAccId,
-          debit_amount: 0,
-          credit_amount: issueVatAmount,
+          account_id: debitAccId,
+          debit_amount: grandTotal,
+          credit_amount: 0,
           currency: "ETB",
           exchange_rate_at_time: 1.0,
           warehouse_id: existing.warehouse_id || null,
@@ -1228,10 +1247,84 @@ export async function postSalesIssue(arg1, arg2) {
           party_name: existing.customer_name || existing.customer || null,
         },
       })
+
+      // 2. Credit Sales Revenue (4000) for Net Subtotal
+      await drizzleCreateRow({
+        resource: getResource("journal_entry_lines"),
+        body: {
+          id: `${saleJeId}-CR`,
+          journal_entry_id: saleJeId,
+          account_id: revenueAccId,
+          debit_amount: 0,
+          credit_amount: issueSubtotal,
+          currency: "ETB",
+          exchange_rate_at_time: 1.0,
+          warehouse_id: existing.warehouse_id || null,
+          party_type: "Customer",
+          party_id: existing.customer_id || null,
+          party_name: existing.customer_name || existing.customer || null,
+        },
+      })
+
+      // 3. Credit Output VAT Payable (2000-05) if VAT is charged
+      if (issueVatAmount > 0) {
+        await drizzleCreateRow({
+          resource: getResource("journal_entry_lines"),
+          body: {
+            id: `${saleJeId}-VAT`,
+            journal_entry_id: saleJeId,
+            account_id: vatAccId,
+            debit_amount: 0,
+            credit_amount: issueVatAmount,
+            currency: "ETB",
+            exchange_rate_at_time: 1.0,
+            warehouse_id: existing.warehouse_id || null,
+            party_type: "Customer",
+            party_id: existing.customer_id || null,
+            party_name: existing.customer_name || existing.customer || null,
+          },
+        })
+      }
     }
 
     // C. COGS Journal Entry
-    if (totalCost > 0) {
+    if (customCogsLines.length > 0) {
+      await drizzleCreateRow({
+        resource: getResource("journal_entries"),
+        body: {
+          id: cogsJeId,
+          entry_date: new Date().toISOString().split("T")[0],
+          description: `Inventory cost for sales issue ${existing.fs_no || id}`,
+          source_type: "Sales Issue",
+          source_id: id,
+          created_by: "Sales Officer",
+          currency: "ETB",
+          exchange_rate: 1.0,
+          posting_status: "POSTED",
+        },
+      })
+
+      for (const [idx, line] of customCogsLines.entries()) {
+        const accId = line.accountId || line.account_id || line.accountCode || line.account_code
+        const dAmt = Number(line.debit || line.debit_amount || 0)
+        const cAmt = Number(line.credit || line.credit_amount || 0)
+        if (dAmt <= 0 && cAmt <= 0) continue
+
+        await drizzleCreateRow({
+          resource: getResource("journal_entry_lines"),
+          body: {
+            id: `${cogsJeId}-LINE-${idx + 1}`,
+            journal_entry_id: cogsJeId,
+            account_id: accId,
+            debit_amount: dAmt,
+            credit_amount: cAmt,
+            currency: "ETB",
+            exchange_rate_at_time: 1.0,
+            warehouse_id: existing.warehouse_id || null,
+          },
+        })
+      }
+    } else if (totalCost > 0) {
       await drizzleCreateRow({
         resource: getResource("journal_entries"),
         body: {
@@ -1310,6 +1403,19 @@ export async function postSalesIssue(arg1, arg2) {
         payment_terms: isCash ? "Cash" : "Credit (Net 30)",
         status: paymentStatus,
         settlement_status: settlementStatus,
+        gl_distribution: {
+          revenue_lines: customRevLines.length > 0 ? customRevLines : [
+            { account_id: debitAccId, debit: grandTotal, credit: 0, description: "Customer Settlement" },
+            { account_id: revenueAccId, debit: 0, credit: issueSubtotal, description: "Sales Revenue" },
+            ...(issueVatAmount > 0 ? [{ account_id: vatAccId, debit: 0, credit: issueVatAmount, description: "VAT Output Payable" }] : [])
+          ],
+          cogs_lines: customCogsLines.length > 0 ? customCogsLines : (totalCost > 0 ? [
+            { account_id: cogsAccId, debit: totalCost, credit: 0, description: "Cost of Goods Sold" },
+            { account_id: inventoryAccId, debit: 0, credit: totalCost, description: "Inventory Stock In Hand" }
+          ] : []),
+          updated_at: new Date().toISOString(),
+          updated_by: "Sales Issue System",
+        },
       }
       await drizzleCreateRow({
         resource: getResource("invoices"),

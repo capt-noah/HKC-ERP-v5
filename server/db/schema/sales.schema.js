@@ -78,6 +78,7 @@ export const salesIssues = mysqlTable("sales_issues", {
   taxAmount: decimal("tax_amount", { precision: 18, scale: 2 }).default("0").notNull(),
   paymentStatus: varchar("payment_status", { length: 50 }).default("Unpaid").notNull(),
   paymentMethod: varchar("payment_method", { length: 50 }),
+  accountEntries: json("account_entries"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })

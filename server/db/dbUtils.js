@@ -593,6 +593,14 @@ export function unwrapRow(row, storage) {
   if (out.customer_id !== undefined && out.customerId === undefined) {
     out.customerId = out.customer_id
   }
+  if (out.account_entries !== undefined || out.accountEntries !== undefined) {
+    let entries = out.account_entries !== undefined ? out.account_entries : out.accountEntries
+    if (typeof entries === "string") {
+      try { entries = JSON.parse(entries) } catch { entries = [] }
+    }
+    out.account_entries = entries
+    out.accountEntries = entries
+  }
 
   // Normalization for chart_of_accounts
   if (out.account_type !== undefined && out.accountType === undefined) out.accountType = out.account_type

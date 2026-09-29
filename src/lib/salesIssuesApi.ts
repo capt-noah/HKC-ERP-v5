@@ -43,6 +43,8 @@ export interface SalesIssue {
   posted_by?: string | null
   posted_at?: string | null
   items?: SalesIssueItem[]
+  account_entries?: any
+  accountEntries?: any
 }
 
 export interface AvailableBatch {

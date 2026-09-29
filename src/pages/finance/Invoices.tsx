@@ -730,6 +730,148 @@ export default function Invoices() {
                   )
                 })()}
 
+                {/* CHART OF ACCOUNTS (COA) BREAKDOWN & GL ROUTING */}
+                <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/70 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-zinc-600 flex items-center gap-1.5">
+                        <ArrowRightLeft className="size-3.5 text-purple-700" />
+                        COA Account Breakdown & GL Distribution
+                      </span>
+                      <span className="text-[11px] font-medium text-zinc-500 block mt-0.5">
+                        Multi-account double-entry splits for this transaction in the General Ledger.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSplittingInvoice(activeInvoice)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-purple-100 hover:bg-purple-200 text-purple-900 border border-purple-300 font-bold text-xs transition-colors cursor-pointer"
+                    >
+                      <ArrowRightLeft className="size-3 text-purple-700" /> Maintain / Edit COA Split
+                    </button>
+                  </div>
+
+                  {(() => {
+                    const { salesLines, cogsLines } = store.getInvoiceJournalEntries(activeInvoice)
+                    const dist = activeInvoice.gl_distribution
+                    const accounts = store.getAccounts()
+
+                    // Debits and credits for Revenue & Settlement
+                    const revDebits = dist?.revenue_lines?.filter((l) => Number(l.debit) > 0) || salesLines.filter((l) => Number(l.debit_amount) > 0)
+                    const revCredits = dist?.revenue_lines?.filter((l) => Number(l.credit) > 0) || salesLines.filter((l) => Number(l.credit_amount) > 0)
+                    const cogsDebits = dist?.cogs_lines?.filter((l) => Number(l.debit) > 0) || cogsLines.filter((l) => Number(l.debit_amount) > 0)
+                    const cogsCredits = dist?.cogs_lines?.filter((l) => Number(l.credit) > 0) || cogsLines.filter((l) => Number(l.credit_amount) > 0)
+
+                    const hasEntries = revDebits.length > 0 || revCredits.length > 0
+
+                    if (!hasEntries) {
+                      return (
+                        <div className="p-3 bg-white rounded-xl border border-zinc-200 text-xs text-zinc-500 flex items-center justify-between">
+                          <span>Standard system accounts mapped for this invoice. Click &quot;Maintain / Edit COA Split&quot; to configure custom splits.</span>
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <div className="space-y-2">
+                        {/* Section A: Revenue & Settlement */}
+                        <div className="bg-white rounded-xl border border-zinc-200 p-3 space-y-2">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
+                            Section A: Revenue & Settlement
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            {/* Debits */}
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-emerald-800 uppercase block">Debit Accounts (Receivable / Bank / Cash)</span>
+                              <div className="space-y-1">
+                                {revDebits.map((l: any, i: number) => {
+                                  const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id || a.code === l.account_code)
+                                  const amt = Number(l.debit || l.debit_amount || 0)
+                                  return (
+                                    <div key={i} className="flex items-center justify-between p-1.5 rounded-lg bg-emerald-50/60 border border-emerald-100 font-mono text-[11px]">
+                                      <span className="font-bold text-emerald-950 truncate max-w-[180px]">
+                                        {acc?.code || l.account_code || l.account_id} - {acc?.name || l.account_name || "Account"}
+                                      </span>
+                                      <span className="font-black text-emerald-800">ETB {money(amt)}</span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Credits */}
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-zinc-700 uppercase block">Credit Accounts (Revenue / VAT / AP)</span>
+                              <div className="space-y-1">
+                                {revCredits.map((l: any, i: number) => {
+                                  const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id || a.code === l.account_code)
+                                  const amt = Number(l.credit || l.credit_amount || 0)
+                                  return (
+                                    <div key={i} className="flex items-center justify-between p-1.5 rounded-lg bg-zinc-50 border border-zinc-200 font-mono text-[11px]">
+                                      <span className="font-bold text-zinc-900 truncate max-w-[180px]">
+                                        {acc?.code || l.account_code || l.account_id} - {acc?.name || l.account_name || "Account"}
+                                      </span>
+                                      <span className="font-black text-zinc-950">ETB {money(amt)}</span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Section B: COGS & Inventory (if available) */}
+                        {(cogsDebits.length > 0 || cogsCredits.length > 0) && (
+                          <div className="bg-white rounded-xl border border-zinc-200 p-3 space-y-2">
+                            <div className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
+                              Section B: Inventory & Cost of Goods Sold (COGS)
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                              {/* COGS Debits */}
+                              <div className="space-y-1">
+                                <span className="text-[10px] font-bold text-amber-800 uppercase block">Debit Accounts (COGS Expense)</span>
+                                <div className="space-y-1">
+                                  {cogsDebits.map((l: any, i: number) => {
+                                    const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id || a.code === l.account_code)
+                                    const amt = Number(l.debit || l.debit_amount || 0)
+                                    return (
+                                      <div key={i} className="flex items-center justify-between p-1.5 rounded-lg bg-amber-50/60 border border-amber-100 font-mono text-[11px]">
+                                        <span className="font-bold text-amber-950 truncate max-w-[180px]">
+                                          {acc?.code || l.account_code || l.account_id} - {acc?.name || l.account_name || "COGS"}
+                                        </span>
+                                        <span className="font-black text-amber-900">ETB {money(amt)}</span>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* Inventory Credits */}
+                              <div className="space-y-1">
+                                <span className="text-[10px] font-bold text-zinc-700 uppercase block">Credit Accounts (Inventory Asset Relieved)</span>
+                                <div className="space-y-1">
+                                  {cogsCredits.map((l: any, i: number) => {
+                                    const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id || a.code === l.account_code)
+                                    const amt = Number(l.credit || l.credit_amount || 0)
+                                    return (
+                                      <div key={i} className="flex items-center justify-between p-1.5 rounded-lg bg-zinc-50 border border-zinc-200 font-mono text-[11px]">
+                                        <span className="font-bold text-zinc-900 truncate max-w-[180px]">
+                                          {acc?.code || l.account_code || l.account_id} - {acc?.name || l.account_name || "Inventory"}
+                                        </span>
+                                        <span className="font-black text-zinc-950">ETB {money(amt)}</span>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+                </div>
+
                 {/* Attached Supporting Documents & Payment Advice */}
                 <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/50">
                   <div className="flex items-center justify-between mb-2">

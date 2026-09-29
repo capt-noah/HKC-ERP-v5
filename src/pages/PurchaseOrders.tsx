@@ -11,7 +11,6 @@ import {
   Check,
   ChevronDown,
   FileCheck,
-  Building2,
   Receipt,
   ArrowRightLeft
 } from "lucide-react"
@@ -33,6 +32,7 @@ import PurchaseOrderGLSplitModal from "@/components/purchase/PurchaseOrderGLSpli
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { uploadFile } from "@/lib/fileUpload"
 import COAAccountSelector from "@/components/finance/COAAccountSelector"
+import PurchaseCOASplitSection, { type SplitLineItem } from "@/components/purchase/PurchaseCOASplitSection"
 import { 
   PURCHASE_OPERATIONAL_CATEGORIES, 
   resolvePurchaseAccountsFromMatrix 
@@ -95,14 +95,9 @@ export default function PurchaseOrders() {
   const [paymentType, setPaymentType] = useState<"Cash" | "Credit">("Cash")
   const [status, setStatus] = useState<"PAID" | "DRAFT">("PAID")
 
-  // COA Ledger Routing State (for Edit & Reference)
-  const [debitAccountCode, setDebitAccountCode] = useState("1410-01")
-  const [debitAccountName, setDebitAccountName] = useState("Stock of Green Mung")
-  const [debitAccountId, setDebitAccountId] = useState("1410-01")
-
-  const [creditAccountCode, setCreditAccountCode] = useState("1000-02-26")
-  const [creditAccountName, setCreditAccountName] = useState("CBE ECB - 1000006734589")
-  const [creditAccountId, setCreditAccountId] = useState("1000-02-26")
+  // Multiline COA Debit & Credit state for Create & Edit Voucher modals
+  const [modalDebitLines, setModalDebitLines] = useState<SplitLineItem[]>([])
+  const [modalCreditLines, setModalCreditLines] = useState<SplitLineItem[]>([])
 
   // Combobox Dropdown States & Refs
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
@@ -198,19 +193,51 @@ export default function PurchaseOrders() {
   // Handle Payment Type Toggle
   const handlePaymentTypeChange = (newType: "Cash" | "Credit") => {
     setPaymentType(newType)
-    if (newType === "Cash") {
-      if (creditAccountCode.startsWith("2100")) {
-        setCreditAccountCode("1000-02-26")
-        setCreditAccountName("CBE ECB - 1000006734589")
-        setCreditAccountId("1000-02-26")
-        setBankName("CBE ECB - 1000006734589")
-      }
-    } else {
-      if (creditAccountCode.startsWith("1000")) {
-        setCreditAccountCode("2100-06")
-        setCreditAccountName("Other Accruals & Payables")
-        setCreditAccountId("2100-06")
-      }
+    const newCrCode = newType === "Cash" ? "1000-02-26" : "2100-06"
+    const newCrName = newType === "Cash" ? "CBE ECB - 1000006734589" : "Other Accruals & Payables"
+    if (newType === "Cash") setBankName(newCrName)
+
+    if (modalCreditLines.length <= 1) {
+      setModalCreditLines([
+        {
+          id: `cr-init-${Date.now()}`,
+          accountId: newCrCode,
+          accountCode: newCrCode,
+          accountName: newCrName,
+          description: newType === "Cash" ? "Bank Disbursement" : "Supplier Credit Settlement",
+          amount: Number(paidAmount) || 0,
+        },
+      ])
+    }
+  }
+
+  // Handle Amount Change with auto single-line sync
+  const handlePaidAmountChange = (val: number | "") => {
+    setPaidAmount(val)
+    const num = Number(val) || 0
+    if (modalDebitLines.length === 1) {
+      setModalDebitLines((prev) => prev.map((l) => ({ ...l, amount: num })))
+    }
+    if (modalCreditLines.length === 1) {
+      setModalCreditLines((prev) => prev.map((l) => ({ ...l, amount: num })))
+    }
+  }
+
+  // Handle Category Change with auto default sync
+  const handleCategoryChange = (newCat: string) => {
+    setOperationalCategory(newCat)
+    if (modalDebitLines.length <= 1) {
+      const { debitAccount } = resolvePurchaseAccountsFromMatrix(newCat, paymentType, financeStore)
+      setModalDebitLines([
+        {
+          id: `dr-init-${Date.now()}`,
+          accountId: debitAccount.id,
+          accountCode: debitAccount.code,
+          accountName: debitAccount.name,
+          description: reasonForPayment.trim() || "Procurement Purchase",
+          amount: Number(paidAmount) || 0,
+        },
+      ])
     }
   }
 
@@ -221,12 +248,6 @@ export default function PurchaseOrders() {
     setPaidTo("")
     setReasonForPayment("")
     setOperationalCategory("export_commodities")
-    setDebitAccountCode("1410-01")
-    setDebitAccountName("Stock of Green Mung")
-    setDebitAccountId("1410-01")
-    setCreditAccountCode("1000-02-26")
-    setCreditAccountName("CBE ECB - 1000006734589")
-    setCreditAccountId("1000-02-26")
     setBankName("CBE ECB - 1000006734589")
     setPaymentMethod("Cheque")
     setChequeNo("")
@@ -236,6 +257,30 @@ export default function PurchaseOrders() {
     setPaymentAdvice(null)
     setAttachments([])
     setEditingPo(null)
+
+    // Initialize COA debit & credit split
+    const { debitAccount, creditAccount } = resolvePurchaseAccountsFromMatrix("export_commodities", "Cash", financeStore)
+    setModalDebitLines([
+      {
+        id: `dr-init-${Date.now()}`,
+        accountId: debitAccount.id,
+        accountCode: debitAccount.code,
+        accountName: debitAccount.name,
+        description: "Procurement Purchase",
+        amount: 0,
+      },
+    ])
+    setModalCreditLines([
+      {
+        id: `cr-init-${Date.now()}`,
+        accountId: creditAccount.id,
+        accountCode: creditAccount.code,
+        accountName: creditAccount.name,
+        description: "Payment Disbursement",
+        amount: 0,
+      },
+    ])
+
     setIsCreateModalOpen(true)
   }
 
@@ -252,9 +297,6 @@ export default function PurchaseOrders() {
     const drCode = drRow?.accountCode || po.targetAccountCode || "1410-01"
     const drName = drRow?.accountName || po.targetAccountName || "Stock of Green Mung"
     const drId = drRow?.accountId || po.targetAccountId || drCode
-    setDebitAccountCode(drCode)
-    setDebitAccountName(drName)
-    setDebitAccountId(drId)
 
     // Extract Credit Account
     const crRow = po.accountEntries?.find((e) => Number(e.credit) > 0)
@@ -262,9 +304,6 @@ export default function PurchaseOrders() {
     const crCode = crRow?.accountCode || po.creditAccountCode || (isCreditPo ? "2100-06" : "1000-02-26")
     const crName = crRow?.accountName || po.creditAccountName || po.bankName || (isCreditPo ? "Other Accruals & Payables" : "CBE ECB - 1000006734589")
     const crId = crRow?.accountId || po.creditAccountId || crCode
-    setCreditAccountCode(crCode)
-    setCreditAccountName(crName)
-    setCreditAccountId(crId)
 
     setBankName(po.bankName || crName)
     setPaymentMethod((po.paymentMethod as any) || "Cheque")
@@ -272,6 +311,75 @@ export default function PurchaseOrders() {
     setPaidAmount(po.amount || "")
     setPaymentType(isCreditPo ? "Credit" : "Cash")
     setStatus((po.status === "PAID" || po.status === "COMPLETED") ? "PAID" : "DRAFT")
+
+    const numPoAmount = Number(po.amount || 0)
+    if (Array.isArray(po.accountEntries) && po.accountEntries.length > 0) {
+      const drs = po.accountEntries.filter((e) => Number(e.debit) > 0)
+      const crs = po.accountEntries.filter((e) => Number(e.credit) > 0)
+      setModalDebitLines(
+        drs.length > 0
+          ? drs.map((e, idx) => ({
+              id: e.id || `dr-${idx}-${Date.now()}`,
+              accountId: e.accountId || e.accountCode,
+              accountCode: e.accountCode,
+              accountName: e.accountName || (e as any).account_name || "Purchase Allocation",
+              description: e.description || po.reasonForPayment || "Purchase Allocation",
+              amount: Number(e.debit) || 0,
+            }))
+          : [
+              {
+                id: `dr-init-${Date.now()}`,
+                accountId: po.targetAccountId || po.targetAccountCode || "1410-01",
+                accountCode: po.targetAccountCode || "1410-01",
+                accountName: po.targetAccountName || "Stock of Green Mung",
+                description: po.reasonForPayment || "Purchase Allocation",
+                amount: numPoAmount,
+              },
+            ]
+      )
+      setModalCreditLines(
+        crs.length > 0
+          ? crs.map((e, idx) => ({
+              id: e.id || `cr-${idx}-${Date.now()}`,
+              accountId: e.accountId || e.accountCode,
+              accountCode: e.accountCode,
+              accountName: e.accountName || (e as any).account_name || (isCreditPo ? "Supplier Credit Settlement" : "Payment Disbursement"),
+              description: e.description || (isCreditPo ? "Supplier Credit Settlement" : "Payment Disbursement"),
+              amount: Number(e.credit) || 0,
+            }))
+          : [
+              {
+                id: `cr-init-${Date.now()}`,
+                accountId: po.creditAccountId || po.creditAccountCode || (isCreditPo ? "2100-06" : "1000-02-26"),
+                accountCode: po.creditAccountCode || (isCreditPo ? "2100-06" : "1000-02-26"),
+                accountName: po.creditAccountName || (isCreditPo ? "Other Accruals & Payables" : "CBE ECB - 1000006734589"),
+                description: isCreditPo ? "Supplier Credit Settlement" : "Payment Disbursement",
+                amount: numPoAmount,
+              },
+            ]
+      )
+    } else {
+      setModalDebitLines([
+        {
+          id: `dr-init-${Date.now()}`,
+          accountId: drId,
+          accountCode: drCode,
+          accountName: drName,
+          description: po.reasonForPayment || "Purchase Allocation",
+          amount: numPoAmount,
+        },
+      ])
+      setModalCreditLines([
+        {
+          id: `cr-init-${Date.now()}`,
+          accountId: crId,
+          accountCode: crCode,
+          accountName: crName,
+          description: isCreditPo ? "Supplier Credit Settlement" : "Payment Disbursement",
+          amount: numPoAmount,
+        },
+      ])
+    }
 
     // Process payment advice
     if (po.paymentAdviceAttachment) {
@@ -479,33 +587,44 @@ export default function PurchaseOrders() {
     const isCredit = paymentType === "Credit"
     const amountInWords = numberToBirrWords(numericAmount)
 
-    // Automatically resolve accounts from Finance Transaction Mapping Matrix
-    const { debitAccount, creditAccount } = resolvePurchaseAccountsFromMatrix(
-      operationalCategory,
-      paymentType,
-      financeStore
-    )
-
     const catObj = PURCHASE_OPERATIONAL_CATEGORIES.find((c) => c.id === operationalCategory)
     const effectiveDesc = reasonForPayment.trim() || catObj?.label || "Procurement Purchase"
 
+    // Validate COA split balance
+    const totalDr = Math.round(modalDebitLines.reduce((s, l) => s + (Number(l.amount) || 0), 0) * 100) / 100
+    const totalCr = Math.round(modalCreditLines.reduce((s, l) => s + (Number(l.amount) || 0), 0) * 100) / 100
+    const diff = Math.round(Math.abs(totalDr - totalCr) * 100) / 100
+    if (diff >= 0.01 || Math.abs(totalDr - numericAmount) >= 0.01) {
+      showToast(
+        "COA Split Unbalanced",
+        "warning",
+        `Total debits (ETB ${totalDr.toLocaleString()}) must equal total credits (ETB ${totalCr.toLocaleString()}) and match purchase amount (ETB ${numericAmount.toLocaleString()}). Difference is ETB ${diff.toFixed(2)}.`
+      )
+      return
+    }
+
+    const firstDr = modalDebitLines[0]
+    const firstCr = modalCreditLines[0]
+
     const accountEntries = [
-      {
-        accountId: debitAccount.id,
-        accountCode: debitAccount.code,
-        accountName: debitAccount.name,
-        description: effectiveDesc,
-        debit: numericAmount,
+      ...modalDebitLines.map((l) => ({
+        id: l.id,
+        accountId: l.accountId,
+        accountCode: l.accountCode,
+        accountName: l.accountName,
+        description: l.description.trim() || effectiveDesc,
+        debit: Number(l.amount),
         credit: 0,
-      },
-      {
-        accountId: creditAccount.id,
-        accountCode: creditAccount.code,
-        accountName: creditAccount.name,
-        description: isCredit ? "Supplier Credit Settlement" : "Payment Disbursement",
+      })),
+      ...modalCreditLines.map((l) => ({
+        id: l.id,
+        accountId: l.accountId,
+        accountCode: l.accountCode,
+        accountName: l.accountName,
+        description: l.description.trim() || (isCredit ? "Supplier Credit Settlement" : "Payment Disbursement"),
         debit: 0,
-        credit: numericAmount,
-      },
+        credit: Number(l.amount),
+      })),
     ]
 
     const newPo: PurchaseOrder = {
@@ -517,7 +636,7 @@ export default function PurchaseOrders() {
       supplier: paidTo.trim(),
       reasonForPayment: effectiveDesc,
       category: catObj?.label || operationalCategory,
-      bankName: creditAccount.name,
+      bankName: firstCr.accountName,
       paymentMethod,
       chequeNo: chequeNo.trim(),
       amount: numericAmount,
@@ -529,12 +648,12 @@ export default function PurchaseOrders() {
       settlement_status: isCredit ? "Unpaid" : "Fully Settled",
       paymentType,
       payment_type: paymentType,
-      targetAccountId: debitAccount.id,
-      targetAccountCode: debitAccount.code,
-      targetAccountName: debitAccount.name,
-      creditAccountId: creditAccount.id,
-      creditAccountCode: creditAccount.code,
-      creditAccountName: creditAccount.name,
+      targetAccountId: firstDr.accountId,
+      targetAccountCode: firstDr.accountCode,
+      targetAccountName: firstDr.accountName,
+      creditAccountId: firstCr.accountId,
+      creditAccountCode: firstCr.accountCode,
+      creditAccountName: firstCr.accountName,
       accountEntries,
       amountInWords,
       currency: "ETB",
@@ -594,30 +713,42 @@ export default function PurchaseOrders() {
     const newDue = isCredit ? Number(Math.max(0, numericAmount - prevPaid).toFixed(2)) : 0
     const settlement = isCredit ? (newDue <= 0.01 ? "Fully Settled" : (prevPaid > 0 ? "Ongoing" : "Unpaid")) : "Fully Settled"
 
-    const hasCustomSplit = Array.isArray(editingPo.accountEntries) && editingPo.accountEntries.length > 2
-    const amountChanged = Math.abs(Number(editingPo.amount || 0) - numericAmount) > 0.01
-
-    let accountEntries = editingPo.accountEntries
-    if (!hasCustomSplit || amountChanged || !accountEntries || accountEntries.length === 0) {
-      accountEntries = [
-        {
-          accountId: debitAccountId,
-          accountCode: debitAccountCode,
-          accountName: debitAccountName,
-          description: reasonForPayment.trim() || "Procurement / Purchase",
-          debit: numericAmount,
-          credit: 0,
-        },
-        {
-          accountId: creditAccountId,
-          accountCode: creditAccountCode,
-          accountName: creditAccountName,
-          description: reasonForPayment.trim() || (isCredit ? "Supplier Credit Settlement" : "Payment Disbursement"),
-          debit: 0,
-          credit: numericAmount,
-        },
-      ]
+    // Validate COA split balance
+    const totalDr = Math.round(modalDebitLines.reduce((s, l) => s + (Number(l.amount) || 0), 0) * 100) / 100
+    const totalCr = Math.round(modalCreditLines.reduce((s, l) => s + (Number(l.amount) || 0), 0) * 100) / 100
+    const diff = Math.round(Math.abs(totalDr - totalCr) * 100) / 100
+    if (diff >= 0.01 || Math.abs(totalDr - numericAmount) >= 0.01) {
+      showToast(
+        "COA Split Unbalanced",
+        "warning",
+        `Total debits (ETB ${totalDr.toLocaleString()}) must equal total credits (ETB ${totalCr.toLocaleString()}) and match purchase amount (ETB ${numericAmount.toLocaleString()}). Difference is ETB ${diff.toFixed(2)}.`
+      )
+      return
     }
+
+    const firstDr = modalDebitLines[0]
+    const firstCr = modalCreditLines[0]
+
+    const accountEntries = [
+      ...modalDebitLines.map((l) => ({
+        id: l.id,
+        accountId: l.accountId,
+        accountCode: l.accountCode,
+        accountName: l.accountName,
+        description: l.description.trim() || reasonForPayment.trim() || "Procurement / Purchase",
+        debit: Number(l.amount),
+        credit: 0,
+      })),
+      ...modalCreditLines.map((l) => ({
+        id: l.id,
+        accountId: l.accountId,
+        accountCode: l.accountCode,
+        accountName: l.accountName,
+        description: l.description.trim() || (isCredit ? "Supplier Credit Settlement" : "Payment Disbursement"),
+        debit: 0,
+        credit: Number(l.amount),
+      })),
+    ]
 
     try {
       setIsSavingEditVoucher(true)
@@ -628,7 +759,7 @@ export default function PurchaseOrders() {
         paidTo: paidTo.trim(),
         supplier: paidTo.trim(),
         reasonForPayment: reasonForPayment.trim(),
-        bankName: (creditAccountName || bankName || "").trim(),
+        bankName: (firstCr.accountName || bankName || "").trim(),
         paymentMethod,
         chequeNo: chequeNo.trim(),
         amount: numericAmount,
@@ -640,12 +771,12 @@ export default function PurchaseOrders() {
         settlement_status: settlement,
         paymentType,
         payment_type: paymentType,
-        targetAccountId: debitAccountId,
-        targetAccountCode: debitAccountCode,
-        targetAccountName: debitAccountName,
-        creditAccountId: creditAccountId,
-        creditAccountCode: creditAccountCode,
-        creditAccountName: creditAccountName,
+        targetAccountId: firstDr.accountId,
+        targetAccountCode: firstDr.accountCode,
+        targetAccountName: firstDr.accountName,
+        creditAccountId: firstCr.accountId,
+        creditAccountCode: firstCr.accountCode,
+        creditAccountName: firstCr.accountName,
         accountEntries,
         amountInWords,
         status: isCredit ? (settlement === "Fully Settled" ? "PAID" : "PAID") : status,
@@ -1267,7 +1398,7 @@ export default function PurchaseOrders() {
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Purchase Category *</label>
                     <select
                       value={operationalCategory}
-                      onChange={(e) => setOperationalCategory(e.target.value)}
+                      onChange={(e) => handleCategoryChange(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
                     >
                       {PURCHASE_OPERATIONAL_CATEGORIES.map((cat) => (
@@ -1301,7 +1432,7 @@ export default function PurchaseOrders() {
                       required
                       placeholder="0.00"
                       value={paidAmount}
-                      onChange={(e) => setPaidAmount(e.target.value === "" ? "" : Number(e.target.value))}
+                      onChange={(e) => handlePaidAmountChange(e.target.value === "" ? "" : Number(e.target.value))}
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-mono font-black text-zinc-950 outline-none focus:ring-1 focus:ring-emerald-500"
                     />
                     {Number(paidAmount) > 0 && (
@@ -1341,6 +1472,16 @@ export default function PurchaseOrders() {
                     />
                   </div>
                 </div>
+
+                {/* COA Multi-Account Debit & Credit Split Section */}
+                <PurchaseCOASplitSection
+                  paymentType={paymentType}
+                  totalAmount={Number(paidAmount) || 0}
+                  debitLines={modalDebitLines}
+                  creditLines={modalCreditLines}
+                  onDebitLinesChange={setModalDebitLines}
+                  onCreditLinesChange={setModalCreditLines}
+                />
 
                 {/* ORDER DOCUMENTATION & ATTACHMENTS */}
                 <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/70 space-y-3">
@@ -1780,117 +1921,69 @@ export default function PurchaseOrders() {
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
                     />
                   </div>
-                </div>
 
-                {/* CHART OF ACCOUNTS (COA) ROUTING & PAYMENT DETAILS */}
-                <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/70 space-y-3.5">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-black text-xs text-zinc-900 uppercase tracking-wider flex items-center gap-1.5">
-                        <Building2 className="size-3.5 text-zinc-600" />
-                        Accounting & Chart of Accounts (COA) Routing
-                      </h4>
-                      <p className="text-[10px] text-zinc-500">
-                        Explicitly select the debit asset/expense account and credit funding source or liability account for General Ledger double-entry posting.
-                      </p>
-                    </div>
+                  {/* Row 3: Total Amount, Payment Instrument, Ref/Cheque */}
+                  <div className="md:col-span-4">
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">
+                      {paymentType === "Credit" ? "Total Credit Amount (ETB) *" : "Amount Paid in figure (ETB) *"}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      placeholder="0.00"
+                      value={paidAmount}
+                      onChange={(e) => handlePaidAmountChange(e.target.value === "" ? "" : Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-mono font-black text-zinc-950 outline-none"
+                    />
+                    {Number(paidAmount) > 0 && (
+                      <div className="mt-1 text-[10px] text-emerald-800 font-semibold italic truncate">
+                        {numberToBirrWords(Number(paidAmount))}
+                      </div>
+                    )}
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                    {/* Debit Account Selector */}
-                    <div className="md:col-span-6">
-                      <COAAccountSelector
-                        label="Debit Account (Inventory / Expense / Asset)"
-                        value={debitAccountCode}
-                        onChange={(acc) => {
-                          setDebitAccountCode(acc.code)
-                          setDebitAccountName(acc.name)
-                          setDebitAccountId(acc.id)
-                        }}
-                        suggestedCodes={["1410-01", "1400-01", "1410-03", "1600-01", "6000-17", "8000-02"]}
-                        placeholder="Select debit account..."
-                        helperText="Asset or Expense being purchased"
-                        required
-                      />
-                    </div>
+                  <div className="md:col-span-4">
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">
+                      Payment Instrument *
+                    </label>
+                    <select
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value as any)}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
+                    >
+                      <option value="Cheque">Cheque</option>
+                      <option value="Bank Transfer">Bank Transfer</option>
+                      <option value="RTGS">RTGS</option>
+                      <option value="Cash">Cash</option>
+                    </select>
+                  </div>
 
-                    {/* Credit Account Selector */}
-                    <div className="md:col-span-6">
-                      <COAAccountSelector
-                        label={paymentType === "Cash" ? "Credit Account (Bank / Cash Source)" : "Credit Account (Accounts Payable Liability)"}
-                        value={creditAccountCode}
-                        onChange={(acc) => {
-                          setCreditAccountCode(acc.code)
-                          setCreditAccountName(acc.name)
-                          setCreditAccountId(acc.id)
-                          setBankName(acc.name)
-                        }}
-                        suggestedCodes={
-                          paymentType === "Cash"
-                            ? ["1000-02-26", "1000-01-01", "1000-02-01", "1000-02-14", "1000-02-17"]
-                            : ["2100-06", "2100-01", "2100-02", "2100-08"]
-                        }
-                        placeholder="Select credit account..."
-                        helperText={paymentType === "Cash" ? "Bank or Cash account disbursing funds" : "AP liability account credited"}
-                        required
-                      />
-                    </div>
-
-                    {/* Payment Method Dropdown */}
-                    <div className="md:col-span-4">
-                      <label className="block text-xs font-bold text-zinc-700 mb-1">
-                        Payment Instrument *
-                      </label>
-                      <select
-                        value={paymentMethod}
-                        onChange={(e) => setPaymentMethod(e.target.value as any)}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
-                      >
-                        <option value="Cheque">Cheque</option>
-                        <option value="Bank Transfer">Bank Transfer</option>
-                        <option value="RTGS">RTGS</option>
-                        <option value="Cash">Cash</option>
-                      </select>
-                    </div>
-
-                    {/* Total Amount */}
-                    <div className="md:col-span-4">
-                      <label className="block text-xs font-bold text-zinc-700 mb-1">
-                        {paymentType === "Credit" ? "Total Credit Amount (ETB) *" : "Amount Paid in figure (ETB) *"}
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        required
-                        placeholder="0.00"
-                        value={paidAmount}
-                        onChange={(e) => setPaidAmount(e.target.value === "" ? "" : Number(e.target.value))}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-mono font-black text-zinc-950 outline-none"
-                      />
-                      {Number(paidAmount) > 0 && (
-                        <div className="mt-1 text-[10px] text-emerald-800 font-semibold italic truncate">
-                          {numberToBirrWords(Number(paidAmount))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Cheque / Reference Number */}
-                    <div className="md:col-span-4">
-                      <label className="block text-xs font-bold text-zinc-700 mb-1">
-                        {paymentType === "Credit" ? "Supplier Invoice / PO Ref" : (paymentMethod === "Cheque" ? "Cheque Number *" : `${paymentMethod} Ref *`)}
-                      </label>
-                      <input
-                        type="text"
-                        required={paymentType === "Cash"}
-                        placeholder={paymentType === "Credit" ? "e.g. SUP-INV-00421" : (paymentMethod === "Cheque" ? "e.g. CHQ-009823" : "e.g. TXN-98421098")}
-                        value={chequeNo}
-                        onChange={(e) => setChequeNo(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-bold font-mono outline-none"
-                      />
-                    </div>
+                  <div className="md:col-span-4">
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">
+                      {paymentType === "Credit" ? "Supplier Invoice / PO Ref" : (paymentMethod === "Cheque" ? "Cheque Number *" : `${paymentMethod} Ref *`)}
+                    </label>
+                    <input
+                      type="text"
+                      required={paymentType === "Cash"}
+                      placeholder={paymentType === "Credit" ? "e.g. SUP-INV-00421" : (paymentMethod === "Cheque" ? "e.g. CHQ-009823" : "e.g. TXN-98421098")}
+                      value={chequeNo}
+                      onChange={(e) => setChequeNo(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold font-mono outline-none"
+                    />
                   </div>
                 </div>
+
+                {/* COA Multi-Account Debit & Credit Split Section */}
+                <PurchaseCOASplitSection
+                  paymentType={paymentType}
+                  totalAmount={Number(paidAmount) || 0}
+                  debitLines={modalDebitLines}
+                  creditLines={modalCreditLines}
+                  onDebitLinesChange={setModalDebitLines}
+                  onCreditLinesChange={setModalCreditLines}
+                />
 
                 {/* ORDER DOCUMENTATION & PAYMENT ADVICE ATTACHMENTS */}
                 <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/70 space-y-3">
