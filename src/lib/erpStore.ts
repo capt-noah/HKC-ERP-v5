@@ -3383,12 +3383,39 @@ class ErpStore {
 
     const dnId = `DN-${Date.now().toString().slice(-4)}`
 
-    // Post Double-Entry Journal Entry in Finance (Debit COGS ACC-5000, Credit Stock ACC-1010)
+    // Post Double-Entry Journal Entry in Finance (Debit COGS ACC-5000, Credit Stock ACC-1400/1410)
     let jeId: string | undefined = undefined
     try {
-      // Resolve accounts by code — fall back gracefully if not in COA yet
-      const cogsAcc = financeStore.getAccounts().find((a) => a.code === "6000-04" || a.code === "6000" || a.code === "5001" || a.account_type === "Expense")
-      const stockAcc = financeStore.getAccounts().find((a) => a.code === "1410-01" || a.code === "1410-03" || a.code === "1410" || a.account_type === "Asset")
+      // Resolve accounts dynamically based on warehouse and commodity
+      const isExportWh = String(so.warehouse || "").toUpperCase().startsWith("WH1") || String(so.warehouse || "").toUpperCase().includes("EXP")
+      const firstItemName = (so.items?.[0] as any)?.productName || so.items?.[0]?.name || ""
+      const normItem = firstItemName.toUpperCase()
+
+      let targetCogsCode = "5000-01" // Cost of Veterinary Drug (Pharma default)
+      let targetStockCode = "1400-01" // Stock of Veterinary Drug (Pharma default)
+
+      if (isExportWh) {
+        if (normItem.includes("SOYA") || normItem.includes("SOY")) {
+          targetStockCode = "1410-02"
+          targetCogsCode = "5010-02"
+        } else if ((normItem.includes("REDISH") || normItem.includes("REDDISH") || normItem.includes("RED")) && normItem.includes("SESAME")) {
+          targetStockCode = "1410-03"
+          targetCogsCode = "5010-03"
+        } else if (normItem.includes("SESAME")) {
+          targetStockCode = "1410-04"
+          targetCogsCode = "5010-04"
+        } else if (normItem.includes("BLACK") && (normItem.includes("BEAN") || normItem.includes("BEANS"))) {
+          targetStockCode = "1410-05"
+          targetCogsCode = "5010-01"
+        } else {
+          targetStockCode = "1410-01"
+          targetCogsCode = "5010-01"
+        }
+      }
+
+      const allAccounts = financeStore.getAccounts()
+      const cogsAcc = allAccounts.find((a) => a.code === targetCogsCode) || allAccounts.find((a) => a.code === "5000-01" || a.code === "5010-01" || a.account_type === "Expense")
+      const stockAcc = allAccounts.find((a) => a.code === targetStockCode) || allAccounts.find((a) => a.code === "1400-01" || a.code === "1410-01" || a.account_type === "Asset")
 
       if (cogsAcc && stockAcc && totalCogs > 0) {
         const postRes = financeStore.postJournalEntry(

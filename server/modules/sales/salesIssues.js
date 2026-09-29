@@ -189,6 +189,73 @@ function isExportWarehouse(wh) {
   return s.startsWith("WH1") || s.includes("EXP") || s.includes("EXPORT")
 }
 
+export function resolveCommodityAccounts(itemName = "") {
+  const norm = String(itemName || "").toUpperCase().trim()
+
+  if (norm.includes("SOYA") || norm.includes("SOY")) {
+    return {
+      inventoryCode: "1410-02",
+      cogsCode: "5010-02",
+      revenueCode: "4000-02-02",
+    }
+  }
+  if ((norm.includes("REDISH") || norm.includes("REDDISH") || norm.includes("RED")) && norm.includes("SESAME")) {
+    return {
+      inventoryCode: "1410-03",
+      cogsCode: "5010-03",
+      revenueCode: "4000-02-03",
+    }
+  }
+  if (norm.includes("SESAME")) {
+    return {
+      inventoryCode: "1410-04",
+      cogsCode: "5010-04",
+      revenueCode: "4000-02-04",
+    }
+  }
+  if (norm.includes("BLACK") && (norm.includes("BEAN") || norm.includes("BEANS"))) {
+    return {
+      inventoryCode: "1410-05",
+      cogsCode: "5010-01",
+      revenueCode: "4000-02-01",
+    }
+  }
+  // Default export commodity (Green Mung)
+  return {
+    inventoryCode: "1410-01",
+    cogsCode: "5010-01",
+    revenueCode: "4000-02-01",
+  }
+}
+
+export function resolveSalesGLAccounts({ warehouseId, items = [], isCredit = false, allAccounts = [] }) {
+  const findAcc = (code) => allAccounts.find(a => (a.code || a.account_code) === code)?.id || code
+  const isWh1 = isExportWarehouse(warehouseId)
+
+  // 1. Receivables / Cash (Debit for Sales Voucher)
+  const debitAccId = isCredit
+    ? (isWh1 ? findAcc("1300-01") : findAcc("1300-03"))
+    : (findAcc("1000-02-26") || findAcc("1000-01-01") || "1000-02-26")
+
+  let revenueAccId, inventoryAccId, cogsAccId
+
+  if (isWh1) {
+    const firstItemName = items[0]?.item_name || items[0]?.name || ""
+    const commodity = resolveCommodityAccounts(firstItemName)
+    revenueAccId = findAcc(commodity.revenueCode)
+    inventoryAccId = findAcc(commodity.inventoryCode)
+    cogsAccId = findAcc(commodity.cogsCode)
+  } else {
+    // Single unified account family for Pharma / Veterinary Import
+    revenueAccId = findAcc("4000-01-01") // Sales of Veterinary Drug
+    inventoryAccId = findAcc("1400-01") // Stock of Veterinary Drug
+    cogsAccId = findAcc("5000-01")      // Cost of Veterinary Drug
+  }
+
+  const vatAccId = findAcc("2000-05")
+  return { debitAccId, revenueAccId, inventoryAccId, cogsAccId, vatAccId }
+}
+
 export async function getSalesIssue(id) {
   try {
     const cleanId = String(id).trim()
@@ -1052,16 +1119,14 @@ export async function postSalesIssue(arg1, arg2) {
   try {
     const coaRes = await drizzleListRows({ resource: getResource("chart_of_accounts") }).catch(() => ({ body: [] }))
     const allAccounts = Array.isArray(coaRes.body) ? coaRes.body.map(a => a?.payload ? { ...a.payload, ...a } : a) : []
-    const findAcc = (code) => allAccounts.find(a => (a.code || a.account_code) === code)?.id || null
 
     const isCredit = (existing.payment_type || "").toString().toLowerCase().includes("credit")
-    const debitAccId = isCredit
-      ? (findAcc("1300-03") || findAcc("1200-03") || findAcc("1100-03") || "1300-03")
-      : (findAcc("1000-02-26") || findAcc("1000-01-01") || findAcc("1000") || "1000-02-26")
-    const revenueAccId = findAcc("4000-01-01") || findAcc("4000-03-02") || findAcc("4000") || "4000-01-01"
-    const vatAccId = findAcc("2000-05") || "2000-05"
-    const cogsAccId = findAcc("6000-04") || findAcc("6000") || "6000-04"
-    const inventoryAccId = findAcc("1410-01") || findAcc("1410-03") || findAcc("1410") || "1410-01"
+    const { debitAccId, revenueAccId, inventoryAccId, cogsAccId, vatAccId } = resolveSalesGLAccounts({
+      warehouseId: existing.warehouse_id,
+      items: existing.items || [],
+      isCredit,
+      allAccounts,
+    })
 
     const saleJeId = `JE-SALE-${id}`
     const cogsJeId = `JE-COGS-${id}`

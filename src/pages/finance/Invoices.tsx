@@ -12,6 +12,7 @@ import {
   Receipt,
   CheckCircle2,
   ArrowRight,
+  ArrowRightLeft,
   RefreshCw
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
@@ -28,6 +29,7 @@ import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import InvoicePrintModal from "@/components/finance/InvoicePrintModal"
+import { InvoiceGLSplitModal } from "@/components/finance/InvoiceGLSplitModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import {
   type ShipmentDocAttachment,
@@ -69,6 +71,7 @@ export default function Invoices() {
 
   // Currently selected preview invoice
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
+  const [splittingInvoice, setSplittingInvoice] = useState<Invoice | null>(null)
 
   // Attachments State for Active Invoice
   const [invoiceAttachments, setInvoiceAttachments] = useState<InvoiceAttachment[]>([])
@@ -774,6 +777,15 @@ export default function Invoices() {
 
                 {/* Bottom Action Footer */}
                 <div className="flex items-center justify-end gap-2 pt-4 border-t border-black/5">
+                  <button
+                    type="button"
+                    onClick={() => setSplittingInvoice(activeInvoice)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-[11px] transition-all shadow-sm cursor-pointer"
+                    title="Split or adjust General Ledger accounts for this invoice"
+                  >
+                    <ArrowRightLeft className="size-3 text-white" /> Split GL Accounts
+                  </button>
+
                   {!isSelectedInvoicePaid && (
                     <button
                       type="button"
@@ -1449,6 +1461,17 @@ export default function Invoices() {
         onClose={() => {
           setPreviewDocUrl("")
           setPreviewDocName("")
+        }}
+      />
+
+      {/* Invoice GL Split Modal */}
+      <InvoiceGLSplitModal
+        isOpen={Boolean(splittingInvoice)}
+        invoice={splittingInvoice}
+        onClose={() => setSplittingInvoice(null)}
+        onSaveSuccess={() => {
+          setSplittingInvoice(null)
+          void store.reloadFromApi()
         }}
       />
     </div>

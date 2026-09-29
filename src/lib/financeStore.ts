@@ -36,6 +36,7 @@ export interface JournalEntry {
   source_type:
     | "Beginning Balance"
     | "Sales Invoice"
+    | "Sales Issue"
     | "Purchase Invoice"
     | "Payment Voucher"
     | "Payment"
@@ -81,6 +82,27 @@ export interface InvoiceLineItem {
   line_total: number
 }
 
+export interface InvoiceGLDistributionLine {
+  id?: string
+  account_id: string
+  account_code?: string
+  account_name?: string
+  debit: number
+  credit: number
+  description?: string
+  party_type?: "Customer" | "Supplier" | "Employee" | null
+  party_id?: string | null
+  party_name?: string | null
+}
+
+export interface InvoiceGLDistribution {
+  revenue_lines?: InvoiceGLDistributionLine[]
+  cogs_lines?: InvoiceGLDistributionLine[]
+  notes?: string
+  updated_at?: string
+  updated_by?: string
+}
+
 export interface Invoice {
   id: string
   invoice_number: string
@@ -110,6 +132,8 @@ export interface Invoice {
   settlement_status?: "Unpaid" | "Ongoing" | "Fully Settled"
   status: "Draft" | "Sent" | "Paid" | "Partially Paid" | "Overdue" | "Void" | "Cancelled"
   is_beginning_balance?: boolean
+  warehouse_id?: string
+  gl_distribution?: InvoiceGLDistribution
 }
 
 export interface PartnerBeginningBalanceItem {
@@ -2612,8 +2636,26 @@ class FinanceStore {
 
     // Post corresponding journal entry if not Draft
     if (newInv.status !== "Draft") {
-      const arAcc = this.getMappedAccount("sales_credit_ar", "1300-03")
-      const salesAcc = this.getMappedAccount("sales_revenue_domestic", "4000-01-01")
+      const isExportWh = String(newInv.warehouse_id || "").toUpperCase().startsWith("WH1") || String(newInv.warehouse_id || "").toUpperCase().includes("EXP")
+      const firstItem = newInv.line_items?.[0]?.description?.toUpperCase() || ""
+      const isExportCrop = firstItem.includes("MUNG") || firstItem.includes("SOYA") || firstItem.includes("SESAME") || firstItem.includes("BEAN")
+
+      let arAcc = this.getMappedAccount("sales_credit_ar", "1300-03")
+      let salesAcc = this.getMappedAccount("sales_revenue_domestic", "4000-01-01")
+
+      if (isExportWh || isExportCrop) {
+        arAcc = this.getMappedAccount("sales_credit_ar_export", "1300-01")
+        if (firstItem.includes("SOYA") || firstItem.includes("SOY")) {
+          salesAcc = this.accounts.find((a) => a.code === "4000-02-02") || this.getMappedAccount("sales_revenue_export", "4000-02-01")
+        } else if (firstItem.includes("REDISH") || firstItem.includes("REDDISH") || firstItem.includes("RED")) {
+          salesAcc = this.accounts.find((a) => a.code === "4000-02-03") || this.getMappedAccount("sales_revenue_export", "4000-02-01")
+        } else if (firstItem.includes("SESAME")) {
+          salesAcc = this.accounts.find((a) => a.code === "4000-02-04") || this.getMappedAccount("sales_revenue_export", "4000-02-01")
+        } else {
+          salesAcc = this.getMappedAccount("sales_revenue_export", "4000-02-01")
+        }
+      }
+
       const taxAcc = this.getMappedAccount("sales_vat_output", "2000-05")
 
       const arAccId = arAcc.id
@@ -2660,6 +2702,175 @@ class FinanceStore {
 
     this.notify()
     return newInv
+  }
+
+  public getInvoiceJournalEntries(invoice: Invoice): {
+    salesEntry: JournalEntry | null
+    salesLines: JournalEntryLine[]
+    cogsEntry: JournalEntry | null
+    cogsLines: JournalEntryLine[]
+  } {
+    const invId = invoice.id
+    const invNum = invoice.invoice_number
+    const siId = invoice.sales_issue_id
+    const soId = invoice.sales_order_id
+
+    // Find Sales Journal Entry
+    const salesEntry = this.entries.find((e) => {
+      if (siId && (e.id === `JE-SALE-${siId}` || e.source_id === siId)) return true
+      if (e.id === `JE-SALE-${invNum}` || e.id === `JE-INV-${invNum}`) return true
+      if (e.source_id === invId || e.source_id === invNum) return true
+      if (e.source_type === "Sales Invoice" && (e.description.includes(invNum) || (invId && e.description.includes(invId)))) return true
+      if (soId && e.source_id === soId && (e.source_type === "Sales Invoice" || e.source_type === "Sales Issue")) return true
+      return false
+    }) || null
+
+    const salesLines = salesEntry ? this.lines.filter((l) => l.journal_entry_id === salesEntry.id) : []
+
+    // Find COGS Journal Entry
+    const cogsEntry = this.entries.find((e) => {
+      if (siId && (e.id === `JE-COGS-${siId}` || (e.source_id === siId && (e.id.startsWith("JE-COGS") || e.description.toLowerCase().includes("cogs") || e.description.toLowerCase().includes("cost"))))) return true
+      if (e.id === `JE-COGS-${invNum}`) return true
+      if ((e.source_id === invId || e.source_id === invNum) && (e.id.startsWith("JE-COGS") || e.description.toLowerCase().includes("cogs") || e.description.toLowerCase().includes("cost"))) return true
+      return false
+    }) || null
+
+    const cogsLines = cogsEntry ? this.lines.filter((l) => l.journal_entry_id === cogsEntry.id) : []
+
+    return { salesEntry, salesLines, cogsEntry, cogsLines }
+  }
+
+  public async updateInvoiceGLDistribution(
+    invoiceId: string,
+    distribution: {
+      revenueLines: InvoiceGLDistributionLine[]
+      cogsLines?: InvoiceGLDistributionLine[]
+      notes?: string
+    }
+  ): Promise<{ success: boolean; error?: string }> {
+    const invIndex = this.invoices.findIndex((i) => i.id === invoiceId || i.invoice_number === invoiceId)
+    if (invIndex === -1) {
+      return { success: false, error: "Invoice not found" }
+    }
+    const inv = this.invoices[invIndex]
+
+    // 1. Balance validation on revenueLines
+    const revDebits = Math.round(distribution.revenueLines.reduce((s, l) => s + (Number(l.debit) || 0), 0) * 100) / 100
+    const revCredits = Math.round(distribution.revenueLines.reduce((s, l) => s + (Number(l.credit) || 0), 0) * 100) / 100
+    if (Math.abs(revDebits - revCredits) > 0.01) {
+      return {
+        success: false,
+        error: `Revenue distribution is unbalanced: Debits (${revDebits.toFixed(2)}) != Credits (${revCredits.toFixed(2)})`,
+      }
+    }
+
+    // 2. Balance validation on cogsLines (if provided)
+    if (distribution.cogsLines && distribution.cogsLines.length > 0) {
+      const cogsDebits = Math.round(distribution.cogsLines.reduce((s, l) => s + (Number(l.debit) || 0), 0) * 100) / 100
+      const cogsCredits = Math.round(distribution.cogsLines.reduce((s, l) => s + (Number(l.credit) || 0), 0) * 100) / 100
+      if (Math.abs(cogsDebits - cogsCredits) > 0.01) {
+        return {
+          success: false,
+          error: `COGS distribution is unbalanced: Debits (${cogsDebits.toFixed(2)}) != Credits (${cogsCredits.toFixed(2)})`,
+        }
+      }
+    }
+
+    // 3. Find or Create Sales Journal Entry
+    const { salesEntry, cogsEntry } = this.getInvoiceJournalEntries(inv)
+
+    let targetSaleJeId = salesEntry?.id
+    if (!targetSaleJeId) {
+      targetSaleJeId = inv.sales_issue_id ? `JE-SALE-${inv.sales_issue_id}` : `JE-SALE-${inv.invoice_number}`
+      const newSaleJe: JournalEntry = {
+        id: targetSaleJeId,
+        entry_date: inv.issue_date,
+        description: `Sales Invoice ${inv.invoice_number} for ${inv.customer_name}`,
+        source_type: "Sales Invoice",
+        source_id: inv.sales_issue_id || inv.invoice_number,
+        created_by: "Finance GL Split Tool",
+        currency: inv.currency || "ETB",
+        exchange_rate: 1.0,
+        is_reversal_of: null,
+      }
+      this.entries = [newSaleJe, ...this.entries]
+    }
+
+    // Format new sales lines
+    const newSaleLines: JournalEntryLine[] = distribution.revenueLines.map((l, idx) => ({
+      id: l.id || `JEL-${targetSaleJeId}-${idx + 1}-${Date.now().toString().slice(-4)}`,
+      journal_entry_id: targetSaleJeId!,
+      account_id: l.account_id,
+      debit_amount: Math.round((Number(l.debit) || 0) * 100) / 100,
+      credit_amount: Math.round((Number(l.credit) || 0) * 100) / 100,
+      currency: inv.currency || "ETB",
+      exchange_rate_at_time: 1.0,
+      warehouse_id: inv.warehouse_id || null,
+      party_type: l.party_type ?? "Customer",
+      party_id: l.party_id ?? null,
+      party_name: l.party_name ?? inv.customer_name,
+    }))
+
+    // Remove old lines for sales JE and append updated lines
+    this.lines = this.lines.filter((line) => line.journal_entry_id !== targetSaleJeId)
+    this.lines = [...newSaleLines, ...this.lines]
+
+    // 4. Update or Create COGS Journal Entry if cogsLines are present
+    if (distribution.cogsLines && distribution.cogsLines.length > 0) {
+      let targetCogsJeId = cogsEntry?.id
+      if (!targetCogsJeId) {
+        targetCogsJeId = inv.sales_issue_id ? `JE-COGS-${inv.sales_issue_id}` : `JE-COGS-${inv.invoice_number}`
+        const newCogsJe: JournalEntry = {
+          id: targetCogsJeId,
+          entry_date: inv.issue_date,
+          description: `Inventory cost for sales invoice ${inv.invoice_number}`,
+          source_type: "Sales Issue",
+          source_id: inv.sales_issue_id || inv.invoice_number,
+          created_by: "Finance GL Split Tool",
+          currency: inv.currency || "ETB",
+          exchange_rate: 1.0,
+          is_reversal_of: null,
+        }
+        this.entries = [newCogsJe, ...this.entries]
+      }
+
+      const newCogsLines: JournalEntryLine[] = distribution.cogsLines.map((l, idx) => ({
+        id: l.id || `JEL-${targetCogsJeId}-${idx + 1}-${Date.now().toString().slice(-4)}`,
+        journal_entry_id: targetCogsJeId!,
+        account_id: l.account_id,
+        debit_amount: Math.round((Number(l.debit) || 0) * 100) / 100,
+        credit_amount: Math.round((Number(l.credit) || 0) * 100) / 100,
+        currency: inv.currency || "ETB",
+        exchange_rate_at_time: 1.0,
+        warehouse_id: inv.warehouse_id || null,
+      }))
+
+      this.lines = this.lines.filter((line) => line.journal_entry_id !== targetCogsJeId)
+      this.lines = [...newCogsLines, ...this.lines]
+    }
+
+    // 5. Update Invoice object
+    const updatedInvoice: Invoice = {
+      ...inv,
+      gl_distribution: {
+        revenue_lines: distribution.revenueLines,
+        cogs_lines: distribution.cogsLines,
+        notes: distribution.notes,
+        updated_at: new Date().toISOString(),
+        updated_by: "Finance Team",
+      },
+    }
+    this.invoices[invIndex] = updatedInvoice
+
+    // 6. Persist changes to server
+    try {
+      await this.saveToApi()
+    } catch (saveErr: any) {
+      console.error("[updateInvoiceGLDistribution] API persistence warning:", saveErr)
+    }
+
+    this.notify()
+    return { success: true }
   }
 
   public updateInvoiceFromSalesOrder(so: { id: string; customer: string; items: Array<{ name: string; qty: number; unit: string; unitPrice: number; total: number }>; amount: number; invoiceIds?: string[] }) {
