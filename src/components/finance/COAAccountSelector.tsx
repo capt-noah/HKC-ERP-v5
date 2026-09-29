@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from "react"
+import { createPortal } from "react-dom"
 import { Search, ChevronDown, Check, X } from "lucide-react"
 import { useFinanceStore, type AccountItem } from "@/lib/financeStore"
 
@@ -10,14 +11,9 @@ export interface COAAccountSelectorProps {
   required?: boolean
   disabled?: boolean
   className?: string
-  /**
-   * Optional quick preset codes to display as clickable chips
-   */
-  suggestedCodes?: string[]
-  /**
-   * Custom title or helper text
-   */
+  suggestedCodes?: string[] // Backwards compatibility, unused to keep UI clean
   helperText?: string
+  compact?: boolean
 }
 
 const TYPE_STYLES: Record<string, { bg: string; text: string; border: string }> = {
@@ -32,12 +28,12 @@ export const COAAccountSelector: React.FC<COAAccountSelectorProps> = ({
   value,
   onChange,
   label,
-  placeholder = "Select or search Chart of Accounts...",
+  placeholder = "Select COA account...",
   required = false,
   disabled = false,
   className = "",
-  suggestedCodes = [],
   helperText,
+  compact = false,
 }) => {
   const financeStore = useFinanceStore()
   const accounts = financeStore.getAccounts()
@@ -46,7 +42,15 @@ export const COAAccountSelector: React.FC<COAAccountSelectorProps> = ({
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string>("ALL")
   const containerRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number; placeAbove: boolean }>({
+    top: 0,
+    left: 0,
+    width: 0,
+    placeAbove: false,
+  })
 
   // Selected account lookup
   const selectedAccount = useMemo(() => {
@@ -74,18 +78,58 @@ export const COAAccountSelector: React.FC<COAAccountSelectorProps> = ({
     })
   }, [accounts, searchTerm, selectedTypeFilter])
 
-  // Click outside listener
+  // Measure and position the dropdown in viewport coordinates
+  const updatePosition = () => {
+    if (!containerRef.current) return
+    const rect = containerRef.current.getBoundingClientRect()
+    const spaceBelow = window.innerHeight - rect.bottom
+    const dropdownHeight = 310
+    const placeAbove = spaceBelow < dropdownHeight && rect.top > dropdownHeight
+
+    setCoords({
+      top: placeAbove ? rect.top : rect.bottom,
+      left: Math.max(8, Math.min(rect.left, window.innerWidth - Math.max(rect.width, 340) - 8)),
+      width: Math.max(rect.width, 340),
+      placeAbove,
+    })
+  }
+
+  // Update position on open & resize/scroll
   useEffect(() => {
+    if (!isOpen) return
+    updatePosition()
+
+    const handleScrollOrResize = () => {
+      updatePosition()
+    }
+
+    window.addEventListener("scroll", handleScrollOrResize, true)
+    window.addEventListener("resize", handleScrollOrResize)
+    return () => {
+      window.removeEventListener("scroll", handleScrollOrResize, true)
+      window.removeEventListener("resize", handleScrollOrResize)
+    }
+  }, [isOpen])
+
+  // Click outside listener (checks both trigger and portal menu)
+  useEffect(() => {
+    if (!isOpen) return
     const handleMouseDown = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(target) &&
+        menuRef.current &&
+        !menuRef.current.contains(target)
+      ) {
         setIsOpen(false)
       }
     }
     document.addEventListener("mousedown", handleMouseDown)
     return () => document.removeEventListener("mousedown", handleMouseDown)
-  }, [])
+  }, [isOpen])
 
-  // Auto focus search input when opened
+  // Focus search input on open
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => {
@@ -96,14 +140,6 @@ export const COAAccountSelector: React.FC<COAAccountSelectorProps> = ({
       setSelectedTypeFilter("ALL")
     }
   }, [isOpen])
-
-  // Suggested accounts for quick selection chips
-  const suggestedAccounts = useMemo(() => {
-    if (!suggestedCodes.length) return []
-    return suggestedCodes
-      .map((code) => accounts.find((a) => a.code === code))
-      .filter((a): a is AccountItem => Boolean(a))
-  }, [suggestedCodes, accounts])
 
   const handleSelect = (account: AccountItem) => {
     onChange(account)
@@ -125,20 +161,24 @@ export const COAAccountSelector: React.FC<COAAccountSelectorProps> = ({
         </div>
       )}
 
-      {/* Main Trigger Button */}
+      {/* Main Trigger Input Button */}
       <button
         type="button"
         disabled={disabled}
-        onClick={() => !disabled && setIsOpen((prev) => !prev)}
-        className={`w-full text-left px-3 py-2 rounded-xl bg-white border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+        onClick={() => {
+          if (disabled) return
+          if (!isOpen) updatePosition()
+          setIsOpen((prev) => !prev)
+        }}
+        className={`w-full text-left px-3 ${compact ? "py-1.5 min-h-[34px]" : "py-2 min-h-[38px]"} rounded-xl bg-white border transition-all flex items-center justify-between gap-2 cursor-pointer ${
           isOpen
-            ? "border-zinc-900 ring-2 ring-zinc-900/10 shadow-xs"
-            : "border-zinc-200 hover:border-zinc-300"
+            ? "border-emerald-600 ring-2 ring-emerald-500/15 shadow-sm"
+            : "border-zinc-200 hover:border-zinc-300 shadow-2xs"
         } ${disabled ? "opacity-60 cursor-not-allowed bg-zinc-50" : ""}`}
       >
         {selectedAccount ? (
           <div className="flex items-center gap-2 truncate flex-1 min-w-0">
-            <span className="font-mono font-black text-xs text-zinc-950 bg-zinc-100 px-1.5 py-0.5 rounded border border-zinc-200/80 shrink-0">
+            <span className="font-mono font-black text-xs text-zinc-950 bg-zinc-100 px-1.5 py-0.5 rounded border border-zinc-200 shrink-0">
               {selectedAccount.code}
             </span>
             <span className="text-xs font-bold text-zinc-800 truncate">
@@ -146,7 +186,7 @@ export const COAAccountSelector: React.FC<COAAccountSelectorProps> = ({
             </span>
             {accountTypeStyle && (
               <span
-                className={`ml-auto text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full border shrink-0 ${accountTypeStyle.bg} ${accountTypeStyle.text} ${accountTypeStyle.border}`}
+                className={`ml-auto text-[8.5px] font-black uppercase px-1.5 py-0.5 rounded-full border shrink-0 ${accountTypeStyle.bg} ${accountTypeStyle.text} ${accountTypeStyle.border}`}
               >
                 {selectedAccount.account_type}
               </span>
@@ -160,135 +200,121 @@ export const COAAccountSelector: React.FC<COAAccountSelectorProps> = ({
 
         <ChevronDown
           className={`size-4 text-zinc-400 shrink-0 transition-transform duration-150 ${
-            isOpen ? "rotate-180 text-zinc-700" : ""
+            isOpen ? "rotate-180 text-emerald-600" : ""
           }`}
         />
       </button>
 
-      {/* Suggested Quick Select Pills */}
-      {suggestedAccounts.length > 0 && !isOpen && (
-        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-          <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-0.5">
-            Suggested:
-          </span>
-          {suggestedAccounts.map((acc) => {
-            const isSelected = selectedAccount?.code === acc.code
-            return (
-              <button
-                key={acc.code}
-                type="button"
-                onClick={() => handleSelect(acc)}
-                className={`text-[10px] font-bold px-2 py-0.5 rounded-md border transition-all cursor-pointer ${
-                  isSelected
-                    ? "bg-zinc-900 text-white border-zinc-900"
-                    : "bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border-zinc-200"
-                }`}
-                title={`${acc.code} - ${acc.name}`}
-              >
-                <span className="font-mono mr-1">{acc.code}</span>
-                <span className="truncate max-w-[120px] inline-block align-bottom">{acc.name}</span>
-              </button>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Searchable Dropdown Modal Overlay */}
-      {isOpen && (
-        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-zinc-200 rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[320px] w-full min-w-[300px]">
-          {/* Search Header */}
-          <div className="p-2.5 border-b border-zinc-100 bg-zinc-50/70 space-y-2">
-            <div className="relative flex items-center">
-              <Search className="size-3.5 text-zinc-400 absolute left-2.5" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search by code (e.g. 1410), name, or type..."
-                className="w-full pl-8 pr-7 py-1.5 bg-white border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-500"
-              />
-              {searchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setSearchTerm("")}
-                  className="absolute right-2 text-zinc-400 hover:text-zinc-600 p-0.5 cursor-pointer"
-                >
-                  <X className="size-3" />
-                </button>
-              )}
-            </div>
-
-            {/* Category Filter Tabs */}
-            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-0.5 text-[10px] font-bold">
-              {(["ALL", "Asset", "Liability", "Expense", "Revenue", "Equity"] as const).map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => setSelectedTypeFilter(type)}
-                  className={`px-2 py-0.5 rounded-full whitespace-nowrap transition-colors cursor-pointer ${
-                    selectedTypeFilter === type
-                      ? "bg-zinc-900 text-white"
-                      : "bg-white text-zinc-600 hover:bg-zinc-100 border border-zinc-200/80"
-                  }`}
-                >
-                  {type}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Accounts List */}
-          <div className="overflow-y-auto divide-y divide-zinc-50 flex-1 max-h-[220px]">
-            {filteredAccounts.length === 0 ? (
-              <div className="p-4 text-center text-xs text-zinc-400">
-                No accounts match "{searchTerm}"
-              </div>
-            ) : (
-              filteredAccounts.map((acc) => {
-                const isSelected = selectedAccount?.code === acc.code || selectedAccount?.id === acc.id
-                const style = TYPE_STYLES[acc.account_type] || TYPE_STYLES.Asset
-
-                return (
+      {/* Portal-based Dropdown Menu: completely immune to parent overflow clipping */}
+      {isOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              position: "fixed",
+              top: coords.placeAbove ? undefined : `${coords.top + 4}px`,
+              bottom: coords.placeAbove ? `${window.innerHeight - coords.top + 4}px` : undefined,
+              left: `${coords.left}px`,
+              width: `${coords.width}px`,
+              zIndex: 999999,
+            }}
+            className="bg-white border border-zinc-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[300px] animate-in fade-in-50 zoom-in-95 duration-100"
+          >
+            {/* Search Header */}
+            <div className="p-2.5 border-b border-zinc-100 bg-zinc-50/80 space-y-2">
+              <div className="relative flex items-center">
+                <Search className="size-3.5 text-zinc-400 absolute left-2.5" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search by code (e.g. 1410), name, or type..."
+                  className="w-full pl-8 pr-7 py-1.5 bg-white border border-zinc-200 rounded-xl text-xs font-semibold text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                />
+                {searchTerm && (
                   <button
-                    key={acc.id}
                     type="button"
-                    onClick={() => handleSelect(acc)}
-                    className={`w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-zinc-50 transition-colors cursor-pointer ${
-                      isSelected ? "bg-emerald-50/60" : ""
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-2 text-zinc-400 hover:text-zinc-600 p-0.5 cursor-pointer"
+                  >
+                    <X className="size-3" />
+                  </button>
+                )}
+              </div>
+
+              {/* Category Filter Tabs */}
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-0.5 text-[10px] font-bold">
+                {(["ALL", "Asset", "Liability", "Expense", "Revenue", "Equity"] as const).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setSelectedTypeFilter(type)}
+                    className={`px-2 py-0.5 rounded-full whitespace-nowrap transition-colors cursor-pointer ${
+                      selectedTypeFilter === type
+                        ? "bg-zinc-900 text-white"
+                        : "bg-white text-zinc-600 hover:bg-zinc-100 border border-zinc-200/80"
                     }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className="font-mono font-black text-xs text-zinc-950 bg-zinc-100/90 px-1.5 py-0.5 rounded border border-zinc-200/70 shrink-0">
-                        {acc.code}
-                      </span>
-                      <div className="truncate">
-                        <span className="text-xs font-bold text-zinc-800 truncate block">
-                          {acc.name}
-                        </span>
-                        {acc.peachtree_type && (
-                          <span className="text-[9px] text-zinc-400 block truncate">
-                            {acc.peachtree_type}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span
-                        className={`text-[8.5px] font-black uppercase px-1.5 py-0.5 rounded border ${style.bg} ${style.text} ${style.border}`}
-                      >
-                        {acc.account_type}
-                      </span>
-                      {isSelected && <Check className="size-3.5 text-emerald-600 shrink-0" />}
-                    </div>
+                    {type}
                   </button>
-                )
-              })
-            )}
-          </div>
-        </div>
-      )}
+                ))}
+              </div>
+            </div>
+
+            {/* Accounts List */}
+            <div className="overflow-y-auto divide-y divide-zinc-50 flex-1 max-h-[210px]">
+              {filteredAccounts.length === 0 ? (
+                <div className="p-4 text-center text-xs text-zinc-400">
+                  No accounts match &quot;{searchTerm}&quot;
+                </div>
+              ) : (
+                filteredAccounts.map((acc) => {
+                  const isSelected = selectedAccount?.code === acc.code || selectedAccount?.id === acc.id
+                  const style = TYPE_STYLES[acc.account_type] || TYPE_STYLES.Asset
+
+                  return (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => handleSelect(acc)}
+                      className={`w-full text-left px-3 py-2 flex items-center justify-between gap-2 hover:bg-emerald-50/50 transition-colors cursor-pointer ${
+                        isSelected ? "bg-emerald-50 font-bold" : ""
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span className="font-mono font-black text-xs text-zinc-950 bg-zinc-100 px-1.5 py-0.5 rounded border border-zinc-200/70 shrink-0">
+                          {acc.code}
+                        </span>
+                        <div className="truncate">
+                          <span className="text-xs font-bold text-zinc-800 truncate block">
+                            {acc.name}
+                          </span>
+                          {acc.peachtree_type && (
+                            <span className="text-[9px] text-zinc-400 block truncate">
+                              {acc.peachtree_type}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span
+                          className={`text-[8.5px] font-black uppercase px-1.5 py-0.5 rounded border ${style.bg} ${style.text} ${style.border}`}
+                        >
+                          {acc.account_type}
+                        </span>
+                        {isSelected && <Check className="size-3.5 text-emerald-600 shrink-0" />}
+                      </div>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import React from "react"
-import { Plus, Trash2, CheckCircle2, AlertTriangle, Sparkles, Layers } from "lucide-react"
+import { Plus, Trash2, CheckCircle2, AlertTriangle, ArrowRightLeft } from "lucide-react"
 import { useFinanceStore } from "@/lib/financeStore"
 import COAAccountSelector from "@/components/finance/COAAccountSelector"
 
@@ -36,7 +36,6 @@ export const PurchaseCOASplitSection: React.FC<PurchaseCOASplitSectionProps> = (
 
   const isCredit = paymentType === "Credit"
 
-  // Rounding safe totals
   const totalDebits = Math.round(debitLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0) * 100) / 100
   const totalCredits = Math.round(creditLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0) * 100) / 100
   const poTotal = Math.round((Number(totalAmount) || 0) * 100) / 100
@@ -44,7 +43,6 @@ export const PurchaseCOASplitSection: React.FC<PurchaseCOASplitSectionProps> = (
   const isBalanced = difference < 0.01 && totalDebits > 0
   const matchesPoTotal = Math.abs(totalDebits - poTotal) < 0.01
 
-  // Debit line operations
   const handleAddDebitLine = () => {
     const currentSum = debitLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
     const remainder = Math.max(0, Math.round((poTotal - currentSum) * 100) / 100)
@@ -56,7 +54,7 @@ export const PurchaseCOASplitSection: React.FC<PurchaseCOASplitSectionProps> = (
         accountId: defaultAcc?.id || "1410-01",
         accountCode: defaultAcc?.code || "1410-01",
         accountName: defaultAcc?.name || "STOCK OF GREEN MUNG",
-        description: reasonForPayment || "Purchase Cost Allocation",
+        description: reasonForPayment || "Purchase Allocation",
         amount: remainder,
       },
     ])
@@ -71,13 +69,6 @@ export const PurchaseCOASplitSection: React.FC<PurchaseCOASplitSectionProps> = (
     onDebitLinesChange(debitLines.map((l) => (l.id === id ? { ...l, ...updates } : l)))
   }
 
-  const handleAutoFillDebit = (index: number) => {
-    const otherSum = debitLines.filter((_, i) => i !== index).reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
-    const remainder = Math.max(0, Math.round((poTotal - otherSum) * 100) / 100)
-    onDebitLinesChange(debitLines.map((l, i) => (i === index ? { ...l, amount: remainder } : l)))
-  }
-
-  // Credit line operations
   const handleAddCreditLine = () => {
     const currentSum = creditLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
     const remainder = Math.max(0, Math.round((poTotal - currentSum) * 100) / 100)
@@ -105,268 +96,206 @@ export const PurchaseCOASplitSection: React.FC<PurchaseCOASplitSectionProps> = (
     onCreditLinesChange(creditLines.map((l) => (l.id === id ? { ...l, ...updates } : l)))
   }
 
-  const handleAutoFillCredit = (index: number) => {
-    const otherSum = creditLines.filter((_, i) => i !== index).reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
-    const remainder = Math.max(0, Math.round((poTotal - otherSum) * 100) / 100)
-    onCreditLinesChange(creditLines.map((l, i) => (i === index ? { ...l, amount: remainder } : l)))
-  }
-
   return (
-    <div className="border border-zinc-200 rounded-2xl p-4 bg-zinc-50/80 space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-200/80 pb-3">
-        <div>
-          <h3 className="text-xs font-black uppercase tracking-wider text-zinc-950 flex items-center gap-1.5">
-            <Layers className="size-4 text-emerald-600" />
-            General Ledger COA Routing & Multi-Account Split
-          </h3>
-          <p className="text-[11px] font-medium text-zinc-500 mt-0.5">
-            Select the specific General Ledger accounts hit by this transaction. You can add multiple debit accounts and multiple credit funding sources.
-          </p>
+    <div className="rounded-2xl border border-zinc-200 bg-zinc-50/60 p-4 space-y-3.5">
+      {/* Section Header */}
+      <div className="flex items-center justify-between pb-2 border-b border-zinc-200">
+        <div className="flex items-center gap-2">
+          <ArrowRightLeft className="size-4 text-zinc-700" />
+          <h4 className="text-xs font-black uppercase tracking-wider text-zinc-900">
+            Accounting & COA Account Allocation
+          </h4>
         </div>
 
-        {/* Live Balance Status Badge */}
-        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
-          {isBalanced && matchesPoTotal ? (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-300">
-              <CheckCircle2 className="size-3 text-emerald-600" /> Balanced
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black border border-amber-300">
-              <AlertTriangle className="size-3 text-amber-600" />
-              {!isBalanced
-                ? `Dr ≠ Cr (${difference.toFixed(2)} diff)`
-                : `Diff from Total (${Math.abs(totalDebits - poTotal).toFixed(2)})`}
-            </span>
-          )}
-        </div>
+        {/* Balance Status */}
+        {isBalanced && matchesPoTotal ? (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-black border border-emerald-300">
+            <CheckCircle2 className="size-3 text-emerald-600" /> Balanced
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[11px] font-black border border-amber-300">
+            <AlertTriangle className="size-3 text-amber-600" />
+            {!isBalanced
+              ? `Unbalanced (Diff: ETB ${difference.toFixed(2)})`
+              : `Diff from Total (ETB ${Math.abs(totalDebits - poTotal).toFixed(2)})`}
+          </span>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* ═══════════ DEBIT SECTION ═══════════ */}
-        <div className="bg-white border border-zinc-200 rounded-xl p-3.5 space-y-3 shadow-2xs">
+      {/* Two Clean Columns: Debit Accounts & Credit Accounts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        {/* ═══ DEBIT SECTION ═══ */}
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
+            <span className="text-xs font-black text-zinc-800 uppercase tracking-wide flex items-center gap-1.5">
               <span className="size-2 rounded-full bg-emerald-500" />
-              <h4 className="text-xs font-black text-zinc-900 uppercase tracking-wider">Debit Accounts</h4>
-              <span className="text-[10px] text-zinc-400 font-bold">({debitLines.length})</span>
-            </div>
+              Debit Accounts (Asset / Expense)
+            </span>
             <button
               type="button"
               onClick={handleAddDebitLine}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-colors cursor-pointer"
+              className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline inline-flex items-center gap-0.5 cursor-pointer"
             >
-              <Plus className="size-3 text-emerald-600" /> Add Debit
+              <Plus className="size-3" /> Add Debit
             </button>
           </div>
 
-          <div className="space-y-2.5 max-h-[280px] overflow-y-auto pr-1">
-            {debitLines.map((line, idx) => (
-              <div key={line.id} className="p-2.5 rounded-xl bg-zinc-50/70 border border-zinc-200 space-y-2">
-                <div className="flex items-center justify-between text-[11px] font-bold text-zinc-600">
-                  <span className="font-mono text-[10px] bg-zinc-200/80 px-1.5 py-0.5 rounded text-zinc-800">
-                    DR #{idx + 1}
-                  </span>
+          <div className="space-y-2">
+            {debitLines.map((line) => (
+              <div
+                key={line.id}
+                className="p-2 rounded-xl bg-white border border-zinc-200 shadow-2xs space-y-1.5"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <COAAccountSelector
+                      value={line.accountCode}
+                      onChange={(acc) =>
+                        handleUpdateDebitLine(line.id, {
+                          accountId: acc.id,
+                          accountCode: acc.code,
+                          accountName: acc.name,
+                        })
+                      }
+                      placeholder="Select debit account..."
+                      compact
+                      required
+                    />
+                  </div>
+
+                  <div className="w-28 shrink-0">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      placeholder="Amount"
+                      value={line.amount || ""}
+                      onChange={(e) =>
+                        handleUpdateDebitLine(line.id, {
+                          amount: e.target.value === "" ? 0 : Number(e.target.value),
+                        })
+                      }
+                      className="w-full px-2.5 py-1.5 h-[34px] rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-mono font-black text-zinc-950 text-right outline-none focus:bg-white focus:border-emerald-500"
+                    />
+                  </div>
+
                   {debitLines.length > 1 && (
                     <button
                       type="button"
                       onClick={() => handleRemoveDebitLine(line.id)}
-                      className="text-zinc-400 hover:text-rose-600 p-0.5 transition-colors cursor-pointer"
-                      title="Remove line"
+                      className="text-zinc-400 hover:text-rose-600 p-1 shrink-0 transition-colors cursor-pointer"
+                      title="Remove"
                     >
                       <Trash2 className="size-3.5" />
                     </button>
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <COAAccountSelector
-                    value={line.accountCode}
-                    onChange={(acc) =>
-                      handleUpdateDebitLine(line.id, {
-                        accountId: acc.id,
-                        accountCode: acc.code,
-                        accountName: acc.name,
-                      })
-                    }
-                    suggestedCodes={["1410-01", "1400-01", "1410-02", "1410-03", "6000-04", "6000-08", "8000-02"]}
-                    placeholder="Select debit account..."
-                    required
-                  />
-
-                  <div className="grid grid-cols-12 gap-2 items-center">
-                    <div className="col-span-6">
-                      <div className="relative">
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          required
-                          placeholder="0.00"
-                          value={line.amount || ""}
-                          onChange={(e) =>
-                            handleUpdateDebitLine(line.id, {
-                              amount: e.target.value === "" ? 0 : Number(e.target.value),
-                            })
-                          }
-                          className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-zinc-200 text-xs font-mono font-black text-zinc-950 outline-none focus:ring-1 focus:ring-emerald-500"
-                        />
-                      </div>
-                      {debitLines.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleAutoFillDebit(idx)}
-                          className="mt-0.5 text-[9px] font-bold text-emerald-700 hover:underline flex items-center gap-0.5 cursor-pointer"
-                        >
-                          <Sparkles className="size-2.5" /> Auto-fill remainder
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="col-span-6">
-                      <input
-                        type="text"
-                        placeholder="Memo / Line Description"
-                        value={line.description}
-                        onChange={(e) => handleUpdateDebitLine(line.id, { description: e.target.value })}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-zinc-200 text-xs font-medium text-zinc-800 outline-none"
-                      />
-                    </div>
-                  </div>
-                </div>
+                <input
+                  type="text"
+                  placeholder="Memo / Line Description (Optional)"
+                  value={line.description}
+                  onChange={(e) => handleUpdateDebitLine(line.id, { description: e.target.value })}
+                  className="w-full px-2.5 py-1 text-[11px] rounded-lg bg-zinc-50 border border-transparent hover:border-zinc-200 focus:border-zinc-300 focus:bg-white text-zinc-700 outline-none"
+                />
               </div>
             ))}
           </div>
 
-          <div className="pt-2 border-t border-zinc-100 flex justify-between items-center text-xs">
-            <span className="font-bold text-zinc-500 uppercase text-[10px]">Total Debits:</span>
-            <span className="font-mono font-black text-zinc-900">ETB {totalDebits.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+          <div className="flex justify-between items-center text-xs px-1 pt-1 font-mono">
+            <span className="text-zinc-500 font-sans font-bold">Total Debits:</span>
+            <span className="font-black text-zinc-900">
+              ETB {totalDebits.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
           </div>
         </div>
 
-        {/* ═══════════ CREDIT SECTION ═══════════ */}
-        <div className="bg-white border border-zinc-200 rounded-xl p-3.5 space-y-3 shadow-2xs">
+        {/* ═══ CREDIT SECTION ═══ */}
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
+            <span className="text-xs font-black text-zinc-800 uppercase tracking-wide flex items-center gap-1.5">
               <span className="size-2 rounded-full bg-blue-500" />
-              <h4 className="text-xs font-black text-zinc-900 uppercase tracking-wider">Credit Accounts</h4>
-              <span className="text-[10px] text-zinc-400 font-bold">({creditLines.length})</span>
-            </div>
+              {isCredit ? "Credit Accounts (Accounts Payable)" : "Credit Accounts (Bank / Cash Source)"}
+            </span>
             <button
               type="button"
               onClick={handleAddCreditLine}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-[11px] font-bold transition-colors cursor-pointer"
+              className="text-[11px] font-bold text-blue-700 hover:text-blue-900 hover:underline inline-flex items-center gap-0.5 cursor-pointer"
             >
-              <Plus className="size-3 text-blue-600" /> Add Credit
+              <Plus className="size-3" /> Add Credit
             </button>
           </div>
 
-          <div className="space-y-2.5 max-h-[280px] overflow-y-auto pr-1">
-            {creditLines.map((line, idx) => (
-              <div key={line.id} className="p-2.5 rounded-xl bg-zinc-50/70 border border-zinc-200 space-y-2">
-                <div className="flex items-center justify-between text-[11px] font-bold text-zinc-600">
-                  <span className="font-mono text-[10px] bg-zinc-200/80 px-1.5 py-0.5 rounded text-zinc-800">
-                    CR #{idx + 1}
-                  </span>
+          <div className="space-y-2">
+            {creditLines.map((line) => (
+              <div
+                key={line.id}
+                className="p-2 rounded-xl bg-white border border-zinc-200 shadow-2xs space-y-1.5"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <COAAccountSelector
+                      value={line.accountCode}
+                      onChange={(acc) =>
+                        handleUpdateCreditLine(line.id, {
+                          accountId: acc.id,
+                          accountCode: acc.code,
+                          accountName: acc.name,
+                        })
+                      }
+                      placeholder={isCredit ? "Select AP account..." : "Select bank/cash account..."}
+                      compact
+                      required
+                    />
+                  </div>
+
+                  <div className="w-28 shrink-0">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      placeholder="Amount"
+                      value={line.amount || ""}
+                      onChange={(e) =>
+                        handleUpdateCreditLine(line.id, {
+                          amount: e.target.value === "" ? 0 : Number(e.target.value),
+                        })
+                      }
+                      className="w-full px-2.5 py-1.5 h-[34px] rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-mono font-black text-zinc-950 text-right outline-none focus:bg-white focus:border-blue-500"
+                    />
+                  </div>
+
                   {creditLines.length > 1 && (
                     <button
                       type="button"
                       onClick={() => handleRemoveCreditLine(line.id)}
-                      className="text-zinc-400 hover:text-rose-600 p-0.5 transition-colors cursor-pointer"
-                      title="Remove line"
+                      className="text-zinc-400 hover:text-rose-600 p-1 shrink-0 transition-colors cursor-pointer"
+                      title="Remove"
                     >
                       <Trash2 className="size-3.5" />
                     </button>
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <COAAccountSelector
-                    value={line.accountCode}
-                    onChange={(acc) =>
-                      handleUpdateCreditLine(line.id, {
-                        accountId: acc.id,
-                        accountCode: acc.code,
-                        accountName: acc.name,
-                      })
-                    }
-                    suggestedCodes={
-                      isCredit
-                        ? ["2100-06", "2100-01", "2100-02", "2100-08"]
-                        : ["1000-02-26", "1000-01-01", "1000-02-01", "1000-02-14", "1000-02-17"]
-                    }
-                    placeholder="Select credit account..."
-                    required
-                  />
-
-                  <div className="grid grid-cols-12 gap-2 items-center">
-                    <div className="col-span-6">
-                      <div className="relative">
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          required
-                          placeholder="0.00"
-                          value={line.amount || ""}
-                          onChange={(e) =>
-                            handleUpdateCreditLine(line.id, {
-                              amount: e.target.value === "" ? 0 : Number(e.target.value),
-                            })
-                          }
-                          className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-zinc-200 text-xs font-mono font-black text-zinc-950 outline-none focus:ring-1 focus:ring-blue-500"
-                        />
-                      </div>
-                      {creditLines.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleAutoFillCredit(idx)}
-                          className="mt-0.5 text-[9px] font-bold text-blue-700 hover:underline flex items-center gap-0.5 cursor-pointer"
-                        >
-                          <Sparkles className="size-2.5" /> Auto-fill remainder
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="col-span-6">
-                      <input
-                        type="text"
-                        placeholder="Memo / Line Description"
-                        value={line.description}
-                        onChange={(e) => handleUpdateCreditLine(line.id, { description: e.target.value })}
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-zinc-200 text-xs font-medium text-zinc-800 outline-none"
-                      />
-                    </div>
-                  </div>
-                </div>
+                <input
+                  type="text"
+                  placeholder="Memo / Line Description (Optional)"
+                  value={line.description}
+                  onChange={(e) => handleUpdateCreditLine(line.id, { description: e.target.value })}
+                  className="w-full px-2.5 py-1 text-[11px] rounded-lg bg-zinc-50 border border-transparent hover:border-zinc-200 focus:border-zinc-300 focus:bg-white text-zinc-700 outline-none"
+                />
               </div>
             ))}
           </div>
 
-          <div className="pt-2 border-t border-zinc-100 flex justify-between items-center text-xs">
-            <span className="font-bold text-zinc-500 uppercase text-[10px]">Total Credits:</span>
-            <span className="font-mono font-black text-zinc-900">ETB {totalCredits.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+          <div className="flex justify-between items-center text-xs px-1 pt-1 font-mono">
+            <span className="text-zinc-500 font-sans font-bold">Total Credits:</span>
+            <span className="font-black text-zinc-900">
+              ETB {totalCredits.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
           </div>
-        </div>
-      </div>
-
-      {/* Summary Footer */}
-      <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-700">
-        <div className="flex items-center gap-3">
-          <span>Voucher Amount: <strong className="font-mono text-zinc-950">ETB {poTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
-          <span>Total Dr: <strong className="font-mono text-emerald-700">ETB {totalDebits.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
-          <span>Total Cr: <strong className="font-mono text-blue-700">ETB {totalCredits.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
-        </div>
-        <div>
-          {isBalanced && matchesPoTotal ? (
-            <span className="text-emerald-700 font-extrabold flex items-center gap-1 text-[11px]">
-              <CheckCircle2 className="size-3.5 text-emerald-600" /> Balanced (0.00 difference)
-            </span>
-          ) : (
-            <span className="text-rose-600 font-extrabold flex items-center gap-1 text-[11px]">
-              <AlertTriangle className="size-3.5 text-rose-600" />
-              Unbalanced: difference is ETB {difference.toFixed(2)}
-            </span>
-          )}
         </div>
       </div>
     </div>
