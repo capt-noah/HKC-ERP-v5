@@ -972,12 +972,25 @@ class FinanceStore {
               }
 
               // 2. Default two-legged double entry with dynamic accounts
+              const isPharma = String(po.warehouse_id || po.warehouseId || po.warehouse || "").toUpperCase().includes("WH2") ||
+                               String(po.warehouse_id || po.warehouseId || po.warehouse || "").toUpperCase().includes("WH3") ||
+                               String(po.category || "").toUpperCase().includes("PHARMA") ||
+                               String(po.category || "").toUpperCase().includes("VET")
+
+              const debitRule = isPharma ? "purchase_pharma_stock" : "purchase_export_commodity"
+              const debitFallback = isPharma ? "1400-01" : "1410-01"
+
               const debitAcc = (po.targetAccountId && this.accounts.find((a) => a.id === po.targetAccountId))
                 || (po.targetAccountCode && this.accounts.find((a) => a.code === po.targetAccountCode))
-                || this.getMappedAccount("po_grni_inventory", "1410-01")
+                || this.getMappedAccount(debitRule, debitFallback)
+                || (isPharma ? this.getMappedAccount("inventory_pharma_stock", "1400-01") : this.getMappedAccount("po_grni_inventory", "1410-01"))
+
+              const creditRule = isCash ? "purchase_cash_bank" : "purchase_ap_credit"
+              const creditFallback = isCash ? "1000-02-26" : "2100-06"
 
               const creditAcc = (po.creditAccountId && this.accounts.find((a) => a.id === po.creditAccountId))
                 || (po.creditAccountCode && this.accounts.find((a) => a.code === po.creditAccountCode))
+                || this.getMappedAccount(creditRule, creditFallback)
                 || (isCash
                   ? this.getMappedAccount("supplier_payment_bank", "1000-02-26")
                   : this.getMappedAccount("po_grni_clearing", "2100-06"))

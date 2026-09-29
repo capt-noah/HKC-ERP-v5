@@ -40,6 +40,20 @@ const CATEGORY_BADGES: Record<string, { bg: string; text: string; border: string
   "Custom Rules": { bg: "bg-indigo-50 dark:bg-indigo-950/40", text: "text-indigo-700 dark:text-indigo-400", border: "border-indigo-200 dark:border-indigo-800/50" },
 }
 
+const getRuleRoutingBadge = (ruleId: string) => {
+  const norm = ruleId.toLowerCase()
+  if (norm.includes("export") || norm.includes("wh1")) {
+    return { label: "WH1 Export", bg: "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800" }
+  }
+  if (norm.includes("pharma") || norm.includes("domestic") || norm.includes("stock_fulfillment")) {
+    return { label: "WH2/WH3 Pharma", bg: "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800" }
+  }
+  if (norm.includes("bank") || norm.includes("cash") || norm.includes("receipt") || norm.includes("clearing")) {
+    return { label: "Treasury", bg: "bg-cyan-100 text-cyan-800 border-cyan-300 dark:bg-cyan-950/60 dark:text-cyan-300 dark:border-cyan-800" }
+  }
+  return null
+}
+
 const mappingColumns: TableColumn[] = [
   { key: "label", label: "Business Transaction / Event", align: "left" },
   { key: "category", label: "Category", align: "left" },
@@ -313,6 +327,15 @@ export default function TransactionMappingMatrix() {
                             <span className="font-black text-zinc-950 text-xs truncate">
                               {rule.label}
                             </span>
+                            {(() => {
+                              const rBadge = getRuleRoutingBadge(rule.id)
+                              if (!rBadge) return null
+                              return (
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-extrabold border shrink-0 ${rBadge.bg}`}>
+                                  {rBadge.label}
+                                </span>
+                              )
+                            })()}
                           </div>
                           {rule.description && (
                             <span className="text-[11px] text-zinc-500 truncate" title={rule.description}>

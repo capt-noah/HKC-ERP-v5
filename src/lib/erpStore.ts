@@ -3398,10 +3398,10 @@ class ErpStore {
         if (normItem.includes("SOYA") || normItem.includes("SOY")) {
           targetStockCode = "1410-02"
           targetCogsCode = "5010-02"
-        } else if ((normItem.includes("REDISH") || normItem.includes("REDDISH") || normItem.includes("RED")) && normItem.includes("SESAME")) {
+        } else if ((normItem.includes("REDISH") || normItem.includes("REDDISH") || normItem.includes("RED")) && (normItem.includes("SESAME") || normItem.includes("SESSAME") || normItem.includes("SESEAM"))) {
           targetStockCode = "1410-03"
           targetCogsCode = "5010-03"
-        } else if (normItem.includes("SESAME")) {
+        } else if (normItem.includes("SESAME") || normItem.includes("SESSAME") || normItem.includes("SESEAM")) {
           targetStockCode = "1410-04"
           targetCogsCode = "5010-04"
         } else if (normItem.includes("BLACK") && (normItem.includes("BEAN") || normItem.includes("BEANS"))) {
@@ -3413,9 +3413,13 @@ class ErpStore {
         }
       }
 
-      const allAccounts = financeStore.getAccounts()
-      const cogsAcc = allAccounts.find((a) => a.code === targetCogsCode) || allAccounts.find((a) => a.code === "5000-01" || a.code === "5010-01" || a.account_type === "Expense")
-      const stockAcc = allAccounts.find((a) => a.code === targetStockCode) || allAccounts.find((a) => a.code === "1400-01" || a.code === "1410-01" || a.account_type === "Asset")
+      const cogsAcc = isExportWh
+        ? financeStore.getMappedAccount("cogs_export_fulfillment", targetCogsCode)
+        : financeStore.getMappedAccount("cogs_stock_fulfillment", "5000-01")
+
+      const stockAcc = isExportWh
+        ? financeStore.getMappedAccount("inventory_stock_in_hand", targetStockCode)
+        : financeStore.getMappedAccount("inventory_pharma_stock", "1400-01")
 
       if (cogsAcc && stockAcc && totalCogs > 0) {
         const postRes = financeStore.postJournalEntry(

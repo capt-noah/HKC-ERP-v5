@@ -1,16 +1,26 @@
 import { pool } from "../db/client.js"
 
 export const CORE_SYSTEM_GL_MAPPINGS = [
-  // ── SALES & REVENUE (6 rules) ──
+  // ── SALES & REVENUE (8 rules) ──
   {
     id: "sales_credit_ar",
-    label: "Trade Accounts Receivable (Credit Invoicing)",
+    label: "Trade Accounts Receivable (Domestic / Pharma)",
     category: "Sales & Revenue",
     defaultCode: "1300-03",
     defaultName: "VET MEDICEN SALES RECIVABLE",
     normalPosting: "Debit",
     isSystemDefault: true,
-    description: "Customer balance due debited upon issuing a credit sales invoice.",
+    description: "Customer balance due debited upon issuing a credit sales invoice for domestic/pharma sales.",
+  },
+  {
+    id: "sales_credit_ar_export",
+    label: "Trade Accounts Receivable (Export Sales Invoicing)",
+    category: "Sales & Revenue",
+    defaultCode: "1300-01",
+    defaultName: "EXPORT SALES RECIVEABLE",
+    normalPosting: "Debit",
+    isSystemDefault: true,
+    description: "Customer balance due debited upon issuing an export commodity sales invoice.",
   },
   {
     id: "sales_cash_clearing",
@@ -24,13 +34,23 @@ export const CORE_SYSTEM_GL_MAPPINGS = [
   },
   {
     id: "sales_revenue_domestic",
-    label: "Domestic Commercial Sales Revenue",
+    label: "Domestic Commercial Sales Revenue (Pharma)",
     category: "Sales & Revenue",
     defaultCode: "4000-01-01",
     defaultName: "SALES OF VETERINARY DRUG",
     normalPosting: "Credit",
     isSystemDefault: true,
-    description: "Operating sales revenue recognized from domestic product sales.",
+    description: "Operating sales revenue recognized from domestic veterinary product sales.",
+  },
+  {
+    id: "sales_revenue_export",
+    label: "Export Commodity Sales Revenue",
+    category: "Sales & Revenue",
+    defaultCode: "4000-02-01",
+    defaultName: "EXPORT SALES GREEN MUNG B",
+    normalPosting: "Credit",
+    isSystemDefault: true,
+    description: "Operating sales revenue recognized from export commodity crop sales.",
   },
   {
     id: "sales_revenue_services",
@@ -63,7 +83,7 @@ export const CORE_SYSTEM_GL_MAPPINGS = [
     description: "Tax withheld by clients (2% or 30%), claimable against annual corporate tax.",
   },
 
-  // ── PURCHASING & ACCOUNTS PAYABLE (4 rules) ──
+  // ── PURCHASING & ACCOUNTS PAYABLE (11 rules) ──
   {
     id: "po_grni_inventory",
     label: "Inventory Stock-In-Hand (PO Goods Receipt / GRN)",
@@ -104,6 +124,86 @@ export const CORE_SYSTEM_GL_MAPPINGS = [
     isSystemDefault: true,
     description: "Cash prepayments issued to suppliers prior to goods receipt.",
   },
+  {
+    id: "purchase_cash_bank",
+    label: "Purchase Default Cash / Operating Bank",
+    category: "Purchasing & AP",
+    defaultCode: "1000-02-26",
+    defaultName: "CBE_ECB_AC_1000465135224",
+    normalPosting: "Credit",
+    isSystemDefault: true,
+    description: "Default operational bank account credited when paying for purchases.",
+  },
+  {
+    id: "purchase_export_commodity",
+    label: "Raw Commodity Inventory (WH1 Purchases)",
+    category: "Purchasing & AP",
+    defaultCode: "1410-01",
+    defaultName: "STOCK OF GREEN MUNG",
+    normalPosting: "Debit",
+    isSystemDefault: true,
+    description: "Inventory asset debited for export commodity crop purchases.",
+  },
+  {
+    id: "purchase_pharma_stock",
+    label: "Pharma Inventory (WH2/WH3 Purchases)",
+    category: "Purchasing & AP",
+    defaultCode: "1400-01",
+    defaultName: "STOCK OF VETERINARY DRUG",
+    normalPosting: "Debit",
+    isSystemDefault: true,
+    description: "Inventory asset debited for veterinary medicine purchases.",
+  },
+  {
+    id: "purchase_packaging_bags",
+    label: "Packing and Bagging Procurement",
+    category: "Purchasing & AP",
+    defaultCode: "6000-04",
+    defaultName: "PACKING AND BAGING",
+    normalPosting: "Debit",
+    isSystemDefault: true,
+    description: "Direct cost/asset debited for procurement of bags and packing materials.",
+  },
+  {
+    id: "purchase_transport_freight",
+    label: "Inward Freight & Logistics Procurement",
+    category: "Purchasing & AP",
+    defaultCode: "6000-08",
+    defaultName: "TRANSPORT COST",
+    normalPosting: "Debit",
+    isSystemDefault: true,
+    description: "Transportation and freight inward costs for purchases.",
+  },
+  {
+    id: "purchase_office_supplies",
+    label: "Office & Warehouse Supplies Procurement",
+    category: "Purchasing & AP",
+    defaultCode: "8000-07",
+    defaultName: "STATIONERY, PRINTING & OFF SUP",
+    normalPosting: "Debit",
+    isSystemDefault: true,
+    description: "Operating expenses debited for office and warehouse consumable supplies.",
+  },
+  {
+    id: "purchase_general_misc",
+    label: "Miscellaneous Operating Purchases",
+    category: "Purchasing & AP",
+    defaultCode: "8000-30",
+    defaultName: "MICELLANOUS",
+    normalPosting: "Debit",
+    isSystemDefault: true,
+    description: "General operating procurement and miscellaneous business expenses.",
+  },
+  {
+    id: "purchase_ap_credit",
+    label: "Trade Accounts Payable (Supplier Credit)",
+    category: "Purchasing & AP",
+    defaultCode: "2100-06",
+    defaultName: "OTHER ACCRUALS",
+    normalPosting: "Credit",
+    isSystemDefault: true,
+    description: "Supplier trade payable liability credited on credit purchase orders.",
+  },
 
   // ── CUSTOMER & SUPPLIER PAYMENTS (3 rules) ──
   {
@@ -137,7 +237,17 @@ export const CORE_SYSTEM_GL_MAPPINGS = [
     description: "Default corporate bank account used to disburse supplier payments.",
   },
 
-  // ── INVENTORY & LOGISTICS (4 rules) ──
+  // ── INVENTORY & LOGISTICS (6 rules) ──
+  {
+    id: "inventory_pharma_stock",
+    label: "Veterinary / Pharma Stock In Hand Asset",
+    category: "Inventory & COGS",
+    defaultCode: "1400-01",
+    defaultName: "STOCK OF VETERINARY DRUG",
+    normalPosting: "Debit",
+    isSystemDefault: true,
+    description: "Balance sheet inventory asset representing veterinary and pharmaceutical stock.",
+  },
   {
     id: "inventory_stock_in_hand",
     label: "Commodity Stock In Hand Asset",
@@ -152,11 +262,21 @@ export const CORE_SYSTEM_GL_MAPPINGS = [
     id: "cogs_stock_fulfillment",
     label: "Cost of Goods Sold (Delivery Notes / Stock Fulfillment)",
     category: "Inventory & COGS",
-    defaultCode: "6000-04",
-    defaultName: "PACKING AND BAGING",
+    defaultCode: "5000-01",
+    defaultName: "COST OF VETERINARY DRUG",
     normalPosting: "Debit",
     isSystemDefault: true,
     description: "Cost of sales recognized upon dispatching customer delivery note.",
+  },
+  {
+    id: "cogs_export_fulfillment",
+    label: "Cost of Goods Sold (Export Commodities)",
+    category: "Inventory & COGS",
+    defaultCode: "5010-01",
+    defaultName: "COST OF SALES GREEN MUNG",
+    normalPosting: "Debit",
+    isSystemDefault: true,
+    description: "Cost of sales recognized upon dispatching export commodities from WH1.",
   },
   {
     id: "stock_shrinkage_loss",

@@ -199,14 +199,14 @@ export function resolveCommodityAccounts(itemName = "") {
       revenueCode: "4000-02-02",
     }
   }
-  if ((norm.includes("REDISH") || norm.includes("REDDISH") || norm.includes("RED")) && norm.includes("SESAME")) {
+  if ((norm.includes("REDISH") || norm.includes("REDDISH") || norm.includes("RED")) && (norm.includes("SESAME") || norm.includes("SESSAME") || norm.includes("SESEAM"))) {
     return {
       inventoryCode: "1410-03",
       cogsCode: "5010-03",
       revenueCode: "4000-02-03",
     }
   }
-  if (norm.includes("SESAME")) {
+  if (norm.includes("SESAME") || norm.includes("SESSAME") || norm.includes("SESEAM")) {
     return {
       inventoryCode: "1410-04",
       cogsCode: "5010-04",
@@ -228,31 +228,43 @@ export function resolveCommodityAccounts(itemName = "") {
   }
 }
 
-export function resolveSalesGLAccounts({ warehouseId, items = [], isCredit = false, allAccounts = [] }) {
+export function resolveSalesGLAccounts({ warehouseId, items = [], isCredit = false, allAccounts = [], mappingMap = new Map() }) {
   const findAcc = (code) => allAccounts.find(a => (a.code || a.account_code) === code)?.id || code
+  const getMappedCode = (ruleId, fallbackCode) => mappingMap.get(ruleId) || fallbackCode
   const isWh1 = isExportWarehouse(warehouseId)
 
   // 1. Receivables / Cash (Debit for Sales Voucher)
-  const debitAccId = isCredit
-    ? (isWh1 ? findAcc("1300-01") : findAcc("1300-03"))
-    : (findAcc("1000-02-26") || findAcc("1000-01-01") || "1000-02-26")
+  const debitCode = isCredit
+    ? (isWh1 ? getMappedCode("sales_credit_ar_export", "1300-01") : getMappedCode("sales_credit_ar", "1300-03"))
+    : getMappedCode("sales_cash_clearing", "1000-02-26")
+  const debitAccId = findAcc(debitCode)
 
   let revenueAccId, inventoryAccId, cogsAccId
 
   if (isWh1) {
     const firstItemName = items[0]?.item_name || items[0]?.name || ""
     const commodity = resolveCommodityAccounts(firstItemName)
-    revenueAccId = findAcc(commodity.revenueCode)
-    inventoryAccId = findAcc(commodity.inventoryCode)
-    cogsAccId = findAcc(commodity.cogsCode)
+
+    // Use commodity-specific account when recognized, falling back to mapping matrix rule
+    const exportRevCode = commodity.revenueCode || mappingMap.get("sales_revenue_export") || "4000-02-01"
+    const exportInvCode = commodity.inventoryCode || mappingMap.get("inventory_stock_in_hand") || "1410-01"
+    const exportCogsCode = commodity.cogsCode || mappingMap.get("cogs_export_fulfillment") || "5010-01"
+
+    revenueAccId = findAcc(exportRevCode)
+    inventoryAccId = findAcc(exportInvCode)
+    cogsAccId = findAcc(exportCogsCode)
   } else {
-    // Single unified account family for Pharma / Veterinary Import
-    revenueAccId = findAcc("4000-01-01") // Sales of Veterinary Drug
-    inventoryAccId = findAcc("1400-01") // Stock of Veterinary Drug
-    cogsAccId = findAcc("5000-01")      // Cost of Veterinary Drug
+    // Domestic / Pharma / Veterinary Import: dynamically resolved from COA mappings
+    const pharmaRevCode = getMappedCode("sales_revenue_domestic", "4000-01-01")
+    const pharmaInvCode = getMappedCode("inventory_pharma_stock", "1400-01")
+    const pharmaCogsCode = getMappedCode("cogs_stock_fulfillment", "5000-01")
+
+    revenueAccId = findAcc(pharmaRevCode)
+    inventoryAccId = findAcc(pharmaInvCode)
+    cogsAccId = findAcc(pharmaCogsCode)
   }
 
-  const vatAccId = findAcc("2000-05")
+  const vatAccId = findAcc(getMappedCode("sales_vat_output", "2000-05"))
   return { debitAccId, revenueAccId, inventoryAccId, cogsAccId, vatAccId }
 }
 
@@ -1117,8 +1129,13 @@ export async function postSalesIssue(arg1, arg2) {
 
   // 3. Post Double-Entry Journal Entries
   try {
-    const coaRes = await drizzleListRows({ resource: getResource("chart_of_accounts") }).catch(() => ({ body: [] }))
+    const [coaRes, mappingsRes] = await Promise.all([
+      drizzleListRows({ resource: getResource("chart_of_accounts") }).catch(() => ({ body: [] })),
+      drizzleListRows({ resource: getResource("gl_account_mappings") }).catch(() => ({ body: [] })),
+    ])
     const allAccounts = Array.isArray(coaRes.body) ? coaRes.body.map(a => a?.payload ? { ...a.payload, ...a } : a) : []
+    const allMappings = Array.isArray(mappingsRes.body) ? mappingsRes.body.map(m => m?.payload ? { ...m.payload, ...m } : m) : []
+    const mappingMap = new Map(allMappings.map(m => [m.id, m.account_code || m.account_id]))
 
     const isCredit = (existing.payment_type || "").toString().toLowerCase().includes("credit")
     const { debitAccId, revenueAccId, inventoryAccId, cogsAccId, vatAccId } = resolveSalesGLAccounts({
@@ -1126,6 +1143,7 @@ export async function postSalesIssue(arg1, arg2) {
       items: existing.items || [],
       isCredit,
       allAccounts,
+      mappingMap,
     })
 
     const saleJeId = `JE-SALE-${id}`
