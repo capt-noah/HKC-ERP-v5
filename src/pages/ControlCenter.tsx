@@ -31,7 +31,6 @@ import {
   Download,
   Receipt,
   ArrowRight,
-  Percent,
 } from "lucide-react"
 import {
   ResponsiveContainer,
@@ -63,7 +62,7 @@ import { type HRData, loadHRData, money } from "@/lib/hrApi"
 import { loadResource } from "@/lib/apiPersistence"
 import { listSalesIssues, type SalesIssue } from "@/lib/salesIssuesApi"
 import { isExportWarehouse, isPharmaWarehouse } from "@/lib/warehouses"
-import { computeWH1RejectAnalysis } from "@/lib/wh1QualityAnalytics"
+import { computeWH1SupplierQuality } from "@/lib/wh1QualityAnalytics"
 import { getExpiringItemsSummary } from "@/lib/expiryUtils"
 import { formatDateTimeDisplay, parseSafeDate } from "@/lib/dateUtils"
 import { resolveActivityDetails, isAutoSyncActivityLog, type UserActivityLog } from "@/lib/activityUtils"
@@ -746,14 +745,11 @@ export default function ControlCenter() {
     const activeIssues = salesIssues.filter((si) => si.status !== "Cancelled")
     const salesIssueRev = activeIssues.reduce((sum, si) => sum + Number(si.total_amount || 0), 0)
     let salesIssueCogs = 0
-    const allProds = erp.getProducts()
-    const prodMap = new Map(allProds.map((p) => [p.id, p]))
     activeIssues.forEach((si) => {
       if (Array.isArray(si.items)) {
         si.items.forEach((item) => {
           const qty = Number(item.quantity || 0)
-          const matchedProd = prodMap.get((item as any).product_id || item.item_id)
-          const cost = Number((item as any).unit_cost || (item as any).cost_price || matchedProd?.unitCost || 0)
+          const cost = Number((item as any).unit_cost || (item as any).cost_price || 0)
           salesIssueCogs += qty * cost
         })
       }
@@ -761,14 +757,13 @@ export default function ControlCenter() {
 
     // 2. Or from Journal Entry Lines if available
     const accounts = finance.getAccounts()
-    const accountMap = new Map(accounts.flatMap((a) => [[a.id, a], [a.code, a]]))
     const lines = finance.getJournalEntryLines()
     let glRev = 0
     let glCogs = 0
     let glExp = 0
 
     lines.forEach((line) => {
-      const account = accountMap.get(line.account_id)
+      const account = accounts.find((item) => item.id === line.account_id)
       if (!account) return
       if (account.account_type === "Revenue") {
         glRev += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
@@ -798,7 +793,7 @@ export default function ControlCenter() {
       netProfit: np,
       netMargin: nm,
     }
-  }, [salesIssues, finance, erp])
+  }, [salesIssues, finance])
 
   // Chart Data Preparation (Revenue & Sales Pipeline)
   const revenueChartData = useMemo(() => {
@@ -863,7 +858,6 @@ export default function ControlCenter() {
     })
 
     const accounts = finance.getAccounts()
-    const accountMap = new Map(accounts.flatMap((a) => [[a.id, a], [a.code, a]]))
     const entries = finance.getJournalEntries()
     const lines = finance.getJournalEntryLines()
     const entryMap = new Map(entries.map((e) => [e.id, e]))
@@ -874,7 +868,7 @@ export default function ControlCenter() {
       const d = dateStr ? new Date(dateStr) : null
       if (d && !isNaN(d.getTime())) {
         const monthLabel = months[d.getMonth()]
-        const acc = accountMap.get(line.account_id)
+        const acc = accounts.find((a) => a.id === line.account_id)
         if (acc) {
           if (acc.account_type === "Revenue") {
             monthlyMap[monthLabel].revenue += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
@@ -892,8 +886,6 @@ export default function ControlCenter() {
     // Fallback to Sales Issues if GL lines are empty
     const hasGlData = Object.values(monthlyMap).some((m) => m.revenue > 0 || m.cogs > 0)
     if (!hasGlData && salesIssues.length > 0) {
-      const allProds = erp.getProducts()
-      const prodMap = new Map(allProds.map((p) => [p.id, p]))
       salesIssues.forEach((si) => {
         if (si.status === "Cancelled") return
         const dateStr = si.sale_date || (si as any).created_at
@@ -904,8 +896,7 @@ export default function ControlCenter() {
           if (Array.isArray(si.items)) {
             si.items.forEach((item) => {
               const qty = Number(item.quantity || 0)
-              const matchedProd = prodMap.get((item as any).product_id || item.item_id)
-              const cost = Number((item as any).unit_cost || (item as any).cost_price || matchedProd?.unitCost || 0)
+              const cost = Number((item as any).unit_cost || (item as any).cost_price || 0)
               monthlyMap[monthLabel].cogs += qty * cost
             })
           }
@@ -930,19 +921,13 @@ export default function ControlCenter() {
         margin,
       }
     })
-  }, [salesIssues, finance, erp])
+  }, [salesIssues, finance])
 
   // Stock Valuation Breakdown by Commodity / Category
   const inventoryCategoryData = useMemo(() => {
     const categoryMap: Record<string, { value: number; count: number }> = {}
     erp.getProducts().forEach((p) => {
-      const cat =
-        p.category?.trim() ||
-        (isExportWarehouse(p.warehouse)
-          ? "Export Commodities"
-          : isPharmaWarehouse(p.warehouse)
-          ? "Veterinary Medicine"
-          : "General Stock")
+      const cat = p.category?.trim() || p.name || "General Stock"
       const val = Number(p.totalStockValue ?? (Number(p.quantity || 0) * Number(p.unitCost || 0)))
       if (!categoryMap[cat]) {
         categoryMap[cat] = { value: 0, count: 0 }
@@ -961,9 +946,9 @@ export default function ControlCenter() {
       .slice(0, 8)
   }, [erp, erp.getProducts()])
 
-  // Raw Stock Rejection & Loss Percentage Benchmark (Strictly export warehouse raw arrivals & cleaning rejects)
+  // Raw Stock Supplier Quality Benchmark (Strictly export warehouse raw arrivals & cleaning rejects)
   const wh1QualitySummary = useMemo(() => {
-    return computeWH1RejectAnalysis(erp.getProducts(), qualityProductFilter, qualityWarehouseFilter)
+    return computeWH1SupplierQuality(erp.getProducts(), qualityProductFilter, qualityWarehouseFilter)
   }, [erp, erp.getProducts(), qualityProductFilter, qualityWarehouseFilter])
 
   // WH2 & WH3 Stock Expiration Summary (9-Month Watch & 6-Month Critical)
@@ -1226,10 +1211,11 @@ export default function ControlCenter() {
         {/* Tab Content 1: Overview */}
         {activeTab === "overview" && (
           <motion.div key="overview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
-            {/* Colored Metric Cards (Posted Revenue, Gross Profit & Inventory Value) */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* Colored Metric Cards (Posted Revenue, Gross Profit, EBIT & Inventory Value) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
               {dataLoading ? (
                 <>
+                  <StatCardSkeleton />
                   <StatCardSkeleton />
                   <StatCardSkeleton />
                   <StatCardSkeleton />
@@ -1255,13 +1241,10 @@ export default function ControlCenter() {
                           <DollarSign className="size-6 text-emerald-700" />
                         </div>
                       </div>
-                      <div className="mt-4 relative z-10 flex items-baseline gap-1.5 min-w-0 overflow-hidden">
-                        <span className="text-xs sm:text-sm font-extrabold text-emerald-950/70 font-sans tracking-wide shrink-0">
-                          ETB
-                        </span>
-                        <span className="text-xl sm:text-2xl xl:text-[22px] font-black text-black tracking-tight font-mono truncate" title={`ETB ${money(postedRevenue)}`}>
-                          {money(postedRevenue)}
-                        </span>
+                      <div className="mt-4 relative z-10">
+                        <p className="text-2xl sm:text-3xl font-black text-black tracking-tight font-mono">
+                          ETB {money(postedRevenue)}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-emerald-800 relative z-10">
@@ -1294,22 +1277,55 @@ export default function ControlCenter() {
                           <TrendingUp className="size-6 text-teal-700" />
                         </div>
                       </div>
-                      <div className="mt-4 relative z-10 flex items-baseline gap-1.5 min-w-0 overflow-hidden">
-                        <span className="text-xs sm:text-sm font-extrabold text-teal-950/70 font-sans tracking-wide shrink-0">
-                          ETB
-                        </span>
-                        <span className="text-xl sm:text-2xl xl:text-[22px] font-black text-black tracking-tight font-mono truncate" title={`ETB ${money(grossProfit)}`}>
-                          {money(grossProfit)}
-                        </span>
+                      <div className="mt-4 relative z-10">
+                        <p className="text-2xl sm:text-3xl font-black text-black tracking-tight font-mono">
+                          ETB {money(grossProfit)}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-teal-800 relative z-10">
                       <Coins className="size-4 shrink-0" />
-                      <span className="truncate">COGS: <span className="text-[10px] font-bold">ETB</span> {money(totalCogs)}</span>
+                      <span className="truncate">COGS: ETB {money(totalCogs)}</span>
                     </div>
                   </motion.div>
 
-                  {/* Card 3: Inventory Value (Indigo/Violet Gradient) */}
+                  {/* Card 3: Net Operating Income (Blue/Indigo Gradient) */}
+                  <motion.div
+                    whileHover={{ scale: 1.01 }}
+                    transition={{ duration: 0.2 }}
+                    className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-blue-500/15 via-indigo-600/5 to-white/70 border border-blue-500/30 backdrop-blur-xl shadow-lg shadow-blue-950/[0.04] flex flex-col justify-between"
+                  >
+                    <div className="absolute top-0 right-0 w-48 h-48 bg-blue-400/20 rounded-full blur-3xl pointer-events-none -mr-12 -mt-12" />
+                    <div>
+                      <div className="flex items-start justify-between relative z-10">
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-700 text-white shadow-sm">
+                              EBIT
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-300 font-mono">
+                              {netMargin.toFixed(1)}%
+                            </span>
+                          </div>
+                          <p className="text-xs text-blue-900 font-extrabold uppercase tracking-wider mt-2.5">Net Operating Income</p>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-blue-500/20 text-blue-800 border border-blue-500/30 shadow-inner">
+                          <BarChart3 className="size-6 text-blue-700" />
+                        </div>
+                      </div>
+                      <div className="mt-4 relative z-10">
+                        <p className="text-2xl sm:text-3xl font-black text-black tracking-tight font-mono">
+                          ETB {money(netProfit)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-blue-800 relative z-10">
+                      <CheckCircle2 className="size-4 shrink-0" />
+                      <span className="truncate">Bottom-line operating income</span>
+                    </div>
+                  </motion.div>
+
+                  {/* Card 4: Inventory Value (Indigo/Violet Gradient) */}
                   <motion.div
                     whileHover={{ scale: 1.01 }}
                     transition={{ duration: 0.2 }}
@@ -1328,13 +1344,10 @@ export default function ControlCenter() {
                           <Package className="size-6 text-indigo-700" />
                         </div>
                       </div>
-                      <div className="mt-4 relative z-10 flex items-baseline gap-1.5 min-w-0 overflow-hidden">
-                        <span className="text-xs sm:text-sm font-extrabold text-indigo-950/70 font-sans tracking-wide shrink-0">
-                          ETB
-                        </span>
-                        <span className="text-xl sm:text-2xl xl:text-[22px] font-black text-black tracking-tight font-mono truncate" title={`ETB ${money(inventoryValue)}`}>
-                          {money(inventoryValue)}
-                        </span>
+                      <div className="mt-4 relative z-10">
+                        <p className="text-2xl sm:text-3xl font-black text-black tracking-tight font-mono">
+                          ETB {money(inventoryValue)}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-indigo-800 relative z-10">
@@ -1368,7 +1381,7 @@ export default function ControlCenter() {
                             ? "Gross profit margin, Cost of Goods Sold (COGS), and net operating profit breakdown."
                             : chartMode === "inventory"
                             ? "Inventory valuation and stock distribution breakdown by product category."
-                            : "Commodity cleaning reject rates (%) & clean export yield across export commodities."}
+                            : "Raw commodity cleaning reject rates & net yield comparison across WH1 suppliers."}
                         </p>
                       </div>
 
@@ -1418,8 +1431,8 @@ export default function ControlCenter() {
                               : "text-gray-500 hover:text-black"
                           )}
                         >
-                          <Percent className="size-3.5 text-rose-600" />
-                          Rejection Rate (%)
+                          <ShieldCheck className="size-3.5 text-amber-600" />
+                          Supplier Quality
                         </button>
                       </div>
                     </div>
@@ -1444,12 +1457,7 @@ export default function ControlCenter() {
                               tickLine={false}
                               axisLine={false}
                               tick={{ fontSize: 11, fill: "#888", fontWeight: 600 }}
-                              tickFormatter={(val) => {
-                                const abs = Math.abs(val)
-                                if (abs >= 1000000) return `${(val / 1000000).toFixed(1)}M`
-                                if (abs >= 1000) return `${(val / 1000).toFixed(0)}k`
-                                return `${val}`
-                              }}
+                              tickFormatter={(val) => (val >= 1000 ? `${(val / 1000).toFixed(0)}k` : `${val}`)}
                             />
                             <Tooltip
                               contentStyle={{
@@ -1460,7 +1468,7 @@ export default function ControlCenter() {
                                 fontSize: "12px",
                                 fontWeight: "bold",
                               }}
-                              formatter={(val: any, name: any) => [`ETB ${Number(val).toLocaleString()}`, name]}
+                              formatter={(val: any) => [`ETB ${Number(val).toLocaleString()}`, "Amount"]}
                             />
                             <Area
                               type="monotone"
@@ -1535,12 +1543,7 @@ export default function ControlCenter() {
                                 tickLine={false}
                                 axisLine={false}
                                 tick={{ fontSize: 11, fill: "#888", fontWeight: 600 }}
-                                tickFormatter={(val) => {
-                                  const abs = Math.abs(val)
-                                  if (abs >= 1000000) return `${(val / 1000000).toFixed(1)}M`
-                                  if (abs >= 1000) return `${(val / 1000).toFixed(0)}k`
-                                  return `${val}`
-                                }}
+                                tickFormatter={(val) => (Math.abs(val) >= 1000 ? `${(val / 1000).toFixed(0)}k` : `${val}`)}
                               />
                               <Tooltip
                                 contentStyle={{
@@ -1600,12 +1603,7 @@ export default function ControlCenter() {
                                 tickLine={false}
                                 axisLine={false}
                                 tick={{ fontSize: 11, fill: "#888", fontWeight: 600 }}
-                                tickFormatter={(val) => {
-                                  const abs = Math.abs(val)
-                                  if (abs >= 1000000) return `${(val / 1000000).toFixed(1)}M`
-                                  if (abs >= 1000) return `${(val / 1000).toFixed(0)}k`
-                                  return `${val}`
-                                }}
+                                tickFormatter={(val) => (val >= 1000 ? `${(val / 1000).toFixed(0)}k` : `${val}`)}
                               />
                               <Tooltip
                                 contentStyle={{
@@ -1616,9 +1614,9 @@ export default function ControlCenter() {
                                   fontSize: "12px",
                                   fontWeight: "bold",
                                 }}
-                                formatter={(val: any, _name: any, item: any) => [
-                                  `ETB ${Number(val).toLocaleString()} (${Number(item?.payload?.count || 0).toLocaleString()} units/Qtl)`,
-                                  "Valuation",
+                                formatter={(val: any) => [
+                                  `ETB ${Number(val).toLocaleString()}`,
+                                  "Category Value",
                                 ]}
                               />
                               <Bar dataKey="value" name="Valuation (ETB)" fill="#4f46e5" radius={[8, 8, 0, 0]} />
@@ -1675,72 +1673,32 @@ export default function ControlCenter() {
                               <span className="text-black font-mono">{wh1QualitySummary.overallTotalReceived.toLocaleString()} Qtl</span>
                             </div>
                             <div className="flex items-center gap-1.5">
-                              <span className="text-gray-400 text-[11px]">Clean Yield:</span>
-                              <span className="text-emerald-600 font-mono font-black">{wh1QualitySummary.overallCleanYieldRate}%</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
                               <span className="text-gray-400 text-[11px]">Rejects:</span>
                               <span className="text-rose-600 font-mono">{wh1QualitySummary.overallTotalRejected.toLocaleString()} Qtl</span>
-                              {wh1QualitySummary.overallLossValuation > 0 && (
-                                <span className="text-gray-400 text-[10px] font-normal">
-                                  (ETB {money(wh1QualitySummary.overallLossValuation)})
-                                </span>
-                              )}
                             </div>
-                            <div
-                              className={cn(
-                                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border",
-                                wh1QualitySummary.overallRejectRate <= 5
-                                  ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
-                                  : wh1QualitySummary.overallRejectRate <= 10
-                                  ? "bg-amber-500/10 text-amber-700 border-amber-500/20"
-                                  : "bg-rose-500/10 text-rose-700 border-rose-500/20"
-                              )}
-                            >
-                              <span className="text-[10px] uppercase tracking-wider font-extrabold">Enterprise Reject:</span>
+                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-700 border border-amber-500/20">
+                              <span className="text-[10px] uppercase tracking-wider font-extrabold">Avg Reject:</span>
                               <span className="font-mono font-black">{wh1QualitySummary.overallRejectRate}%</span>
                             </div>
                           </div>
                         </div>
 
-                        {/* Dual Yield vs Loss Visual Progress Bar */}
-                        <div className="space-y-1 px-1">
-                          <div className="flex items-center justify-between text-[11px] font-bold">
-                            <span className="text-emerald-700 flex items-center gap-1">
-                              Clean Export Yield: {wh1QualitySummary.overallCleanYieldRate}%
-                            </span>
-                            <span className="text-rose-600 flex items-center gap-1">
-                              Cleaning Rejection Loss: {wh1QualitySummary.overallRejectRate}%
-                            </span>
-                          </div>
-                          <div className="h-2 w-full bg-rose-200 rounded-full overflow-hidden flex">
-                            <div
-                              className="h-full bg-emerald-500 transition-all duration-500 rounded-l-full"
-                              style={{ width: `${Math.min(100, Math.max(0, wh1QualitySummary.overallCleanYieldRate))}%` }}
-                            />
-                            <div
-                              className="h-full bg-rose-500 transition-all duration-500 rounded-r-full"
-                              style={{ width: `${Math.min(100, Math.max(0, wh1QualitySummary.overallRejectRate))}%` }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Recharts Bar Graph for Commodity Reject Rates (%) */}
-                        <div className="h-[210px] w-full pt-1">
-                          {wh1QualitySummary.commodityMetrics.length === 0 ? (
+                        {/* Recharts Bar Graph for Supplier Reject Rates */}
+                        <div className="h-[235px] w-full pt-1">
+                          {wh1QualitySummary.supplierMetrics.length === 0 ? (
                             <div className="h-full flex flex-col items-center justify-center text-xs font-semibold text-gray-400 gap-1.5">
                               <Package className="size-6 text-gray-300" />
-                              <span>No export commodity arrival or rejection records found.</span>
+                              <span>No WH1 supplier arrival or rejection records found.</span>
                             </div>
                           ) : (
                             <ResponsiveContainer width="100%" height="100%">
                               <BarChart
-                                data={wh1QualitySummary.commodityMetrics}
+                                data={wh1QualitySummary.supplierMetrics}
                                 margin={{ top: 10, right: 10, left: -15, bottom: 20 }}
                               >
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
                                 <XAxis
-                                  dataKey="productName"
+                                  dataKey="supplierName"
                                   tickLine={false}
                                   axisLine={false}
                                   tick={{ fontSize: 10, fill: "#666", fontWeight: 700 }}
@@ -1767,14 +1725,9 @@ export default function ControlCenter() {
                                     if (!active || !payload || !payload.length) return null
                                     const data = payload[0].payload
                                     return (
-                                      <div className="space-y-1.5 text-left text-xs font-semibold min-w-[210px]">
+                                      <div className="space-y-1.5 text-left text-xs font-semibold min-w-[200px]">
                                         <div className="font-extrabold text-black text-sm pb-1 border-b border-black/5">
-                                          {data.productName}
-                                          {data.sku ? (
-                                            <span className="ml-1 text-[10px] font-mono text-gray-400 font-normal">
-                                              ({data.sku})
-                                            </span>
-                                          ) : null}
+                                          {data.supplierName}
                                         </div>
                                         <div className="flex items-center justify-between gap-4">
                                           <span className="text-gray-500">Reject Rate:</span>
@@ -1786,18 +1739,12 @@ export default function ControlCenter() {
                                         </div>
                                         <div className="flex items-center justify-between gap-4 text-[11px] pt-1 border-t border-black/5">
                                           <span className="text-gray-400">Total Received:</span>
-                                          <span className="font-mono text-black">{data.totalReceived} {data.unit || "Qtl"}</span>
+                                          <span className="font-mono text-black">{data.totalReceived} Qtl</span>
                                         </div>
                                         <div className="flex items-center justify-between gap-4 text-[11px]">
                                           <span className="text-gray-400">Total Rejections:</span>
-                                          <span className="font-mono text-rose-600">{data.totalRejected} {data.unit || "Qtl"}</span>
+                                          <span className="font-mono text-rose-600">{data.totalRejected} Qtl</span>
                                         </div>
-                                        {data.lossValuation > 0 && (
-                                          <div className="flex items-center justify-between gap-4 text-[11px]">
-                                            <span className="text-gray-400">Loss Valuation:</span>
-                                            <span className="font-mono text-rose-700 font-bold">ETB {money(data.lossValuation)}</span>
-                                          </div>
-                                        )}
                                         <div className="text-[10px] text-gray-500 font-bold mt-1 bg-black/[0.03] px-2 py-0.5 rounded-md">
                                           Rating: {data.gradeLabel}
                                         </div>
@@ -1806,7 +1753,7 @@ export default function ControlCenter() {
                                   }}
                                 />
                                 <Bar dataKey="rejectRate" name="Reject Rate (%)" radius={[6, 6, 0, 0]} maxBarSize={45}>
-                                  {wh1QualitySummary.commodityMetrics.map((entry, index) => (
+                                  {wh1QualitySummary.supplierMetrics.map((entry, index) => (
                                     <Cell
                                       key={`cell-${index}`}
                                       fill={
@@ -1841,7 +1788,7 @@ export default function ControlCenter() {
                             </span>
                           </div>
                           <span className="text-[10px] text-gray-400 font-medium">
-                            Export warehouse raw arrivals & cleaning reject percentages only
+                            WH1 raw commodity arrivals & cleaning rejects only
                           </span>
                         </div>
                       </div>

@@ -25,7 +25,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { financeStore } from "@/lib/financeStore"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { loadResource } from "@/lib/apiPersistence"
-import { resolveWarehouseFullName, withOperatingWarehouses } from "@/lib/warehouses"
+import { resolveWarehouseFullName, withOperatingWarehouses, getRegisteredWarehouses } from "@/lib/warehouses"
 import type { Warehouse } from "@/lib/erpStore"
 import {
   PAYMENT_STATUSES,
@@ -111,7 +111,7 @@ export default function Payroll() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [periods, setPeriods] = useState<PayrollPeriod[]>([])
   const [records, setRecords] = useState<PayrollRecord[]>([])
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => getRegisteredWarehouses())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
 
@@ -136,7 +136,7 @@ export default function Payroll() {
       setEmployees(data.employees)
       setPeriods(data.payrollPeriods)
       setRecords(data.payrollRecords)
-      setWarehouses(withOperatingWarehouses(whData))
+      setWarehouses(withOperatingWarehouses(whData || []))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load payroll.")
     } finally {

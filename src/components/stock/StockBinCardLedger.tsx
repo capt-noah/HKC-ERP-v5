@@ -1,18 +1,15 @@
 import { useMemo } from "react"
 import { Edit3 } from "lucide-react"
 import type { BinCardMovementEntry, Product } from "@/lib/erpStore"
-import { getDaysUntilExpiry } from "@/lib/expiryUtils"
 
 interface StockBinCardLedgerProps {
   product: Product
-  onEditEntry?: (product: Product, entry: BinCardMovementEntry) => void
-  readOnly?: boolean
+  onEditEntry: (product: Product, entry: BinCardMovementEntry) => void
 }
 
 export default function StockBinCardLedger({
   product,
-  onEditEntry,
-  readOnly = false,
+  onEditEntry
 }: StockBinCardLedgerProps) {
   const entries = useMemo(() => {
     const raw = [...(product.binCardEntries || [])]
@@ -75,7 +72,7 @@ export default function StockBinCardLedger({
                 <th rowSpan={2} className="py-2.5 px-4 border-r border-zinc-200">Expiry Date</th>
                 <th rowSpan={2} className="py-2.5 px-4 border-r border-zinc-200">Received From / Issued To</th>
                 <th rowSpan={2} className="py-2.5 px-4 border-r border-zinc-200">Remark</th>
-                {!readOnly && <th rowSpan={2} className="py-2.5 px-4 text-center">Actions</th>}
+                <th rowSpan={2} className="py-2.5 px-4 text-center">Actions</th>
               </tr>
               <tr className="bg-zinc-50/90 border-b border-zinc-200 text-[9px] font-black uppercase tracking-wider text-zinc-500">
                 <th className="py-2 px-4 border-r border-zinc-200 text-right text-emerald-700">Received</th>
@@ -130,45 +127,21 @@ export default function StockBinCardLedger({
                     </td>
                     {/* Selling Price / Value (ETB) */}
                     <td className="py-2.5 px-4 text-right font-mono font-bold text-blue-950 border-r border-zinc-100 whitespace-nowrap">
-                      {rec.sellingPrice != null && Number(rec.sellingPrice) > 0 ? (
+                      {isLeave && rec.sellingPrice != null && Number(rec.sellingPrice) > 0 ? (
                         <div>
                           <div className="font-extrabold text-blue-700">
                             ETB {Number(rec.sellingPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                           <div className="text-[9px] text-blue-600/80 font-sans font-semibold">
-                            {isLeave
-                              ? `Invoiced: ETB ${(Number(rec.qtyIssued || 0) * Number(rec.sellingPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                              : isEntry
-                              ? `Expected: ETB ${(Number(rec.qtyReceived || 0) * Number(rec.sellingPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                              : "Batch Price"}
+                            Invoiced: ETB {(Number(rec.qtyIssued || 0) * Number(rec.sellingPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
-                        </div>
-                      ) : product.sellingPrice != null && Number(product.sellingPrice) > 0 ? (
-                        <div>
-                          <div className="font-extrabold text-blue-700">
-                            ETB {Number(product.sellingPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </div>
-                          <div className="text-[9px] text-zinc-400 font-sans font-semibold">Catalog Price</div>
                         </div>
                       ) : (
                         <span className="text-zinc-300 font-normal">—</span>
                       )}
                     </td>
                     <td className="py-2.5 px-4 font-mono text-zinc-600 border-r border-zinc-100">{rec.mfgDate || "-"}</td>
-                    <td className="py-2.5 px-4 font-mono text-zinc-600 border-r border-zinc-100">
-                      <div>{rec.expiryDate || "-"}</div>
-                      {(() => {
-                        const daysStatus = getDaysUntilExpiry(rec.expiryDate)
-                        if (!daysStatus) return null
-                        return (
-                          <div className="pt-0.5 font-sans">
-                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] border ${daysStatus.badgeClass}`}>
-                              {daysStatus.text}
-                            </span>
-                          </div>
-                        )
-                      })()}
-                    </td>
+                    <td className="py-2.5 px-4 font-mono text-zinc-600 border-r border-zinc-100">{rec.expiryDate || "-"}</td>
                     <td className="py-2.5 px-4 font-semibold text-zinc-800 border-r border-zinc-100">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {isQuarantine && (
@@ -180,24 +153,22 @@ export default function StockBinCardLedger({
                       </div>
                     </td>
                     <td className="py-2.5 px-4 text-zinc-500 max-w-xs truncate border-r border-zinc-100">{rec.remark || "-"}</td>
-                    {!readOnly && (
-                      <td className="py-2.5 px-4 text-center">
-                        {isQuarantine ? (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-900 text-[10px] font-black tracking-wider shadow-2xs">
-                            QA Locked
-                          </span>
-                        ) : onEditEntry ? (
-                          <button
-                            type="button"
-                            onClick={() => onEditEntry(product, rec)}
-                            className="px-2.5 py-1 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-800 text-[10px] font-extrabold inline-flex items-center gap-1 transition-all shadow-xs cursor-pointer"
-                            title="Edit sub-entry details"
-                          >
-                            <Edit3 className="size-3 text-zinc-500" /> Edit
-                          </button>
-                        ) : null}
-                      </td>
-                    )}
+                    <td className="py-2.5 px-4 text-center">
+                      {isQuarantine ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-900 text-[10px] font-black tracking-wider shadow-2xs">
+                          QA Locked
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onEditEntry(product, rec)}
+                          className="px-2.5 py-1 rounded-full border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-800 text-[10px] font-extrabold inline-flex items-center gap-1 transition-all shadow-xs cursor-pointer"
+                          title="Edit sub-entry details"
+                        >
+                          <Edit3 className="size-3 text-zinc-500" /> Edit
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 )
               })}
@@ -218,7 +189,7 @@ export default function StockBinCardLedger({
                   <div className="text-[9px] uppercase tracking-wider text-blue-600 font-sans font-semibold">Total Invoiced Sales</div>
                   <div>ETB {totalInvoicedSalesValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 </td>
-                <td colSpan={readOnly ? 3 : 4} className="py-2.5 px-4 text-zinc-500 font-sans italic text-[10px]">
+                <td colSpan={4} className="py-2.5 px-4 text-zinc-500 font-sans italic text-[10px]">
                   Warehouse: {product.warehouseName || product.warehouse} &bull; Shelf: {product.shelfNo || "Unassigned"}
                 </td>
               </tr>

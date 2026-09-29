@@ -1,4 +1,3 @@
-import { useEffect } from "react"
 import { motion } from "framer-motion"
 import { Wallet, Calendar, ArrowUpRight, DollarSign, TrendingUp, TrendingDown, BarChart3 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
@@ -6,7 +5,6 @@ import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFinanceStore } from "@/lib/financeStore"
-import { erpStore } from "@/lib/erpStore"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
 import { Link } from "react-router-dom"
 
@@ -18,18 +16,11 @@ const stagger = { visible: { transition: { staggerChildren: 0.08 } } }
 export default function FinanceOverview() {
   const store = useFinanceStore()
   const isLoading = store.isLoading()
-
-  useEffect(() => {
-    void store.loadFromApi()
-    void erpStore.loadInventoryData()
-    void erpStore.loadSalesData()
-  }, [])
-
   const invoices = store.getInvoices()
   const journalLines = store.getJournalEntryLines()
   const journalEntries = store.getJournalEntries()
   const accounts = store.getAccounts()
-  const accountById = new Map(accounts.flatMap((account) => [[account.id, account], [account.code, account]]))
+  const accountById = new Map(accounts.map((account) => [account.id, account]))
   const entryById = new Map(journalEntries.map((entry) => [entry.id, entry]))
 
   const isCogsAccount = (account?: { code?: string | null; name?: string | null; peachtree_type?: string | null }) => {
@@ -66,83 +57,25 @@ export default function FinanceOverview() {
 
   const cashLines = journalLines.filter((line) => {
     const account = accountById.get(line.account_id)
-    return (
-      account?.account_type === "Asset" &&
-      (account.peachtree_type === "Cash" ||
-        account.code?.startsWith("1000") ||
-        /cash|bank|cbe|boa|aib|abay|unb|cbo|ahadu|oib/i.test(account.name || ""))
-    )
+    return account?.account_type === "Asset" && /cash|bank/i.test(account.name)
   })
   const cashDebits = cashLines.reduce((s, l) => s + l.debit_amount, 0)
   const cashCredits = cashLines.reduce((s, l) => s + l.credit_amount, 0)
   const cashPosition = cashDebits - cashCredits
 
-  // Find distinct years from journal entries or fallback to current year
-  const entryYears = new Set<number>()
-  for (const entry of journalEntries) {
-    if (entry.entry_date) {
-      const y = parseInt(entry.entry_date.slice(0, 4), 10)
-      if (!isNaN(y)) entryYears.add(y)
-    }
-  }
-  const currentYear = new Date().getFullYear()
-  if (entryYears.size === 0) entryYears.add(currentYear)
-  const sortedYears = [...entryYears].sort((a, b) => a - b)
-
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-  const cashFlowByMonth = new Map<string, { monthKey: string; name: string; Revenue: number; Expenses: number; COGS: number; NetProfit: number }>()
-
-  // Initialize all 12 months for the fiscal year so the chart renders a continuous baseline
-  for (const yr of sortedYears) {
-    for (let m = 1; m <= 12; m++) {
-      const monthStr = m.toString().padStart(2, "0")
-      const key = `${yr}-${monthStr}`
-      const label = sortedYears.length > 1 ? `${monthNames[m - 1]} '${yr.toString().slice(2)}` : monthNames[m - 1]
-      cashFlowByMonth.set(key, {
-        monthKey: key,
-        name: label,
-        Revenue: 0,
-        Expenses: 0,
-        COGS: 0,
-        NetProfit: 0,
-      })
-    }
-  }
-
+  const cashFlowByMonth = new Map<string, { name: string; Revenue: number; Expenses: number; NetProfit: number }>()
   for (const line of journalLines) {
     const entry = entryById.get(line.journal_entry_id)
     const account = accountById.get(line.account_id)
-    if (!entry || !account || !entry.entry_date) continue
-    const monthKey = entry.entry_date.slice(0, 7)
-    let row = cashFlowByMonth.get(monthKey)
-    if (!row) {
-      const mIdx = parseInt(monthKey.slice(5, 7), 10) - 1
-      row = {
-        monthKey,
-        name: monthNames[mIdx] || monthKey,
-        Revenue: 0,
-        Expenses: 0,
-        COGS: 0,
-        NetProfit: 0,
-      }
-      cashFlowByMonth.set(monthKey, row)
-    }
-
-    if (account.account_type === "Revenue") {
-      row.Revenue += line.credit_amount - line.debit_amount
-    } else if (account.account_type === "Expense") {
-      const amt = line.debit_amount - line.credit_amount
-      row.Expenses += amt
-      if (isCogsAccount(account)) {
-        row.COGS += amt
-      }
-    }
+    if (!entry || !account) continue
+    const month = entry.entry_date.slice(0, 7)
+    const row = cashFlowByMonth.get(month) || { name: month, Revenue: 0, Expenses: 0, NetProfit: 0 }
+    if (account.account_type === "Revenue") row.Revenue += line.credit_amount - line.debit_amount
+    if (account.account_type === "Expense") row.Expenses += line.debit_amount - line.credit_amount
     row.NetProfit = row.Revenue - row.Expenses
+    cashFlowByMonth.set(month, row)
   }
-
-  const cashFlowData = [...cashFlowByMonth.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, value]) => value)
+  const cashFlowData = [...cashFlowByMonth.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => value)
 
   // Unpaid invoices
   const unpaidInvoices = invoices.filter((inv) => inv.balance_due > 0)
@@ -191,14 +124,9 @@ export default function FinanceOverview() {
               {isLoading ? (
                 <Skeleton className="h-7 w-32 bg-zinc-200/80 my-1" />
               ) : (
-                <div className="flex items-baseline gap-1.5 mt-1 min-w-0 overflow-hidden">
-                  <span className="text-xs font-extrabold text-emerald-800/70 font-sans tracking-wide shrink-0">
-                    ETB
-                  </span>
-                  <span className="text-lg sm:text-xl font-black font-mono text-emerald-700 truncate" title={`ETB ${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}>
-                    {totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
+                <p className="text-xl font-black font-mono text-emerald-700 mt-1">
+                  ETB {totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
               )}
             </div>
             <p className="text-[11px] text-gray-400 mt-2 font-medium">Posted sales & revenue</p>
@@ -216,14 +144,9 @@ export default function FinanceOverview() {
               {isLoading ? (
                 <Skeleton className="h-7 w-32 bg-zinc-200/80 my-1" />
               ) : (
-                <div className="flex items-baseline gap-1.5 mt-1 min-w-0 overflow-hidden">
-                  <span className="text-xs font-extrabold text-rose-800/70 font-sans tracking-wide shrink-0">
-                    ETB
-                  </span>
-                  <span className="text-lg sm:text-xl font-black font-mono text-rose-600 truncate" title={`ETB (${totalCogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`}>
-                    ({totalCogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
-                  </span>
-                </div>
+                <p className="text-xl font-black font-mono text-rose-600 mt-1">
+                  ETB ({totalCogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                </p>
               )}
             </div>
             <p className="text-[11px] text-gray-400 mt-2 font-medium">Direct inventory cost (COGS)</p>
@@ -246,14 +169,9 @@ export default function FinanceOverview() {
               {isLoading ? (
                 <Skeleton className="h-7 w-32 bg-zinc-200/80 my-1" />
               ) : (
-                <div className="flex items-baseline gap-1.5 mt-1 min-w-0 overflow-hidden">
-                  <span className="text-xs font-extrabold text-zinc-500 font-sans tracking-wide shrink-0">
-                    ETB
-                  </span>
-                  <span className="text-lg sm:text-xl font-black font-mono text-zinc-900 truncate" title={`ETB ${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}>
-                    {grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
+                <p className="text-xl font-black font-mono text-zinc-900 mt-1">
+                  ETB {grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
               )}
             </div>
             <p className="text-[11px] text-gray-400 mt-2 font-medium">Gross surplus (Revenue - COGS)</p>
@@ -276,14 +194,9 @@ export default function FinanceOverview() {
               {isLoading ? (
                 <Skeleton className="h-7 w-32 bg-zinc-200/80 my-1" />
               ) : (
-                <div className="flex items-baseline gap-1.5 mt-1 min-w-0 overflow-hidden">
-                  <span className="text-xs font-extrabold text-emerald-800/70 font-sans tracking-wide shrink-0">
-                    ETB
-                  </span>
-                  <span className="text-lg sm:text-xl font-black font-mono text-emerald-800 truncate" title={`ETB ${netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}>
-                    {netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
+                <p className="text-xl font-black font-mono text-emerald-800 mt-1">
+                  ETB {netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
               )}
             </div>
             <p className="text-[11px] text-gray-400 mt-2 font-medium">Bottom line profit (EBIT)</p>
@@ -301,14 +214,9 @@ export default function FinanceOverview() {
               {isLoading ? (
                 <Skeleton className="h-7 w-32 bg-zinc-200/80 my-1" />
               ) : (
-                <div className="flex items-baseline gap-1.5 mt-1 min-w-0 overflow-hidden">
-                  <span className="text-xs font-extrabold text-emerald-800/70 font-sans tracking-wide shrink-0">
-                    ETB
-                  </span>
-                  <span className="text-lg sm:text-xl font-black font-mono text-emerald-700 truncate" title={`ETB ${cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}>
-                    {cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
+                <p className="text-xl font-black font-mono text-emerald-700 mt-1">
+                  ETB {cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
               )}
             </div>
             <p className="text-[11px] text-gray-400 mt-2 font-medium">Liquid cash & bank reserves</p>
@@ -383,72 +291,40 @@ export default function FinanceOverview() {
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="font-semibold text-base text-black">Cash Flow & Profit Trends</h3>
-                <p className="text-xs text-gray-400">Monthly breakdown of operating revenue, costs, and net operating income</p>
+                <p className="text-xs text-gray-400">Comparison of incoming revenue against outgoing costs and bottom line profit</p>
               </div>
               <div className="flex items-center gap-4 text-xs font-semibold">
-                <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#18181b]" /> Revenue</div>
+                <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#242427]" /> Revenue</div>
                 <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-rose-500" /> Expenses</div>
                 <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-emerald-600" /> Net Profit</div>
               </div>
             </div>
             <div className="h-[300px]">
-              {cashFlowData.length === 0 ? (
-                <div className="flex h-full items-center justify-center text-xs font-medium text-gray-400">
-                  No posted revenue or expense activity yet.
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={cashFlowData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#18181b" stopOpacity={0.2}/>
-                        <stop offset="95%" stopColor="#18181b" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.2}/>
-                        <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#059669" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#059669" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
-                    <XAxis dataKey="name" stroke="#888" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis
-                      stroke="#888"
-                      fontSize={11}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(val) => {
-                        if (Math.abs(val) >= 1000000) return `ETB ${(val / 1000000).toFixed(1)}M`
-                        if (Math.abs(val) >= 1000) return `ETB ${(val / 1000).toFixed(0)}k`
-                        return `ETB ${val}`
-                      }}
-                    />
-                    <Tooltip
-                      formatter={(value: any, name: any) => [
-                        `ETB ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                        name === "NetProfit" || name === "Net Profit" ? "Net Operating Income" : name
-                      ]}
-                      labelStyle={{ fontWeight: 800, color: "#18181b", marginBottom: "4px" }}
-                      contentStyle={{
-                        backgroundColor: "rgba(255, 255, 255, 0.96)",
-                        backdropFilter: "blur(8px)",
-                        borderRadius: "14px",
-                        border: "1px solid rgba(0, 0, 0, 0.08)",
-                        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
-                        padding: "10px 14px",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                      }}
-                    />
-                    <Area type="monotone" dataKey="Revenue" stroke="#18181b" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRev)" />
-                    <Area type="monotone" dataKey="Expenses" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#colorExp)" />
-                    <Area type="monotone" dataKey="NetProfit" name="Net Profit" stroke="#059669" strokeWidth={2.5} fillOpacity={1} fill="url(#colorProfit)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              )}
+              {cashFlowData.length === 0 ? <div className="flex h-full items-center justify-center text-xs font-medium text-gray-400">No posted revenue or expense activity yet.</div> : <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={cashFlowData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#242427" stopOpacity={0.15}/>
+                      <stop offset="95%" stopColor="#242427" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.15}/>
+                      <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#059669" stopOpacity={0.25}/>
+                      <stop offset="95%" stopColor="#059669" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.03)" />
+                  <XAxis dataKey="name" stroke="#888" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(val) => `ETB ${val/1000}k`} />
+                  <Tooltip formatter={(value) => [`ETB ${(value as number).toLocaleString()}`, ""]} labelStyle={{ fontWeight: "bold" }} />
+                  <Area type="monotone" dataKey="Revenue" stroke="#242427" strokeWidth={2} fillOpacity={1} fill="url(#colorRev)" />
+                  <Area type="monotone" dataKey="Expenses" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#colorExp)" />
+                  <Area type="monotone" dataKey="NetProfit" name="Net Profit" stroke="#059669" strokeWidth={2} fillOpacity={1} fill="url(#colorProfit)" />
+                </AreaChart>
+              </ResponsiveContainer>}
             </div>
           </GlassCard>
 

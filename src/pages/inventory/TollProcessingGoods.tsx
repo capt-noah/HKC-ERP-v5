@@ -19,12 +19,15 @@ import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { useFeedback } from "@/context/FeedbackContext"
+import { useErpStore } from "@/lib/erpStore"
+import { resolveWarehouseFullName } from "@/lib/warehouses"
 import {
   type ProcessingServiceOrder,
   type ProcessingServiceStage,
   fetchProcessingServices,
   transitionProcessingServiceStage,
 } from "@/lib/processingServicesApi"
+
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
@@ -45,7 +48,9 @@ const tollGoodsColumns: TableColumn[] = [
 
 export default function TollProcessingGoods() {
   const { showToast } = useFeedback()
+  const erp = useErpStore()
   const [services, setServices] = useState<ProcessingServiceOrder[]>([])
+
   const [stageFilter, setStageFilter] = useState<string>("ALL")
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [selectedItem, setSelectedItem] = useState<ProcessingServiceOrder | null>(null)
@@ -364,8 +369,9 @@ export default function TollProcessingGoods() {
                     <div className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-xl border border-zinc-200/80 dark:border-zinc-800">
                       <span className="text-[10px] font-bold text-zinc-400 uppercase block">Warehouse Storage</span>
                       <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300 mt-0.5 flex items-center gap-1">
-                        <Warehouse className="size-3.5" /> WH1 - Export Hub
+                        <Warehouse className="size-3.5" /> {resolveWarehouseFullName((selectedItem as any)?.warehouse_id || (selectedItem as any)?.warehouse || "WH1", erp.getWarehouses())}
                       </span>
+
                     </div>
                     <div className="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-xl border border-zinc-200/80 dark:border-zinc-800">
                       <span className="text-[10px] font-bold text-zinc-400 uppercase block">Arrival Date</span>

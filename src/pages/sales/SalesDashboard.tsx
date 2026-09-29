@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
-import { DollarSign, PackageCheck, Truck } from "lucide-react"
+import { DollarSign, FileText, PackageCheck, Truck } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -51,14 +51,13 @@ export default function SalesDashboard() {
   const navigate = useNavigate()
   const erp = useErpStore()
   const salesOrders = erp.getSalesOrders()
+  const quotations = erp.getQuotations()
   const [salesIssues, setSalesIssues] = useState<SalesIssue[]>([])
   const [salesLoading, setSalesLoading] = useState(true)
 
   useEffect(() => {
     const params = new URLSearchParams({ page: "1", pageSize: "100", sort: "sale_date.desc" })
     setSalesLoading(true)
-    void erp.loadSalesData()
-    void erp.loadInventoryData()
     listSalesIssues(params)
       .then((result: any) => {
         const rows = Array.isArray(result) ? result : Array.isArray(result?.rows) ? result.rows : []
@@ -66,7 +65,7 @@ export default function SalesDashboard() {
       })
       .catch(() => setSalesIssues([]))
       .finally(() => setSalesLoading(false))
-  }, [erp])
+  }, [])
 
   const safeIssues = Array.isArray(salesIssues) ? salesIssues : []
   const postedIssues = safeIssues.filter((issue) => issue?.status === "Posted")
@@ -81,6 +80,7 @@ export default function SalesDashboard() {
   const issuedAmount = postedIssues.reduce((sum, issue) => sum + Number(issue?.total_amount || 0), 0)
   const postedIssueCount = postedIssues.length
   const orderAmount = salesOrders.reduce((sum, order) => sum + Number(order?.amount || 0), 0)
+  const quotationAmount = quotations.reduce((sum, quote) => sum + Number(quote?.amount || 0), 0)
 
   const recentActivity = useMemo(() => safeIssues.slice(0, 6), [safeIssues])
   const isLoading = erp.isLoading() || salesLoading
@@ -93,7 +93,7 @@ export default function SalesDashboard() {
           <div>
             <h1 className="mt-1 text-3xl font-black tracking-tight text-black">Sales Dashboard</h1>
             <p className="mt-1 max-w-xl text-xs font-semibold leading-relaxed text-zinc-500">
-              Live sales totals from sales issues, customer orders, and dispatch notes.
+              Live sales totals from sales issues, orders, quotations, and dispatch notes.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 self-end md:self-start">
@@ -101,11 +101,12 @@ export default function SalesDashboard() {
           </div>
         </motion.div>
 
-        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {isLoading ? Array.from({ length: 3 }).map((_, index) => <MetricSkeleton key={index} />) : [
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {isLoading ? Array.from({ length: 4 }).map((_, index) => <MetricSkeleton key={index} />) : [
             { label: "Posted Sales", value: `ETB ${money(issuedAmount)}`, note: `${postedIssues.length.toLocaleString()} posted issues`, Icon: DollarSign },
             { label: "Issued Records", value: postedIssueCount.toLocaleString(), note: "Posted sales issue records", Icon: PackageCheck },
             { label: "Open Orders", value: `ETB ${money(orderAmount)}`, note: `${salesOrders.length.toLocaleString()} sales orders`, Icon: Truck },
+            { label: "Quotations", value: `ETB ${money(quotationAmount)}`, note: `${quotations.length.toLocaleString()} quotations`, Icon: FileText },
           ].map((card, index) => {
             const Icon = card.Icon
             return (
@@ -166,7 +167,7 @@ export default function SalesDashboard() {
             </div>
             <div className="space-y-3">
               {isLoading ? (
-                Array.from({ length: 4 }).map((_, index) => (
+                Array.from({ length: 3 }).map((_, index) => (
                   <div key={index} className="flex items-center justify-between rounded-xl bg-zinc-50 px-3 py-2.5">
                     <Skeleton className="h-3 w-32 bg-zinc-200/80" />
                     <Skeleton className="h-4 w-8 bg-zinc-200/80" />
@@ -177,6 +178,7 @@ export default function SalesDashboard() {
                 { label: "Credit Sales Issues", value: creditIssues.length.toLocaleString() },
                 { label: "Active Receivables Due", value: `ETB ${money(totalCustomerCreditDue)}` },
                 { label: "Sales Orders", value: salesOrders.length.toLocaleString() },
+                { label: "Quotations", value: quotations.length.toLocaleString() },
               ].map((row) => (
                 <div key={row.label} className="flex items-center justify-between rounded-xl bg-zinc-50 px-3 py-2.5">
                   <span className="text-xs font-bold text-zinc-600">{row.label}</span>

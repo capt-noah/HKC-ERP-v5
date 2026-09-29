@@ -204,7 +204,7 @@ export default function AdminSettings() {
       setLoading(true)
       try {
         const [, , usersData, employeesData] = await Promise.all([
-          erp.loadFromApi(),
+          erp.loadFromApi("all"),
           finance.loadFromApi(),
           loadResource<any>("users").catch(() => []),
           loadResource<any>("employees").catch(() => []),
@@ -534,7 +534,7 @@ export default function AdminSettings() {
       setIsSavingWh(true)
       const payload: Omit<Warehouse, "id"> & { id?: string } = {
         name: whName.trim(),
-        code: whCode.trim() || (editingWarehouse ? editingWarehouse.id : `WH-${Date.now().toString(36).toUpperCase()}`),
+        code: whCode.trim() || (editingWarehouse ? (editingWarehouse.code || editingWarehouse.id) : `WH-${Date.now().toString(36).toUpperCase()}`),
         location: whLocation.trim(),
         warehouse_type: whType,
         type: whType === "EXPORT_WH" ? "Export Hub" : "Pharmaceutical Hub",

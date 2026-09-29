@@ -1,31 +1,13 @@
 import { isExportWarehouse } from "./warehouses"
 import type { Product } from "./erpStore"
 
-export interface CommodityRejectMetric {
-  productId: string
-  productName: string
-  sku: string
-  warehouse: string
-  unit: string
+export interface SupplierQualityMetric {
+  supplierName: string
   totalReceived: number // in Quintals
   totalRejected: number // in Quintals
   netYield: number // in Quintals
   rejectRate: number // % e.g. 5.2
   cleanYieldRate: number // % e.g. 94.8
-  rejectionsCount: number
-  lossValuation: number // in ETB
-  grade: "Grade A" | "Grade B" | "Grade C"
-  gradeLabel: string
-  gradeColor: "emerald" | "amber" | "rose"
-}
-
-export interface SupplierQualityMetric {
-  supplierName: string
-  totalReceived: number
-  totalRejected: number
-  netYield: number
-  rejectRate: number
-  cleanYieldRate: number
   batchesCount: number
   products: string[]
   grade: "Grade A" | "Grade B" | "Grade C"
@@ -34,34 +16,39 @@ export interface SupplierQualityMetric {
 }
 
 export interface WH1QualitySummary {
-  commodityMetrics: CommodityRejectMetric[]
   supplierMetrics: SupplierQualityMetric[]
   overallTotalReceived: number
   overallTotalRejected: number
   overallNetYield: number
   overallRejectRate: number
-  overallCleanYieldRate: number
-  overallLossValuation: number
-  topSupplier?: SupplierQualityMetric | null
-  highestRejectSupplier?: SupplierQualityMetric | null
-  highestRejectCommodity: CommodityRejectMetric | null
-  lowestRejectCommodity: CommodityRejectMetric | null
-  totalCommoditiesCount: number
+  topSupplier: SupplierQualityMetric | null
+  highestRejectSupplier: SupplierQualityMetric | null
   totalSuppliersCount: number
   availableProducts: { id: string; name: string }[]
   isSampleData?: boolean
 }
 
 /**
- * Computes commodity-level rejection and loss percentages from Export Warehouse stock records.
- * Grouped strictly by commodity for 100% data accuracy after parent-level rejection workflow.
+ * Normalizes supplier name string to clean standard representation.
  */
-export function computeWH1RejectAnalysis(
+function cleanSupplierName(rawName?: string): string {
+  if (!rawName) return "Direct Supplier"
+  const trimmed = rawName.trim()
+  if (!trimmed || trimmed === "—" || trimmed === "-") return "Direct Supplier"
+  return trimmed
+}
+
+/**
+ * Strictly compute supplier quality metrics from all EXPORT_WH stock records.
+ * Evaluates raw commodity arrivals and cleaning rejects.
+ * NEVER includes processing_services records.
+ */
+export function computeWH1SupplierQuality(
   products: Product[],
   filterProductId: string = "all",
   filterWarehouseId: string = "all"
 ): WH1QualitySummary {
-  // 1. Filter strictly for export warehouse products
+  // 1. Filter strictly for all export warehouse products (optionally scoped by warehouseId)
   const exportProducts = products.filter((p) =>
     isExportWarehouse(p.warehouse) && (filterWarehouseId === "all" || p.warehouse === filterWarehouseId)
   )
@@ -77,158 +64,207 @@ export function computeWH1RejectAnalysis(
     name: p.name,
   }))
 
-  const commodityMetrics: CommodityRejectMetric[] = []
-  let overallTotalReceived = 0
-  let overallTotalRejected = 0
-  let overallLossValuation = 0
+  const supplierMap: Record<
+    string,
+    {
+      name: string
+      totalReceived: number
+      totalRejected: number
+      batchesCount: number
+      productNames: Set<string>
+    }
+  > = {}
 
   for (const product of targetProducts) {
     const wh1Entries = product.wh1Entries || []
     const binEntries = product.binCardEntries || []
+    const fallbackSupplier = cleanSupplierName(product.supplierName || product.customer)
 
-    let productReceived = 0
-    let productRejected = 0
-    let productLossValue = 0
-    let rejectionsCount = 0
+    // A. Process wh1Entries (Inbound truckload receipts and reject movements)
+    for (const entry of wh1Entries) {
+      const eAny = entry as any
+      const isReject =
+        eAny.type === "reject" ||
+        Boolean(eAny.isReject) ||
+        (eAny.notes && /reject|loss|cleaning|chaff|impurity/i.test(eAny.notes))
 
-    // A. Received Quantities (All historical inbound arrivals into WH1)
-    if (wh1Entries.length > 0) {
-      for (const entry of wh1Entries) {
-        const isPureLeave =
-          (entry as any).type === "leave" ||
-          (Number((entry as any).quantityIssued || 0) > 0 && Number(entry.quantityReceived ?? entry.quantity ?? 0) === 0)
-        if (!isPureLeave) {
-          productReceived += Number(entry.quantityReceived ?? entry.quantity ?? 0)
+      const isLeave = eAny.type === "leave" || (Number(eAny.quantityIssued || 0) > 0 && Number(entry.quantityReceived || 0) === 0)
+
+      const supplier = cleanSupplierName(entry.customer || eAny.supplier || eAny.party || fallbackSupplier)
+      const key = supplier.toLowerCase()
+
+      if (!supplierMap[key]) {
+        supplierMap[key] = {
+          name: supplier,
+          totalReceived: 0,
+          totalRejected: 0,
+          batchesCount: 0,
+          productNames: new Set(),
         }
       }
-    } else {
-      const entryBins = binEntries.filter((b) => b.type === "entry" || Number(b.qtyReceived || 0) > 0)
-      if (entryBins.length > 0) {
-        productReceived = entryBins.reduce((sum, b) => sum + Number(b.qtyReceived || 0), 0)
-      } else {
-        productReceived = Number(product.quantity || 0)
-      }
-    }
 
-    // B. Rejections
-    const rejectBins = binEntries.filter(
-      (b) =>
-        b.type === "reject" ||
-        (b.remark && /reject|loss|cleaning|impurity/i.test(b.remark) && Number(b.qtyIssued || 0) > 0)
-    )
-    if (rejectBins.length > 0) {
-      for (const bin of rejectBins) {
-        const q = Number(bin.qtyIssued || (bin as any).rejectQuantity || 0)
-        const cost = Number(bin.unitPrice ?? product.unitCost ?? 0)
-        productRejected += q
-        productLossValue += q * cost
-        rejectionsCount += 1
-      }
-    } else if (wh1Entries.length > 0) {
-      for (const entry of wh1Entries) {
-        const q = Number((entry as any).rejectQuantity || 0)
-        if (q > 0) {
-          const cost = Number(entry.unitPrice ?? product.unitCost ?? 0)
-          productRejected += q
-          productLossValue += q * cost
-          rejectionsCount += 1
+      supplierMap[key].productNames.add(product.name)
+
+      if (isReject) {
+        const rejectQty = Number(eAny.rejectQuantity || eAny.quantityIssued || entry.quantityReceived || 0)
+        supplierMap[key].totalRejected += rejectQty
+        supplierMap[key].batchesCount += 1
+      } else if (!isLeave) {
+        const receivedQty = Number(entry.quantityReceived || 0)
+        supplierMap[key].totalReceived += receivedQty
+        if (receivedQty > 0) supplierMap[key].batchesCount += 1
+
+        // If the entry itself contains an inline reject loss field
+        if (Number(eAny.rejectQuantity || 0) > 0) {
+          supplierMap[key].totalRejected += Number(eAny.rejectQuantity)
         }
       }
     }
 
-    // Ensure intake reflects rejections if baseline received was omitted
-    const effectiveIntake = Math.max(productReceived, Number(product.quantity || 0) + productRejected, productRejected)
-    const rejectRate = effectiveIntake > 0 ? Number(((productRejected / effectiveIntake) * 100).toFixed(1)) : 0
-    const cleanYieldRate = Number(Math.max(0, 100 - rejectRate).toFixed(1))
-    const netYield = Math.max(0, effectiveIntake - productRejected)
+    // B. Process binCardEntries (Stock movements, reject losses, quarantine)
+    for (const bin of binEntries) {
+      const bAny = bin as any
+      const isReject =
+        (bin.type as string) === "reject" ||
+        bin.type === "quarantine" ||
+        Boolean(bAny.isReject) ||
+        (bin.remark && /reject|loss|cleaning|chaff|impurity|quarantine/i.test(bin.remark))
 
-    let grade: "Grade A" | "Grade B" | "Grade C" = "Grade A"
-    let gradeLabel = "Grade A (Low Loss ≤5%)"
-    let gradeColor: "emerald" | "amber" | "rose" = "emerald"
+      const isEntry = Number(bin.qtyReceived || 0) > 0 || bin.type === "entry"
+      const supplier = cleanSupplierName(bin.party || fallbackSupplier)
+      const key = supplier.toLowerCase()
 
-    if (rejectRate > 10) {
-      grade = "Grade C"
-      gradeLabel = `Grade C (High Loss >10%)`
-      gradeColor = "rose"
-    } else if (rejectRate > 5) {
-      grade = "Grade B"
-      gradeLabel = `Grade B (Moderate 5–10% Loss)`
-      gradeColor = "amber"
+      // Avoid double counting if this entry corresponds to an already counted wh1Entry
+      if (isEntry) {
+        const alreadyInWH1 = wh1Entries.some(
+          (w) =>
+            (w.voucherNo && bin.voucherNo && w.voucherNo === bin.voucherNo) ||
+            w.entryId === bin.id
+        )
+        if (alreadyInWH1) {
+          // If the matching wh1Entry didn't record reject, but binEntry does
+          if (isReject && !wh1Entries.some((w: any) => w.type === "reject" && w.voucherNo === bin.voucherNo)) {
+            if (!supplierMap[key]) {
+              supplierMap[key] = {
+                name: supplier,
+                totalReceived: 0,
+                totalRejected: 0,
+                batchesCount: 0,
+                productNames: new Set(),
+              }
+            }
+            supplierMap[key].totalRejected += Number(bin.qtyIssued || bin.qtyReceived || 0)
+          }
+          continue
+        }
+      }
+
+      if (!supplierMap[key]) {
+        supplierMap[key] = {
+          name: supplier,
+          totalReceived: 0,
+          totalRejected: 0,
+          batchesCount: 0,
+          productNames: new Set(),
+        }
+      }
+
+      supplierMap[key].productNames.add(product.name)
+
+      if (isReject) {
+        const rejectQty = Number(bin.qtyIssued || (bin as any).rejectQuantity || bin.qtyReceived || 0)
+        supplierMap[key].totalRejected += rejectQty
+        supplierMap[key].batchesCount += 1
+      } else if (isEntry) {
+        const receivedQty = Number(bin.qtyReceived || 0)
+        supplierMap[key].totalReceived += receivedQty
+        if (receivedQty > 0) supplierMap[key].batchesCount += 1
+      }
     }
 
-    // Only include commodities that have inventory or recorded movements
-    if (effectiveIntake > 0 || productRejected > 0 || Number(product.quantity || 0) > 0) {
-      commodityMetrics.push({
-        productId: product.id,
-        productName: product.name,
-        sku: product.sku,
-        warehouse: product.warehouse,
-        unit: product.unit || "Quintal",
-        totalReceived: Number(effectiveIntake.toFixed(2)),
-        totalRejected: Number(productRejected.toFixed(2)),
-        netYield: Number(netYield.toFixed(2)),
-        rejectRate,
-        cleanYieldRate,
-        rejectionsCount,
-        lossValuation: Number(productLossValue.toFixed(2)),
-        grade,
-        gradeLabel,
-        gradeColor,
-      })
-
-      overallTotalReceived += effectiveIntake
-      overallTotalRejected += productRejected
-      overallLossValuation += productLossValue
+    // Fallback: If product has baseline quantity and supplierName, but 0 movements recorded yet
+    if (wh1Entries.length === 0 && binEntries.length === 0 && Number(product.quantity || 0) > 0) {
+      const supplier = fallbackSupplier
+      const key = supplier.toLowerCase()
+      if (!supplierMap[key]) {
+        supplierMap[key] = {
+          name: supplier,
+          totalReceived: 0,
+          totalRejected: 0,
+          batchesCount: 1,
+          productNames: new Set([product.name]),
+        }
+      }
+      supplierMap[key].totalReceived += Number(product.quantity || 0)
     }
   }
 
-  // Sort commodities by highest reject rate first (highlights areas needing attention)
-  commodityMetrics.sort(
-    (a, b) => b.rejectRate - a.rejectRate || b.totalRejected - a.totalRejected || b.totalReceived - a.totalReceived
-  )
+  // 2. Build array of Supplier Quality Metrics with calculated rates & grades
+  const supplierMetrics: SupplierQualityMetric[] = Object.values(supplierMap)
+    .filter((s) => s.totalReceived > 0 || s.totalRejected > 0)
+    .map((s) => {
+      // If received is 0 but rejects exist, clamp received to rejects for sensible %
+      const effectiveReceived = Math.max(s.totalReceived, s.totalRejected)
+      const rejectRate = effectiveReceived > 0 ? (s.totalRejected / effectiveReceived) * 100 : 0
+      const cleanYieldRate = Math.max(0, 100 - rejectRate)
+      const netYield = Math.max(0, s.totalReceived - s.totalRejected)
 
+      let grade: "Grade A" | "Grade B" | "Grade C" = "Grade A"
+      let gradeLabel = "Grade A (Excellent ≤5% Loss)"
+      let gradeColor: "emerald" | "amber" | "rose" = "emerald"
+
+      if (rejectRate > 10) {
+        grade = "Grade C"
+        gradeLabel = `Grade C (High Loss >10%)`
+        gradeColor = "rose"
+      } else if (rejectRate > 5) {
+        grade = "Grade B"
+        gradeLabel = `Grade B (Moderate 5–10% Loss)`
+        gradeColor = "amber"
+      }
+
+      return {
+        supplierName: s.name,
+        totalReceived: Number(s.totalReceived.toFixed(2)),
+        totalRejected: Number(s.totalRejected.toFixed(2)),
+        netYield: Number(netYield.toFixed(2)),
+        rejectRate: Number(rejectRate.toFixed(1)),
+        cleanYieldRate: Number(cleanYieldRate.toFixed(1)),
+        batchesCount: s.batchesCount,
+        products: Array.from(s.productNames),
+        grade,
+        gradeLabel,
+        gradeColor,
+      }
+    })
+    // Sort suppliers by lowest reject rate (highest quality first)
+    .sort((a, b) => a.rejectRate - b.rejectRate || b.totalReceived - a.totalReceived)
+
+  // 3. Compute overall WH1 enterprise aggregates strictly from real data
+  const finalMetrics = supplierMetrics
+
+  const overallTotalReceived = finalMetrics.reduce((sum, s) => sum + s.totalReceived, 0)
+  const overallTotalRejected = finalMetrics.reduce((sum, s) => sum + s.totalRejected, 0)
   const overallNetYield = Math.max(0, overallTotalReceived - overallTotalRejected)
   const overallRejectRate =
     overallTotalReceived > 0 ? Number(((overallTotalRejected / overallTotalReceived) * 100).toFixed(1)) : 0
-  const overallCleanYieldRate = Number(Math.max(0, 100 - overallRejectRate).toFixed(1))
 
-  const highestRejectCommodity = commodityMetrics.length > 0 ? commodityMetrics[0] : null
-  const lowestRejectCommodity = commodityMetrics.length > 0 ? commodityMetrics[commodityMetrics.length - 1] : null
-
-  // Backward compatibility supplierMetrics
-  const supplierMetrics: SupplierQualityMetric[] = commodityMetrics.map((c) => ({
-    supplierName: c.productName,
-    totalReceived: c.totalReceived,
-    totalRejected: c.totalRejected,
-    netYield: c.netYield,
-    rejectRate: c.rejectRate,
-    cleanYieldRate: c.cleanYieldRate,
-    batchesCount: c.rejectionsCount,
-    products: [c.productName],
-    grade: c.grade,
-    gradeLabel: c.gradeLabel,
-    gradeColor: c.gradeColor,
-  }))
+  const topSupplier = finalMetrics.length > 0 ? finalMetrics[0] : null
+  const highestRejectSupplier =
+    finalMetrics.length > 0
+      ? [...finalMetrics].sort((a, b) => b.rejectRate - a.rejectRate)[0]
+      : null
 
   return {
-    commodityMetrics,
-    supplierMetrics,
+    supplierMetrics: finalMetrics,
     overallTotalReceived: Number(overallTotalReceived.toFixed(2)),
     overallTotalRejected: Number(overallTotalRejected.toFixed(2)),
     overallNetYield: Number(overallNetYield.toFixed(2)),
     overallRejectRate,
-    overallCleanYieldRate,
-    overallLossValuation: Number(overallLossValuation.toFixed(2)),
-    topSupplier: supplierMetrics[0] || null,
-    highestRejectSupplier: supplierMetrics[0] || null,
-    highestRejectCommodity,
-    lowestRejectCommodity,
-    totalCommoditiesCount: commodityMetrics.length,
-    totalSuppliersCount: commodityMetrics.length,
+    topSupplier,
+    highestRejectSupplier,
+    totalSuppliersCount: finalMetrics.length,
     availableProducts,
     isSampleData: false,
   }
 }
-
-// Backward-compatible alias
-export const computeWH1SupplierQuality = computeWH1RejectAnalysis

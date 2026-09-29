@@ -95,7 +95,6 @@ export const pharmaProductBatches = mysqlTable("pharma_product_batches", {
   expiryDate: varchar("expiry_date", { length: 50 }).notNull(),
   quantity: decimal("quantity", { precision: 18, scale: 2 }).default("0").notNull(),
   unitCost: decimal("unit_cost", { precision: 18, scale: 2 }).default("0"),
-  sellingPrice: decimal("selling_price", { precision: 18, scale: 2 }).default("0"),
   qaStatus: varchar("qa_status", { length: 50 }).default("Released").notNull(),
   location: varchar("location", { length: 100 }),
   notes: varchar("notes", { length: 255 }),

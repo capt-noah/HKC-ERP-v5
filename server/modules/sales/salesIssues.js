@@ -823,11 +823,7 @@ export async function postSalesIssue(arg1, arg2) {
           const finalStockValue = allGrvs.reduce((sum, g) => sum + (Number(g.net_quantity || 0) * Number(g.unit_price || 0)), 0)
           const weightedCost = newQty > 0 ? Math.round((finalStockValue / newQty) * 100) / 100 : unitCost
 
-          // 4. Update export_products in MySQL (preserving lifetime total_quantity intake)
-          const currentTotalIntake = Number(prod.total_quantity || prod.totalQuantity || 0)
-          const newSold = Number(prod.quantity_sold || prod.quantitySold || 0) + issueQty
-          const preservedTotalQuantity = Math.max(currentTotalIntake, newQty + newSold)
-
+          // 4. Update export_products in MySQL
           await pool.query(
             `UPDATE \`export_products\` SET
               quantity = ?,
@@ -841,7 +837,7 @@ export async function postSalesIssue(arg1, arg2) {
             [
               newQty,
               issueQty,
-              preservedTotalQuantity,
+              newQty + (Number(prod.quantitySold || prod.quantity_sold || 0) + issueQty),
               weightedCost,
               finalStockValue,
               newQty === 0 ? "Out of Stock" : newQty < 20 ? "Low Stock" : "In Stock",
@@ -971,11 +967,7 @@ export async function postSalesIssue(arg1, arg2) {
             ]
           )
 
-          // 6. Update parent pharma_products in MySQL (preserving lifetime total_quantity intake)
-          const currentPharmaIntake = Number(prod.total_quantity || prod.totalQuantity || 0)
-          const newPharmaSold = Number(prod.quantity_sold || prod.quantitySold || 0) + issueQty
-          const preservedPharmaTotalQuantity = Math.max(currentPharmaIntake, newQty + newPharmaSold)
-
+          // 6. Update parent pharma_products in MySQL
           await pool.query(
             `UPDATE pharma_products SET
               quantity = ?,
@@ -988,7 +980,7 @@ export async function postSalesIssue(arg1, arg2) {
              WHERE id = ?`,
             [
               newQty,
-              preservedPharmaTotalQuantity,
+              newQty + (Number(prod.quantity_sold || prod.quantitySold || 0) + issueQty),
               issueQty,
               newWeightedCost,
               totalStockVal,
@@ -1054,14 +1046,14 @@ export async function postSalesIssue(arg1, arg2) {
     const allAccounts = Array.isArray(coaRes.body) ? coaRes.body.map(a => a?.payload ? { ...a.payload, ...a } : a) : []
     const findAcc = (code) => allAccounts.find(a => (a.code || a.account_code) === code)?.id || null
 
-    const isCredit = (existing.payment_type || "").toString().toLowerCase().includes("credit")
+    const isCredit = existing.payment_type === "Credit"
     const debitAccId = isCredit
-      ? (findAcc("1300-03") || findAcc("1200-03") || findAcc("1100-03") || "1300-03")
-      : (findAcc("1000-02-26") || findAcc("1000-01-01") || findAcc("1000") || "1000-02-26")
-    const revenueAccId = findAcc("4000-01-01") || findAcc("4000-03-02") || findAcc("4000") || "4000-01-01"
-    const vatAccId = findAcc("2000-05") || "2000-05"
-    const cogsAccId = findAcc("6000-04") || findAcc("6000") || "6000-04"
-    const inventoryAccId = findAcc("1410-01") || findAcc("1410-03") || findAcc("1410") || "1410-01"
+      ? (findAcc("1300-03") || findAcc("1200-03") || findAcc("1100-03") || "ACC-1200")
+      : (findAcc("1000-02-26") || findAcc("1000-01-01") || findAcc("1000") || "ACC-1000")
+    const revenueAccId = findAcc("4000-01-01") || findAcc("4000-03-02") || findAcc("4000") || "ACC-4000"
+    const vatAccId = findAcc("2000-05") || "ACC-2200"
+    const cogsAccId = findAcc("6000-04") || findAcc("6000") || "ACC-5000"
+    const inventoryAccId = findAcc("1410-01") || findAcc("1410-03") || findAcc("1410") || "ACC-1010"
 
     const saleJeId = `JE-SALE-${id}`
     const cogsJeId = `JE-COGS-${id}`

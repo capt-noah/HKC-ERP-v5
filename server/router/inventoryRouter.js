@@ -263,17 +263,6 @@ inventoryRouter.patch(exportMovementRoutes.map((r) => `${r}/:id`), requireInvent
   }
 })
 
-inventoryRouter.patch(exportMovementRoutes.map((r) => `${r}/:id/difference`), requireInventoryMutation, async (req, res, next) => {
-  try {
-    const diffQty = req.body.differenceQty !== undefined ? req.body.differenceQty : (req.body.difference_quantity !== undefined ? req.body.difference_quantity : req.body.difference)
-    const reason = req.body.reason || req.body.notes || ""
-    const result = await inventoryService.recordExportDispatchDifference(req.params.id, diffQty, reason)
-    res.status(result.status).json(result.body)
-  } catch (err) {
-    next(err)
-  }
-})
-
 inventoryRouter.delete(exportMovementRoutes.map((r) => `${r}/:id`), requireInventoryMutation, async (req, res, next) => {
   try {
     const result = await inventoryService.deleteMovement(req.params.id, "export_warehouse_movements")

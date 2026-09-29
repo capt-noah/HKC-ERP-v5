@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react"
-import { createPortal } from "react-dom"
 import { motion } from "framer-motion"
 import { Camera, CameraOff, X, RotateCcw, Check, SwitchCamera, Upload } from "lucide-react"
 import { uploadFile } from "@/lib/fileUpload"
@@ -246,15 +245,14 @@ export default function CameraCaptureModal({
     }
   }
 
-  if (!isOpen || typeof document === "undefined") return null
+  if (!isOpen) return null
 
-  return createPortal(
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md">
+  return (
+    <div className="fixed inset-0 z-[250] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        onClick={(e) => e.stopPropagation()}
         className="relative w-full max-w-xl bg-zinc-950 rounded-3xl overflow-hidden shadow-2xl border border-zinc-800 flex flex-col max-h-[92vh]"
       >
         {/* Top Header */}
@@ -412,7 +410,6 @@ export default function CameraCaptureModal({
           ) : null}
         </div>
       </motion.div>
-    </div>,
-    document.body
+    </div>
   )
 }

@@ -12,7 +12,7 @@ import { LoadingDots } from "@/components/ui/LoadingDots"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { loadResource } from "@/lib/apiPersistence"
-import { resolveWarehouseFullName, withOperatingWarehouses } from "@/lib/warehouses"
+import { resolveWarehouseFullName, withOperatingWarehouses, getRegisteredWarehouses } from "@/lib/warehouses"
 import type { Warehouse } from "@/lib/erpStore"
 import { EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, WAREHOUSE_OPTIONS, employeeDuplicateKey, emptyEmployee, hrApi, initials, loadHRData, makeId, money, type AttendanceRecord, type Employee, type LeaveRequest, type PayrollRecord } from "@/lib/hrApi"
 import { uploadFile, resolveFileUrl } from "@/lib/fileUpload"
@@ -28,7 +28,7 @@ export default function Employees() {
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([])
   const [leaves, setLeaves] = useState<LeaveRequest[]>([])
   const [payroll, setPayroll] = useState<PayrollRecord[]>([])
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => getRegisteredWarehouses())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [search, setSearch] = useState("")
@@ -53,7 +53,7 @@ export default function Employees() {
       setAttendance(data.attendance)
       setLeaves(data.leaves)
       setPayroll(data.payrollRecords)
-      setWarehouses(withOperatingWarehouses(whData))
+      setWarehouses(withOperatingWarehouses(whData || []))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load employees.")
     } finally {

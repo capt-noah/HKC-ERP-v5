@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   Scale,
@@ -51,13 +51,6 @@ export type ReportTab = "GL" | "TrialBalance" | "BalanceSheet" | "IncomeStatemen
 export default function FinancialReports() {
   const { showToast } = useFeedback()
   const store = useFinanceStore()
-
-  useEffect(() => {
-    void store.loadFromApi()
-    void erpStore.loadInventoryData()
-    void erpStore.loadSalesData()
-  }, [])
-
   const isLoading = store.isLoading()
 
   const [activeTab, setActiveTab] = useState<ReportTab>("GL")
@@ -343,7 +336,7 @@ export default function FinancialReports() {
       if (isCogsTx) row.cogs += amount
       else row.expenses += amount
     }
-    if (transaction.account_type === "Asset" && (transaction.account_code.startsWith("1000") || /cash|bank|cbe|boa|aib|abay|unb|cbo|ahadu|oib/i.test(transaction.account_name))) row.operating += transaction.debit_amount - transaction.credit_amount
+    if (transaction.account_type === "Asset" && (transaction.account_code.startsWith("1000") || /cash|bank/i.test(transaction.account_name))) row.operating += transaction.debit_amount - transaction.credit_amount
     monthlyReports.set(month, row)
   }
   const plMonthlyTrendData = [...monthlyReports.values()].map((row) => ({ ...row, netProfit: row.revenue - row.cogs - row.expenses }))

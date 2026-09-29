@@ -629,24 +629,15 @@ class FinanceStore {
         source_type: e.source_type || "MANUAL",
         currency: e.currency || "ETB",
       })))
-      const seenLineIds = new Set<string>()
-      this.lines = lines
-        .filter((l: any) => {
-          const id = l.id || l.line_id
-          if (!id) return true
-          if (seenLineIds.has(id)) return false
-          seenLineIds.add(id)
-          return true
-        })
-        .map((l: any) => ({
-          ...l,
-          debit_amount: Number(l.debit_amount ?? l.debit ?? 0),
-          credit_amount: Number(l.credit_amount ?? l.credit ?? 0),
-          currency: l.currency || "ETB",
-          exchange_rate_at_time: Number(l.exchange_rate_at_time || 1.0),
-          is_cleared: Boolean(l.is_cleared),
-          cleared_date: l.cleared_date || (l.is_cleared ? new Date().toISOString().slice(0, 10) : null),
-        }))
+      this.lines = lines.map((l: any) => ({
+        ...l,
+        debit_amount: Number(l.debit_amount ?? l.debit ?? 0),
+        credit_amount: Number(l.credit_amount ?? l.credit ?? 0),
+        currency: l.currency || "ETB",
+        exchange_rate_at_time: Number(l.exchange_rate_at_time || 1.0),
+        is_cleared: Boolean(l.is_cleared),
+        cleared_date: l.cleared_date || (l.is_cleared ? new Date().toISOString().slice(0, 10) : null),
+      }))
       this.invoices = sortNewestFirst(invoices.map((inv: any) => {
         const rawItems = Array.isArray(inv.line_items) ? inv.line_items : []
         const line_items: InvoiceLineItem[] = rawItems.map((li: any) => {
@@ -804,12 +795,151 @@ class FinanceStore {
             const taxRate = Number(si.vat_rate !== undefined ? si.vat_rate : (si.tax_rate !== undefined ? si.tax_rate : (si.vat_amount && subtotal > 0 ? Math.round((Number(si.vat_amount) / subtotal) * 100) : 0)))
             const vatAmount = Number(si.tax_amount !== undefined ? si.tax_amount : (si.vat_amount !== undefined ? si.vat_amount : (taxRate > 0 ? Math.round(subtotal * (taxRate / 100)) : 0)))
             const discountAmount = Number(si.discount_amount || 0)
+            const whtAmount = Number(si.wht_amount || 0)
             const invoiceTotal = Number(si.total_amount || (subtotal + vatAmount - discountAmount))
+            const netReceivableDue = Math.max(0, invoiceTotal - whtAmount)
+
             const isCredit = (si.payment_type || si.paymentType || si.payment_method || si.paymentMethod || "").toString().toLowerCase().includes("credit")
             const isCash = !isCredit
+            const isPosted = (si.status || "").toLowerCase() === "posted"
 
-            // ── GL journal entries are authoritative from backend posting (server/modules/sales/salesIssues.js) ──
-            // Do not synthesize client-side GL entries to prevent duplicate lines in MySQL.
+            // ── GL journal entries (only for posted records with valid total) ──
+            if (isPosted && invoiceTotal > 0) {
+              const saleJeId = `JE-SALE-${si.id}`
+              const cogsJeId = `JE-COGS-${si.id}`
+
+              // Sale Revenue entry
+              const hasSaleEntry = this.entries.some((e) => e.id === saleJeId)
+              const hasSaleLines = this.lines.some((l) => l.journal_entry_id === saleJeId)
+
+              if (!hasSaleEntry || !hasSaleLines) {
+                this.entries = this.entries.filter((e) => e.id !== saleJeId)
+                this.lines = this.lines.filter((l) => l.journal_entry_id !== saleJeId)
+                const debitAcc = isCredit
+                  ? this.getMappedAccount("sales_credit_ar", "1300-03")
+                  : this.getMappedAccount("sales_cash_clearing", "1000-02-26")
+                const revenueAcc = this.getMappedAccount("sales_revenue_domestic", "4000-01-01")
+                const vatAcc = this.getMappedAccount("sales_vat_output", "2000-05")
+                const whtAssetAcc = this.getMappedAccount("sales_wht_withheld", "1320-06-01")
+
+                if (debitAcc && revenueAcc) {
+                  this.entries.push({
+                    id: saleJeId,
+                    entry_date: si.sale_date || new Date().toISOString().split("T")[0],
+                    source_type: "Sales Invoice",
+                    source_id: si.id,
+                    created_by: "System Synced",
+                    currency: "ETB",
+                    exchange_rate: 1.0,
+                    description: `Sales Issue ${si.fs_no || si.id} — ${si.customer_name || "Customer"}${whtAmount > 0 ? " (WHT applied)" : ""}`,
+                    is_reversal_of: null,
+                  })
+
+                  const newSaleLines: JournalEntryLine[] = []
+                  let lineIdx = 1
+
+                  // 1. Debit Net Receivable or Cash
+                  newSaleLines.push({
+                    id: `${saleJeId}-${lineIdx++}`,
+                    journal_entry_id: saleJeId,
+                    account_id: debitAcc.id,
+                    debit_amount: netReceivableDue,
+                    credit_amount: 0,
+                    currency: "ETB",
+                    exchange_rate_at_time: 1.0,
+                    warehouse_id: si.warehouse_id || null,
+                    party_type: "Customer",
+                    party_id: si.customer_id || null,
+                    party_name: si.customer_name || null,
+                  })
+
+                  // 2. Debit Withholding Tax Asset (if client withheld tax)
+                  if (whtAmount > 0 && whtAssetAcc) {
+                    newSaleLines.push({
+                      id: `${saleJeId}-${lineIdx++}`,
+                      journal_entry_id: saleJeId,
+                      account_id: whtAssetAcc.id,
+                      debit_amount: whtAmount,
+                      credit_amount: 0,
+                      currency: "ETB",
+                      exchange_rate_at_time: 1.0,
+                      warehouse_id: si.warehouse_id || null,
+                      party_type: "Customer",
+                      party_id: si.customer_id || null,
+                      party_name: si.customer_name || null,
+                    })
+                  }
+
+                  // 3. Credit Base Sales Revenue (Subtotal net of discount)
+                  const baseRevenue = Math.max(0, subtotal - discountAmount)
+                  newSaleLines.push({
+                    id: `${saleJeId}-${lineIdx++}`,
+                    journal_entry_id: saleJeId,
+                    account_id: revenueAcc.id,
+                    debit_amount: 0,
+                    credit_amount: baseRevenue,
+                    currency: "ETB",
+                    exchange_rate_at_time: 1.0,
+                    warehouse_id: si.warehouse_id || null,
+                    party_type: "Customer",
+                    party_id: si.customer_id || null,
+                    party_name: si.customer_name || null,
+                  })
+
+                  // 4. Credit Output VAT Payable (if VAT charged)
+                  if (vatAmount > 0 && vatAcc) {
+                    newSaleLines.push({
+                      id: `${saleJeId}-${lineIdx++}`,
+                      journal_entry_id: saleJeId,
+                      account_id: vatAcc.id,
+                      debit_amount: 0,
+                      credit_amount: vatAmount,
+                      currency: "ETB",
+                      exchange_rate_at_time: 1.0,
+                      warehouse_id: si.warehouse_id || null,
+                      party_type: "Customer",
+                      party_id: si.customer_id || null,
+                      party_name: si.customer_name || null,
+                    })
+                  }
+
+                  this.lines.push(...newSaleLines)
+                  hasNewSync = true
+                }
+              }
+
+              // COGS entry
+              const hasCogsEntry = this.entries.some((e) => e.id === cogsJeId)
+              const hasCogsLines = this.lines.some((l) => l.journal_entry_id === cogsJeId)
+
+              if (!hasCogsEntry || !hasCogsLines) {
+                this.entries = this.entries.filter((e) => e.id !== cogsJeId)
+                this.lines = this.lines.filter((l) => l.journal_entry_id !== cogsJeId)
+
+                const debitAcc = this.getMappedAccount("cogs_stock_fulfillment", "6000-04")
+                const creditAcc = this.getMappedAccount("inventory_stock_in_hand", "1410-01")
+                const estimatedCost = Math.round(subtotal * 0.7)
+
+                if (debitAcc && creditAcc) {
+                  this.entries.push({
+                    id: cogsJeId,
+                    entry_date: si.sale_date || new Date().toISOString().split("T")[0],
+                    source_type: "Sales Invoice",
+                    source_id: si.id,
+                    created_by: "System Synced",
+                    currency: "ETB",
+                    exchange_rate: 1.0,
+                    description: `COGS — Sales Issue ${si.fs_no || si.id}`,
+                    is_reversal_of: null,
+                  })
+                  this.lines.push(
+                    { id: `${cogsJeId}-1`, journal_entry_id: cogsJeId, account_id: debitAcc.id, debit_amount: estimatedCost, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: si.warehouse_id || null },
+                    { id: `${cogsJeId}-2`, journal_entry_id: cogsJeId, account_id: creditAcc.id, debit_amount: 0, credit_amount: estimatedCost, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: si.warehouse_id || null }
+                  )
+                  hasNewSync = true
+                }
+              }
+            }
 
             // ── Invoices record sync ──
             const invId = `INV-SI-${si.id}`
@@ -895,86 +1025,33 @@ class FinanceStore {
             const poAmt = Number(po.amount || po.total_amount || 0)
             if (poAmt <= 0) return  // Skip zero or undefined amounts — never fabricate
 
-            const isCash = (po.paymentType || po.payment_type) === "Cash"
-            const hasPoEntry = this.entries.some((e) => e.id === jeId || e.source_id === po.id || (po.journalEntryId && e.id === po.journalEntryId))
+            const hasPoEntry = this.entries.some((e) => e.id === jeId || e.source_id === po.id)
             const hasPoLines = this.lines.some((l) => l.journal_entry_id === jeId)
 
             if (!hasPoEntry || !hasPoLines) {
               this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== po.id)
               this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
 
-              // 1. If accountEntries is defined, use its distribution
-              if (Array.isArray(po.accountEntries) && po.accountEntries.length > 0) {
-                const poLines: any[] = []
-                po.accountEntries.forEach((entry: any, eIdx: number) => {
-                  const acc = this.accounts.find((a) => a.code === entry.accountCode || a.id === entry.accountId || a.id === `ACC-${entry.accountCode}`)
-                  if (!acc) return
-                  const debit = Number(entry.debit) || 0
-                  const credit = Number(entry.credit) || 0
-                  if (debit <= 0 && credit <= 0) return
+              const stockAcc = this.getMappedAccount("po_grni_inventory", "1410-01")
+              const apAcc = this.getMappedAccount("po_grni_clearing", "2100-06")
 
-                  const isPartyReq = acc.code.startsWith("2100") || acc.code.startsWith("1300") || acc.name.toLowerCase().includes("payable")
-                  poLines.push({
-                    id: `${jeId}-${eIdx + 1}`,
-                    journal_entry_id: jeId,
-                    account_id: acc.id,
-                    debit_amount: debit,
-                    credit_amount: credit,
-                    currency: "ETB",
-                    exchange_rate_at_time: 1.0,
-                    warehouse_id: null,
-                    party_type: isPartyReq ? "Supplier" : null,
-                    party_id: isPartyReq ? (po.supplierId || null) : null,
-                    party_name: isPartyReq ? (po.supplier || po.paidTo || null) : null,
-                  })
-                })
-
-                if (poLines.length >= 2) {
-                  this.entries.push({
-                    id: jeId,
-                    entry_date: po.date || new Date().toISOString().split("T")[0],
-                    source_type: isCash ? "Payment Voucher" : "Purchase Invoice",
-                    source_id: po.id,
-                    created_by: po.preparedBy || "System Synced",
-                    currency: po.currency || "ETB",
-                    exchange_rate: 1.0,
-                    description: `Purchase Order ${po.voucherNo || po.poNumber || po.id} — ${po.paidTo || po.supplier || "Supplier"}: ${po.reasonForPayment || "Procurement"}`,
-                    is_reversal_of: null,
-                  })
-                  this.lines.push(...poLines)
-                  hasNewSync = true
-                  return
-                }
-              }
-
-              // 2. Default two-legged double entry with dynamic accounts
-              const debitAcc = (po.targetAccountId && this.accounts.find((a) => a.id === po.targetAccountId))
-                || (po.targetAccountCode && this.accounts.find((a) => a.code === po.targetAccountCode))
-                || this.getMappedAccount("po_grni_inventory", "1410-01")
-
-              const creditAcc = (po.creditAccountId && this.accounts.find((a) => a.id === po.creditAccountId))
-                || (po.creditAccountCode && this.accounts.find((a) => a.code === po.creditAccountCode))
-                || (isCash
-                  ? this.getMappedAccount("supplier_payment_bank", "1000-02-26")
-                  : this.getMappedAccount("po_grni_clearing", "2100-06"))
-
-              if (!debitAcc || !creditAcc) {
+              if (!stockAcc || !apAcc) {
                 console.warn(`[FinanceSync] Missing accounts for PO ${po.id} — skipping.`)
               } else {
                 this.entries.push({
                   id: jeId,
                   entry_date: po.date || new Date().toISOString().split("T")[0],
-                  source_type: isCash ? "Payment Voucher" : "Purchase Invoice",
+                  source_type: "Purchase Invoice",
                   source_id: po.id,
-                  created_by: po.preparedBy || "System Synced",
-                  currency: po.currency || "ETB",
+                  created_by: "System Synced",
+                  currency: "ETB",
                   exchange_rate: 1.0,
-                  description: `Purchase Order ${po.voucherNo || po.poNumber || po.id} — ${po.paidTo || po.supplier || "Supplier"}: ${po.reasonForPayment || "Procurement"}`,
+                  description: `Purchase Order ${po.id} — ${po.supplier || "Supplier"}`,
                   is_reversal_of: null,
                 })
                 this.lines.push(
-                  { id: `${jeId}-1`, journal_entry_id: jeId, account_id: debitAcc.id, debit_amount: poAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
-                  { id: `${jeId}-2`, journal_entry_id: jeId, account_id: creditAcc.id, debit_amount: 0, credit_amount: poAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Supplier", party_id: po.supplierId || null, party_name: po.supplier || po.paidTo || null }
+                  { id: `${jeId}-1`, journal_entry_id: jeId, account_id: stockAcc.id, debit_amount: poAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
+                  { id: `${jeId}-2`, journal_entry_id: jeId, account_id: apAcc.id, debit_amount: 0, credit_amount: poAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Supplier", party_id: po.supplierId || null, party_name: po.supplier || null }
                 )
                 hasNewSync = true
               }
@@ -1124,10 +1201,10 @@ class FinanceStore {
 
               hasNewSync = true
             }
-          });
+          })
 
           // D. Sync Payroll Records → Salary Expense & Cash GL Entries
-          (payrollRecords || []).forEach((pr: any, idx: number) => {
+          payrollRecords.forEach((pr: any, idx: number) => {
             const jeId = `JE-PAY-${pr.id || idx + 1}`
             const payAmt = Number(pr.net_salary || pr.net_pay || pr.amount || 0)
             if (payAmt <= 0) return  // Skip zero or undefined amounts — never fabricate
@@ -1160,7 +1237,6 @@ class FinanceStore {
                   { id: `${jeId}-1`, journal_entry_id: jeId, account_id: salaryAcc.id, debit_amount: payAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
                   { id: `${jeId}-2`, journal_entry_id: jeId, account_id: cashAcc.id, debit_amount: 0, credit_amount: payAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Employee", party_id: pr.employee_id || null, party_name: pr.employee_name || null }
                 )
-                hasNewSync = true
               }
             }
           });
@@ -1683,7 +1759,7 @@ class FinanceStore {
     let normalizedParentId: string | null = null
     if (account.parent_account_id) {
       const parentAcc = this.accounts.find(
-        (a) => a.id === account.parent_account_id || a.code === account.parent_account_id
+        (a) => a.id === account.parent_account_id || a.code === account.parent_account_id || `ACC-${a.code}` === account.parent_account_id
       )
       if (parentAcc) {
         normalizedParentId = parentAcc.id
@@ -1691,13 +1767,15 @@ class FinanceStore {
           this.accounts = this.accounts.map((a) => (a.id === parentAcc.id ? { ...a, is_group: true } : a))
         }
       } else {
-        normalizedParentId = account.parent_account_id
+        normalizedParentId = account.parent_account_id.startsWith("ACC-")
+          ? account.parent_account_id
+          : `ACC-${account.parent_account_id}`
       }
     }
 
     const newAcc: AccountItem = {
       ...account,
-      id: account.code,
+      id: `ACC-${account.code}`,
       parent_account_id: normalizedParentId,
     }
     this.accounts = [newAcc, ...this.accounts]
@@ -3621,7 +3699,7 @@ class FinanceStore {
     if (updated.parent_account_id !== undefined) {
       if (updated.parent_account_id) {
         const parentAcc = this.accounts.find(
-          (a) => a.id === updated.parent_account_id || a.code === updated.parent_account_id
+          (a) => a.id === updated.parent_account_id || a.code === updated.parent_account_id || `ACC-${a.code}` === updated.parent_account_id
         )
         if (parentAcc) {
           normalizedParentId = parentAcc.id
@@ -3629,7 +3707,9 @@ class FinanceStore {
             this.accounts = this.accounts.map((a) => (a.id === parentAcc.id ? { ...a, is_group: true } : a))
           }
         } else {
-          normalizedParentId = updated.parent_account_id
+          normalizedParentId = updated.parent_account_id.startsWith("ACC-")
+            ? updated.parent_account_id
+            : `ACC-${updated.parent_account_id}`
         }
       } else {
         normalizedParentId = null
@@ -3642,7 +3722,7 @@ class FinanceStore {
             ...a,
             ...updated,
             ...(normalizedParentId !== undefined ? { parent_account_id: normalizedParentId } : {}),
-            ...(updated.code ? { id: updated.code } : {}),
+            ...(updated.code ? { id: `ACC-${updated.code}` } : {}),
           }
         : a
     )
