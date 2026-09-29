@@ -349,7 +349,7 @@ export function resolveWarehouseFullName(warehouseOrId?: string | null, customLi
   const canonicalKey = getWarehouseCanonicalKey(raw)
 
   // 1. Match by canonical key in registered dynamic warehouses
-  if (canonicalKey) {
+  if (canonicalKey)  {
     const matched = pool.find((w) => getWarehouseCanonicalKey(w) === canonicalKey)
     if (matched && matched.name) return matched.name
   }

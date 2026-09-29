@@ -156,7 +156,15 @@ function normalizeEmployee(row: Partial<Employee> & Record<string, unknown>): Em
     bank_account: String(row.bank_account || row.bankAccount || ""),
     emergency_contact_name: String(row.emergency_contact_name || row.emergencyContactName || ""),
     emergency_contact_phone: String(row.emergency_contact_phone || row.emergencyContactPhone || ""),
-    national_id_image: String(row.national_id_image || ""),
+    national_id_image: String(
+      row.national_id_image ||
+      row.nationalIdImage ||
+      row.national_id ||
+      row.nationalId ||
+      row.id_image ||
+      row.idImage ||
+      ""
+    ),
     status: String(row.status || "Active"),
     created_at: row.created_at ? String(row.created_at) : undefined,
     updated_at: row.updated_at ? String(row.updated_at) : undefined,

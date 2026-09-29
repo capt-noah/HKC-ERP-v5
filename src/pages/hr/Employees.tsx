@@ -1,6 +1,20 @@
-import { useEffect, useMemo, useState } from "react"
-import { motion } from "framer-motion"
-import { Eye, ImagePlus, MoreHorizontal, Pencil, UserCheck, UserMinus, X } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { motion, AnimatePresence } from "framer-motion"
+import {
+  Eye,
+  ImagePlus,
+  MoreHorizontal,
+  Pencil,
+  UserCheck,
+  UserMinus,
+  X,
+  CheckCircle2,
+  ShieldCheck,
+  ZoomIn,
+  Trash2,
+  UploadCloud,
+  ExternalLink,
+} from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { HRPageSkeleton } from "@/components/HRSkeleton"
@@ -14,8 +28,23 @@ import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { loadResource } from "@/lib/apiPersistence"
 import { resolveWarehouseFullName, withOperatingWarehouses, getRegisteredWarehouses } from "@/lib/warehouses"
 import type { Warehouse } from "@/lib/erpStore"
-import { EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, employeeDuplicateKey, emptyEmployee, hrApi, initials, loadHRData, makeId, money, type AttendanceRecord, type Employee, type LeaveRequest, type PayrollRecord } from "@/lib/hrApi"
+import {
+  EMPLOYEE_STATUSES,
+  EMPLOYMENT_TYPES,
+  employeeDuplicateKey,
+  emptyEmployee,
+  hrApi,
+  initials,
+  loadHRData,
+  makeId,
+  money,
+  type AttendanceRecord,
+  type Employee,
+  type LeaveRequest,
+  type PayrollRecord,
+} from "@/lib/hrApi"
 import { uploadFile, resolveFileUrl } from "@/lib/fileUpload"
+import { cn } from "@/lib/utils"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
@@ -40,6 +69,7 @@ export default function Employees() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState<FormState>(emptyEmployee)
   const [saving, setSaving] = useState(false)
+  const [showIdModalFor, setShowIdModalFor] = useState<Employee | null>(null)
 
   const refresh = async () => {
     setLoading(true)
@@ -138,7 +168,7 @@ export default function Employees() {
   const displayedEmployees = sortedEmployees.slice((page - 1) * pageSize, page * pageSize)
 
   const columns: TableColumn[] = [
-    { key: "full_name", label: "Full Name", initialWidth: 200 },
+    { key: "full_name", label: "Full Name", initialWidth: 220 },
     { key: "phone", label: "Phone", initialWidth: 140 },
     { key: "email", label: "Email", initialWidth: 200 },
     { key: "warehouse_id", label: "Office", initialWidth: 150 },
@@ -189,16 +219,30 @@ export default function Employees() {
       return
     }
     const employeeNumber = editing?.employee_number || form.employee_number || makeId("EMP")
-    const payload = { ...form, employee_number: employeeNumber, email: form.email.trim(), basic_salary: Number(form.basic_salary || 0) }
+    const payload: Employee = {
+      id: editing?.id || employeeNumber,
+      ...form,
+      employee_number: employeeNumber,
+      email: form.email.trim(),
+      basic_salary: Number(form.basic_salary || 0),
+      national_id_image: form.national_id_image ? form.national_id_image.trim() : "",
+    }
+
     setSaving(true)
     try {
       let savedEmployee: Employee
       if (editing) {
         savedEmployee = await hrApi.updateEmployee(editing.id, payload)
-        setEmployees((prev) => prev.map((employee) => employee.id === editing.id ? { ...employee, ...savedEmployee, ...payload, id: editing.id } : employee))
+        setEmployees((prev) =>
+          prev.map((employee) =>
+            employee.id === editing.id
+              ? { ...employee, ...savedEmployee, ...payload, id: editing.id }
+              : employee
+          )
+        )
         showToast("Employee Updated", "success", `${payload.full_name} was updated.`)
       } else {
-        savedEmployee = await hrApi.createEmployee({ id: employeeNumber, ...payload })
+        savedEmployee = await hrApi.createEmployee(payload)
         setEmployees((prev) => [{ ...payload, ...savedEmployee, id: savedEmployee.id || employeeNumber }, ...prev])
         showToast("Employee Registered", "success", `${payload.full_name} was registered successfully.`)
       }
@@ -274,83 +318,112 @@ export default function Employees() {
                 <tbody className="divide-y divide-black/5 text-xs">
                   {!loading && sortedEmployees.length === 0 ? (
                     <tr><td colSpan={9} className="py-12 text-center text-zinc-400 font-medium">No employees have been registered yet.</td></tr>
-                  ) : displayedEmployees.map((employee) => (
-                    <tr key={employee.id} className="hover:bg-black/[0.02] transition-colors">
-                      <Cell width={colWidths.full_name}><div className="flex items-center gap-2"><span className="size-7 rounded-full bg-zinc-900 text-white flex items-center justify-center text-[10px] font-black">{initials(employee.full_name)}</span><span className="truncate">{employee.full_name}</span></div></Cell>
-                      <Cell width={colWidths.phone}>{employee.phone || "-"}</Cell>
-                      <Cell width={colWidths.email}>{employee.email || "-"}</Cell>
-                      <Cell width={colWidths.warehouse_id}>{resolveWarehouseFullName(employee.warehouse_id, warehouses)}</Cell>
-                      <Cell width={colWidths.employment_type}>{employee.employment_type}</Cell>
-                      <Cell width={colWidths.start_date}>{employee.start_date}</Cell>
-                      <Cell width={colWidths.basic_salary} align="right">ETB {money(employee.basic_salary)}</Cell>
-                      <Cell width={colWidths.status} align="center"><StatusPill status={employee.status} /></Cell>
-                      <Cell width={colWidths.actions} align="right">
-                        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() => setViewing(employee)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                            title="View Employee Details"
-                          >
-                            <Eye className="size-3 text-zinc-700" /> View
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openEdit(employee)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                            title="Edit Employee Details"
-                          >
-                            <Pencil className="size-3 text-zinc-700" /> Edit
-                          </button>
-
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
+                  ) : displayedEmployees.map((employee) => {
+                    const hasIdImage = Boolean(employee.national_id_image && employee.national_id_image.trim())
+                    return (
+                      <tr key={employee.id} className="hover:bg-black/[0.02] transition-colors">
+                        <Cell width={colWidths.full_name}>
+                          <div className="flex items-center gap-2">
+                            <span className="size-7 rounded-full bg-zinc-900 text-white flex items-center justify-center text-[10px] font-black shrink-0">
+                              {initials(employee.full_name)}
+                            </span>
+                            <span className="truncate font-bold text-zinc-900">{employee.full_name}</span>
+                            {hasIdImage && (
                               <button
                                 type="button"
-                                className="inline-flex items-center justify-center size-7 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                                title="More Employee Actions"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setShowIdModalFor(employee)
+                                }}
+                                className="inline-flex items-center text-emerald-600 hover:text-emerald-700 hover:scale-110 transition-transform cursor-pointer"
+                                title="National ID Document Attached (Click to view)"
                               >
-                                <MoreHorizontal className="size-3.5" />
+                                <ShieldCheck className="size-4" />
                               </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-1.5 z-50">
-                              {employee.status === "Active" ? (
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    confirm({
-                                      title: "Deactivate Employee",
-                                      message: `Are you sure you want to deactivate ${employee.full_name} (${employee.employee_number})? They will be marked Inactive and excluded from active payroll cycles.`,
-                                      confirmLabel: "Deactivate Employee",
-                                      isDestructive: true,
-                                      onConfirm: () => deactivate(employee),
-                                    })
-                                  }}
-                                  className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl cursor-pointer"
+                            )}
+                          </div>
+                        </Cell>
+                        <Cell width={colWidths.phone}>{employee.phone || "-"}</Cell>
+                        <Cell width={colWidths.email}>{employee.email || "-"}</Cell>
+                        <Cell width={colWidths.warehouse_id}>{resolveWarehouseFullName(employee.warehouse_id, warehouses)}</Cell>
+                        <Cell width={colWidths.employment_type}>{employee.employment_type}</Cell>
+                        <Cell width={colWidths.start_date}>{employee.start_date}</Cell>
+                        <Cell width={colWidths.basic_salary} align="right">ETB {money(employee.basic_salary)}</Cell>
+                        <Cell width={colWidths.status} align="center"><StatusPill status={employee.status} /></Cell>
+                        <Cell width={colWidths.actions} align="right">
+                          <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => setViewing(employee)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                              title="View Employee Details"
+                            >
+                              <Eye className="size-3 text-zinc-700" /> View
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openEdit(employee)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                              title="Edit Employee Details"
+                            >
+                              <Pencil className="size-3 text-zinc-700" /> Edit
+                            </button>
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center size-7 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
+                                  title="More Employee Actions"
                                 >
-                                  <UserMinus className="size-3.5" /> Deactivate Employee
-                                </DropdownMenuItem>
-                              ) : (
+                                  <MoreHorizontal className="size-3.5" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-52 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-1.5 z-50">
                                 <DropdownMenuItem
-                                  onClick={() => {
-                                    confirm({
-                                      title: "Reactivate Employee",
-                                      message: `Are you sure you want to reactivate ${employee.full_name} (${employee.employee_number})? They will be marked Active again.`,
-                                      confirmLabel: "Reactivate Employee",
-                                      isDestructive: false,
-                                      onConfirm: () => reactivate(employee),
-                                    })
-                                  }}
-                                  className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-xl cursor-pointer"
+                                  onClick={() => setShowIdModalFor(employee)}
+                                  className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer"
                                 >
-                                  <UserCheck className="size-3.5" /> Reactivate Employee
+                                  <ShieldCheck className="size-3.5 text-emerald-600" /> View National ID
                                 </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </Cell>
-                    </tr>
-                  ))}
+                                {employee.status === "Active" ? (
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      confirm({
+                                        title: "Deactivate Employee",
+                                        message: `Are you sure you want to deactivate ${employee.full_name} (${employee.employee_number})? They will be marked Inactive and excluded from active payroll cycles.`,
+                                        confirmLabel: "Deactivate Employee",
+                                        isDestructive: true,
+                                        onConfirm: () => deactivate(employee),
+                                      })
+                                    }}
+                                    className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl cursor-pointer"
+                                  >
+                                    <UserMinus className="size-3.5" /> Deactivate Employee
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      confirm({
+                                        title: "Reactivate Employee",
+                                        message: `Are you sure you want to reactivate ${employee.full_name} (${employee.employee_number})? They will be marked Active again.`,
+                                        confirmLabel: "Reactivate Employee",
+                                        isDestructive: false,
+                                        onConfirm: () => reactivate(employee),
+                                      })
+                                    }}
+                                    className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-xl cursor-pointer"
+                                  >
+                                    <UserCheck className="size-3.5" /> Reactivate Employee
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </Cell>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </TableScrollWrapper>
@@ -419,6 +492,7 @@ export default function Employees() {
           onSubmit={saveEmployee}
         />
       )}
+
       {viewing && (
         <EmployeeDetails
           employee={viewing}
@@ -427,8 +501,81 @@ export default function Employees() {
           payroll={payroll}
           warehouses={warehouses}
           onClose={() => setViewing(null)}
+          onEdit={(emp) => {
+            setViewing(null)
+            openEdit(emp)
+          }}
         />
       )}
+
+      {/* Standalone National ID Preview Modal from Table List */}
+      <AnimatePresence>
+        {showIdModalFor && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl border border-black/10">
+              <div className="flex items-center justify-between border-b border-black/10 px-6 py-4 bg-zinc-50">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="size-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                    <ShieldCheck className="size-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="truncate text-sm font-black text-black">National ID Identification Document</h4>
+                    <p className="truncate text-xs font-bold text-zinc-500">{showIdModalFor.full_name} ({showIdModalFor.employee_number})</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {showIdModalFor.national_id_image && (
+                    <button
+                      type="button"
+                      onClick={() => window.open(resolveFileUrl(showIdModalFor.national_id_image), "_blank")}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-zinc-100 text-black text-xs font-bold transition-colors cursor-pointer"
+                      title="Open in new browser tab"
+                    >
+                      <ExternalLink className="size-3.5" /> Open Tab
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowIdModalFor(null)}
+                    className="p-1.5 rounded-xl hover:bg-black/5 text-zinc-500 hover:text-black transition-colors cursor-pointer"
+                    aria-label="Close National ID preview"
+                  >
+                    <X className="size-5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="max-h-[75vh] overflow-auto bg-zinc-100 p-6 flex items-center justify-center">
+                {showIdModalFor.national_id_image ? (
+                  <img
+                    src={resolveFileUrl(showIdModalFor.national_id_image)}
+                    alt={`${showIdModalFor.full_name} National ID document`}
+                    className="mx-auto max-h-[70vh] w-auto max-w-full rounded-2xl bg-white object-contain shadow-md border border-black/10"
+                  />
+                ) : (
+                  <div className="text-center py-16 px-4">
+                    <ImagePlus className="size-12 text-zinc-300 mx-auto mb-3" />
+                    <p className="text-sm font-bold text-zinc-700">No National ID Document Uploaded</p>
+                    <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">
+                      This employee does not have a National ID document on file. You can upload one by editing the employee details.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const emp = showIdModalFor
+                        setShowIdModalFor(null)
+                        openEdit(emp)
+                      }}
+                      className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-black text-white text-xs font-bold hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
+                    >
+                      <Pencil className="size-3.5" /> Edit & Upload National ID
+                    </button>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -453,7 +600,7 @@ function EmployeeForm({
   onSubmit,
 }: {
   form: FormState
-  setForm: (form: FormState) => void
+  setForm: React.Dispatch<React.SetStateAction<FormState>>
   title: string
   saving: boolean
   warehouseOptions: string[]
@@ -461,27 +608,44 @@ function EmployeeForm({
   onClose: () => void
   onSubmit: (event: React.FormEvent) => void
 }) {
-  const field = (key: keyof FormState, value: string | number) => setForm({ ...form, [key]: value })
+  const [uploadingId, setUploadingId] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const field = (key: keyof FormState, value: string | number) =>
+    setForm((prev) => ({ ...prev, [key]: value }))
+
   const handleNationalIdImage = async (file: File | undefined) => {
     if (!file) return
-    if (file.size > 10_000_000) {
-      window.alert("National ID image must be 10 MB or smaller.")
+    if (file.size > 15_000_000) {
+      window.alert("National ID document must be 15 MB or smaller.")
       return
     }
     try {
+      setUploadingId(true)
       const res = await uploadFile(file, "employees")
-      field("national_id_image", res.url)
+      setForm((prev) => ({ ...prev, national_id_image: res.url }))
     } catch (err) {
       console.warn("National ID image upload failed:", err)
-      window.alert("Failed to upload National ID image.")
+      window.alert("Failed to upload National ID image. Please try again.")
+    } finally {
+      setUploadingId(false)
     }
   }
+
+  const handleRemoveId = () => {
+    setForm((prev) => ({ ...prev, national_id_image: "" }))
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-5xl max-h-[90vh] overflow-y-auto no-scrollbar bg-white rounded-3xl p-6 shadow-2xl border border-black/10">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-black text-black">{title}</h3>
-          <button onClick={onClose} disabled={saving} className="p-1.5 rounded-lg hover:bg-black/5 disabled:opacity-40"><X className="size-5" /></button>
+          <button onClick={onClose} disabled={saving || uploadingId} className="p-1.5 rounded-lg hover:bg-black/5 disabled:opacity-40 cursor-pointer"><X className="size-5" /></button>
         </div>
         <form onSubmit={onSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Input label="Full Name" required value={form.full_name} onChange={(v) => field("full_name", v)} />
@@ -502,31 +666,166 @@ function EmployeeForm({
           <Input label="Bank Account" required value={form.bank_account} onChange={(v) => field("bank_account", v)} />
           <Input label="Emergency Contact Name" required value={form.emergency_contact_name} onChange={(v) => field("emergency_contact_name", v)} />
           <Input label="Emergency Contact Phone" required value={form.emergency_contact_phone} onChange={(v) => field("emergency_contact_phone", v)} />
-          <label className="md:col-span-3 text-[10px] font-black uppercase tracking-wider text-zinc-500">
-            National ID
-            <div className="mt-1 flex min-h-24 items-center gap-3 rounded-xl border border-dashed border-black/15 bg-black/[0.02] p-3">
-              <div className="size-16 shrink-0 overflow-hidden rounded-lg bg-white border border-black/10 flex items-center justify-center">
-                {form.national_id_image ? (
-                  <img src={resolveFileUrl(form.national_id_image)} alt="National ID preview" className="h-full w-full object-cover" />
-                ) : (
-                  <ImagePlus className="size-6 text-zinc-400" />
-                )}
-              </div>
-              <div className="min-w-0">
-                <span className="block text-xs font-black text-zinc-900">National ID image</span>
-                <span className="block text-[10px] font-semibold text-zinc-500">Upload the employee National ID image.</span>
-                <input type="file" accept="image/*" disabled={saving} onChange={(event) => handleNationalIdImage(event.target.files?.[0])} className="mt-2 w-full text-[10px] font-bold text-zinc-600 file:mr-2 file:rounded-full file:border-0 file:bg-black file:px-3 file:py-1.5 file:text-[10px] file:font-bold file:text-white disabled:opacity-50" />
-              </div>
+
+          {/* National ID Document Upload / Attached View Section */}
+          <div className="md:col-span-3">
+            <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-500 mb-1.5">
+              National ID Document
+            </label>
+            <div className="rounded-2xl border border-dashed border-black/15 bg-black/[0.02] p-4 transition-all">
+              {form.national_id_image ? (
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div
+                      onClick={() => setPreviewOpen(true)}
+                      className="group relative size-16 shrink-0 overflow-hidden rounded-xl border border-black/10 bg-white cursor-pointer shadow-xs"
+                      title="Click to view full preview"
+                    >
+                      <img
+                        src={resolveFileUrl(form.national_id_image)}
+                        alt="National ID preview"
+                        className="h-full w-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                      <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                        <ZoomIn className="size-4" />
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black uppercase tracking-wider">
+                          <CheckCircle2 className="size-3" /> Document Attached
+                        </span>
+                      </div>
+                      <p className="text-xs font-bold text-zinc-900 mt-1">National ID Image on file</p>
+                      <p className="text-[11px] text-zinc-500 truncate">Saved with employee profile</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-zinc-50 text-black text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                    >
+                      <Eye className="size-3.5 text-zinc-600" /> View Document
+                    </button>
+                    <button
+                      type="button"
+                      disabled={saving || uploadingId}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-zinc-50 text-black text-xs font-bold transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+                    >
+                      <Pencil className="size-3.5 text-zinc-600" /> Replace
+                    </button>
+                    <button
+                      type="button"
+                      disabled={saving || uploadingId}
+                      onClick={handleRemoveId}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <Trash2 className="size-3.5" /> Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="size-14 shrink-0 rounded-xl bg-white border border-black/10 flex items-center justify-center text-zinc-400">
+                      {uploadingId ? <LoadingDots color="bg-zinc-600" size="sm" /> : <ImagePlus className="size-6 text-zinc-400" />}
+                    </div>
+                    <div>
+                      <span className="block text-xs font-black text-zinc-900">
+                        {uploadingId ? "Uploading National ID Document..." : "Upload National ID Document"}
+                      </span>
+                      <span className="block text-[11px] font-semibold text-zinc-500">
+                        PNG, JPG, JPEG, WEBP or PDF document (Max 15 MB)
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={saving || uploadingId}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-black hover:bg-zinc-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                  >
+                    {uploadingId ? <LoadingDots color="bg-white" size="sm" /> : <UploadCloud className="size-4" />}
+                    {uploadingId ? "Uploading..." : "Choose National ID File"}
+                  </button>
+                </div>
+              )}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                disabled={saving || uploadingId}
+                onChange={(e) => handleNationalIdImage(e.target.files?.[0])}
+                className="hidden"
+              />
             </div>
-          </label>
+          </div>
+
           <div className="md:col-span-3 flex justify-end gap-3 pt-2">
-            <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 rounded-full bg-black/5 text-xs font-bold disabled:opacity-50">Cancel</button>
-            <button type="submit" disabled={saving} className="inline-flex min-w-34 items-center justify-center gap-2 px-5 py-2 rounded-full bg-black text-white text-xs font-bold disabled:cursor-wait disabled:bg-zinc-700 disabled:opacity-60 transition-colors">
-              {saving ? <LoadingDots color="bg-white" size="sm" /> : "Save Employee"}
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving || uploadingId}
+              className="px-4 py-2 rounded-full bg-black/5 text-xs font-bold disabled:opacity-50 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving || uploadingId}
+              className="inline-flex min-w-36 items-center justify-center gap-2 px-5 py-2 rounded-full bg-black text-white text-xs font-bold disabled:cursor-wait disabled:bg-zinc-700 disabled:opacity-60 transition-colors shadow-md cursor-pointer"
+            >
+              {saving ? <LoadingDots color="bg-white" size="sm" /> : uploadingId ? "Uploading ID..." : "Save Employee"}
             </button>
           </div>
         </form>
       </motion.div>
+
+      {/* Form In-Flight National ID Preview Modal */}
+      <AnimatePresence>
+        {previewOpen && form.national_id_image && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl border border-black/10">
+              <div className="flex items-center justify-between border-b border-black/10 px-6 py-4 bg-zinc-50">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="size-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                    <ShieldCheck className="size-5" />
+                  </div>
+                  <div>
+                    <h4 className="truncate text-sm font-black text-black">National ID Preview</h4>
+                    <p className="text-xs text-zinc-500 font-semibold">{form.full_name || "New Employee"}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.open(resolveFileUrl(form.national_id_image), "_blank")}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-zinc-100 text-black text-xs font-bold transition-colors cursor-pointer"
+                    title="Open in new browser tab"
+                  >
+                    <ExternalLink className="size-3.5" /> Open Tab
+                  </button>
+                  <button onClick={() => setPreviewOpen(false)} className="p-1.5 rounded-xl hover:bg-black/5 text-zinc-500 hover:text-black transition-colors cursor-pointer">
+                    <X className="size-5" />
+                  </button>
+                </div>
+              </div>
+              <div className="max-h-[75vh] overflow-auto bg-zinc-100 p-6 flex items-center justify-center">
+                <img
+                  src={resolveFileUrl(form.national_id_image)}
+                  alt="National ID document"
+                  className="mx-auto max-h-[70vh] w-auto max-w-full rounded-2xl bg-white object-contain shadow-md border border-black/10"
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
@@ -546,6 +845,7 @@ function EmployeeDetails({
   payroll,
   warehouses = [],
   onClose,
+  onEdit,
 }: {
   employee: Employee
   attendance: AttendanceRecord[]
@@ -553,56 +853,187 @@ function EmployeeDetails({
   payroll: PayrollRecord[]
   warehouses?: Warehouse[]
   onClose: () => void
+  onEdit?: (emp: Employee) => void
 }) {
   const [showNationalId, setShowNationalId] = useState(false)
   const employeeAttendance = attendance.filter((record) => record.employee_id === employee.id)
   const employeeLeaves = leaves.filter((request) => request.employee_id === employee.id)
   const employeePayroll = payroll.filter((record) => record.employee_id === employee.id)
+  const hasNationalId = Boolean(employee.national_id_image && employee.national_id_image.trim())
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-4xl max-h-[90vh] overflow-y-auto no-scrollbar bg-white rounded-3xl p-6 shadow-2xl border border-black/10">
-        <div className="flex items-center justify-between mb-5"><h3 className="text-lg font-black text-black">{employee.full_name}</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div>
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <span className="size-10 rounded-2xl bg-zinc-900 text-white flex items-center justify-center text-xs font-black">
+              {initials(employee.full_name)}
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-black text-black leading-tight">{employee.full_name}</h3>
+                <span className="text-[11px] font-bold font-mono text-zinc-500">({employee.employee_number})</span>
+              </div>
+              <p className="text-xs text-zinc-500">{employee.employment_type} • {employee.status}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowNationalId(true)}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-black transition-all cursor-pointer shadow-xs",
+                hasNationalId
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border border-zinc-200"
+              )}
+              title="View Employee National ID Document"
+            >
+              <Eye className="size-3.5" />
+              View National ID
+            </button>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5 cursor-pointer"><X className="size-5" /></button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Detail title="Personal Information" rows={[["Phone", employee.phone], ["Email", employee.email || "-"], ["Address", employee.address], ["Gender", employee.gender], ["National ID", employee.national_id_image ? "Uploaded" : "Not uploaded"]]} />
+          <div className="rounded-2xl border border-black/5 bg-black/[0.02] p-4">
+            <h4 className="text-xs font-black uppercase mb-3">Personal Information</h4>
+            <div className="space-y-1.5 text-xs">
+              <div className="flex justify-between gap-3 py-1 text-xs"><span className="font-bold text-zinc-500">Phone</span><span className="font-black text-zinc-900 text-right">{employee.phone || "-"}</span></div>
+              <div className="flex justify-between gap-3 py-1 text-xs"><span className="font-bold text-zinc-500">Email</span><span className="font-black text-zinc-900 text-right">{employee.email || "-"}</span></div>
+              <div className="flex justify-between gap-3 py-1 text-xs"><span className="font-bold text-zinc-500">Address</span><span className="font-black text-zinc-900 text-right">{employee.address || "-"}</span></div>
+              <div className="flex justify-between gap-3 py-1 text-xs"><span className="font-bold text-zinc-500">Gender</span><span className="font-black text-zinc-900 text-right">{employee.gender || "-"}</span></div>
+              <div className="flex items-center justify-between gap-3 pt-2 mt-1 border-t border-black/5 text-xs">
+                <span className="font-bold text-zinc-500">National ID</span>
+                {hasNationalId ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowNationalId(true)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[11px] font-black transition-colors cursor-pointer"
+                  >
+                    <CheckCircle2 className="size-3 text-emerald-600" />
+                    View National ID
+                  </button>
+                ) : (
+                  <span className="text-zinc-400 italic text-[11px] font-semibold">Not uploaded</span>
+                )}
+              </div>
+            </div>
+          </div>
+
           <Detail title="Employment Information" rows={[["Warehouse / Office", resolveWarehouseFullName(employee.warehouse_id, warehouses)], ["Employment Type", employee.employment_type], ["Start Date", employee.start_date], ["Status", employee.status]]} />
           <Detail title="Salary Information" rows={[["Gross Salary", `ETB ${money(employee.basic_salary)}`], ["Bank Account", employee.bank_account], ["Emergency Contact", employee.emergency_contact_name], ["Emergency Phone", employee.emergency_contact_phone]]} />
         </div>
-        {employee.national_id_image && (
-          <div className="mt-4 flex justify-end">
-            <button type="button" onClick={() => setShowNationalId(true)} className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2 text-xs font-black text-white transition-colors hover:bg-zinc-800">
-              <Eye className="size-4" />
-              View National ID
-            </button>
-          </div>
-        )}
+
         <History title="Attendance History" empty="No attendance records exist for this employee." rows={employeeAttendance.map((record) => `${record.attendance_date} - ${record.status} (${record.hours_worked || 0} hrs)`)} />
         <History title="Leave History" empty="No leave records exist for this employee." rows={employeeLeaves.map((request) => `${request.leave_type}: ${request.start_date} to ${request.end_date} - ${request.status}`)} />
         <History title="Payroll History" empty="No payroll records exist for this employee." rows={employeePayroll.map((record) => `Net ETB ${money(record.net_pay)} - ${record.payment_status}`)} />
       </motion.div>
-      {showNationalId && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md">
-          <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-black/10 px-5 py-4">
-              <div className="min-w-0">
-                <h4 className="truncate text-sm font-black text-black">National ID Document</h4>
-                <p className="truncate text-xs font-semibold text-zinc-500">{employee.full_name}</p>
+
+      {/* Full-Screen National ID Document Viewer Modal */}
+      <AnimatePresence>
+        {showNationalId && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl border border-black/10">
+              <div className="flex items-center justify-between border-b border-black/10 px-6 py-4 bg-zinc-50">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="size-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                    <ShieldCheck className="size-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="truncate text-sm font-black text-black">National ID Identification Document</h4>
+                    <p className="truncate text-xs font-bold text-zinc-500">{employee.full_name} ({employee.employee_number})</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {hasNationalId && (
+                    <button
+                      type="button"
+                      onClick={() => window.open(resolveFileUrl(employee.national_id_image), "_blank")}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-zinc-100 text-black text-xs font-bold transition-colors cursor-pointer"
+                      title="Open in new browser tab"
+                    >
+                      <ExternalLink className="size-3.5" /> Open Tab
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowNationalId(false)}
+                    className="p-1.5 rounded-xl hover:bg-black/5 text-zinc-500 hover:text-black transition-colors cursor-pointer"
+                    aria-label="Close National ID preview"
+                  >
+                    <X className="size-5" />
+                  </button>
+                </div>
               </div>
-              <button onClick={() => setShowNationalId(false)} className="shrink-0 rounded-lg p-1.5 hover:bg-black/5" aria-label="Close National ID preview"><X className="size-5" /></button>
-            </div>
-            <div className="max-h-[72vh] overflow-auto bg-zinc-100 p-4">
-              <img src={resolveFileUrl(employee.national_id_image)} alt={`${employee.full_name} National ID document`} className="mx-auto max-h-[68vh] w-auto max-w-full rounded-xl bg-white object-contain shadow-sm" />
-            </div>
-          </motion.div>
-        </div>
-      )}
+
+              <div className="max-h-[75vh] overflow-auto bg-zinc-100 p-6 flex items-center justify-center">
+                {hasNationalId ? (
+                  <img
+                    src={resolveFileUrl(employee.national_id_image)}
+                    alt={`${employee.full_name} National ID document`}
+                    className="mx-auto max-h-[70vh] w-auto max-w-full rounded-2xl bg-white object-contain shadow-md border border-black/10"
+                  />
+                ) : (
+                  <div className="text-center py-16 px-4">
+                    <ImagePlus className="size-12 text-zinc-300 mx-auto mb-3" />
+                    <p className="text-sm font-bold text-zinc-700">No National ID Document Uploaded</p>
+                    <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">
+                      This employee does not have a National ID document on file. You can upload one by editing the employee details.
+                    </p>
+                    {onEdit && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowNationalId(false)
+                          onClose()
+                          onEdit(employee)
+                        }}
+                        className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-black text-white text-xs font-bold hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
+                      >
+                        <Pencil className="size-3.5" /> Edit & Upload National ID
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
 
 function Detail({ title, rows }: { title: string; rows: Array<[string, string]> }) {
-  return <div className="rounded-2xl border border-black/5 bg-black/[0.02] p-4"><h4 className="text-xs font-black uppercase mb-3">{title}</h4>{rows.map(([label, value]) => <div key={label} className="flex justify-between gap-3 py-1.5 text-xs"><span className="font-bold text-zinc-500">{label}</span><span className="font-black text-zinc-900 text-right">{value}</span></div>)}</div>
+  return (
+    <div className="rounded-2xl border border-black/5 bg-black/[0.02] p-4">
+      <h4 className="text-xs font-black uppercase mb-3">{title}</h4>
+      {rows.map(([label, value]) => (
+        <div key={label} className="flex justify-between gap-3 py-1.5 text-xs">
+          <span className="font-bold text-zinc-500">{label}</span>
+          <span className="font-black text-zinc-900 text-right">{value}</span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function History({ title, rows, empty }: { title: string; rows: string[]; empty: string }) {
-  return <div className="mt-5"><h4 className="text-xs font-black uppercase mb-2">{title}</h4>{rows.length ? <div className="space-y-2">{rows.map((row) => <div key={row} className="rounded-xl bg-black/[0.03] px-3 py-2 text-xs font-bold text-zinc-700">{row}</div>)}</div> : <p className="text-xs font-semibold text-zinc-400">{empty}</p>}</div>
+  return (
+    <div className="mt-5">
+      <h4 className="text-xs font-black uppercase mb-2">{title}</h4>
+      {rows.length ? (
+        <div className="space-y-2">
+          {rows.map((row) => (
+            <div key={row} className="rounded-xl bg-black/[0.03] px-3 py-2 text-xs font-bold text-zinc-700">
+              {row}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs font-semibold text-zinc-400">{empty}</p>
+      )}
+    </div>
+  )
 }
