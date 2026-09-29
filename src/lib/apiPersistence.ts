@@ -90,8 +90,13 @@ export async function loadResource<T>(resource: string): Promise<T[]> {
   if (Array.isArray(body)) {
     return body as T[]
   }
-  if (body && typeof body === "object" && Array.isArray((body as any).rows)) {
-    return (body as any).rows as T[]
+  if (body && typeof body === "object") {
+    const b = body as any
+    if (Array.isArray(b.rows)) return b.rows as T[]
+    if (Array.isArray(b.issues)) return b.issues as T[]
+    if (Array.isArray(b.items)) return b.items as T[]
+    if (Array.isArray(b.data)) return b.data as T[]
+    if (Array.isArray(b.records)) return b.records as T[]
   }
   return []
 }

@@ -514,6 +514,20 @@ export function unwrapRow(row, storage) {
   if (out.installmentPayments !== undefined && out.installment_payments === undefined) out.installment_payments = out.installmentPayments
   if (out.account_entries !== undefined && out.accountEntries === undefined) out.accountEntries = out.account_entries
   if (out.accountEntries !== undefined && out.account_entries === undefined) out.account_entries = out.accountEntries
+  if (Array.isArray(out.accountEntries) && out.accountEntries.length > 0) {
+    const firstDebit = out.accountEntries.find((e) => Number(e.debit) > 0)
+    const firstCredit = out.accountEntries.find((e) => Number(e.credit) > 0)
+    if (firstDebit) {
+      if (!out.targetAccountId) out.targetAccountId = firstDebit.accountId || firstDebit.account_id
+      if (!out.targetAccountCode) out.targetAccountCode = firstDebit.accountCode || firstDebit.account_code
+      if (!out.targetAccountName) out.targetAccountName = firstDebit.accountName || firstDebit.account_name
+    }
+    if (firstCredit) {
+      if (!out.creditAccountId) out.creditAccountId = firstCredit.accountId || firstCredit.account_id
+      if (!out.creditAccountCode) out.creditAccountCode = firstCredit.accountCode || firstCredit.account_code
+      if (!out.creditAccountName) out.creditAccountName = firstCredit.accountName || firstCredit.account_name
+    }
+  }
   if (out.prepared_by !== undefined && out.preparedBy === undefined) out.preparedBy = out.prepared_by
   if (out.approved_by !== undefined && out.approvedBy === undefined) out.approvedBy = out.approved_by
   if (out.paid_by !== undefined && out.paidBy === undefined) out.paidBy = out.paid_by

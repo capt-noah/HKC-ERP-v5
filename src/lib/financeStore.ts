@@ -840,10 +840,9 @@ class FinanceStore {
             const linkedSoId = si.sales_order_id || (si.reference_no && String(si.reference_no).startsWith("SO-") ? si.reference_no : undefined)
             const isMatchingInvoice = (inv: Invoice) => {
               if (inv.id === invId || inv.sales_issue_id === si.id || inv.id === si.id) return true
-              if (si.fs_no && (inv.fs_no === si.fs_no || inv.invoice_number === `INV-${si.fs_no}` || inv.invoice_number?.includes(si.fs_no))) return true
+              if (si.fs_no && (inv.fs_no === si.fs_no || inv.invoice_number === `INV-${si.fs_no}`)) return true
               if (linkedSoId && (inv.sales_order_id === linkedSoId || inv.id === `INV-SO-${linkedSoId}`)) return true
-              if (si.reference_no && (inv.invoice_number === si.reference_no || inv.invoice_number?.includes(si.reference_no))) return true
-              if (inv.customer_name?.toLowerCase() === si.customer_name?.toLowerCase() && (Math.abs((inv.total || 0) - invoiceTotal) < 0.01 || Math.abs((inv.subtotal || 0) - subtotal) < 0.01) && invoiceTotal > 0) return true
+              if (si.reference_no && inv.invoice_number === si.reference_no) return true
               return false
             }
 
@@ -910,6 +909,7 @@ class FinanceStore {
               }
             } else {
               this.invoices.push(mappedInvoice)
+              hasNewSync = true
             }
           })
 
@@ -1013,6 +1013,54 @@ class FinanceStore {
                   { id: `${jeId}-1`, journal_entry_id: jeId, account_id: debitAcc.id, debit_amount: poAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
                   { id: `${jeId}-2`, journal_entry_id: jeId, account_id: creditAcc.id, debit_amount: 0, credit_amount: poAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Supplier", party_id: po.supplierId || null, party_name: po.supplier || po.paidTo || null }
                 )
+                hasNewSync = true
+              }
+            }
+
+            // Sync Credit Purchase Orders into Accounts Payable Invoices
+            const isCredit = (po.paymentType || po.payment_type) === "Credit"
+            if (isCredit) {
+              const poInvId = `INV-PO-${po.id}`
+              const existingPoInvIdx = this.invoices.findIndex((i) => i.id === poInvId || i.purchase_order_id === po.id || (po.voucherNo && i.voucher_no === po.voucherNo))
+              const totalAmt = Number(po.amount || 0)
+              const paidAmt = Number(po.amountPaid ?? po.amount_paid ?? 0)
+              const dueAmt = typeof po.balanceDue === "number" ? po.balanceDue : Math.max(0, totalAmt - paidAmt)
+              const isPaid = dueAmt <= 0.01 || po.settlementStatus === "Fully Settled"
+              const invObj: Invoice = {
+                id: poInvId,
+                invoice_number: po.voucherNo || po.poNumber || `BILL-${po.id.slice(-6)}`,
+                invoice_type: "Purchase",
+                party_type: "Supplier",
+                purchase_order_id: po.id,
+                voucher_no: po.voucherNo || po.poNumber,
+                customer_name: po.supplier || po.paidTo || "Supplier",
+                supplier_name: po.supplier || po.paidTo || "Supplier",
+                issue_date: po.date || new Date().toISOString().split("T")[0],
+                due_date: po.dueDate || po.due_date || po.date || new Date().toISOString().split("T")[0],
+                currency: "ETB",
+                line_items: [
+                  {
+                    description: `Purchase Voucher: ${po.voucherNo || po.poNumber || po.id} - ${po.reasonForPayment || po.notes || "Stock & Supplies Purchase"}`,
+                    quantity: 1,
+                    unit_price: totalAmt,
+                    line_total: totalAmt,
+                  },
+                ],
+                subtotal: totalAmt,
+                tax_amount: 0,
+                total: totalAmt,
+                amount_paid: paidAmt,
+                balance_due: dueAmt,
+                payment_terms: po.paymentTerms || po.payment_terms || "Credit",
+                settlement_status: isPaid ? "Fully Settled" : paidAmt > 0 ? "Ongoing" : "Unpaid",
+                status: isPaid ? "Paid" : paidAmt > 0 ? "Partially Paid" : "Sent",
+                notes: po.notes || po.reasonForPayment || "",
+                attachments: po.attachments || [],
+              }
+              if (existingPoInvIdx >= 0) {
+                this.invoices[existingPoInvIdx] = { ...this.invoices[existingPoInvIdx], ...invObj }
+              } else {
+                this.invoices.push(invObj)
                 hasNewSync = true
               }
             }
@@ -1260,6 +1308,7 @@ class FinanceStore {
               }
             } else {
               this.invoices.push(mappedPSInvoice)
+              hasNewSync = true
             }
           })
 

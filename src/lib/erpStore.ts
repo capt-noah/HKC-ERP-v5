@@ -810,7 +810,28 @@ class ErpStore {
       )
       this.stockMovements = sortNewestFirst(stockMovements)
       if (suppliers.length > 0) this.suppliers = sortNewestFirst(suppliers)
-      if (purchaseOrders.length > 0) this.purchaseOrders = sortNewestFirst(purchaseOrders)
+      if (purchaseOrders.length > 0) {
+        const poStatusColorMap: Record<string, string> = {
+          DRAFT: "bg-zinc-600 text-white",
+          PAID: "bg-emerald-600 text-white",
+          COMPLETED: "bg-emerald-600 text-white",
+          "IN TRANSIT": "bg-blue-700 text-white",
+          RECEIVED: "bg-emerald-600 text-white",
+          CANCELLED: "bg-red-600 text-white",
+        }
+        this.purchaseOrders = sortNewestFirst(
+          purchaseOrders.map((po: any) => ({
+            ...po,
+            status: po.status || "DRAFT",
+            statusColor: po.statusColor || poStatusColorMap[po.status] || "bg-zinc-600 text-white",
+            amount: Number(po.amount || 0),
+            amountPaid: Number(po.amountPaid ?? po.amount_paid ?? 0),
+            amount_paid: Number(po.amountPaid ?? po.amount_paid ?? 0),
+            balanceDue: Number(po.balanceDue ?? po.balance_due ?? 0),
+            balance_due: Number(po.balanceDue ?? po.balance_due ?? 0),
+          }))
+        )
+      }
 
       // Hydrate quarantine records from MySQL quarantine_records table
       const dbQuarantines: QuarantineRecord[] = (quarantineRecordsDb || []).map((q: any) => {
@@ -991,7 +1012,28 @@ class ErpStore {
         approvalStatus: so.approvalStatus || so.approval_status || "Pending",
         paymentType: so.paymentType || so.payment_type || "Credit",
       })))
-      this.purchaseOrders = sortNewestFirst(purchaseOrders)
+      if (purchaseOrders && purchaseOrders.length > 0) {
+        const poStatusColorMap: Record<string, string> = {
+          DRAFT: "bg-zinc-600 text-white",
+          PAID: "bg-emerald-600 text-white",
+          COMPLETED: "bg-emerald-600 text-white",
+          "IN TRANSIT": "bg-blue-700 text-white",
+          RECEIVED: "bg-emerald-600 text-white",
+          CANCELLED: "bg-red-600 text-white",
+        }
+        this.purchaseOrders = sortNewestFirst(
+          purchaseOrders.map((po: any) => ({
+            ...po,
+            status: po.status || "DRAFT",
+            statusColor: po.statusColor || poStatusColorMap[po.status] || "bg-zinc-600 text-white",
+            amount: Number(po.amount || 0),
+            amountPaid: Number(po.amountPaid ?? po.amount_paid ?? 0),
+            amount_paid: Number(po.amountPaid ?? po.amount_paid ?? 0),
+            balanceDue: Number(po.balanceDue ?? po.balance_due ?? 0),
+            balance_due: Number(po.balanceDue ?? po.balance_due ?? 0),
+          }))
+        )
+      }
       this.customers = sortNewestFirst(customers)
       this.suppliers = sortNewestFirst(suppliers)
       if (warehouses && warehouses.length > 0) {
@@ -3683,6 +3725,9 @@ class ErpStore {
     }
 
     this.purchaseOrders.unshift(enriched)
+    void createResource<PurchaseOrder>("purchase_orders", enriched).catch((err) =>
+      console.error("Failed to persist Purchase Order:", err)
+    )
     if (enriched.status === "PAID" || enriched.status === "COMPLETED") {
       this.syncPurchaseVoucherToFinance(enriched)
     }
@@ -3693,6 +3738,7 @@ class ErpStore {
   }
 
   public updatePurchaseOrder(id: string, updates: Partial<PurchaseOrder>) {
+    let updatedPo: PurchaseOrder | undefined
     this.purchaseOrders = this.purchaseOrders.map((p) => {
       if (p.id !== id) return p
       const merged = { ...p, ...updates }
@@ -3716,8 +3762,14 @@ class ErpStore {
         financeStore.deleteJournalEntriesBySource("Payment Voucher", merged.id)
         merged.journalEntryId = undefined
       }
+      updatedPo = merged
       return merged
     })
+    if (updatedPo) {
+      void updateResource<PurchaseOrder>("purchase_orders", id, updatedPo).catch((err) =>
+        console.error("Failed to update Purchase Order:", err)
+      )
+    }
     this.notify()
   }
 
@@ -3798,6 +3850,9 @@ class ErpStore {
       financeStore.deleteJournalEntry(target.journalEntryId)
     }
     this.purchaseOrders = this.purchaseOrders.filter((p) => p.id !== id)
+    void deleteResource("purchase_orders", id).catch((err) =>
+      console.error("Failed to delete Purchase Order:", err)
+    )
     this.notify()
   }
 
@@ -3941,14 +3996,21 @@ class ErpStore {
       RECEIVED: "bg-emerald-600 text-white",
       CANCELLED: "bg-red-600 text-white",
     }
+    let updatedPo: PurchaseOrder | undefined
     this.purchaseOrders = this.purchaseOrders.map((po) => {
       if (po.id !== id) return po
-      const updatedPo = { ...po, status, statusColor: statusColorMap[status] || "bg-zinc-600 text-white" }
-      if ((status === "PAID" || status === "COMPLETED") && !updatedPo.journalEntryId) {
-        this.syncPurchaseVoucherToFinance(updatedPo)
+      const updated = { ...po, status, statusColor: statusColorMap[status] || "bg-zinc-600 text-white" }
+      if ((status === "PAID" || status === "COMPLETED") && !updated.journalEntryId) {
+        this.syncPurchaseVoucherToFinance(updated)
       }
-      return updatedPo
+      updatedPo = updated
+      return updated
     })
+    if (updatedPo) {
+      void updateResource<PurchaseOrder>("purchase_orders", id, updatedPo).catch((err) =>
+        console.error("Failed to update Purchase Order status:", err)
+      )
+    }
     this.notify()
   }
 
@@ -4014,10 +4076,11 @@ class ErpStore {
 
     // 3. Update PO status
     const receiptId = `PR-${Date.now().toString().slice(-5)}`
+    let updatedReceiptPo: PurchaseOrder | undefined
     this.purchaseOrders = this.purchaseOrders.map((p) => {
       if (p.id !== poId) return p
       const existingReceipts = p.receiptIds || []
-      return {
+      const updated = {
         ...p,
         status: "RECEIVED" as const,
         statusColor: "bg-emerald-600 text-white",
@@ -4025,7 +4088,15 @@ class ErpStore {
         receivedAmount: p.amount,
         receiptIds: [...existingReceipts, receiptId],
       }
+      updatedReceiptPo = updated
+      return updated
     })
+
+    if (updatedReceiptPo) {
+      void updateResource<PurchaseOrder>("purchase_orders", poId, updatedReceiptPo).catch((err) =>
+        console.error("Failed to update PO receipt status:", err)
+      )
+    }
 
     this.notify()
     return { success: true, journalEntryId: jeId }
@@ -4086,16 +4157,25 @@ class ErpStore {
     const pinvId = `PINV-${Date.now().toString().slice(-5)}`
 
     // Update PO billing status
+    let updatedInvoicePo: PurchaseOrder | undefined
     this.purchaseOrders = this.purchaseOrders.map((p) => {
       if (p.id !== poId) return p
       const existingInvoices = p.invoiceIds || []
-      return {
+      const updated = {
         ...p,
         billedAmount: totalAmount,
         billingStatus: "Fully Billed" as const,
         invoiceIds: [...existingInvoices, pinvId],
       }
+      updatedInvoicePo = updated
+      return updated
     })
+
+    if (updatedInvoicePo) {
+      void updateResource<PurchaseOrder>("purchase_orders", poId, updatedInvoicePo).catch((err) =>
+        console.error("Failed to update PO billing status:", err)
+      )
+    }
 
     this.notify()
     return { success: true, invoiceId: pinvId, journalEntryId: jeId }

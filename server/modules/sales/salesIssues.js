@@ -598,6 +598,14 @@ export async function createSalesIssue(input, existingId = null) {
     }
   }
 
+  if (String(doc.status || headerRow.status || "").toLowerCase() === "posted") {
+    try {
+      await postSalesIssue(id)
+    } catch (autoPostErr) {
+      console.warn("Auto-post during createSalesIssue warning:", autoPostErr.message)
+    }
+  }
+
   return { status: 200, body: { ...doc, savedToDb: true } }
 }
 
@@ -1268,6 +1276,49 @@ export async function postSalesIssue(arg1, arg2) {
       })
     }
 
+    // 3.5. Authoritative Invoice Sync into `invoices` table
+    try {
+      const invId = `INV-SI-${id}`
+      const invNumber = `INV-${existing.fs_no || existing.reference_no || id}`
+      const lineItems = (existing.items || []).map((i) => ({
+        description: i.item_name || i.product_name || i.name || "Issued Item",
+        quantity: Number(i.quantity || i.qty || 1),
+        unit_price: Number(i.unit_price || i.price || 0),
+        line_total: Number(i.amount || (Number(i.quantity || 1) * Number(i.unit_price || 0))),
+      }))
+      const invData = {
+        id: invId,
+        invoice_number: invNumber,
+        invoice_type: "Sales",
+        party_type: "Customer",
+        customer_name: existing.customer_name || existing.customer || "Customer",
+        sales_issue_id: id,
+        fs_no: existing.fs_no || id,
+        sales_order_id: existing.sales_order_id || null,
+        issue_date: existing.sale_date || getLocalDateString(),
+        due_date: existing.sale_date || getLocalDateString(),
+        currency: "ETB",
+        line_items: lineItems.length > 0 ? lineItems : [{ description: `Sales Issue ${existing.fs_no || id}`, quantity: 1, unit_price: grandTotal, line_total: grandTotal }],
+        subtotal: issueSubtotal,
+        tax_amount: issueVatAmount,
+        tax_rate: issueVatRate,
+        discount_amount: 0,
+        total: grandTotal,
+        total_amount: grandTotal,
+        amount_paid: existingPaid,
+        balance_due: existingBal,
+        payment_terms: isCash ? "Cash" : "Credit (Net 30)",
+        status: paymentStatus,
+        settlement_status: settlementStatus,
+      }
+      await drizzleCreateRow({
+        resource: getResource("invoices"),
+        body: invData,
+      })
+    } catch (invErr) {
+      console.warn("Invoice auto-sync warning during post:", invErr.message)
+    }
+
     // 4. Update Sales Order if referenced
     const targetSoId = existing.sales_order_id || (existing.reference_no && String(existing.reference_no).startsWith("SO-") ? existing.reference_no : null)
     if (targetSoId) {
@@ -1308,6 +1359,20 @@ export async function cancelSalesIssue(id) {
     id,
     body: { status: "Cancelled" },
   })
+
+  try {
+    const invId = `INV-SI-${id}`
+    const invRes = await drizzleGetRow({ resource: getResource("invoices"), id: invId })
+    if (invRes.status === 200 && invRes.body) {
+      await drizzleUpdateRow({
+        resource: getResource("invoices"),
+        id: invId,
+        body: { status: "Cancelled", balance_due: 0 },
+      })
+    }
+  } catch (cancelInvErr) {
+    console.warn("Cancel invoice warning:", cancelInvErr.message)
+  }
 
   return { status: 200, body: { ...existing, status: "Cancelled", ok: true } }
 }

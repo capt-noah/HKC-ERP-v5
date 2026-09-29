@@ -114,6 +114,13 @@ export default function PurchaseOrders() {
   // Optional Supporting Attachments
   const [attachments, setAttachments] = useState<PurchaseOrderAttachment[]>([])
 
+  // Load ERP inventory, sales data, and finance data on mount / page refresh
+  useEffect(() => {
+    void erp.loadInventoryData()
+    void erp.loadSalesData()
+    void financeStore.loadFromApi()
+  }, [])
+
   // Close supplier dropdown on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
