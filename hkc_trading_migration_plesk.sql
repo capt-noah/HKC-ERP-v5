@@ -1,7 +1,7 @@
 -- ============================================================================
 -- HKC Trading ERP - Complete Database Migration Dump
 -- Target Platform: Plesk / phpMyAdmin / MySQL 5.7+ & 8.0+
--- Generated Date: 2026-09-29T05:51:26.528Z
+-- Generated Date: 2026-09-29T08:09:06.606Z
 -- ============================================================================
 
 SET FOREIGN_KEY_CHECKS = 0;
@@ -582,7 +582,7 @@ CREATE TABLE `journal_entries` (
   KEY `idx_journal_entries_created_at` (`created_at` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Dumping data for table `journal_entries` (26 rows)
+-- Dumping data for table `journal_entries` (27 rows)
 INSERT INTO `journal_entries` (`id`, `payload`, `created_at`, `updated_at`) VALUES
 ('JE-COGS-00000606', '{"id":"JE-COGS-00000606","currency":"ETB","source_id":"00000606","created_by":"System Synced","entry_date":"2026-09-18","description":"COGS — Sales Issue 00000606","source_type":"Sales Invoice","exchange_rate":1,"is_reversal_of":null}', '2026-09-18 13:09:26.621', '2026-09-28 13:20:57.737'),
 ('JE-COGS-00000607', '{"id":"JE-COGS-00000607","currency":"ETB","source_id":"00000607","created_by":"System Synced","entry_date":"2026-09-16","description":"COGS — Sales Issue 00000607","source_type":"Sales Invoice","exchange_rate":1,"is_reversal_of":null}', '2026-09-18 13:38:21.621', '2026-09-28 13:20:57.712'),
@@ -597,6 +597,7 @@ INSERT INTO `journal_entries` (`id`, `payload`, `created_at`, `updated_at`) VALU
 ('JE-COGS-00000620', '{"id":"JE-COGS-00000620","currency":"ETB","source_id":"00000620","created_by":"System Synced","entry_date":"2026-09-21","description":"COGS — Sales Issue 00000620","source_type":"Sales Invoice","exchange_rate":1,"is_reversal_of":null}', '2026-09-21 14:37:32.644', '2026-09-28 13:20:57.681'),
 ('JE-COGS-00000621', '{"id":"JE-COGS-00000621","currency":"ETB","source_id":"00000621","created_by":"System Synced","entry_date":"2026-09-21","description":"COGS — Sales Issue 00000621","source_type":"Sales Invoice","exchange_rate":1,"is_reversal_of":null}', '2026-09-21 14:37:44.696', '2026-09-28 13:20:57.671'),
 ('JE-COGS-00000623', '{"id":"JE-COGS-00000623","currency":"ETB","source_id":"00000623","created_by":"System Synced","entry_date":"2026-09-21","description":"COGS — Sales Issue 00000623","source_type":"Sales Invoice","exchange_rate":1,"is_reversal_of":null}', '2026-09-21 14:37:38.913', '2026-09-28 13:20:57.678'),
+('JE-OPENING-BALANCES', '{"id":"JE-OPENING-BALANCES","currency":"ETB","source_id":"PEACHTREE-CUTOVER","created_by":"System Initial Balance","entry_date":"2026-09-13","description":"Beginning Balances - Initial Stock of Veterinary Drug","source_type":"Beginning Balance","exchange_rate":1,"is_reversal_of":null}', '2026-09-13 00:00:00.000', '2026-09-29 11:08:49.758'),
 ('JE-SALE-00000606', '{"id":"JE-SALE-00000606","currency":"ETB","source_id":"00000606","created_by":"System Synced","entry_date":"2026-09-18","description":"Sales Issue 00000606 — DR ABDELA ENDRIS/SUPER FAT VETERINARY","source_type":"Sales Invoice","exchange_rate":1,"is_reversal_of":null}', '2026-09-18 13:09:26.611', '2026-09-28 13:20:57.736'),
 ('JE-SALE-00000607', '{"id":"JE-SALE-00000607","currency":"ETB","source_id":"00000607","created_by":"System Synced","entry_date":"2026-09-16","description":"Sales Issue 00000607 — SELEMUN MEKONEN","source_type":"Sales Invoice","exchange_rate":1,"is_reversal_of":null}', '2026-09-18 13:38:21.610', '2026-09-28 13:20:57.710'),
 ('JE-SALE-00000608', '{"id":"JE-SALE-00000608","currency":"ETB","source_id":"00000608","created_by":"System Synced","entry_date":"2026-09-17","description":"Sales Issue 00000608 — yeabsera solomon woldesilase","source_type":"Sales Invoice","exchange_rate":1,"is_reversal_of":null}', '2026-09-18 12:14:36.851', '2026-09-28 13:20:57.746'),
@@ -624,7 +625,7 @@ CREATE TABLE `journal_entry_lines` (
   KEY `idx_journal_entry_lines_created_at` (`created_at` DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Dumping data for table `journal_entry_lines` (52 rows)
+-- Dumping data for table `journal_entry_lines` (54 rows)
 INSERT INTO `journal_entry_lines` (`id`, `payload`, `created_at`, `updated_at`) VALUES
 ('JE-COGS-00000606-CR', '{"id":"JE-COGS-00000606-CR","currency":"ETB","account_id":"1400-01","created_at":"2026-09-18 07:09:26.628","is_cleared":false,"updated_at":"2026-09-25T18:11:24.196Z","cleared_date":null,"debit_amount":0,"warehouse_id":"WH3","credit_amount":272385,"journal_entry_id":"JE-COGS-00000606","exchange_rate_at_time":1}', '2026-09-18 13:09:26.628', '2026-09-29 08:50:15.248'),
 ('JE-COGS-00000606-DR', '{"id":"JE-COGS-00000606-DR","currency":"ETB","account_id":"5000-01","created_at":"2026-09-18 07:09:26.624","is_cleared":false,"updated_at":"2026-09-25T18:11:24.194Z","cleared_date":null,"debit_amount":272385,"warehouse_id":"WH3","credit_amount":0,"journal_entry_id":"JE-COGS-00000606","exchange_rate_at_time":1}', '2026-09-18 13:09:26.624', '2026-09-29 08:50:15.260'),
@@ -678,7 +679,9 @@ INSERT INTO `journal_entry_lines` (`id`, `payload`, `created_at`, `updated_at`) 
 ('JE-SALE-00000621-DR', '{"id":"JE-SALE-00000621-DR","currency":"ETB","party_id":"SELEMUN MEKONEN","account_id":"1300-03","created_at":"2026-09-21 08:37:44.688","is_cleared":false,"party_name":"SELEMUN MEKONEN","party_type":"Customer","updated_at":"2026-09-21 08:37:44.688","cleared_date":null,"debit_amount":275400,"warehouse_id":"WH3","credit_amount":0,"journal_entry_id":"JE-SALE-00000621","exchange_rate_at_time":1}', '2026-09-21 14:37:44.688', '2026-09-22 15:22:36.410');
 INSERT INTO `journal_entry_lines` (`id`, `payload`, `created_at`, `updated_at`) VALUES
 ('JE-SALE-00000623-CR', '{"id":"JE-SALE-00000623-CR","currency":"ETB","party_id":"LIDETU AYFERUM","account_id":"4000-01-01","created_at":"2026-09-21 08:37:38.910","is_cleared":false,"party_name":"LIDETU AYFERUM","party_type":"Customer","updated_at":"2026-09-21 08:37:38.910","cleared_date":null,"debit_amount":0,"warehouse_id":"WH3","credit_amount":367800,"journal_entry_id":"JE-SALE-00000623","exchange_rate_at_time":1}', '2026-09-21 14:37:38.910', '2026-09-22 15:22:36.418'),
-('JE-SALE-00000623-DR', '{"id":"JE-SALE-00000623-DR","currency":"ETB","party_id":"LIDETU AYFERUM","account_id":"1000-02-26","created_at":"2026-09-21 08:37:38.906","is_cleared":false,"party_name":"LIDETU AYFERUM","party_type":"Customer","updated_at":"2026-09-21 08:37:38.906","cleared_date":null,"debit_amount":367800,"warehouse_id":"WH3","credit_amount":0,"journal_entry_id":"JE-SALE-00000623","exchange_rate_at_time":1}', '2026-09-21 14:37:38.906', '2026-09-22 15:22:36.421');
+('JE-SALE-00000623-DR', '{"id":"JE-SALE-00000623-DR","currency":"ETB","party_id":"LIDETU AYFERUM","account_id":"1000-02-26","created_at":"2026-09-21 08:37:38.906","is_cleared":false,"party_name":"LIDETU AYFERUM","party_type":"Customer","updated_at":"2026-09-21 08:37:38.906","cleared_date":null,"debit_amount":367800,"warehouse_id":"WH3","credit_amount":0,"journal_entry_id":"JE-SALE-00000623","exchange_rate_at_time":1}', '2026-09-21 14:37:38.906', '2026-09-22 15:22:36.421'),
+('JEL-OPENING-01', '{"id":"JEL-OPENING-01","currency":"ETB","party_id":null,"account_id":"1400-01","created_at":"2026-09-13 00:00:00.000","is_cleared":false,"party_name":"Initial Inventory Receipt","party_type":"System","updated_at":"2026-09-29T08:08:49.638Z","cleared_date":null,"debit_amount":38395021,"warehouse_id":null,"credit_amount":0,"journal_entry_id":"JE-OPENING-BALANCES","exchange_rate_at_time":1}', '2026-09-13 00:00:00.000', '2026-09-29 11:08:49.864'),
+('JEL-OPENING-02', '{"id":"JEL-OPENING-02","currency":"ETB","party_id":null,"account_id":"3000-01","created_at":"2026-09-13 00:00:00.000","is_cleared":false,"party_name":"Initial Capital / Equity","party_type":"System","updated_at":"2026-09-29T08:08:49.640Z","cleared_date":null,"debit_amount":0,"warehouse_id":null,"credit_amount":38395021,"journal_entry_id":"JE-OPENING-BALANCES","exchange_rate_at_time":1}', '2026-09-13 00:00:00.000', '2026-09-29 11:08:49.865');
 
 -- ----------------------------------------------------------------------------
 -- Table structure for table `leave_requests`
