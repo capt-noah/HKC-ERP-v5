@@ -97,8 +97,7 @@ export default function AdminSettings() {
   const finance = useFinanceStore()
   const companySettings = finance.getCompanySettings()
   const accounts = finance.getAccounts()
-  const taxRules = finance.getTaxRules()
-  const warehouses = erp.getWarehouses()
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => erp.getWarehouses())
 
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<"general" | "pension" | "tax" | "warehouses" | "rates">("general")
@@ -229,6 +228,7 @@ export default function AdminSettings() {
             if (name) names.add(name)
           })
           setManagerOptions(Array.from(names).filter(Boolean))
+          setWarehouses(erp.getWarehouses())
         }
       } catch (err) {
         console.warn("Failed to load settings data:", err)
@@ -248,9 +248,16 @@ export default function AdminSettings() {
       }
     })
 
+    const unsubErp = erp.subscribe(() => {
+      if (active) {
+        setWarehouses(erp.getWarehouses())
+      }
+    })
+
     return () => {
       active = false
       unsubFinance()
+      unsubErp()
     }
   }, [])
 

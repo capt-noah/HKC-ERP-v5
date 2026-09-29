@@ -54,10 +54,10 @@ crudRouter.use("/:resource", (req, res, next) => {
     isAllowed = true
   }
 
-  // Allow inventory admin, sales manager, and finance manager to create and update suppliers, customers, purchase orders, and documentation
+  // Allow inventory admin, sales manager, finance manager, and admins to create and update suppliers, customers, purchase orders, warehouses, and documentation
   if (
-    ["suppliers", "customers", "purchase_orders", "hkc_doc_records", "shipment_documents"].includes(req.params.resource) &&
-    userRoles.some((r) => ["inventory_admin", "sales_manager", "hkc_docs_manager", "finance_manager"].includes(r))
+    ["suppliers", "customers", "purchase_orders", "hkc_doc_records", "shipment_documents", "warehouses"].includes(req.params.resource) &&
+    userRoles.some((r) => ["inventory_admin", "sales_manager", "hkc_docs_manager", "finance_manager", "superadmin", "admin", "system_admin", "general_manager"].includes(r))
   ) {
     isAllowed = true
   }
@@ -66,9 +66,10 @@ crudRouter.use("/:resource", (req, res, next) => {
   if (req.method === "GET") {
     const resName = req.params.resource
 
-    // Company settings, Chart of Accounts, tax rules, and GL mappings readable by all logged-in staff
+    // Company settings, warehouses, Chart of Accounts, tax rules, and GL mappings readable by all logged-in staff
     if (
       resName === "company_settings" ||
+      resName === "warehouses" ||
       resName === "tax_rules" ||
       resName === "accounts" ||
       resName === "chart_of_accounts" ||

@@ -437,18 +437,37 @@ export async function drizzleUpdateRow({ resource, id, body }) {
       const [updateResult] = await pool.query(`UPDATE \`${tableName}\` SET ${setClauses} WHERE id = ?`, values)
 
       if (updateResult && updateResult.affectedRows === 0) {
-        // If row was not found for update, insert it to guarantee persistence
-        const insertObj = { id: targetDbId, ...existingRow, ...normalizedBody }
-        const insertFields = Object.keys(insertObj).filter(
-          (k) => k !== "created_at" && k !== "updated_at" && (!validCols || validCols.has(k))
-        )
-        const insertValues = insertFields.map((k) => sanitizeSqlValue(insertObj[k]))
-        const insertPlaceholders = insertFields.map(() => "?").join(", ")
-        const insertColNames = insertFields.map((f) => `\`${f}\``).join(", ")
-        await pool.query(
-          `INSERT INTO \`${tableName}\` (${insertColNames}) VALUES (${insertPlaceholders})`,
-          insertValues
-        )
+        let codeUpdated = false
+        if (validCols && validCols.has("code") && (existingRow?.code || normalizedBody.code)) {
+          const codeVal = existingRow?.code || normalizedBody.code
+          const [codeRes] = await pool.query(
+            `UPDATE \`${tableName}\` SET ${setClauses} WHERE \`code\` = ?`,
+            [...values.slice(0, -1), String(codeVal)]
+          )
+          if (codeRes && codeRes.affectedRows > 0) {
+            codeUpdated = true
+          }
+        }
+
+        if (!codeUpdated) {
+          const insertObj = { id: targetDbId, ...existingRow, ...normalizedBody }
+          const insertFields = Object.keys(insertObj).filter(
+            (k) => k !== "created_at" && k !== "updated_at" && (!validCols || validCols.has(k))
+          )
+          const insertValues = insertFields.map((k) => sanitizeSqlValue(insertObj[k]))
+          const insertPlaceholders = insertFields.map(() => "?").join(", ")
+          const insertColNames = insertFields.map((f) => `\`${f}\``).join(", ")
+          const updateSet = insertFields
+            .filter((k) => k !== "id")
+            .map((f) => `\`${f}\` = VALUES(\`${f}\`)`)
+            .join(", ")
+
+          await pool.query(
+            `INSERT INTO \`${tableName}\` (${insertColNames}) VALUES (${insertPlaceholders})
+             ${updateSet ? `ON DUPLICATE KEY UPDATE ${updateSet}` : ""}`,
+            insertValues
+          )
+        }
       }
 
       if (tableName === "warehouses") {
