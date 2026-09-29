@@ -184,11 +184,9 @@ export default function SalesIssued() {
   const [taxRuleType, setTaxRuleType] = useState<string>("TAX-ZERO")
   const [customTaxRateInput, setCustomTaxRateInput] = useState<string>("0")
   
-  // COA Multi-Account Split state (Section A: Revenue & Settlement; Section B: Dynamic COGS & Inventory)
-  const [siRevDebitLines, setSiRevDebitLines] = useState<SplitLineItem[]>([])
-  const [siRevCreditLines, setSiRevCreditLines] = useState<SplitLineItem[]>([])
-  const [siCogsDebitLines, setSiCogsDebitLines] = useState<SplitLineItem[]>([])
-  const [siCogsCreditLines, setSiCogsCreditLines] = useState<SplitLineItem[]>([])
+  // COA Multi-Account Split state (Unified Debit and Credit lines)
+  const [siDebitLines, setSiDebitLines] = useState<SplitLineItem[]>([])
+  const [siCreditLines, setSiCreditLines] = useState<SplitLineItem[]>([])
 
   const handleTaxTypeChange = (selectedId: string) => {
     setTaxRuleType(selectedId)
@@ -490,13 +488,10 @@ export default function SalesIssued() {
       preselectedSo ? canonicalWarehouseId(preselectedSo.warehouse) : "",
       0,
       0,
-      0,
       preselectedSo?.customer || ""
     )
-    setSiRevDebitLines(initDef.revDr)
-    setSiRevCreditLines(initDef.revCr)
-    setSiCogsDebitLines(initDef.cogsDr)
-    setSiCogsCreditLines(initDef.cogsCr)
+    setSiDebitLines(initDef.debitLines)
+    setSiCreditLines(initDef.creditLines)
 
     setFormOpen(true)
   }
@@ -557,72 +552,58 @@ export default function SalesIssued() {
         }
       }
 
-      if (loadedEntries && (loadedEntries.revenue_lines || loadedEntries.cogs_lines)) {
-        const rev = loadedEntries.revenue_lines || []
-        const cogs = loadedEntries.cogs_lines || []
+      if (loadedEntries && (loadedEntries.revenue_lines || loadedEntries.cogs_lines || loadedEntries.debit_lines)) {
+        const rev = loadedEntries.revenue_lines || loadedEntries.debit_lines || []
+        const credits = loadedEntries.revenue_lines || loadedEntries.credit_lines || []
         const rDr = rev
           .filter((l: any) => Number(l.debit || 0) > 0 || l.id?.startsWith("dr-"))
           .map((l: any) => ({
-            id: l.id || `dr-rev-${Math.random()}`,
+            id: l.id || `dr-sale-${Math.random()}`,
             accountId: l.accountId || l.account_id || l.accountCode || l.code || "",
             accountCode: l.accountCode || l.code || "",
             accountName: l.accountName || l.name || "",
             description: l.description || "",
             amount: Number(l.amount || l.debit || 0),
           }))
-        const rCr = rev
+        const rCr = credits
           .filter((l: any) => Number(l.credit || 0) > 0 || l.id?.startsWith("cr-"))
           .map((l: any) => ({
-            id: l.id || `cr-rev-${Math.random()}`,
+            id: l.id || `cr-sale-${Math.random()}`,
             accountId: l.accountId || l.account_id || l.accountCode || l.code || "",
             accountCode: l.accountCode || l.code || "",
             accountName: l.accountName || l.name || "",
             description: l.description || "",
             amount: Number(l.amount || l.credit || 0),
           }))
-        const cDr = cogs
-          .filter((l: any) => Number(l.debit || 0) > 0 || l.id?.startsWith("dr-"))
-          .map((l: any) => ({
-            id: l.id || `dr-cogs-${Math.random()}`,
-            accountId: l.accountId || l.account_id || l.accountCode || l.code || "",
-            accountCode: l.accountCode || l.code || "",
-            accountName: l.accountName || l.name || "",
-            description: l.description || "",
-            amount: Number(l.amount || l.debit || 0),
-          }))
-        const cCr = cogs
-          .filter((l: any) => Number(l.credit || 0) > 0 || l.id?.startsWith("cr-"))
-          .map((l: any) => ({
-            id: l.id || `cr-cogs-${Math.random()}`,
-            accountId: l.accountId || l.account_id || l.accountCode || l.code || "",
-            accountCode: l.accountCode || l.code || "",
-            accountName: l.accountName || l.name || "",
-            description: l.description || "",
-            amount: Number(l.amount || l.credit || 0),
-          }))
-        setSiRevDebitLines(rDr)
-        setSiRevCreditLines(rCr)
-        setSiCogsDebitLines(cDr)
-        setSiCogsCreditLines(cCr)
+
+        if (rDr.length > 0 || rCr.length > 0) {
+          setSiDebitLines(rDr)
+          setSiCreditLines(rCr)
+        } else {
+          const itemSubtotal = mappedItems.reduce((s: number, itm: any) => s + Number(itm.amount || 0), 0)
+          const itemVat = Math.round(itemSubtotal * (loadedTaxRate / 100))
+          const def = buildDefaultSalesCOALines(
+            (full.payment_type || "Cash") as "Cash" | "Credit",
+            canonicalWh,
+            itemSubtotal,
+            itemVat,
+            full.customer_name || ""
+          )
+          setSiDebitLines(def.debitLines)
+          setSiCreditLines(def.creditLines)
+        }
       } else {
         const itemSubtotal = mappedItems.reduce((s: number, itm: any) => s + Number(itm.amount || 0), 0)
         const itemVat = Math.round(itemSubtotal * (loadedTaxRate / 100))
-        const itemCost = mappedItems.reduce((s: number, itm: any) => {
-          const prod = products.find((p) => p.id === itm.item_id)
-          return s + (Number(itm.quantity || 0) * Number(prod?.unitCost || 0))
-        }, 0)
         const def = buildDefaultSalesCOALines(
           (full.payment_type || "Cash") as "Cash" | "Credit",
           canonicalWh,
           itemSubtotal,
           itemVat,
-          itemCost,
           full.customer_name || ""
         )
-        setSiRevDebitLines(def.revDr)
-        setSiRevCreditLines(def.revCr)
-        setSiCogsDebitLines(def.cogsDr)
-        setSiCogsCreditLines(def.cogsCr)
+        setSiDebitLines(def.debitLines)
+        setSiCreditLines(def.creditLines)
       }
 
       setIsDocsLoading(true)
@@ -887,21 +868,11 @@ export default function SalesIssued() {
   const vatAmount = useMemo(() => Math.round(subtotal * (vatRate / 100)), [subtotal, vatRate])
   const grandTotal = useMemo(() => subtotal + vatAmount, [subtotal, vatAmount])
 
-  const totalCost = useMemo(() => {
-    return items.reduce((sum, itm) => {
-      const prod = products.find((p) => p.id === itm.item_id)
-      const cost = Number(prod?.unitCost || 0)
-      const qty = Number(itm.quantity || 0)
-      return sum + (qty * cost)
-    }, 0)
-  }, [items, products])
-
   const buildDefaultSalesCOALines = (
     pType: "Cash" | "Credit",
     whId: string,
     subTot: number,
     vat: number,
-    cst: number,
     cName: string
   ) => {
     const isCreditSale = pType === "Credit"
@@ -909,12 +880,12 @@ export default function SalesIssued() {
     const gTot = Math.round((subTot + vat) * 100) / 100
     const accounts = financeStore.getAccounts()
 
-    // 1. Rev Debit (Cash/Bank or AR)
+    // 1. Debit Accounts (Settlement / Cash / Bank / AR)
     const drCode = isCreditSale ? (isWh1Sale ? "1300-01" : "1300-03") : "1000-02-26"
     const drAcc = accounts.find((a) => a.code === drCode)
-    const revDr: SplitLineItem[] = [
+    const debitLines: SplitLineItem[] = [
       {
-        id: `dr-rev-${Date.now()}-1`,
+        id: `dr-sale-${Date.now()}-1`,
         accountId: drAcc?.id || drCode,
         accountCode: drAcc?.code || drCode,
         accountName: drAcc?.name || (isCreditSale ? "Trade Accounts Receivable" : "Commercial Bank of Ethiopia (CBE)"),
@@ -923,12 +894,12 @@ export default function SalesIssued() {
       },
     ]
 
-    // 2. Rev Credit (Sales Revenue + VAT)
+    // 2. Credit Accounts (Sales Revenue + VAT)
     const revCode = isWh1Sale ? "4000-02-01" : "4000-01-01"
     const revAcc = accounts.find((a) => a.code === revCode)
-    const revCr: SplitLineItem[] = [
+    const creditLines: SplitLineItem[] = [
       {
-        id: `cr-rev-${Date.now()}-1`,
+        id: `cr-sale-${Date.now()}-1`,
         accountId: revAcc?.id || revCode,
         accountCode: revAcc?.code || revCode,
         accountName: revAcc?.name || (isWh1Sale ? "Revenue - Export Commodities" : "Sales Revenue - Pharmaceuticals"),
@@ -939,8 +910,8 @@ export default function SalesIssued() {
     if (vat > 0) {
       const vatCode = "2200-01"
       const vatAcc = accounts.find((a) => a.code === vatCode)
-      revCr.push({
-        id: `cr-rev-${Date.now()}-2`,
+      creditLines.push({
+        id: `cr-sale-${Date.now()}-2`,
         accountId: vatAcc?.id || vatCode,
         accountCode: vatAcc?.code || vatCode,
         accountName: vatAcc?.name || "Output VAT Payable (15%)",
@@ -949,35 +920,7 @@ export default function SalesIssued() {
       })
     }
 
-    // 3. COGS Debit
-    const cogsCode = isWh1Sale ? "5010-01" : "5000-01"
-    const cogsAcc = accounts.find((a) => a.code === cogsCode)
-    const cogsDr: SplitLineItem[] = [
-      {
-        id: `dr-cogs-${Date.now()}-1`,
-        accountId: cogsAcc?.id || cogsCode,
-        accountCode: cogsAcc?.code || cogsCode,
-        accountName: cogsAcc?.name || (isWh1Sale ? "Cost of Goods Sold - Export Goods" : "Cost of Goods Sold - Local Trade"),
-        description: "Inventory Cost Expense",
-        amount: Math.round(cst * 100) / 100,
-      },
-    ]
-
-    // 4. COGS Credit (Inventory Asset)
-    const invCode = isWh1Sale ? "1410-01" : "1400-01"
-    const invAcc = accounts.find((a) => a.code === invCode)
-    const cogsCr: SplitLineItem[] = [
-      {
-        id: `cr-cogs-${Date.now()}-1`,
-        accountId: invAcc?.id || invCode,
-        accountCode: invAcc?.code || invCode,
-        accountName: invAcc?.name || (isWh1Sale ? "Merchandise Inventory - Green Mung" : "Merchandise Inventory - Veterinary Pharmaceuticals"),
-        description: "Inventory Stock Derecognition",
-        amount: Math.round(cst * 100) / 100,
-      },
-    ]
-
-    return { revDr, revCr, cogsDr, cogsCr }
+    return { debitLines, creditLines, revDr: debitLines, revCr: creditLines }
   }
 
   // Synchronize COA split lines when form is open and user has not created custom multi-splits
@@ -985,13 +928,11 @@ export default function SalesIssued() {
     if (!formOpen) return
     if (editing && (editing.account_entries || (editing as any).accountEntries)) return
 
-    const def = buildDefaultSalesCOALines(paymentType, warehouseId, subtotal, vatAmount, totalCost, customerName)
+    const def = buildDefaultSalesCOALines(paymentType, warehouseId, subtotal, vatAmount, customerName)
     
-    setSiRevDebitLines((prev) => (prev.length <= 1 ? def.revDr : prev))
-    setSiRevCreditLines((prev) => (prev.length <= 2 ? def.revCr : prev))
-    setSiCogsDebitLines((prev) => (prev.length <= 1 ? def.cogsDr : prev))
-    setSiCogsCreditLines((prev) => (prev.length <= 1 ? def.cogsCr : prev))
-  }, [formOpen, subtotal, vatAmount, grandTotal, totalCost, warehouseId, paymentType, customerName])
+    setSiDebitLines((prev) => (prev.length <= 1 ? def.debitLines : prev))
+    setSiCreditLines((prev) => (prev.length <= 2 ? def.creditLines : prev))
+  }, [formOpen, subtotal, vatAmount, grandTotal, warehouseId, paymentType, customerName])
 
   const selectableProducts = useMemo(() => {
     if (!warehouseId) return []
@@ -1068,20 +1009,12 @@ export default function SalesIssued() {
       }
     }
 
-    // Section A: Revenue & Settlement split validation
-    const revDrSum = Math.round(siRevDebitLines.reduce((s, l) => s + (Number(l.amount) || 0), 0) * 100) / 100
-    const revCrSum = Math.round(siRevCreditLines.reduce((s, l) => s + (Number(l.amount) || 0), 0) * 100) / 100
-    const revDiff = Math.round(Math.abs(revDrSum - revCrSum) * 100) / 100
-    if (revDiff >= 0.01 || Math.abs(revDrSum - grandTotal) >= 0.01) {
-      errors.coaSplit = `Revenue & Settlement COA split unbalanced. Total Debits (ETB ${revDrSum.toLocaleString()}) must equal Total Credits (ETB ${revCrSum.toLocaleString()}) and match Grand Total (ETB ${grandTotal.toLocaleString()}). Difference: ETB ${revDiff.toFixed(2)}.`
-    }
-
-    // Section B: COGS & Inventory split validation
-    const cogsDrSum = Math.round(siCogsDebitLines.reduce((s, l) => s + (Number(l.amount) || 0), 0) * 100) / 100
-    const cogsCrSum = Math.round(siCogsCreditLines.reduce((s, l) => s + (Number(l.amount) || 0), 0) * 100) / 100
-    const cogsDiff = Math.round(Math.abs(cogsDrSum - cogsCrSum) * 100) / 100
-    if (cogsDiff >= 0.01) {
-      errors.coaSplit = `COGS & Inventory COA split unbalanced. Total COGS Debits (ETB ${cogsDrSum.toLocaleString()}) must equal Total Inventory Credits (ETB ${cogsCrSum.toLocaleString()}). Difference: ETB ${cogsDiff.toFixed(2)}.`
+    // COA split validation (Total Debits must equal Total Credits and match Grand Total)
+    const drSum = Math.round(siDebitLines.reduce((s, l) => s + (Number(l.amount) || 0), 0) * 100) / 100
+    const crSum = Math.round(siCreditLines.reduce((s, l) => s + (Number(l.amount) || 0), 0) * 100) / 100
+    const coaDiff = Math.round(Math.abs(drSum - crSum) * 100) / 100
+    if (coaDiff >= 0.01 || Math.abs(drSum - grandTotal) >= 0.01) {
+      errors.coaSplit = `Accounting COA split unbalanced. Total Debits (ETB ${drSum.toLocaleString()}) must equal Total Credits (ETB ${crSum.toLocaleString()}) and match Grand Total (ETB ${grandTotal.toLocaleString()}). Difference: ETB ${coaDiff.toFixed(2)}.`
     }
 
     if (Object.keys(errors).length > 0) {
@@ -1092,12 +1025,8 @@ export default function SalesIssued() {
 
     const account_entries = {
       revenue_lines: [
-        ...siRevDebitLines.map((l) => ({ ...l, debit: Number(l.amount), credit: 0 })),
-        ...siRevCreditLines.map((l) => ({ ...l, debit: 0, credit: Number(l.amount) })),
-      ],
-      cogs_lines: [
-        ...siCogsDebitLines.map((l) => ({ ...l, debit: Number(l.amount), credit: 0 })),
-        ...siCogsCreditLines.map((l) => ({ ...l, debit: 0, credit: Number(l.amount) })),
+        ...siDebitLines.map((l) => ({ ...l, debit: Number(l.amount), credit: 0 })),
+        ...siCreditLines.map((l) => ({ ...l, debit: 0, credit: Number(l.amount) })),
       ],
     }
 
@@ -2282,24 +2211,17 @@ export default function SalesIssued() {
                 </div>
               </div>
 
-              {/* Chart of Accounts (COA) Multi-Account Split Section (Revenue & COGS) */}
+              {/* Chart of Accounts (COA) Account Allocation Section */}
               <div className="mt-4">
                 <SalesIssueCOASplitSection
-                  subtotal={subtotal}
-                  vatAmount={vatAmount}
-                  grandTotal={grandTotal}
-                  totalCost={totalCost}
+                  totalAmount={grandTotal}
                   warehouseId={warehouseId}
                   paymentType={paymentType}
                   customerName={customerName}
-                  revDebitLines={siRevDebitLines}
-                  revCreditLines={siRevCreditLines}
-                  cogsDebitLines={siCogsDebitLines}
-                  cogsCreditLines={siCogsCreditLines}
-                  onRevDebitLinesChange={setSiRevDebitLines}
-                  onRevCreditLinesChange={setSiRevCreditLines}
-                  onCogsDebitLinesChange={setSiCogsDebitLines}
-                  onCogsCreditLinesChange={setSiCogsCreditLines}
+                  debitLines={siDebitLines}
+                  creditLines={siCreditLines}
+                  onDebitLinesChange={setSiDebitLines}
+                  onCreditLinesChange={setSiCreditLines}
                 />
               </div>
 
