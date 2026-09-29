@@ -14,7 +14,7 @@ import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { loadResource } from "@/lib/apiPersistence"
 import { resolveWarehouseFullName, withOperatingWarehouses, getRegisteredWarehouses } from "@/lib/warehouses"
 import type { Warehouse } from "@/lib/erpStore"
-import { EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, WAREHOUSE_OPTIONS, employeeDuplicateKey, emptyEmployee, hrApi, initials, loadHRData, makeId, money, type AttendanceRecord, type Employee, type LeaveRequest, type PayrollRecord } from "@/lib/hrApi"
+import { EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, employeeDuplicateKey, emptyEmployee, hrApi, initials, loadHRData, makeId, money, type AttendanceRecord, type Employee, type LeaveRequest, type PayrollRecord } from "@/lib/hrApi"
 import { uploadFile, resolveFileUrl } from "@/lib/fileUpload"
 
 const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }

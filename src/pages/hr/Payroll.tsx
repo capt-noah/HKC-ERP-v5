@@ -29,7 +29,6 @@ import { resolveWarehouseFullName, withOperatingWarehouses, getRegisteredWarehou
 import type { Warehouse } from "@/lib/erpStore"
 import {
   PAYMENT_STATUSES,
-  WAREHOUSE_OPTIONS,
   calculatePayroll,
   hrApi,
   loadHRData,

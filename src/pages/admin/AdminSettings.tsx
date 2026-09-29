@@ -98,6 +98,7 @@ export default function AdminSettings() {
   const companySettings = finance.getCompanySettings()
   const accounts = finance.getAccounts()
   const [warehouses, setWarehouses] = useState<Warehouse[]>(() => erp.getWarehouses())
+  const [taxRules, setTaxRules] = useState<TaxRule[]>(() => finance.getTaxRules())
 
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<"general" | "pension" | "tax" | "warehouses" | "rates">("general")
@@ -229,6 +230,7 @@ export default function AdminSettings() {
           })
           setManagerOptions(Array.from(names).filter(Boolean))
           setWarehouses(erp.getWarehouses())
+          setTaxRules(finance.getTaxRules())
         }
       } catch (err) {
         console.warn("Failed to load settings data:", err)
@@ -245,6 +247,7 @@ export default function AdminSettings() {
       if (active) {
         const fresh = finance.getCompanySettings()
         syncFormFromSettings(fresh)
+        setTaxRules(finance.getTaxRules())
       }
     })
 
@@ -483,6 +486,7 @@ export default function AdminSettings() {
       })
       showToast("Tax Rule Created", "success", `New tax rule '${taxName}' with ${taxRate}% rate has been added.`)
     }
+    setTaxRules(finance.getTaxRules())
     setTaxModalOpen(false)
   }
 
@@ -495,6 +499,7 @@ export default function AdminSettings() {
       isDestructive: true,
       onConfirm: () => {
         finance.deleteTaxRule(id)
+        setTaxRules(finance.getTaxRules())
         showToast("Tax Rule Deleted", "info", `Tax rule '${name}' was removed.`)
       },
     })
