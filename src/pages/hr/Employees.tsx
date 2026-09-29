@@ -81,7 +81,8 @@ export default function Employees() {
     employees.forEach((emp) => {
       if (emp.warehouse_id) addOpt(emp.warehouse_id)
     })
-    WAREHOUSE_OPTIONS.forEach((opt) => addOpt(opt))
+    addOpt("Head Office")
+    addOpt("Not Assigned")
     return opts
   }, [warehouses, employees])
 
@@ -98,7 +99,8 @@ export default function Employees() {
       }
     }
     warehouses.forEach((w) => addOpt(w.name || w.id))
-    WAREHOUSE_OPTIONS.forEach((opt) => addOpt(opt))
+    addOpt("Head Office")
+    addOpt("Not Assigned")
     return opts
   }, [warehouses])
 

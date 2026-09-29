@@ -569,7 +569,8 @@ export default function Payroll() {
     employees.forEach((emp) => {
       if (emp.warehouse_id) addOpt(emp.warehouse_id)
     })
-    WAREHOUSE_OPTIONS.forEach((opt) => addOpt(opt))
+    addOpt("Head Office")
+    addOpt("Not Assigned")
     return options
   }, [warehouses, employees])
 

@@ -89,55 +89,49 @@ export function getRegisteredWarehouses(): Warehouse[] {
   return registeredDynamicWarehouses
 }
 
-export function withOperatingWarehouses(warehouses: Warehouse[] = []): Warehouse[] {
-  // Combine registered dynamic warehouses and incoming warehouses
-  const inputList = [...(registeredDynamicWarehouses || []), ...(warehouses || [])]
+export function getWarehouseCanonicalKey(w?: Warehouse | string | null): string {
+  if (!w) return ""
+  const str = typeof w === "string" ? w : `${w.id || ""} ${w.code || ""} ${w.name || ""}`
+  const clean = str.trim().toUpperCase()
 
-  // Seed with baseline operating warehouses indexed by their primary ID
-  const resultById = new Map<string, Warehouse>()
+  if (/\bWH[-_\s]?0?1\b/i.test(clean) || clean.includes("AGRI-EXP") || clean.includes("MODJO") || clean.includes("ETHIOPIA AGRICULTURAL")) {
+    return "WH1"
+  }
+  if (/\bWH[-_\s]?0?2\b/i.test(clean) || clean.includes("VET-ALEM") || clean.includes("ALEM BANK") || clean.includes("VET-IND") || clean.includes("VET-CENTRAL")) {
+    return "WH2"
+  }
+  if (/\bWH[-_\s]?0?3\b/i.test(clean) || clean.includes("VET-LEBU") || clean.includes("LEBU") || clean.includes("VET-CHN") || clean.includes("VET-REGIONAL")) {
+    return "WH3"
+  }
+  return typeof w === "string" ? (w.trim() || "") : (w.id || w.code || w.name || "")
+}
+
+export function withOperatingWarehouses(warehouses: Warehouse[] = []): Warehouse[] {
+  const resultByKey = new Map<string, Warehouse>()
+
+  // 1. Seed baseline default operating warehouses
   for (const base of OPERATING_WAREHOUSES) {
     if (base?.id) {
-      resultById.set(base.id, { ...base })
+      const key = getWarehouseCanonicalKey(base) || base.id
+      resultByKey.set(key, { ...base })
     }
   }
 
-  // Match helper to find matching warehouse in resultById
-  const findMatchingKey = (w: Warehouse): string | undefined => {
-    if (!w) return undefined
-    const wId = (w.id || "").trim()
-    const wCode = (w.code || "").trim()
-    const wName = (w.name || "").trim()
-
-    // 1. Direct ID match
-    if (wId && resultById.has(wId)) return wId
-
-    // 2. Exact code or alias match
-    for (const [key, existing] of resultById.entries()) {
-      if (wId && (existing.id === wId || existing.code === wId || matchesWarehouse(existing.id, wId) || matchesWarehouse(existing.code, wId))) {
-        return key
-      }
-      if (wCode && (existing.code === wCode || existing.id === wCode || matchesWarehouse(existing.code, wCode) || matchesWarehouse(existing.id, wCode))) {
-        return key
-      }
-      if (wName && existing.name && existing.name.trim().toLowerCase() === wName.toLowerCase()) {
-        return key
-      }
-    }
-    return undefined
-  }
+  // 2. Merge registered dynamic warehouses and incoming warehouses
+  const inputList = [...(registeredDynamicWarehouses || []), ...(warehouses || [])]
 
   for (const incoming of inputList) {
     if (!incoming) continue
-    const matchedKey = findMatchingKey(incoming)
+    const incomingKey = getWarehouseCanonicalKey(incoming) || incoming.id || incoming.code || incoming.name
 
-    if (matchedKey) {
-      const existing = resultById.get(matchedKey)!
+    if (incomingKey && resultByKey.has(incomingKey)) {
+      const existing = resultByKey.get(incomingKey)!
       const updated: Warehouse = {
         ...existing,
         ...incoming,
-        id: incoming.id || existing.id || matchedKey,
-        code: incoming.code || existing.code || incoming.id || matchedKey,
-        name: incoming.name || existing.name || matchedKey,
+        id: incoming.id || existing.id || incomingKey,
+        code: incoming.code || existing.code || incoming.id || incomingKey,
+        name: incoming.name || existing.name || incomingKey,
         location: incoming.location !== undefined ? incoming.location : existing.location,
         type: incoming.type || existing.type,
         manager:
@@ -152,9 +146,9 @@ export function withOperatingWarehouses(warehouses: Warehouse[] = []): Warehouse
           existing.warehouse_type ||
           (incoming.type?.toUpperCase().includes("EXPORT") ? "EXPORT_WH" : "PHARMA_WH"),
       }
-      resultById.set(updated.id, updated)
-    } else {
-      const newId = incoming.id || incoming.code || `WH-${Date.now().toString(36).toUpperCase()}`
+      resultByKey.set(incomingKey, updated)
+    } else if (incomingKey) {
+      const newId = incoming.id || incoming.code || incomingKey
       const newWh: Warehouse = {
         ...incoming,
         id: newId,
@@ -168,11 +162,11 @@ export function withOperatingWarehouses(warehouses: Warehouse[] = []): Warehouse
         status: incoming.status || "Active",
         warehouse_type: incoming.warehouse_type || (incoming.type?.toUpperCase().includes("EXPORT") ? "EXPORT_WH" : "PHARMA_WH"),
       }
-      resultById.set(newId, newWh)
+      resultByKey.set(incomingKey, newWh)
     }
   }
 
-  const result = Array.from(resultById.values())
+  const result = Array.from(resultByKey.values())
   if (result.length > 0) {
     registeredDynamicWarehouses = result
   }
@@ -351,10 +345,18 @@ export function resolveWarehouseFullName(warehouseOrId?: string | null, customLi
   if (!raw || raw === "Not Assigned") return "Not Assigned"
   if (raw === "Head Office" || raw.toLowerCase() === "head office") return "Head Office"
 
+  const pool = customList && customList.length > 0 ? withOperatingWarehouses(customList) : getRegisteredWarehouses()
+  const canonicalKey = getWarehouseCanonicalKey(raw)
+
+  // 1. Match by canonical key in registered dynamic warehouses
+  if (canonicalKey) {
+    const matched = pool.find((w) => getWarehouseCanonicalKey(w) === canonicalKey)
+    if (matched && matched.name) return matched.name
+  }
+
   const lower = raw.toLowerCase()
 
-  // 1. Primary: Search in customList (if provided) or latest registered dynamic warehouses
-  const pool = customList && customList.length > 0 ? withOperatingWarehouses(customList) : getRegisteredWarehouses()
+  // 2. Direct search in customList or latest registered dynamic warehouses
   let found = pool.find(
     (w) =>
       w.id?.toLowerCase() === lower ||
@@ -370,19 +372,6 @@ export function resolveWarehouseFullName(warehouseOrId?: string | null, customLi
 
   if (found && found.name) {
     return found.name
-  }
-
-  // 2. Secondary: Fallback to baseline default operating warehouses
-  const baseline = OPERATING_WAREHOUSES.find(
-    (w) =>
-      w.id?.toLowerCase() === lower ||
-      w.code?.toLowerCase() === lower ||
-      w.name?.toLowerCase() === lower ||
-      matchesWarehouse(w.id, raw) ||
-      matchesWarehouse(w.code, raw)
-  )
-  if (baseline && baseline.name) {
-    return baseline.name
   }
 
   return raw
