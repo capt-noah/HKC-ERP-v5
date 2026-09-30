@@ -21,7 +21,7 @@ import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, getTradeLicenseStatus, type SalesOrder, type Quotation, type SalesOrderItem, type Customer } from "@/lib/erpStore"
 import { useFinanceStore, calculateMultiTax, resolveAutoTaxScheduleId } from "@/lib/financeStore"
 import { useAuthStore } from "@/lib/authStore"
-import { withOperatingWarehouses, isWH1, matchesWarehouse, getUserPermittedWarehouses } from "@/lib/warehouses"
+import { withOperatingWarehouses, isWH1, matchesWarehouse, getUserPermittedWarehouses, resolveWarehouseFullName } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { type TableColumn } from "@/components/ResizableTable"
 import { EditModalHeader } from "@/components/EditModalHeader"
@@ -337,7 +337,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       ? { id: "PRD-001", name: "Sesame Seed", sku: "SES-001", valuationRate: 1500, unit: "Quintal", sellingPrice: 1500, warehouse: "WH1" }
       : { id: "PRD-002", name: "Oxytetracycline 20%", sku: "OXY-002", valuationRate: 850, unit: "Box", sellingPrice: 850, warehouse: "WH2" }
     )
-    const loadedPrice = Number(defaultProduct.sellingPrice) > 0 ? Number(defaultProduct.sellingPrice) : (Number(defaultProduct.unitCost) > 0 ? Number(defaultProduct.unitCost) : (defaultProduct.valuationRate || 1500))
+    const loadedPrice = defaultProduct.sellingPrice || defaultProduct.unitCost || defaultProduct.valuationRate || 1500
     const defaultUnit = isWh1Target ? (defaultProduct.unit === "Ton" ? "Ton" : "Quintal") : (defaultProduct.unit || "Box")
 
     setNewWarehouse(targetWh)
@@ -386,7 +386,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           ? { id: "PRD-001", name: "Sesame Seed", unit: "Quintal", sellingPrice: 1500, valuationRate: 1500 }
           : { id: "PRD-002", name: "Oxytetracycline 20%", unit: "Box", sellingPrice: 850, valuationRate: 850 }
         )
-        const loadedPrice = Number(nextProd.sellingPrice) > 0 ? Number(nextProd.sellingPrice) : (Number(nextProd.unitCost) > 0 ? Number(nextProd.unitCost) : (nextProd.valuationRate || 1500))
+        const loadedPrice = nextProd.sellingPrice || nextProd.unitCost || nextProd.valuationRate || 1500
         const prodUnit = isWh1Row ? (nextProd.unit === "Ton" ? "Ton" : "Quintal") : (nextProd.unit || "Box")
 
         current.productId = nextProd.id
@@ -399,7 +399,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         const availableForWh = getProductsForWarehouse(currentWh)
         const prod = availableForWh.find((p) => p.id === value) || products.find((p) => p.id === value)
         if (prod) {
-          const loadedPrice = Number(prod.sellingPrice) > 0 ? Number(prod.sellingPrice) : (Number(prod.unitCost) > 0 ? Number(prod.unitCost) : (prod.valuationRate || 1500))
+          const loadedPrice = prod.sellingPrice || prod.unitCost || prod.valuationRate || 1500
           const targetWh = current.warehouse || resolveWarehouseCode(prod.warehouse, warehouses)
           const targetIsWh1 = isWH1(targetWh)
           const prodUnit = targetIsWh1 ? (prod.unit === "Ton" ? "Ton" : "Quintal") : (prod.unit || "Box")
@@ -460,7 +460,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           ? { id: "PRD-001", name: "Sesame Seed", unit: "Quintal", valuationRate: 1500, sellingPrice: 1500 }
           : { id: "PRD-002", name: "Oxytetracycline 20%", unit: "Box", valuationRate: 850, sellingPrice: 850 }
         )
-        const loadedPrice = Number(p.sellingPrice) > 0 ? Number(p.sellingPrice) : (Number(p.unitCost) > 0 ? Number(p.unitCost) : (p.valuationRate || 1500))
+        const loadedPrice = p.sellingPrice || p.unitCost || p.valuationRate || 1500
         const defaultUnit = isWh1 ? (p.unit === "Ton" ? "Ton" : "Quintal") : (p.unit || "Box")
         lastItem.warehouse = whCode
         lastItem.productId = p.id
@@ -489,7 +489,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           ? { id: "PRD-001", name: "Sesame Seed", unit: "Quintal", valuationRate: 1500, sellingPrice: 1500 }
           : { id: "PRD-002", name: "Oxytetracycline 20%", unit: "Box", valuationRate: 850, sellingPrice: 850 }
         )
-        const loadedPrice = Number(p.sellingPrice) > 0 ? Number(p.sellingPrice) : (Number(p.unitCost) > 0 ? Number(p.unitCost) : (p.valuationRate || 1500))
+        const loadedPrice = p.sellingPrice || p.unitCost || p.valuationRate || 1500
         const defaultUnit = isWh1 ? (p.unit === "Ton" ? "Ton" : "Quintal") : (p.unit || "Box")
         lastItem.warehouse = whCode
         lastItem.productId = p.id
@@ -511,7 +511,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       ? { id: "PRD-001", name: "Sesame Seed", unit: "Quintal", valuationRate: 1500, sellingPrice: 1500 }
       : { id: "PRD-002", name: "Oxytetracycline 20%", unit: "Box", valuationRate: 850, sellingPrice: 850 }
     )
-    const loadedPrice = Number(p.sellingPrice) > 0 ? Number(p.sellingPrice) : (Number(p.unitCost) > 0 ? Number(p.unitCost) : (p.valuationRate || 1500))
+    const loadedPrice = p.sellingPrice || p.unitCost || p.valuationRate || 1500
     const defaultUnit = targetIsWh1 ? (p.unit === "Ton" ? "Ton" : "Quintal") : (p.unit || "Box")
     const setter = isEditing ? setEditingOrderItems : setOrderItems
 
@@ -551,21 +551,17 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
             ...i,
             warehouse: i.warehouse || so.warehouse || permittedWarehouses[0]?.code || "WH1",
           }))
-        : (() => {
-            const defProd = products[0]
-            const defPrice = Number(defProd?.sellingPrice) > 0 ? Number(defProd.sellingPrice) : (Number(defProd?.unitCost) > 0 ? Number(defProd.unitCost) : (defProd?.valuationRate || 1500))
-            return [
-              {
-                warehouse: so.warehouse || permittedWarehouses[0]?.code || "WH1",
-                productId: defProd?.id || "PRD-001",
-                name: defProd?.name || (isWh1 ? "Sesame Seed" : "Amoxicillin 500mg"),
-                qty: 10,
-                unit: isWh1 ? "Quintal" : (defProd?.unit || "Box"),
-                unitPrice: defPrice,
-                total: defPrice * 10,
-              },
-            ]
-          })()
+        : [
+            {
+              warehouse: so.warehouse || permittedWarehouses[0]?.code || "WH1",
+              productId: products[0]?.id || "PRD-001",
+              name: products[0]?.name || (isWh1 ? "Sesame Seed" : "Amoxicillin 500mg"),
+              qty: 10,
+              unit: isWh1 ? "Quintal" : (products[0]?.unit || "Box"),
+              unitPrice: products[0]?.valuationRate || 1500,
+              total: (products[0]?.valuationRate || 1500) * 10,
+            },
+          ]
     )
 
     // 1. Instant resolution from in-memory cache and customer profile for 0ms delay
@@ -960,15 +956,14 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     }
 
     const defaultItemProduct = products[0] || { id: "PRD-001", name: "Amoxicillin 500mg", sku: "AMX-500", valuationRate: 150 }
-    const defaultQuotePrice = Number(defaultItemProduct.sellingPrice) > 0 ? Number(defaultItemProduct.sellingPrice) : (Number(defaultItemProduct.unitCost) > 0 ? Number(defaultItemProduct.unitCost) : (defaultItemProduct.valuationRate || 150))
     const finalItems: SalesOrderItem[] = quoteItems.length > 0 ? quoteItems : [
       {
         productId: defaultItemProduct.id,
         name: defaultItemProduct.name,
         qty: 100,
         unit: "Pcs",
-        unitPrice: defaultQuotePrice,
-        total: defaultQuotePrice * 100,
+        unitPrice: defaultItemProduct.valuationRate || 150,
+        total: (defaultItemProduct.valuationRate || 150) * 100,
       }
     ]
 
@@ -1130,8 +1125,8 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     {so.warehouseName || "Multi-Warehouse"}
                   </span>
                 ) : (
-                  <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-tight bg-zinc-100 border border-zinc-200/50 px-2 py-0.5 rounded-full inline-block truncate max-w-full">
-                    {so.warehouse}
+                  <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-tight bg-zinc-100 border border-zinc-200/50 px-2 py-0.5 rounded-full inline-block truncate max-w-full" title={resolveWarehouseFullName(so.warehouse, warehouses)}>
+                    {resolveWarehouseFullName(so.warehouse, warehouses) || so.warehouse}
                   </span>
                 )}
               </td>
@@ -1975,22 +1970,6 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                       onChange={(e) => handleOrderItemChange(index, "unitPrice", e.target.value, false)}
                                       className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-right"
                                     />
-                                    {(() => {
-                                      const p = products.find((prod) => prod.id === item.productId)
-                                      const cost = Number(p?.unitCost || 0)
-                                      if (cost > 0 && Number(item.unitPrice) > 0) {
-                                        const pct = Math.round(((Number(item.unitPrice) - cost) / cost) * 100)
-                                        return (
-                                          <div
-                                            className={`mt-0.5 text-[10px] font-black font-mono ${pct >= 0 ? "text-emerald-600" : "text-rose-600"}`}
-                                            title={`Cost Price: ETB ${cost.toLocaleString()}`}
-                                          >
-                                            {pct >= 0 ? `+${pct}%` : `${pct}%`}
-                                          </div>
-                                        )
-                                      }
-                                      return null
-                                    })()}
                                   </td>
                                   <td className="p-2 align-top text-center">
                                     <button
@@ -2514,22 +2493,6 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                               onChange={(e) => handleOrderItemChange(index, "unitPrice", e.target.value, true)}
                               className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-mono font-bold text-right"
                             />
-                            {(() => {
-                              const p = products.find((prod) => prod.id === item.productId)
-                              const cost = Number(p?.unitCost || 0)
-                              if (cost > 0 && Number(item.unitPrice) > 0) {
-                                const pct = Math.round(((Number(item.unitPrice) - cost) / cost) * 100)
-                                return (
-                                  <div
-                                    className={`mt-0.5 text-[10px] font-black font-mono ${pct >= 0 ? "text-emerald-600" : "text-rose-600"}`}
-                                    title={`Cost Price: ETB ${cost.toLocaleString()}`}
-                                  >
-                                    {pct >= 0 ? `+${pct}%` : `${pct}%`}
-                                  </div>
-                                )
-                              }
-                              return null
-                            })()}
                           </td>
                           <td className="p-2 text-center align-top pt-2.5">
                             {editingOrderItems.length > 1 && (

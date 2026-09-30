@@ -4,6 +4,7 @@ import {
   exportWH1ReceivingVoucherExcel,
 } from "@/lib/exportUtils"
 import type { Product } from "@/lib/erpStore"
+import { resolveWarehouseFullName } from "@/lib/warehouses"
 
 interface WH1ReceivingVoucherPrintModalProps {
   isOpen: boolean
@@ -26,7 +27,8 @@ export default function WH1ReceivingVoucherPrintModal({
   const customer = product.customer || wh1Entries.map(e => e.customer).filter(Boolean).join(", ") || "—"
   const plateNumber = product.plateNumber || wh1Entries.map(e => e.plateNumber).filter(Boolean).join(", ") || "—"
   const date = product.entryDate || (wh1Entries.length > 0 ? wh1Entries[0].entryDate : new Date().toISOString().slice(0, 10))
-  const warehouseName = product.warehouseName || product.warehouse || "WH1 - Commodity Store"
+  const warehouseName = resolveWarehouseFullName(product.warehouseName || product.warehouse || "WH1")
+
 
   // 1. Inbound arrival entries (truckloads)
   const arrivalItems = wh1Entries.map((entry) => {

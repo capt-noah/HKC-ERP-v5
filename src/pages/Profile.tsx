@@ -33,6 +33,7 @@ import { useNavigate } from "react-router-dom"
 import { GlassCard } from "@/components/GlassCard"
 import { useAuthStore, type Role } from "@/lib/authStore"
 import { type Warehouse as WarehouseType } from "@/lib/erpStore"
+import { withOperatingWarehouses, getRegisteredWarehouses } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
 import { loadResource, API_BASE } from "@/lib/apiPersistence"
 import { LoadingDots } from "@/components/ui/LoadingDots"
@@ -196,7 +197,7 @@ export default function Profile() {
   const [profileData, setProfileData] = useState<UserAccount | null>(null)
   const [linkedEmployee, setLinkedEmployee] = useState<LinkedEmployee | null>(null)
   const [allEmployees, setAllEmployees] = useState<LinkedEmployee[]>([])
-  const [warehouses, setWarehouses] = useState<WarehouseType[]>([])
+  const [warehouses, setWarehouses] = useState<WarehouseType[]>(() => getRegisteredWarehouses() as any)
 
   // Edit Name State
   const [isEditingName, setIsEditingName] = useState(false)
@@ -434,8 +435,8 @@ export default function Profile() {
         // 3. Fetch warehouses from API for warehouse-operating roles
         try {
           const whData = await loadResource<WarehouseType>("warehouses")
-          if (Array.isArray(whData) && whData.length > 0 && isMounted) {
-            setWarehouses(whData)
+          if (isMounted) {
+            setWarehouses(withOperatingWarehouses(whData || []) as any)
           }
         } catch {}
 

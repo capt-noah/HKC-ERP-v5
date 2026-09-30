@@ -18,8 +18,11 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:export": "node server/db/exportData.js",
-    "db:seed:mysql": "node server/db/seedMysql.js",
     "db:clean": "node server/db/cleanData.js",
+    "test:mysql": "node server/testMysql.js",
+    "test:mysql:full": "node server/verifyMysqlComplete.js",
+    "test:auth": "node server/testAuthRbac.js",
+    "test:settings": "node server/testSettingsSync.js",
     "admin:reset": "node server/scripts/resetPassword.js",
     "reset:password": "node server/scripts/resetPassword.js"
   },

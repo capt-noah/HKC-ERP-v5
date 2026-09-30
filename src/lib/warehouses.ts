@@ -42,77 +42,135 @@ export const OPERATING_WAREHOUSES: Warehouse[] = [
 ]
 
 
-let registeredDynamicWarehouses: Warehouse[] = []
+// Try to initialize registered dynamic warehouses from browser localStorage cache immediately
+let registeredDynamicWarehouses: Warehouse[] = (() => {
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      const cached = localStorage.getItem("hkc_warehouses_cache")
+      if (cached) {
+        const parsed = JSON.parse(cached)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed
+        }
+      }
+    }
+  } catch {}
+  return []
+})()
 
 export function registerDynamicWarehouses(warehouses: Warehouse[] = []) {
   if (Array.isArray(warehouses) && warehouses.length > 0) {
-    registeredDynamicWarehouses = warehouses
+    const merged = withOperatingWarehouses(warehouses)
+    registeredDynamicWarehouses = merged
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        localStorage.setItem("hkc_warehouses_cache", JSON.stringify(merged))
+      }
+    } catch {}
   }
 }
 
 export function getRegisteredWarehouses(): Warehouse[] {
+  if (registeredDynamicWarehouses.length === 0) {
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        const cached = localStorage.getItem("hkc_warehouses_cache")
+        if (cached) {
+          const parsed = JSON.parse(cached)
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            registeredDynamicWarehouses = withOperatingWarehouses(parsed)
+            return registeredDynamicWarehouses
+          }
+        }
+      }
+    } catch {}
+    return withOperatingWarehouses([])
+  }
   return registeredDynamicWarehouses
 }
 
-export function withOperatingWarehouses(warehouses: Warehouse[] = []): Warehouse[] {
-  const byKey = new Map<string, Warehouse>()
+export function getWarehouseCanonicalKey(w?: Warehouse | string | null): string {
+  if (!w) return ""
+  const str = typeof w === "string" ? w : `${w.id || ""} ${w.code || ""} ${w.name || ""}`
+  const clean = str.trim().toUpperCase()
 
-  // Always seed with standard baseline operating warehouses
-  for (const defaultWh of OPERATING_WAREHOUSES) {
-    byKey.set(defaultWh.id, { ...defaultWh })
+  if (/\bWH[-_\s]?0?1\b/i.test(clean) || clean.includes("AGRI-EXP") || clean.includes("MODJO") || clean.includes("ETHIOPIA AGRICULTURAL")) {
+    return "WH1"
   }
+  if (/\bWH[-_\s]?0?2\b/i.test(clean) || clean.includes("VET-ALEM") || clean.includes("ALEM BANK") || clean.includes("VET-IND") || clean.includes("VET-CENTRAL")) {
+    return "WH2"
+  }
+  if (/\bWH[-_\s]?0?3\b/i.test(clean) || clean.includes("VET-LEBU") || clean.includes("LEBU") || clean.includes("VET-CHN") || clean.includes("VET-REGIONAL")) {
+    return "WH3"
+  }
+  return typeof w === "string" ? (w.trim() || "") : (w.id || w.code || w.name || "")
+}
 
-  // Merge any dynamically registered warehouses from erpStore/server
-  const combined = [...registeredDynamicWarehouses, ...(warehouses || [])]
+export function withOperatingWarehouses(warehouses: Warehouse[] = []): Warehouse[] {
+  const resultByKey = new Map<string, Warehouse>()
 
-  for (const warehouse of combined) {
-    if (!warehouse) continue
-    const key = warehouse.id || warehouse.code
-    if (key) {
-      const existing = byKey.get(key) || byKey.get(warehouse.id) || byKey.get(warehouse.code)
-      let resolvedName = warehouse.name || existing?.name || ""
-      if (
-        warehouse.id === "WH2" ||
-        warehouse.code?.includes("WH2") ||
-        (resolvedName.toLowerCase().includes("alem bank") && !resolvedName.toLowerCase().includes("ind")) ||
-        resolvedName.toLowerCase().includes("alemgena")
-      ) {
-        resolvedName = "WH2 - Veterinary Import Hub (alem bank)IND"
-      } else if (
-        warehouse.id === "WH3" ||
-        warehouse.code?.includes("WH3") ||
-        (resolvedName.toLowerCase().includes("lebu") && !resolvedName.toLowerCase().includes("china"))
-      ) {
-        resolvedName = "WH3 - Veterinary Import Hub (LEBU)CHINA"
-      } else if (
-        warehouse.id === "WH1" ||
-        warehouse.code?.includes("WH1") ||
-        resolvedName.toLowerCase().includes("modjo")
-      ) {
-        resolvedName = "WH1 - Ethiopia Agricultural Export Hub"
-      }
-
-      const mergedWh: Warehouse = {
-        ...existing,
-        ...warehouse,
-        name: resolvedName || existing?.name || warehouse.name || key,
-        manager:
-          warehouse.manager !== undefined && warehouse.manager !== null
-            ? warehouse.manager
-            : existing?.manager || "Unassigned",
-        specialization: warehouse.specialization || existing?.specialization,
-        targetMarkets: warehouse.targetMarkets || existing?.targetMarkets,
-        status: warehouse.status || existing?.status || "Active",
-        warehouse_type:
-          warehouse.warehouse_type ||
-          existing?.warehouse_type ||
-          (warehouse.type?.toUpperCase().includes("EXPORT") ? "EXPORT_WH" : "PHARMA_WH"),
-      }
-      byKey.set(warehouse.id || key, mergedWh)
+  // 1. Seed baseline default operating warehouses
+  for (const base of OPERATING_WAREHOUSES) {
+    if (base?.id) {
+      const key = getWarehouseCanonicalKey(base) || base.id
+      resultByKey.set(key, { ...base })
     }
   }
 
-  return Array.from(byKey.values())
+  // 2. Merge registered dynamic warehouses and incoming warehouses
+  const inputList = [...(registeredDynamicWarehouses || []), ...(warehouses || [])]
+
+  for (const incoming of inputList) {
+    if (!incoming) continue
+    const incomingKey = getWarehouseCanonicalKey(incoming) || incoming.id || incoming.code || incoming.name
+
+    if (incomingKey && resultByKey.has(incomingKey)) {
+      const existing = resultByKey.get(incomingKey)!
+      const updated: Warehouse = {
+        ...existing,
+        ...incoming,
+        id: incoming.id || existing.id || incomingKey,
+        code: incoming.code || existing.code || incoming.id || incomingKey,
+        name: incoming.name || existing.name || incomingKey,
+        location: incoming.location !== undefined ? incoming.location : existing.location,
+        type: incoming.type || existing.type,
+        manager:
+          incoming.manager !== undefined && incoming.manager !== null
+            ? incoming.manager
+            : existing.manager || "Unassigned",
+        specialization: incoming.specialization || existing.specialization,
+        targetMarkets: incoming.targetMarkets || existing.targetMarkets,
+        status: incoming.status || existing.status || "Active",
+        warehouse_type:
+          incoming.warehouse_type ||
+          existing.warehouse_type ||
+          (incoming.type?.toUpperCase().includes("EXPORT") ? "EXPORT_WH" : "PHARMA_WH"),
+      }
+      resultByKey.set(incomingKey, updated)
+    } else if (incomingKey) {
+      const newId = incoming.id || incoming.code || incomingKey
+      const newWh: Warehouse = {
+        ...incoming,
+        id: newId,
+        code: incoming.code || newId,
+        name: incoming.name || newId,
+        location: incoming.location || "",
+        type: incoming.type || (incoming.warehouse_type === "EXPORT_WH" ? "Export Hub" : "Pharmaceutical Hub"),
+        manager: incoming.manager || "Unassigned",
+        specialization: incoming.specialization || "",
+        targetMarkets: incoming.targetMarkets || "",
+        status: incoming.status || "Active",
+        warehouse_type: incoming.warehouse_type || (incoming.type?.toUpperCase().includes("EXPORT") ? "EXPORT_WH" : "PHARMA_WH"),
+      }
+      resultByKey.set(incomingKey, newWh)
+    }
+  }
+
+  const result = Array.from(resultByKey.values())
+  if (result.length > 0) {
+    registeredDynamicWarehouses = result
+  }
+  return result
 }
 
 /**
@@ -287,59 +345,37 @@ export function resolveWarehouseFullName(warehouseOrId?: string | null, customLi
   if (!raw || raw === "Not Assigned") return "Not Assigned"
   if (raw === "Head Office" || raw.toLowerCase() === "head office") return "Head Office"
 
+  const pool = customList && customList.length > 0 ? withOperatingWarehouses(customList) : getRegisteredWarehouses()
+  const canonicalKey = getWarehouseCanonicalKey(raw)
+
+  // 1. Match by canonical key in registered dynamic warehouses
+  if (canonicalKey)  {
+    const matched = pool.find((w) => getWarehouseCanonicalKey(w) === canonicalKey)
+    if (matched && matched.name) return matched.name
+  }
+
   const lower = raw.toLowerCase()
 
-  // Match WH1 / Modjo Export Hub
-  if (
-    lower === "wh1" ||
-    lower === "warehouse 1" ||
-    lower.includes("wh1-agri") ||
-    lower.includes("ethiopia agricultural") ||
-    lower.includes("export hub") ||
-    lower.includes("modjo")
-  ) {
-    return "WH1 - Ethiopia Agricultural Export Hub"
-  }
-
-  // Match WH2 / Alem Bank / India
-  if (
-    lower === "wh2" ||
-    lower === "warehouse 2" ||
-    lower.includes("wh2-vet") ||
-    lower.includes("alem bank") ||
-    lower.includes("alemgena") ||
-    lower.includes("india") ||
-    lower.includes("(ind)") ||
-    lower.includes(")ind")
-  ) {
-    return "WH2 - Veterinary Import Hub (alem bank)IND"
-  }
-
-  // Match WH3 / Lebu / China
-  if (
-    lower === "wh3" ||
-    lower === "warehouse 3" ||
-    lower.includes("wh3-vet") ||
-    lower.includes("lebu") ||
-    lower.includes("china") ||
-    lower.includes("(chn)") ||
-    lower.includes(")china")
-  ) {
-    return "WH3 - Veterinary Import Hub (LEBU)CHINA"
-  }
-
-  const all = withOperatingWarehouses(customList)
-  const found = all.find(
+  // 2. Direct search in customList or latest registered dynamic warehouses
+  let found = pool.find(
     (w) =>
       w.id?.toLowerCase() === lower ||
       w.code?.toLowerCase() === lower ||
       w.name?.toLowerCase() === lower
   )
+
+  if (!found) {
+    found = pool.find(
+      (w) => matchesWarehouse(w.id, raw) || matchesWarehouse(w.code, raw)
+    )
+  }
+
   if (found && found.name) {
     return found.name
   }
 
   return raw
 }
+
 
 

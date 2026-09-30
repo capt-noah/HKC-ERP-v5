@@ -632,9 +632,9 @@ export default function FinanceStock() {
                                 </div>
 
                                 {isWh1 ? (
-                                  <WH1ChildMovementLedger product={prod} readOnly={true} />
+                                  <WH1ChildMovementLedger product={prod} />
                                 ) : (
-                                  <StockBinCardLedger product={prod} readOnly={true} />
+                                  <StockBinCardLedger product={prod} />
                                 )}
                               </div>
                             </td>

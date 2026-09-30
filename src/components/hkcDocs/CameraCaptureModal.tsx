@@ -245,7 +245,7 @@ export default function CameraCaptureModal({
     }
   }
 
-  if (!isOpen || typeof document === "undefined") return null
+  if (!isOpen) return null
 
   return createPortal(
     <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md">

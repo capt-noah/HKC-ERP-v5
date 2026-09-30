@@ -9,7 +9,7 @@ import {
   parseJsonField,
 } from "./dbUtils.js"
 import { inventoryService } from "../modules/inventory/inventoryService.js"
-import { getDefaultWarehouseForType } from "../utils/warehouseUtils.js"
+import { getDefaultWarehouseForType, invalidateWarehouseCache } from "../utils/warehouseUtils.js"
 
 export {
   unwrapRow,
@@ -216,6 +216,7 @@ export async function drizzleGetRow({ resource, id }) {
     // 2. Dynamic multi-identifier column fallback
     const validCols = await getTableColumns(tableName)
     const possibleCols = [
+      "code",
       "issue_number",
       "issueNumber",
       "fs_no",
@@ -231,7 +232,7 @@ export async function drizzleGetRow({ resource, id }) {
     ]
     const matchedCols = validCols
       ? possibleCols.filter((c) => validCols.has(c))
-      : ["issue_number", "fs_no", "sales_order_id", "reference_no"]
+      : ["code", "issue_number", "fs_no", "sales_order_id", "reference_no"]
 
     for (const col of matchedCols) {
       try {
@@ -351,6 +352,9 @@ export async function drizzleCreateRow({ resource, body }) {
         `INSERT INTO \`${tableName}\` (${colNames}) VALUES (${placeholders})`,
         values
       )
+      if (tableName === "warehouses") {
+        invalidateWarehouseCache()
+      }
       return { status: 200, body: unwrapRow({ ...normalizedBody, id }, "relational") }
     }
   } catch (err) {
@@ -445,7 +449,46 @@ export async function drizzleUpdateRow({ resource, id, body }) {
       const values = fields.map((k) => sanitizeSqlValue(normalizedBody[k]))
       values.push(String(targetDbId))
 
-      await pool.query(`UPDATE \`${tableName}\` SET ${setClauses} WHERE id = ?`, values)
+      const [updateResult] = await pool.query(`UPDATE \`${tableName}\` SET ${setClauses} WHERE id = ?`, values)
+
+      if (updateResult && updateResult.affectedRows === 0) {
+        let codeUpdated = false
+        if (validCols && validCols.has("code") && (existingRow?.code || normalizedBody.code)) {
+          const codeVal = existingRow?.code || normalizedBody.code
+          const [codeRes] = await pool.query(
+            `UPDATE \`${tableName}\` SET ${setClauses} WHERE \`code\` = ?`,
+            [...values.slice(0, -1), String(codeVal)]
+          )
+          if (codeRes && codeRes.affectedRows > 0) {
+            codeUpdated = true
+          }
+        }
+
+        if (!codeUpdated) {
+          const insertObj = { id: targetDbId, ...existingRow, ...normalizedBody }
+          const insertFields = Object.keys(insertObj).filter(
+            (k) => k !== "created_at" && k !== "updated_at" && (!validCols || validCols.has(k))
+          )
+          const insertValues = insertFields.map((k) => sanitizeSqlValue(insertObj[k]))
+          const insertPlaceholders = insertFields.map(() => "?").join(", ")
+          const insertColNames = insertFields.map((f) => `\`${f}\``).join(", ")
+          const updateSet = insertFields
+            .filter((k) => k !== "id")
+            .map((f) => `\`${f}\` = VALUES(\`${f}\`)`)
+            .join(", ")
+
+          await pool.query(
+            `INSERT INTO \`${tableName}\` (${insertColNames}) VALUES (${insertPlaceholders})
+             ${updateSet ? `ON DUPLICATE KEY UPDATE ${updateSet}` : ""}`,
+            insertValues
+          )
+        }
+      }
+
+      if (tableName === "warehouses") {
+        invalidateWarehouseCache()
+      }
+
       return { status: 200, body: unwrapRow({ id: targetDbId, ...existingRow, ...normalizedBody }, "relational") }
     }
   } catch (err) {
@@ -505,6 +548,9 @@ export async function drizzleDeleteRow({ resource, id }) {
     }
 
     await pool.query(`DELETE FROM \`${tableName}\` WHERE id = ?`, [String(targetDbId)])
+    if (tableName === "warehouses") {
+      invalidateWarehouseCache()
+    }
     return { status: 200, body: { ok: true, deletedId: id } }
   } catch (err) {
     console.error(`[MYSQL DELETE ERROR] ${tableName}:${id}:`, err)

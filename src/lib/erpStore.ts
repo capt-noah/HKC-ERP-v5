@@ -6,7 +6,7 @@ import { evaluateStockStatus } from "../core/inventory/stockEngine"
 import { validateTransferNote } from "../core/inventory/transferEngine"
 import { processSalesOrderPipeline } from "../core/sales/orderPipeline"
 import { sortNewestFirst } from "./utils"
-import { OPERATING_WAREHOUSES, withOperatingWarehouses, isWH1, isExportWarehouse } from "./warehouses"
+import { OPERATING_WAREHOUSES, withOperatingWarehouses, isWH1, isExportWarehouse, registerDynamicWarehouses, matchesWarehouse } from "./warehouses"
 
 export type WarehouseType = "EXPORT_WH" | "PHARMA_WH"
 
@@ -573,6 +573,7 @@ class ErpStore {
       ])
 
       this.warehouses = withOperatingWarehouses(warehouses)
+      registerDynamicWarehouses(this.warehouses)
 
       // 1. Hydrate export products with wh1Entries and binCardEntries from export_warehouse_movements
       const hydratedExport = (exportProducts || []).map((p: any) => {
@@ -1045,6 +1046,7 @@ class ErpStore {
       this.suppliers = sortNewestFirst(suppliers)
       if (warehouses && warehouses.length > 0) {
         this.warehouses = withOperatingWarehouses(warehouses)
+        registerDynamicWarehouses(this.warehouses)
       }
       if (!this._inventoryLoaded || this.products.length === 0) {
         const hydratedExport = (exportProducts || []).map((p: any) => ({
@@ -2166,32 +2168,43 @@ class ErpStore {
       location: warehouse.location || "",
       warehouse_type: warehouse.warehouse_type || "PHARMA_WH",
       type: warehouse.type || (warehouse.warehouse_type === "EXPORT_WH" ? "Export Hub" : "Pharmaceutical Warehouse"),
+      manager: warehouse.manager || "Unassigned",
+      specialization: warehouse.specialization || "",
+      targetMarkets: warehouse.targetMarkets || "",
+      status: warehouse.status || "Active",
     }
     const savedWarehouse = await createResource<Warehouse>("warehouses", newWarehouse)
-    this.warehouses = [savedWarehouse, ...this.warehouses]
+    const normalizedSaved = savedWarehouse || newWarehouse
+    this.warehouses = withOperatingWarehouses([normalizedSaved, ...this.warehouses])
+    registerDynamicWarehouses(this.warehouses)
     this.notify()
-    return savedWarehouse
+    return normalizedSaved
   }
 
   public async updateWarehouse(id: string, partial: Partial<Warehouse>): Promise<Warehouse> {
-    const current = this.warehouses.find((w) => w.id === id)
+    const current = this.warehouses.find((w) => w.id === id || matchesWarehouse(w.id, id) || matchesWarehouse(w.code, id))
     if (!current) throw new Error(`Warehouse with ID ${id} not found.`)
-    const updated: Warehouse = { ...current, ...partial }
-    const savedWarehouse = await updateResource<Warehouse>("warehouses", id, updated)
-    this.warehouses = this.warehouses.map((w) => (w.id === id ? savedWarehouse : w))
+    const updated: Warehouse = { ...current, ...partial, id: current.id }
+    const savedWarehouse = await updateResource<Warehouse>("warehouses", current.id, updated)
+    const normalizedSaved = savedWarehouse || updated
+    this.warehouses = withOperatingWarehouses(
+      this.warehouses.map((w) => (w.id === current.id || matchesWarehouse(w.id, current.id) || matchesWarehouse(w.code, current.id) ? normalizedSaved : w))
+    )
+    registerDynamicWarehouses(this.warehouses)
     this.notify()
-    return savedWarehouse
+    return normalizedSaved
   }
 
   public async deleteWarehouse(id: string): Promise<{ success: boolean; error?: string }> {
     const hasProducts = this.products.some(
-      (p) => p.warehouse === id || p.stockBreakdown?.some((sb) => sb.warehouse === id && sb.qty > 0)
+      (p) => p.warehouse === id || matchesWarehouse(p.warehouse, id) || p.stockBreakdown?.some((sb) => (sb.warehouse === id || matchesWarehouse(sb.warehouse, id)) && sb.qty > 0)
     )
     if (hasProducts) {
       return { success: false, error: "Cannot delete warehouse with active stock in inventory." }
     }
     await deleteResource("warehouses", id)
-    this.warehouses = this.warehouses.filter((w) => w.id !== id)
+    this.warehouses = this.warehouses.filter((w) => w.id !== id && !matchesWarehouse(w.id, id))
+    registerDynamicWarehouses(this.warehouses)
     this.notify()
     return { success: true }
   }

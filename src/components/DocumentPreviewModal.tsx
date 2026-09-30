@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
-import { X, Download, ExternalLink, FileText, Image as ImageIcon } from "lucide-react"
+import { X, Download, ExternalLink, FileText } from "lucide-react"
 import { resolveFileUrl } from "@/lib/fileUpload"
 
 interface DocumentPreviewModalProps {
@@ -39,7 +39,6 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
       window.removeEventListener("keydown", handleKeyDown)
     }
   }, [isOpen, onClose])
-
   useEffect(() => {
     if (!isOpen || !fileUrl) {
       setResolvedUrl("")
@@ -58,9 +57,6 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
       lowerName.endsWith(".jpeg") ||
       lowerName.endsWith(".gif") ||
       lowerName.endsWith(".webp") ||
-      lowerName.endsWith(".bmp") ||
-      lowerName.endsWith(".svg") ||
-      lowerName.endsWith(".heic") ||
       fileUrl.startsWith("data:image/")
 
     setIsPdf(isPdfFile)
@@ -122,92 +118,81 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         className="relative w-full max-w-5xl h-[88vh] bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col z-10"
       >
             {/* Header */}
-            <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-800 bg-zinc-900/95 text-white shrink-0">
-              <div className="flex items-center gap-3 min-w-0 pr-2">
-                <div className={`p-2 rounded-xl shrink-0 ${isPdf ? "bg-rose-500/15 text-rose-400" : isImage ? "bg-emerald-500/15 text-emerald-400" : "bg-blue-500/15 text-blue-400"}`}>
-                  {isPdf ? <FileText className="size-5" /> : isImage ? <ImageIcon className="size-5" /> : <FileText className="size-5" />}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-emerald-500/10 bg-zinc-900/90 text-white shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 shrink-0">
+                  <FileText className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="font-bold text-sm sm:text-base text-zinc-100 truncate" title={fileName}>
-                    {fileName || "Document Preview"}
-                  </h3>
-                  <p className="text-[10px] text-zinc-400 font-mono">
-                    {isPdf ? "Portable Document Format (PDF)" : isImage ? "Image Document" : "Attached File"} • HKC Docs Vault
-                  </p>
+                  <h3 className="font-bold text-sm truncate">{fileName || "Document Preview"}</h3>
+                  <p className="text-[10px] text-zinc-400">ERP Secure Document Vault</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2">
                 {resolvedUrl && (
                   <>
                     <button
-                      type="button"
                       onClick={handleDownload}
-                      className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+                      className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors flex items-center gap-1.5 text-xs font-bold"
                       title="Download Document"
                     >
-                      <Download className="size-4 text-zinc-400" />
+                      <Download className="w-4 h-4" />
                       <span className="hidden sm:inline">Download</span>
                     </button>
                     <a
                       href={resolvedUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
-                      title="Open Full Screen in New Tab"
+                      className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors flex items-center gap-1.5 text-xs font-bold"
+                      title="Open in New Tab"
                     >
-                      <ExternalLink className="size-4 text-zinc-400" />
+                      <ExternalLink className="w-4 h-4" />
                       <span className="hidden sm:inline">Full Screen</span>
                     </a>
                   </>
                 )}
-                <div className="w-px h-6 bg-zinc-800 mx-1" />
+                <div className="w-[1px] h-6 bg-zinc-800 mx-1" />
                 <button
-                  type="button"
                   onClick={onClose}
-                  className="p-2 rounded-xl bg-zinc-800 hover:bg-rose-600/80 text-zinc-300 hover:text-white transition-colors cursor-pointer"
-                  title="Close Preview (Esc)"
-                  aria-label="Close Preview"
+                  className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
                 >
-                  <X className="size-5" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
             </div>
 
             {/* Viewport Content */}
-            <div className="flex-1 bg-zinc-950 p-2 sm:p-4 flex items-center justify-center overflow-auto min-h-0">
+            <div className="flex-1 bg-zinc-950 p-4 flex items-center justify-center overflow-auto min-h-0">
               {resolvedUrl ? (
                 isPdf ? (
                   <iframe
                     src={resolvedUrl}
-                    className="size-full border-0 rounded-2xl bg-white"
+                    className="w-full h-full border-0 rounded-lg bg-white"
                     title="PDF Document Preview"
                   />
                 ) : isImage ? (
-                  <div className="size-full flex items-center justify-center p-2">
-                    <img
-                      src={resolvedUrl}
-                      alt={fileName}
-                      className="max-h-[75vh] w-auto max-w-full object-contain rounded-xl shadow-2xl border border-zinc-800"
-                    />
-                  </div>
+                  <img
+                    src={resolvedUrl}
+                    alt={fileName}
+                    className="max-h-full max-w-full object-contain rounded-lg shadow-lg border border-zinc-800"
+                  />
                 ) : (
                   <div className="text-center p-8 space-y-4">
-                    <FileText className="size-16 text-zinc-600 mx-auto" />
+                    <FileText className="w-16 h-16 text-zinc-600 mx-auto" />
                     <p className="text-sm font-semibold text-zinc-400">
-                      Inline preview is not supported for this file format.
+                      No inline preview available for this document type.
                     </p>
                     <button
-                      type="button"
                       onClick={handleDownload}
-                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-colors inline-flex items-center gap-2 cursor-pointer shadow-md"
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors inline-flex items-center gap-2"
                     >
-                      <Download className="size-4" /> Download & View File
+                      <Download className="w-4 h-4" /> Download & View File
                     </button>
                   </div>
                 )
               ) : (
-                <div className="text-zinc-500 text-xs font-bold animate-pulse">Loading document preview...</div>
+                <div className="text-zinc-500 text-xs font-bold">Loading document viewer...</div>
               )}
             </div>
           </div>
@@ -215,5 +200,3 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
     document.body
   )
 }
-
-export default DocumentPreviewModal

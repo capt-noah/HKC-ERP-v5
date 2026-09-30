@@ -118,7 +118,7 @@ export default function StockBinEntryModal({
     try {
       const isRec = movementType === "received"
       const effectiveUnitPrice = unitPrice ? Number(unitPrice) : (product?.unitCost !== undefined ? Number(product.unitCost) : undefined)
-      const effectiveSellingPrice = sellingPrice ? Number(sellingPrice) : (product?.sellingPrice !== undefined ? Number(product.sellingPrice) : undefined)
+      const effectiveSellingPrice = sellingPrice ? Number(sellingPrice) : (!isRec && product?.sellingPrice !== undefined ? Number(product.sellingPrice) : undefined)
 
       const entryPayload: Omit<BinCardMovementEntry, "id" | "balance"> = {
         type: isRec ? "entry" : "leave",
@@ -130,7 +130,7 @@ export default function StockBinEntryModal({
         expiryDate: expiryDate.trim(),
         party: party.trim() || (isRec ? "Stock Receipt" : "Customer Dispatch"),
         unitPrice: effectiveUnitPrice,
-        sellingPrice: effectiveSellingPrice,
+        sellingPrice: !isRec ? effectiveSellingPrice : undefined,
         remark: remark.trim() || (isRec ? "Stock Inbound" : "Stock Dispatch")
       }
 
@@ -193,36 +193,30 @@ export default function StockBinEntryModal({
             {/* Movement Type Toggle */}
             <div className="space-y-1.5">
               <label className="block text-[10px] font-black uppercase text-zinc-500">Transaction Type</label>
-              {!isEditing ? (
-                <div className="py-2.5 px-4 rounded-xl font-bold border bg-emerald-600 text-white border-emerald-600 shadow-xs flex items-center justify-center gap-2">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMovementType("received")}
+                  className={`py-2.5 px-4 rounded-xl font-bold border transition-all cursor-pointer ${
+                    movementType === "received"
+                      ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                      : "bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100"
+                  }`}
+                >
                   + Received (Stock In)
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setMovementType("received")}
-                    className={`py-2.5 px-4 rounded-xl font-bold border transition-all cursor-pointer ${
-                      movementType === "received"
-                        ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                        : "bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100"
-                    }`}
-                  >
-                    + Received (Stock In)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMovementType("issued")}
-                    className={`py-2.5 px-4 rounded-xl font-bold border transition-all cursor-pointer ${
-                      movementType === "issued"
-                        ? "bg-rose-600 text-white border-rose-600 shadow-xs"
-                        : "bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100"
-                    }`}
-                  >
-                    - Outbound Issue / Dispatch
-                  </button>
-                </div>
-              )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMovementType("issued")}
+                  className={`py-2.5 px-4 rounded-xl font-bold border transition-all cursor-pointer ${
+                    movementType === "issued"
+                      ? "bg-rose-600 text-white border-rose-600 shadow-xs"
+                      : "bg-zinc-50 text-zinc-700 border-zinc-200 hover:bg-zinc-100"
+                  }`}
+                >
+                  - Outbound Issue / Dispatch
+                </button>
+              </div>
             </div>
 
             {/* Date & Batch */}
@@ -252,7 +246,7 @@ export default function StockBinEntryModal({
             </div>
 
             {/* Quantity & Price Fields */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className={`grid ${movementType === "issued" ? "grid-cols-3" : "grid-cols-2"} gap-3`}>
               <div className="space-y-1">
                 <label className="block text-[10px] font-black uppercase text-zinc-500">
                   Quantity ({product.unit}) *
@@ -270,35 +264,36 @@ export default function StockBinEntryModal({
               </div>
 
               <div className="space-y-1">
-                <label className="block text-[10px] font-black uppercase text-zinc-700">
-                  Unit Cost (ETB) {movementType === "received" && "*"}
+                <label className="block text-[10px] font-black uppercase text-zinc-500">
+                  {movementType === "received" ? "Unit Cost (ETB)" : "Acquisition COGS Unit Cost (ETB)"}
                 </label>
                 <input
                   type="number"
                   min="0"
                   step="any"
-                  required={movementType === "received"}
                   placeholder="e.g. 240.00"
                   value={unitPrice}
                   onChange={(e) => setUnitPrice(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-zinc-900 outline-none font-mono font-bold text-zinc-900"
+                  className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-zinc-900 outline-none font-mono"
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="block text-[10px] font-black uppercase text-blue-700">
-                  Selling Price (ETB)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  placeholder="e.g. 350.00"
-                  value={sellingPrice}
-                  onChange={(e) => setSellingPrice(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-blue-50/50 border border-blue-200 rounded-xl focus:bg-white focus:border-blue-900 outline-none font-mono text-blue-950 font-bold"
-                />
-              </div>
+              {movementType === "issued" && (
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-black uppercase text-blue-700">
+                    Commercial Selling Price (ETB)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="e.g. 350.00"
+                    value={sellingPrice}
+                    onChange={(e) => setSellingPrice(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-blue-50/50 border border-blue-200 rounded-xl focus:bg-white focus:border-blue-900 outline-none font-mono text-blue-950 font-bold"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Mfg Date & Expiry Date */}

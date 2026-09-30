@@ -5,9 +5,13 @@ import { GlassCard } from "@/components/GlassCard"
 import { HRPageSkeleton } from "@/components/HRSkeleton"
 import { SubPageNav } from "@/components/SubPageNav"
 import { HRTableToolbar } from "@/components/HRTable"
-import { useFeedback } from "@/context/FeedbackContext"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
-import { WAREHOUSE_OPTIONS, hrApi, initials, loadHRData, makeId, type AttendanceRecord, type Employee } from "@/lib/hrApi"
+import { hrApi, initials, loadHRData, makeId, type AttendanceRecord, type Employee } from "@/lib/hrApi"
+import { resolveWarehouseFullName, withOperatingWarehouses, getRegisteredWarehouses } from "@/lib/warehouses"
+import { loadResource } from "@/lib/apiPersistence"
+import type { Warehouse } from "@/lib/erpStore"
+import { useFeedback } from "@/context/FeedbackContext"
+
 
 const today = new Date().toISOString().slice(0, 10)
 
@@ -21,6 +25,7 @@ export default function Attendance() {
   const { showToast } = useFeedback()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [records, setRecords] = useState<AttendanceRecord[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => getRegisteredWarehouses())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [date, setDate] = useState(today)
@@ -34,9 +39,13 @@ export default function Attendance() {
     setLoading(true)
     setError("")
     try {
-      const data = await loadHRData()
+      const [data, whData] = await Promise.all([
+        loadHRData(),
+        loadResource<Warehouse>("warehouses").catch(() => []),
+      ])
       setEmployees(data.employees)
       setRecords(data.attendance)
+      setWarehouses(withOperatingWarehouses(whData || []))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load attendance.")
     } finally {
@@ -56,24 +65,51 @@ export default function Attendance() {
     return map
   }, [date, records])
 
+  const warehouseFilterOptions = useMemo(() => {
+    const opts: Array<{ value: string; label: string }> = [{ value: "All", label: "All" }]
+    const set = new Set<string>()
+    const addOpt = (rawName?: string | null) => {
+      if (!rawName) return
+      const full = resolveWarehouseFullName(rawName, warehouses)
+      const key = full.toLowerCase().trim()
+      if (key && !set.has(key)) {
+        set.add(key)
+        opts.push({ value: full, label: full })
+      }
+    }
+    warehouses.forEach((w) => addOpt(w.name || w.id))
+    employees.forEach((emp) => {
+      if (emp.warehouse_id) addOpt(emp.warehouse_id)
+    })
+    addOpt("Head Office")
+    addOpt("Not Assigned")
+    return opts
+  }, [warehouses, employees])
+
   const employeeRows = useMemo(() => {
     const query = search.trim().toLowerCase()
     return employees.filter((employee) => {
       const saved = recordsByEmployee.get(employee.id)
       const draft = drafts[employee.id]
       const rowStatus = draft?.status || saved?.status || "Present"
+      const empWh = resolveWarehouseFullName(employee.warehouse_id, warehouses)
       const matchesSearch =
         !query ||
         [employee.full_name, employee.employee_number, employee.phone, employee.email].some((value) =>
           String(value || "").toLowerCase().includes(query)
         )
+      const matchesWh =
+        warehouse === "All" ||
+        empWh.toLowerCase() === warehouse.toLowerCase() ||
+        String(employee.warehouse_id || "").toLowerCase() === warehouse.toLowerCase()
       return (
         matchesSearch &&
-        (warehouse === "All" || employee.warehouse_id === warehouse) &&
+        matchesWh &&
         (statusFilter === "All" || rowStatus === statusFilter)
       )
     })
-  }, [drafts, employees, recordsByEmployee, search, statusFilter, warehouse])
+  }, [drafts, employees, recordsByEmployee, search, statusFilter, warehouse, warehouses])
+
 
   const getDraft = (employee: Employee) => {
     const saved = recordsByEmployee.get(employee.id)
@@ -220,8 +256,9 @@ export default function Attendance() {
                 {
                   value: warehouse,
                   onChange: setWarehouse,
-                  options: ["All", ...WAREHOUSE_OPTIONS].map((item) => ({ value: item, label: item })),
+                  options: warehouseFilterOptions,
                 },
+
                 {
                   value: statusFilter,
                   onChange: setStatusFilter,

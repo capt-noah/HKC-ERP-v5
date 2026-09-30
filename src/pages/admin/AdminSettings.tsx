@@ -85,8 +85,8 @@ export default function AdminSettings() {
   const finance = useFinanceStore()
   const companySettings = finance.getCompanySettings()
   const accounts = finance.getAccounts()
-  const taxRules = finance.getTaxRules()
-  const warehouses = erp.getWarehouses()
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => erp.getWarehouses())
+  const [taxRules, setTaxRules] = useState<TaxRule[]>(() => finance.getTaxRules())
 
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<"general" | "pension" | "tax" | "warehouses" | "rates">("general")
@@ -192,7 +192,7 @@ export default function AdminSettings() {
       setLoading(true)
       try {
         const [, , usersData, employeesData] = await Promise.all([
-          erp.loadFromApi(),
+          erp.loadFromApi("all"),
           finance.loadFromApi(),
           loadResource<any>("users").catch(() => []),
           loadResource<any>("employees").catch(() => []),
@@ -217,6 +217,8 @@ export default function AdminSettings() {
             if (name) names.add(name)
           })
           setManagerOptions(Array.from(names).filter(Boolean))
+          setWarehouses(erp.getWarehouses())
+          setTaxRules(finance.getTaxRules())
         }
       } catch (err) {
         console.warn("Failed to load settings data:", err)
@@ -233,12 +235,20 @@ export default function AdminSettings() {
       if (active) {
         const fresh = finance.getCompanySettings()
         syncFormFromSettings(fresh)
+        setTaxRules(finance.getTaxRules())
+      }
+    })
+
+    const unsubErp = erp.subscribe(() => {
+      if (active) {
+        setWarehouses(erp.getWarehouses())
       }
     })
 
     return () => {
       active = false
       unsubFinance()
+      unsubErp()
     }
   }, [])
 
@@ -464,6 +474,7 @@ export default function AdminSettings() {
       })
       showToast("Tax Rule Created", "success", `New tax rule '${taxName}' with ${taxRate}% rate has been added.`)
     }
+    setTaxRules(finance.getTaxRules())
     setTaxModalOpen(false)
   }
 
@@ -476,6 +487,7 @@ export default function AdminSettings() {
       isDestructive: true,
       onConfirm: () => {
         finance.deleteTaxRule(id)
+        setTaxRules(finance.getTaxRules())
         showToast("Tax Rule Deleted", "info", `Tax rule '${name}' was removed.`)
       },
     })
@@ -522,7 +534,7 @@ export default function AdminSettings() {
       setIsSavingWh(true)
       const payload: Omit<Warehouse, "id"> & { id?: string } = {
         name: whName.trim(),
-        code: whCode.trim() || (editingWarehouse ? editingWarehouse.id : `WH-${Date.now().toString(36).toUpperCase()}`),
+        code: whCode.trim() || (editingWarehouse ? (editingWarehouse.code || editingWarehouse.id) : `WH-${Date.now().toString(36).toUpperCase()}`),
         location: whLocation.trim(),
         warehouse_type: whType,
         type: whType === "EXPORT_WH" ? "Export Hub" : "Pharmaceutical Hub",

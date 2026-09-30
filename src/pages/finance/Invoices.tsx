@@ -46,13 +46,6 @@ function money(value: number) {
 export default function Invoices() {
   const { showToast } = useFeedback()
   const store = useFinanceStore()
-
-  useEffect(() => {
-    void store.loadFromApi()
-    void erpStore.loadInventoryData()
-    void erpStore.loadSalesData()
-  }, [])
-
   const invoices = store.getInvoices()
   const isLoading = store.isLoading()
   const bankAccounts = store.getAccounts().filter((a) => !a.is_group && (a.code.startsWith("1000") || a.account_type === "Asset"))

@@ -25,6 +25,25 @@ export async function migrateWarehousesSchema() {
       await pool.query("ALTER TABLE `warehouses` ADD COLUMN `status` VARCHAR(50) NULL DEFAULT 'Active' AFTER `target_markets`")
       console.log("[DB Migration] Added `status` column to `warehouses` table.")
     }
+
+    // Ensure baseline initial warehouse rows exist ONLY IF table is empty
+    const [existingRows] = await pool.query("SELECT COUNT(*) as count FROM `warehouses`")
+    if (existingRows && existingRows[0]?.count === 0) {
+      const defaultRows = [
+        ["WH1", "WH1 - Ethiopia Agricultural Export Hub", "WH1-AGRI-EXP", "Modjo Export Terminal, Ethiopia", "EXPORT_WH", "Export Hub", "Abebe Kasahun", "Agricultural Commodities", "Europe, Asia, USA", "Active"],
+        ["WH2", "WH2 - Veterinary Import Hub (alem bank)IND", "WH2-VET-ALEM", "Alem Bank Hub, Addis Ababa, Ethiopia", "PHARMA_WH", "Import & Distribution Hub", "Dr. Alemayehu Worku", "Veterinary Drugs & Biologicals", "Domestic & Regional Dist.", "Active"],
+        ["WH3", "WH3 - Veterinary Import Hub (LEBU)CHINA", "WH3-VET-LEBU", "Lebu Commercial Center, Addis Ababa, Ethiopia", "PHARMA_WH", "Import & Distribution Hub", "Tigist Haile", "Veterinary Supplies & Consumables", "Oromia & Southern Regions", "Active"],
+      ]
+      for (const row of defaultRows) {
+        await pool.query(
+          "INSERT IGNORE INTO `warehouses` (id, name, code, location, warehouse_type, type, manager, specialization, target_markets, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))",
+          row
+        )
+      }
+      console.log("[DB Migration] Seeded initial operating warehouses into `warehouses` table.")
+    }
+
+    console.log("[DB Migration] `warehouses` table columns verified successfully.")
   } catch (err) {
     console.warn("[DB Migration] Warehouses schema check notice:", err.message)
   }

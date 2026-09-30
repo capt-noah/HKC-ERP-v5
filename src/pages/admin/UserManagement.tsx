@@ -11,7 +11,7 @@ import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { Skeleton } from "@/components/ui/skeleton"
 import { loadResource, updateResource, deleteResource, API_BASE } from "@/lib/apiPersistence"
 import type { Role } from "@/lib/authStore"
-import { withOperatingWarehouses, isWarehouseInScope } from "@/lib/warehouses"
+import { withOperatingWarehouses, isWarehouseInScope, getRegisteredWarehouses } from "@/lib/warehouses"
 
 export function normalizeRole(r: string): Role {
   const clean = String(r || "").toLowerCase().trim()
@@ -184,7 +184,7 @@ function UserTableSkeleton() {
 export default function UserManagement() {
   const [users, setUsers] = useState<UserAccount[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => getRegisteredWarehouses())
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
 

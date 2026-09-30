@@ -47,13 +47,6 @@ import FiscalPeriodsTab from "@/components/finance/FiscalPeriodsTab"
 export default function Ledger() {
   const { showToast } = useFeedback()
   const store = useFinanceStore()
-
-  useEffect(() => {
-    void store.loadFromApi()
-    void erpStore.loadInventoryData()
-    void erpStore.loadSalesData()
-  }, [])
-
   const isLoading = store.isLoading()
 
   const [activeTab, setActiveTab] = useState<"Entries" | "Periods" | "Chart" | "Mappings">("Entries")
@@ -459,13 +452,11 @@ export default function Ledger() {
   // COA Tree Helpers
   const isRootCategoryDummy = (a: any) => {
     return (
-      Boolean(a.id?.startsWith("ACC-")) && (
-        (a.code === "1000" && a.name.toLowerCase() === "assets") ||
-        (a.code === "2000" && a.name.toLowerCase() === "liabilities") ||
-        (a.code === "3000" && a.name.toLowerCase() === "equity") ||
-        (a.code === "4000" && (a.name.toLowerCase().includes("income") || a.name.toLowerCase().includes("revenue"))) ||
-        (a.code === "5000" && a.name.toLowerCase() === "expenses" && a.is_group === true)
-      )
+      (a.code === "1000" && a.name.toLowerCase() === "assets") ||
+      (a.code === "2000" && a.name.toLowerCase() === "liabilities") ||
+      (a.code === "3000" && a.name.toLowerCase() === "equity") ||
+      (a.code === "4000" && (a.name.toLowerCase().includes("income") || a.name.toLowerCase().includes("revenue"))) ||
+      (a.code === "5000" && a.name.toLowerCase() === "expenses" && a.is_group === true)
     )
   }
 

@@ -1,5 +1,4 @@
-import { API_BASE } from "./apiPersistence"
-import { useAuthStore } from "./authStore"
+import { API_BASE, getAuthHeaders } from "./apiPersistence"
 
 export type UploadFolder =
   | "customers"
@@ -24,29 +23,76 @@ export interface UploadResult {
 }
 
 /**
+ * Compresses an image file in-browser for high quality and compact storage.
+ */
+export async function compressImageIfPossible(
+  file: File,
+  maxWidth = 1920,
+  maxHeight = 1080,
+  quality = 0.85
+): Promise<string> {
+  if (typeof window === "undefined" || !file.type.startsWith("image/")) {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+  }
+
+  return new Promise<string>((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        let { width, height } = img
+        if (width > maxWidth || height > maxHeight) {
+          if (width / maxWidth > height / maxHeight) {
+            height = Math.round((height * maxWidth) / width)
+            width = maxWidth
+          } else {
+            width = Math.round((width * maxHeight) / height)
+            height = maxHeight
+          }
+        }
+        const canvas = document.createElement("canvas")
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext("2d")
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height)
+          resolve(canvas.toDataURL("image/jpeg", quality))
+        } else {
+          resolve(e.target?.result as string)
+        }
+      }
+      img.onerror = () => resolve(e.target?.result as string)
+      img.src = e.target?.result as string
+    }
+    reader.onerror = () => resolve("")
+    reader.readAsDataURL(file)
+  })
+}
+
+/**
  * Uploads a local file to the server storage organized under the specified folder category.
- * If the server is unreachable or responds with an error, it gracefully falls back to DataURL encoding.
+ * If the server is unreachable or responds with an error, it gracefully falls back to optimized DataURL encoding.
  */
 export async function uploadFile(
   file: File,
   folder: UploadFolder = "general"
 ): Promise<UploadResult> {
-  const token = useAuthStore.getState().token
+  const authHeaders = getAuthHeaders()
 
   const formData = new FormData()
   formData.append("folder", folder)
   formData.append("file", file)
 
   try {
-    const headers: Record<string, string> = {}
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`
-    }
-
     const uploadUrl = `${API_BASE}/api/upload?folder=${encodeURIComponent(folder)}`
     const res = await fetch(uploadUrl, {
       method: "POST",
-      headers,
+      headers: authHeaders,
       body: formData,
     })
 
@@ -66,21 +112,16 @@ export async function uploadFile(
     }
   } catch (error) {
     console.warn(`[FILE UPLOAD]: Server upload failed for ${file.name}, falling back to local encoding:`, error)
-    
-    // Resilient fallback to DataURL if server upload endpoint fails
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
+
+    // Resilient fallback to compressed DataURL if server upload endpoint fails
+    const dataUrl = await compressImageIfPossible(file)
 
     return {
       url: dataUrl,
       filename: file.name,
       originalName: file.name,
       size: file.size,
-      mimeType: file.type,
+      mimeType: file.type || "image/jpeg",
       folder,
     }
   }
@@ -88,15 +129,20 @@ export async function uploadFile(
 
 /**
  * Resolves a stored file URL into a fully accessible asset URL.
- * Handles both relative '/uploads/...' paths and full external URLs.
+ * Handles both relative '/uploads/...' paths, data URLs, and full external URLs.
  */
 export function resolveFileUrl(url?: string | null): string {
-  if (!url) return ""
-  if (url.startsWith("data:") || url.startsWith("blob:") || url.startsWith("http://") || url.startsWith("https://")) {
-    return url
+  if (!url || typeof url !== "string") return ""
+  const cleanUrl = url.trim()
+  if (!cleanUrl) return ""
+  if (cleanUrl.startsWith("data:") || cleanUrl.startsWith("blob:") || cleanUrl.startsWith("http://") || cleanUrl.startsWith("https://")) {
+    return cleanUrl
   }
-  if (url.startsWith("/uploads/")) {
-    return `${API_BASE}${url}`
+  if (cleanUrl.startsWith("/uploads/")) {
+    return `${API_BASE}${cleanUrl}`
   }
-  return url
+  if (cleanUrl.startsWith("uploads/")) {
+    return `${API_BASE}/${cleanUrl}`
+  }
+  return `${API_BASE}/${cleanUrl.replace(/^\//, "")}`
 }

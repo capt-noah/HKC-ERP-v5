@@ -24,20 +24,7 @@ export default function PurchaseOrderPrintModal({
   const amountWords = po.amountInWords || numberToBirrWords(Number(po.amount || 0))
   const entries = Array.isArray(po.accountEntries) && po.accountEntries.length > 0
     ? po.accountEntries
-    : [
-        {
-          accountCode: po.targetAccountCode || "1410",
-          description: po.targetAccountName || po.reasonForPayment || "Purchase / Inventory",
-          debit: Number(po.amount || 0),
-          credit: 0
-        },
-        {
-          accountCode: po.creditAccountCode || "1000",
-          description: po.creditAccountName || po.bankName || "Payment / Cash / Bank",
-          debit: 0,
-          credit: Number(po.amount || 0)
-        }
-      ]
+    : [{ accountCode: po.targetAccountCode || "1410", description: po.reasonForPayment || "Payment", debit: po.amount, credit: 0 }]
 
   const totalDebit = entries.reduce((s, r) => s + (Number(r.debit) || 0), 0)
   const totalCredit = entries.reduce((s, r) => s + (Number(r.credit) || 0), 0)
@@ -55,9 +42,6 @@ export default function PurchaseOrderPrintModal({
     status: po.status || "PAID",
     accountEntries: entries,
     targetAccountCode: po.targetAccountCode || "1410",
-    targetAccountName: po.targetAccountName,
-    creditAccountCode: po.creditAccountCode || "1000",
-    creditAccountName: po.creditAccountName,
     company: {
       name: "HABTOM KEBEDE CHIMSA IMPORT & EXPORT",
     },

@@ -31,7 +31,6 @@ export const navSections: NavSection[] = [
       { label: "Overview", path: "/finance" },
       { label: "Ledger", path: "/finance/ledger" },
       { label: "Invoices", path: "/finance/invoices" },
-      { label: "Stock", path: "/finance/stock" },
       { label: "Expenses", path: "/finance/expenses" },
       { label: "Banking", path: "/finance/banking" },
       { label: "Taxes", path: "/finance/taxes" },
