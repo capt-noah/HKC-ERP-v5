@@ -1392,7 +1392,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
               <form onSubmit={handleCreateOrder} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
-                  <div className={`${isWH1(newWarehouse) ? "md:col-span-4" : "md:col-span-3"} relative`} ref={customerComboboxRef}>
+                  <div className={`${isWH1(newWarehouse, warehouses) ? "md:col-span-4" : "md:col-span-3"} relative`} ref={customerComboboxRef}>
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Customer / Union Name *</label>
                     <div className="relative flex items-center">
                       <input
@@ -1520,7 +1520,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     )}
                   </div>
                   {(() => {
-                    const isWh1Order = isWH1(newWarehouse)
+                    const isWh1Order = isWH1(newWarehouse, warehouses)
                     return (
                       <>
                         {!isWh1Order && (
@@ -1554,20 +1554,22 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                           </div>
                         )}
 
-                        <div className={isWh1Order ? "md:col-span-3" : "md:col-span-2"}>
-                          <label className="block text-xs font-bold text-zinc-700 mb-1">
-                            Customer TIN <span className="text-[10px] text-zinc-400 font-normal">(optional)</span>
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="e.g. 0012345678"
-                            value={custTin}
-                            onChange={(e) => setCustTin(e.target.value)}
-                            className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold font-mono outline-none"
-                          />
-                        </div>
+                        {!isWh1Order && (
+                          <div className="md:col-span-2">
+                            <label className="block text-xs font-bold text-zinc-700 mb-1">
+                              Customer TIN <span className="text-[10px] text-zinc-400 font-normal">(optional)</span>
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. 0012345678"
+                              value={custTin}
+                              onChange={(e) => setCustTin(e.target.value)}
+                              className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold font-mono outline-none"
+                            />
+                          </div>
+                        )}
 
-                        <div className={isWh1Order ? "md:col-span-2" : "md:col-span-2"}>
+                        <div className={isWh1Order ? "md:col-span-4" : "md:col-span-2"}>
                           <label className="block text-xs font-bold text-zinc-700 mb-1">Payment Method *</label>
                           <select
                             value={newPaymentType}
@@ -1579,7 +1581,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                           </select>
                         </div>
 
-                        <div className={isWh1Order ? "md:col-span-3" : "md:col-span-2"}>
+                        <div className={isWh1Order ? "md:col-span-4" : "md:col-span-2"}>
                           <label className="block text-xs font-bold text-zinc-700 mb-1">
                             Fulfillment Warehouse *
                           </label>
