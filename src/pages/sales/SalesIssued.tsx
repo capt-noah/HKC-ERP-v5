@@ -20,6 +20,7 @@ import { BodyScrollLock } from "@/components/ui/BodyScrollLock"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import SalesIssuePrintModal from "@/components/sales/SalesIssuePrintModal"
 import { SalesIssueCOASplitSection, type SplitLineItem } from "@/components/sales/SalesIssueCOASplitSection"
+import { COMPANY_CHART_OF_ACCOUNTS } from "@/lib/companyCOA"
 
 import {
   saveTradeLicense,
@@ -394,6 +395,122 @@ export default function SalesIssued() {
     }
   }
 
+  // Load finance store, sales data, and inventory data on mount
+  useEffect(() => {
+    void financeStore.loadFromApi()
+    void erp.loadSalesData()
+    void erp.loadInventoryData()
+  }, [])
+
+  const resolveAcc = (idOrCode?: string) => {
+    if (!idOrCode) return null
+    const clean = String(idOrCode).trim()
+    const unPrefixed = clean.replace(/^ACC-/, "")
+    const accounts = financeStore.getAccounts()
+    return (
+      accounts.find(
+        (a) =>
+          a.code === clean ||
+          a.id === clean ||
+          a.code === unPrefixed ||
+          a.id === `ACC-${clean}` ||
+          a.id === unPrefixed
+      ) ||
+      COMPANY_CHART_OF_ACCOUNTS.find(
+        (a) =>
+          a.code === clean ||
+          a.id === clean ||
+          a.code === unPrefixed ||
+          a.id === `ACC-${clean}` ||
+          a.id === unPrefixed
+      ) ||
+      null
+    )
+  }
+
+  const buildDefaultSalesCOALines = (
+    pType: "Cash" | "Credit",
+    whId: string,
+    subTot: number,
+    vat: number,
+    cName: string,
+    costTot: number = 0
+  ) => {
+    const isCreditSale = pType === "Credit"
+    const isWh1Sale = isWH1(whId)
+    const gTot = Math.round((subTot + vat) * 100) / 100
+
+    // 1. Section A: Debit Accounts (Settlement / Cash / Bank / AR)
+    const drCode = isCreditSale ? (isWh1Sale ? "1300-01" : "1300-03") : "1000-02-26"
+    const drAcc = resolveAcc(drCode)
+    const debitLines: SplitLineItem[] = [
+      {
+        id: `dr-sale-${Date.now()}-1`,
+        accountId: drAcc?.id || drCode,
+        accountCode: drAcc?.code || drCode,
+        accountName: drAcc?.name || (isCreditSale ? (isWh1Sale ? "EXPORT SALES RECIVEABLE" : "VET MEDICEN SALES RECIVABLE") : "Commercial Bank of Ethiopia (CBE)"),
+        description: isCreditSale ? `Receivable - ${cName || "Customer"}` : "Customer Direct Deposit",
+        amount: gTot,
+      },
+    ]
+
+    // 2. Section A: Credit Accounts (Sales Revenue + VAT)
+    const revCode = isWh1Sale ? "4000-02-01" : "4000-01-01"
+    const revAcc = resolveAcc(revCode)
+    const creditLines: SplitLineItem[] = [
+      {
+        id: `cr-sale-${Date.now()}-1`,
+        accountId: revAcc?.id || revCode,
+        accountCode: revAcc?.code || revCode,
+        accountName: revAcc?.name || (isWh1Sale ? "Revenue - Export Commodities" : "SALES OF VETERINARY DRUG"),
+        description: "Sales Revenue Recognition",
+        amount: Math.round(subTot * 100) / 100,
+      },
+    ]
+    if (vat > 0) {
+      const vatCode = "2200-01"
+      const vatAcc = resolveAcc(vatCode)
+      creditLines.push({
+        id: `cr-sale-${Date.now()}-2`,
+        accountId: vatAcc?.id || vatCode,
+        accountCode: vatAcc?.code || vatCode,
+        accountName: vatAcc?.name || "Output VAT Payable (15%)",
+        description: "Standard Output VAT",
+        amount: Math.round(vat * 100) / 100,
+      })
+    }
+
+    // 3. Section B: COGS & Inventory Stock Lines
+    const cogsVal = Math.round(Number(costTot > 0 ? costTot : subTot) * 100) / 100
+    const cogsDrCode = isWh1Sale ? "5000-02" : "5000-01"
+    const cogsDrAcc = resolveAcc(cogsDrCode)
+    const cogsDebitLines: SplitLineItem[] = [
+      {
+        id: `dr-cogs-${Date.now()}-1`,
+        accountId: cogsDrAcc?.id || cogsDrCode,
+        accountCode: cogsDrAcc?.code || cogsDrCode,
+        accountName: cogsDrAcc?.name || (isWh1Sale ? "Cost of Goods Export" : "COST OF VETERINARY DRUG"),
+        description: "Cost of Goods Sold - Stock Issued",
+        amount: cogsVal,
+      },
+    ]
+
+    const cogsCrCode = isWh1Sale ? "1410-01" : "1400-01"
+    const cogsCrAcc = resolveAcc(cogsCrCode)
+    const cogsCreditLines: SplitLineItem[] = [
+      {
+        id: `cr-cogs-${Date.now()}-1`,
+        accountId: cogsCrAcc?.id || cogsCrCode,
+        accountCode: cogsCrAcc?.code || cogsCrCode,
+        accountName: cogsCrAcc?.name || (isWh1Sale ? "STOCK OF GREEN MUNG" : "STOCK OF VETERINARY DRUG"),
+        description: "Inventory Asset Relieved - Stock Issued",
+        amount: cogsVal,
+      },
+    ]
+
+    return { debitLines, creditLines, cogsDebitLines, cogsCreditLines, revDr: debitLines, revCr: creditLines }
+  }
+
   useEffect(() => {
     void load()
   }, [page, pageSize, batchFilter, search])
@@ -569,49 +686,63 @@ export default function SalesIssued() {
       )
 
       if (loadedEntries && (loadedEntries.revenue_lines || loadedEntries.cogs_lines || loadedEntries.debit_lines)) {
-        const rev = loadedEntries.revenue_lines || loadedEntries.debit_lines || []
-        const credits = loadedEntries.revenue_lines || loadedEntries.credit_lines || []
-        const rDr = rev
-          .filter((l: any) => Number(l.debit || 0) > 0 || l.id?.startsWith("dr-"))
-          .map((l: any) => ({
-            id: l.id || `dr-sale-${Math.random()}`,
-            accountId: l.accountId || l.account_id || l.accountCode || l.code || "",
-            accountCode: l.accountCode || l.code || "",
-            accountName: l.accountName || l.name || "",
-            description: l.description || "",
-            amount: Number(l.amount || l.debit || 0),
-          }))
-        const rCr = credits
-          .filter((l: any) => Number(l.credit || 0) > 0 || l.id?.startsWith("cr-"))
-          .map((l: any) => ({
-            id: l.id || `cr-sale-${Math.random()}`,
-            accountId: l.accountId || l.account_id || l.accountCode || l.code || "",
-            accountCode: l.accountCode || l.code || "",
-            accountName: l.accountName || l.name || "",
-            description: l.description || "",
-            amount: Number(l.amount || l.credit || 0),
-          }))
+        const revDrRaw = (loadedEntries.debit_lines && loadedEntries.debit_lines.length > 0)
+          ? loadedEntries.debit_lines
+          : (loadedEntries.revenue_lines || []).filter((l: any) => Number(l.debit || 0) > 0 || l.id?.startsWith("dr-"))
+        const revCrRaw = (loadedEntries.credit_lines && loadedEntries.credit_lines.length > 0)
+          ? loadedEntries.credit_lines
+          : (loadedEntries.revenue_lines || []).filter((l: any) => Number(l.credit || 0) > 0 || l.id?.startsWith("cr-"))
 
-        const cogsDebits = (loadedEntries.cogs_lines || [])
-          .filter((l: any) => Number(l.debit || 0) > 0 || l.id?.startsWith("dr-"))
-          .map((l: any) => ({
-            id: l.id || `dr-cogs-${Math.random()}`,
-            accountId: l.accountId || l.account_id || l.accountCode || l.code || "",
-            accountCode: l.accountCode || l.code || "",
-            accountName: l.accountName || l.name || "",
+        const rDr = revDrRaw.map((l: any, idx: number) => {
+          const acc = resolveAcc(l.accountCode || l.account_code || l.accountId || l.account_id || l.code || l.id)
+          return {
+            id: l.id || `dr-sale-${idx}-${Date.now()}`,
+            accountId: acc?.id || l.accountId || l.account_id || l.accountCode || l.account_code || l.code || "",
+            accountCode: acc?.code || l.accountCode || l.account_code || l.accountId || l.account_id || l.code || "",
+            accountName: acc?.name || l.accountName || l.account_name || l.name || (acc?.code ? `Account ${acc.code}` : "Settlement Account"),
             description: l.description || "",
             amount: Number(l.amount || l.debit || 0),
-          }))
-        const cogsCredits = (loadedEntries.cogs_lines || [])
-          .filter((l: any) => Number(l.credit || 0) > 0 || l.id?.startsWith("cr-"))
-          .map((l: any) => ({
-            id: l.id || `cr-cogs-${Math.random()}`,
-            accountId: l.accountId || l.account_id || l.accountCode || l.code || "",
-            accountCode: l.accountCode || l.code || "",
-            accountName: l.accountName || l.name || "",
+          }
+        })
+
+        const rCr = revCrRaw.map((l: any, idx: number) => {
+          const acc = resolveAcc(l.accountCode || l.account_code || l.accountId || l.account_id || l.code || l.id)
+          return {
+            id: l.id || `cr-sale-${idx}-${Date.now()}`,
+            accountId: acc?.id || l.accountId || l.account_id || l.accountCode || l.account_code || l.code || "",
+            accountCode: acc?.code || l.accountCode || l.account_code || l.accountId || l.account_id || l.code || "",
+            accountName: acc?.name || l.accountName || l.account_name || l.name || (acc?.code ? `Account ${acc.code}` : "Revenue Account"),
             description: l.description || "",
             amount: Number(l.amount || l.credit || 0),
-          }))
+          }
+        })
+
+        const cogsDebitsRaw = (loadedEntries.cogs_lines || []).filter((l: any) => Number(l.debit || 0) > 0 || l.id?.startsWith("dr-"))
+        const cogsCreditsRaw = (loadedEntries.cogs_lines || []).filter((l: any) => Number(l.credit || 0) > 0 || l.id?.startsWith("cr-"))
+
+        const cogsDebits = cogsDebitsRaw.map((l: any, idx: number) => {
+          const acc = resolveAcc(l.accountCode || l.account_code || l.accountId || l.account_id || l.code || l.id)
+          return {
+            id: l.id || `dr-cogs-${idx}-${Date.now()}`,
+            accountId: acc?.id || l.accountId || l.account_id || l.accountCode || l.account_code || l.code || "",
+            accountCode: acc?.code || l.accountCode || l.account_code || l.accountId || l.account_id || l.code || "",
+            accountName: acc?.name || l.accountName || l.account_name || l.name || (acc?.code ? `Account ${acc.code}` : "COGS Expense"),
+            description: l.description || "",
+            amount: Number(l.amount || l.debit || 0),
+          }
+        })
+
+        const cogsCredits = cogsCreditsRaw.map((l: any, idx: number) => {
+          const acc = resolveAcc(l.accountCode || l.account_code || l.accountId || l.account_id || l.code || l.id)
+          return {
+            id: l.id || `cr-cogs-${idx}-${Date.now()}`,
+            accountId: acc?.id || l.accountId || l.account_id || l.accountCode || l.account_code || l.code || "",
+            accountCode: acc?.code || l.accountCode || l.account_code || l.accountId || l.account_id || l.code || "",
+            accountName: acc?.name || l.accountName || l.account_name || l.name || (acc?.code ? `Account ${acc.code}` : "Inventory Asset"),
+            description: l.description || "",
+            amount: Number(l.amount || l.credit || 0),
+          }
+        })
 
         setSiDebitLines(rDr.length > 0 ? rDr : def.debitLines)
         setSiCreditLines(rCr.length > 0 ? rCr : def.creditLines)
@@ -886,89 +1017,7 @@ export default function SalesIssued() {
   const vatAmount = useMemo(() => Math.round(subtotal * (vatRate / 100)), [subtotal, vatRate])
   const grandTotal = useMemo(() => subtotal + vatAmount, [subtotal, vatAmount])
 
-  const buildDefaultSalesCOALines = (
-    pType: "Cash" | "Credit",
-    whId: string,
-    subTot: number,
-    vat: number,
-    cName: string,
-    costTot: number = 0
-  ) => {
-    const isCreditSale = pType === "Credit"
-    const isWh1Sale = isWH1(whId)
-    const gTot = Math.round((subTot + vat) * 100) / 100
-    const accounts = financeStore.getAccounts()
 
-    // 1. Section A: Debit Accounts (Settlement / Cash / Bank / AR)
-    const drCode = isCreditSale ? (isWh1Sale ? "1300-01" : "1300-03") : "1000-02-26"
-    const drAcc = accounts.find((a) => a.code === drCode)
-    const debitLines: SplitLineItem[] = [
-      {
-        id: `dr-sale-${Date.now()}-1`,
-        accountId: drAcc?.id || drCode,
-        accountCode: drAcc?.code || drCode,
-        accountName: drAcc?.name || (isCreditSale ? (isWh1Sale ? "EXPORT SALES RECIVEABLE" : "VET MEDICEN SALES RECIVABLE") : "Commercial Bank of Ethiopia (CBE)"),
-        description: isCreditSale ? `Receivable - ${cName || "Customer"}` : "Customer Direct Deposit",
-        amount: gTot,
-      },
-    ]
-
-    // 2. Section A: Credit Accounts (Sales Revenue + VAT)
-    const revCode = isWh1Sale ? "4000-02-01" : "4000-01-01"
-    const revAcc = accounts.find((a) => a.code === revCode)
-    const creditLines: SplitLineItem[] = [
-      {
-        id: `cr-sale-${Date.now()}-1`,
-        accountId: revAcc?.id || revCode,
-        accountCode: revAcc?.code || revCode,
-        accountName: revAcc?.name || (isWh1Sale ? "Revenue - Export Commodities" : "SALES OF VETERINARY DRUG"),
-        description: "Sales Revenue Recognition",
-        amount: Math.round(subTot * 100) / 100,
-      },
-    ]
-    if (vat > 0) {
-      const vatCode = "2200-01"
-      const vatAcc = accounts.find((a) => a.code === vatCode)
-      creditLines.push({
-        id: `cr-sale-${Date.now()}-2`,
-        accountId: vatAcc?.id || vatCode,
-        accountCode: vatAcc?.code || vatCode,
-        accountName: vatAcc?.name || "Output VAT Payable (15%)",
-        description: "Standard Output VAT",
-        amount: Math.round(vat * 100) / 100,
-      })
-    }
-
-    // 3. Section B: COGS & Inventory Stock Lines
-    const cogsVal = Math.round(Number(costTot > 0 ? costTot : subTot) * 100) / 100
-    const cogsDrCode = isWh1Sale ? "5000-02" : "5000-01"
-    const cogsDrAcc = accounts.find((a) => a.code === cogsDrCode)
-    const cogsDebitLines: SplitLineItem[] = [
-      {
-        id: `dr-cogs-${Date.now()}-1`,
-        accountId: cogsDrAcc?.id || cogsDrCode,
-        accountCode: cogsDrAcc?.code || cogsDrCode,
-        accountName: cogsDrAcc?.name || (isWh1Sale ? "Cost of Goods Export" : "COST OF VETERINARY DRUG"),
-        description: "Cost of Goods Sold - Stock Issued",
-        amount: cogsVal,
-      },
-    ]
-
-    const cogsCrCode = isWh1Sale ? "1410-01" : "1400-01"
-    const cogsCrAcc = accounts.find((a) => a.code === cogsCrCode)
-    const cogsCreditLines: SplitLineItem[] = [
-      {
-        id: `cr-cogs-${Date.now()}-1`,
-        accountId: cogsCrAcc?.id || cogsCrCode,
-        accountCode: cogsCrAcc?.code || cogsCrCode,
-        accountName: cogsCrAcc?.name || (isWh1Sale ? "STOCK OF GREEN MUNG" : "STOCK OF VETERINARY DRUG"),
-        description: "Inventory Asset Relieved - Stock Issued",
-        amount: cogsVal,
-      },
-    ]
-
-    return { debitLines, creditLines, cogsDebitLines, cogsCreditLines, revDr: debitLines, revCr: creditLines }
-  }
 
   // Synchronize COA split lines when form is open and user has not created custom multi-splits
   useEffect(() => {

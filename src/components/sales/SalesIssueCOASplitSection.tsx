@@ -1,6 +1,7 @@
-import React, { useState } from "react"
+import React, { useState, useMemo } from "react"
 import { Plus, Trash2, CheckCircle2, AlertTriangle, ArrowRightLeft, DollarSign, Package } from "lucide-react"
 import { useFinanceStore } from "@/lib/financeStore"
+import { COMPANY_CHART_OF_ACCOUNTS } from "@/lib/companyCOA"
 import COAAccountSelector from "@/components/finance/COAAccountSelector"
 
 export interface SplitLineItem {
@@ -60,7 +61,36 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
   onCogsCreditLinesChange,
 }) => {
   const financeStore = useFinanceStore()
-  const accounts = financeStore.getAccounts()
+  const rawAccounts = financeStore.getAccounts()
+  const accounts = useMemo(() => {
+    if (rawAccounts && rawAccounts.length > 0) return rawAccounts
+    return COMPANY_CHART_OF_ACCOUNTS
+  }, [rawAccounts])
+
+  const resolveAcc = (idOrCode?: string) => {
+    if (!idOrCode) return null
+    const clean = String(idOrCode).trim()
+    const unPrefixed = clean.replace(/^ACC-/, "")
+    return (
+      accounts.find(
+        (a) =>
+          a.code === clean ||
+          a.id === clean ||
+          a.code === unPrefixed ||
+          a.id === `ACC-${clean}` ||
+          a.id === unPrefixed
+      ) ||
+      COMPANY_CHART_OF_ACCOUNTS.find(
+        (a) =>
+          a.code === clean ||
+          a.id === clean ||
+          a.code === unPrefixed ||
+          a.id === `ACC-${clean}` ||
+          a.id === unPrefixed
+      ) ||
+      null
+    )
+  }
 
   const [activeTab, setActiveTab] = useState<"revenue" | "cogs">("revenue")
 
@@ -88,7 +118,7 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
     const currentSum = effectiveRevDebitLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
     const remainder = Math.max(0, Math.round((targetRevTotal - currentSum) * 100) / 100)
     const defaultCode = isCredit ? (isWh1 ? "1300-01" : "1300-03") : "1000-02-26"
-    const defaultAcc = accounts.find((a) => a.code === defaultCode) || accounts[0]
+    const defaultAcc = resolveAcc(defaultCode) || accounts[0]
     setRevDebits([
       ...effectiveRevDebitLines,
       {
@@ -122,7 +152,7 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
     const currentSum = effectiveRevCreditLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
     const remainder = Math.max(0, Math.round((targetRevTotal - currentSum) * 100) / 100)
     const defaultCode = isWh1 ? "4000-02-01" : "4000-01-01"
-    const defaultAcc = accounts.find((a) => a.code === defaultCode) || accounts[0]
+    const defaultAcc = resolveAcc(defaultCode) || accounts[0]
     setRevCredits([
       ...effectiveRevCreditLines,
       {
@@ -168,7 +198,7 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
     const currentSum = effectiveCogsDebitLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
     const remainder = Math.max(0, Math.round((targetCogsTotal - currentSum) * 100) / 100)
     const defaultCode = isWh1 ? "5000-02" : "5000-01"
-    const defaultAcc = accounts.find((a) => a.code === defaultCode) || accounts[0]
+    const defaultAcc = resolveAcc(defaultCode) || accounts[0]
     setCogsDebits([
       ...effectiveCogsDebitLines,
       {
@@ -201,7 +231,7 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
     const currentSum = effectiveCogsCreditLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
     const remainder = Math.max(0, Math.round((targetCogsTotal - currentSum) * 100) / 100)
     const defaultCode = isWh1 ? "1410-01" : "1400-01"
-    const defaultAcc = accounts.find((a) => a.code === defaultCode) || accounts[0]
+    const defaultAcc = resolveAcc(defaultCode) || accounts[0]
     setCogsCredits([
       ...effectiveCogsCreditLines,
       {
@@ -330,7 +360,7 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 min-w-0">
                         <COAAccountSelector
-                          value={line.accountCode}
+                          value={line.accountCode || line.accountId}
                           onChange={(acc) =>
                             handleUpdateRevDebitLine(line.id, {
                               accountId: acc.id,
@@ -429,7 +459,7 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 min-w-0">
                         <COAAccountSelector
-                          value={line.accountCode}
+                          value={line.accountCode || line.accountId}
                           onChange={(acc) =>
                             handleUpdateRevCreditLine(line.id, {
                               accountId: acc.id,
@@ -553,7 +583,7 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 min-w-0">
                         <COAAccountSelector
-                          value={line.accountCode}
+                          value={line.accountCode || line.accountId}
                           onChange={(acc) =>
                             handleUpdateCogsDebitLine(line.id, {
                               accountId: acc.id,
@@ -652,7 +682,7 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 min-w-0">
                         <COAAccountSelector
-                          value={line.accountCode}
+                          value={line.accountCode || line.accountId}
                           onChange={(acc) =>
                             handleUpdateCogsCreditLine(line.id, {
                               accountId: acc.id,

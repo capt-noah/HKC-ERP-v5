@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { Search, ChevronDown, Check, X } from "lucide-react"
 import { useFinanceStore, type AccountItem } from "@/lib/financeStore"
+import { COMPANY_CHART_OF_ACCOUNTS } from "@/lib/companyCOA"
 
 export interface COAAccountSelectorProps {
   value: string // account code or id
@@ -36,7 +37,19 @@ export const COAAccountSelector: React.FC<COAAccountSelectorProps> = ({
   compact = false,
 }) => {
   const financeStore = useFinanceStore()
-  const accounts = financeStore.getAccounts()
+  const rawAccounts = financeStore.getAccounts()
+
+  // Ensure accounts are loaded into financeStore
+  useEffect(() => {
+    if (rawAccounts.length === 0) {
+      void financeStore.loadFromApi()
+    }
+  }, [rawAccounts.length, financeStore])
+
+  const accounts = useMemo(() => {
+    if (rawAccounts && rawAccounts.length > 0) return rawAccounts
+    return COMPANY_CHART_OF_ACCOUNTS
+  }, [rawAccounts])
 
   const [isOpen, setIsOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
@@ -55,9 +68,27 @@ export const COAAccountSelector: React.FC<COAAccountSelectorProps> = ({
   // Selected account lookup
   const selectedAccount = useMemo(() => {
     if (!value) return null
+    const clean = String(value).trim()
+    const unPrefixed = clean.replace(/^ACC-/, "")
     return (
-      accounts.find((a) => a.code === value || a.id === value || a.id === `ACC-${value}`) ||
-      accounts.find((a) => a.name.toLowerCase() === value.toLowerCase()) ||
+      accounts.find(
+        (a) =>
+          a.code === clean ||
+          a.id === clean ||
+          a.code === unPrefixed ||
+          a.id === `ACC-${clean}` ||
+          a.id === unPrefixed ||
+          a.name.toLowerCase() === clean.toLowerCase()
+      ) ||
+      COMPANY_CHART_OF_ACCOUNTS.find(
+        (a) =>
+          a.code === clean ||
+          a.id === clean ||
+          a.code === unPrefixed ||
+          a.id === `ACC-${clean}` ||
+          a.id === unPrefixed ||
+          a.name.toLowerCase() === clean.toLowerCase()
+      ) ||
       null
     )
   }, [value, accounts])
