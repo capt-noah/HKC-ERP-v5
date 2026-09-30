@@ -1403,7 +1403,17 @@ class FinanceStore {
           payrollRecords.forEach((pr: any, idx: number) => {
             const jeId = `JE-PAY-${pr.id || idx + 1}`
             const payAmt = Number(pr.net_salary || pr.net_pay || pr.amount || 0)
-            if (payAmt <= 0) return  // Skip zero or undefined amounts — never fabricate
+            const isPaid = (pr.payment_status || pr.status || "").toLowerCase() === "paid"
+
+            // STRICT RULE: Only PAID payroll records may generate GL entries and deduct cash
+            if (!isPaid || payAmt <= 0) {
+              if (this.entries.some((e) => e.id === jeId || e.source_id === pr.id)) {
+                this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== pr.id)
+                this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
+                hasNewSync = true
+              }
+              return
+            }
 
             const hasPayEntry = this.entries.some((e) => e.id === jeId || e.source_id === pr.id)
             const hasPayLines = this.lines.some((l) => l.journal_entry_id === jeId)
@@ -1433,6 +1443,7 @@ class FinanceStore {
                   { id: `${jeId}-1`, journal_entry_id: jeId, account_id: salaryAcc.id, debit_amount: payAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
                   { id: `${jeId}-2`, journal_entry_id: jeId, account_id: cashAcc.id, debit_amount: 0, credit_amount: payAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Employee", party_id: pr.employee_id || null, party_name: pr.employee_name || null }
                 )
+                hasNewSync = true
               }
             }
           });

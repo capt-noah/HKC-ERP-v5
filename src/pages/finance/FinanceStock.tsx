@@ -23,6 +23,7 @@ import StockBinCardLedger from "@/components/stock/StockBinCardLedger"
 import WH1ReceivingVoucherPrintModal from "@/components/stock/WH1ReceivingVoucherPrintModal"
 import StockBinCardPrintModal from "@/components/stock/StockBinCardPrintModal"
 import { getExpiryStatus } from "@/lib/expiryUtils"
+import { resolveWarehouseCode, resolveWarehouseFullName } from "@/lib/warehouses"
 import { isExportWarehouse, isPharmaWarehouse } from "@/lib/warehouses"
 import { exportToExcel } from "@/lib/exportUtils"
 
@@ -78,6 +79,7 @@ export default function FinanceStock() {
   }
 
   const products = erp.getProducts()
+  const warehouses = erp.getWarehouses()
 
   const toggleRowExpand = (id: string) => {
     setExpandedProductIds((prev) => {
@@ -519,8 +521,17 @@ export default function FinanceStock() {
                           </td>
 
                           {/* Warehouse */}
-                          <td className="py-3 px-4 text-xs font-bold text-zinc-700">
-                            {prod.warehouseName || prod.warehouse}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wide border whitespace-nowrap ${
+                                isWh1
+                                  ? "bg-amber-50 text-amber-800 border-amber-200"
+                                  : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                              }`}
+                              title={resolveWarehouseFullName(prod.warehouse, warehouses) || prod.warehouseName || prod.warehouse}
+                            >
+                              {resolveWarehouseCode(prod.warehouse, warehouses) || (isWh1 ? "WH1-AGRI-EXP" : "WH2-VET-ALEM")}
+                            </span>
                           </td>
 
                           {/* Physical Qty */}

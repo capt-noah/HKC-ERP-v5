@@ -28,6 +28,7 @@ import {
   isPharmaWarehouse,
   matchesWarehouse,
   resolveWarehouseFullName,
+  resolveWarehouseCode,
 } from "@/lib/warehouses"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
@@ -188,6 +189,7 @@ export default function StockProducts() {
   const [addNumCartons, setAddNumCartons] = useState("")
   const [addEntryDate, setAddEntryDate] = useState("")
   const [addQuantity, setAddQuantity] = useState("")
+  const [addProcessedQuantity, setAddProcessedQuantity] = useState("")
   const [addNotes, setAddNotes] = useState("")
   const [isSavingAdd, setIsSavingAdd] = useState(false)
 
@@ -331,6 +333,7 @@ export default function StockProducts() {
     setAddNumCartons("")
     setAddEntryDate("")
     setAddQuantity("")
+    setAddProcessedQuantity("")
     setAddNotes("")
     setSelectedExistingProduct(null)
   }
@@ -403,7 +406,6 @@ export default function StockProducts() {
     if (selectedWarehouse === "ALL") {
       cols.push(
         { key: "warehouse", label: "Warehouse", align: "left" },
-        { key: "details", label: "Supplier / Dosage", align: "left" },
         { key: "cartons", label: "Cartons / Plate", align: "left" },
         { key: "quantity", label: "Total Quantity", align: "right" },
         { key: "unit", label: "UOM / Unit", align: "left" },
@@ -411,8 +413,6 @@ export default function StockProducts() {
       )
     } else if (isWH1(selectedWarehouse)) {
       cols.push(
-        { key: "voucherNo", label: "Voucher No", align: "left" },
-        { key: "customer", label: "Supplier", align: "left" },
         { key: "plateNumber", label: "Plate No", align: "left" },
         { key: "quantity", label: "Total Quantity", align: "right" },
         { key: "unit", label: "UOM", align: "left" },
@@ -420,8 +420,8 @@ export default function StockProducts() {
       )
     } else {
       cols.push(
-        { key: "dosage", label: "Strength / Dosage", align: "left" },
-        { key: "shelfNo", label: "Shelf Number", align: "left" },
+        { key: "manufacturingDate", label: "Mfg Date", align: "left" },
+        { key: "expiryDate", label: "Expiry Date", align: "left" },
         { key: "numberOfCartons", label: "Cartons", align: "right" },
         { key: "quantityPerPack", label: "Quantity/Pack", align: "right" },
         { key: "quantity", label: "Total Quantity", align: "right" },
@@ -437,7 +437,7 @@ export default function StockProducts() {
   const productsTable = useResizableTable(currentProductColumns, filteredProducts, {
     sku: 110,
     name: 180,
-    warehouse: 100,
+    warehouse: 150,
     details: 140,
     cartons: 110,
     voucherNo: 110,
@@ -446,8 +446,8 @@ export default function StockProducts() {
     dosage: 130,
     shelfNo: 120,
     batch: 110,
-    manufacturingDate: 100,
-    expiryDate: 100,
+    manufacturingDate: 110,
+    expiryDate: 140,
     unit: 100,
     numberOfCartons: 85,
     quantityPerPack: 95,
@@ -526,6 +526,15 @@ export default function StockProducts() {
           notes: addNotes.trim() || undefined,
         }
         await erp.addWH1Entry(selectedExistingProduct.id, newEntryPayload)
+        if (Number(addProcessedQuantity) > 0) {
+          await erp.addWH1ProcessedMovement(selectedExistingProduct.id, {
+            date: addEntryDate || now.slice(0, 10),
+            voucherNo: addVoucherNo.trim() ? `PROCESSED-${addVoucherNo.trim()}` : "PROCESSED-ADD",
+            quantity: Number(addProcessedQuantity),
+            notes: "Processed lot recorded during arrival",
+            plateNumber: addPlateNumber.trim() || undefined,
+          })
+        }
         showToast("Stock entry added", "success", `Entry added to existing item ${selectedExistingProduct.name}.`)
       } else {
         // Option B: Add new item entirely
@@ -603,6 +612,15 @@ export default function StockProducts() {
         }
 
         await erp.addProduct(product)
+        if (isWH1Form && Number(addProcessedQuantity) > 0) {
+          await erp.addWH1ProcessedMovement(productId, {
+            date: addEntryDate || now.slice(0, 10),
+            voucherNo: addVoucherNo.trim() ? `PROCESSED-${addVoucherNo.trim()}` : "PROCESSED-INIT",
+            quantity: Number(addProcessedQuantity),
+            notes: "Initial processed lot recorded during commodity registration",
+            plateNumber: addPlateNumber.trim() || undefined,
+          })
+        }
         showToast("Stock item saved", "success", `${addDescription} was saved to inventory.`)
       }
 
@@ -653,6 +671,19 @@ export default function StockProducts() {
     }
   ) => {
     await erp.addWH1RejectEntry(productId, rejectData)
+  }
+
+  const handleSaveWH1Processed = async (
+    productId: string,
+    procData: {
+      date: string
+      voucherNo?: string
+      quantity: number
+      notes?: string
+      plateNumber?: string
+    }
+  ) => {
+    await erp.addWH1ProcessedMovement(productId, procData)
   }
 
   // Handle Edit/Delete Sub Entry
@@ -1151,31 +1182,19 @@ export default function StockProducts() {
                                   </td>
 
                                   {/* Warehouse Badge */}
-                                  <td className="py-4 px-4">
-                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${
-                                      isWH1Item 
-                                        ? "bg-amber-50 text-amber-800 border-amber-200" 
-                                        : (prod.warehouse === "WH2" || prod.warehouseName?.includes("2"))
-                                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                          : "bg-purple-50 text-purple-800 border-purple-200"
-                                    }`}>
-                                      {resolveWarehouseFullName(prod.warehouse, allWarehouses) || prod.warehouseName || prod.warehouse || (isWH1Item ? "WH1" : "WH2")}
+                                  <td className="py-4 px-4 whitespace-nowrap">
+                                    <span
+                                      className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wide border whitespace-nowrap ${
+                                        isWH1Item 
+                                          ? "bg-amber-50 text-amber-800 border-amber-200" 
+                                          : (prod.warehouse === "WH2" || prod.warehouseName?.includes("2"))
+                                            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                            : "bg-purple-50 text-purple-800 border-purple-200"
+                                      }`}
+                                      title={resolveWarehouseFullName(prod.warehouse, allWarehouses) || prod.warehouseName || prod.warehouse}
+                                    >
+                                      {resolveWarehouseCode(prod.warehouse, allWarehouses) || prod.warehouse || (isWH1Item ? "WH1-AGRI-EXP" : "WH2-VET-ALEM")}
                                     </span>
-                                  </td>
-
-                                  {/* Supplier / Dosage */}
-                                  <td className="py-4 px-4 font-bold text-zinc-700 truncate max-w-[150px]" title={isWH1Item ? (prod.customer || wh1Entries[0]?.customer || "—") : (prod.dosage || "—")}>
-                                    {isWH1Item ? (
-                                      <div>
-                                        <div className="truncate text-zinc-900">{prod.customer || wh1Entries[0]?.customer || "—"}</div>
-                                        {prod.voucherNo && <div className="text-[9px] font-mono text-rose-700">No. {prod.voucherNo}</div>}
-                                      </div>
-                                    ) : (
-                                      <div>
-                                        <div className="truncate text-zinc-800">{prod.dosage || "—"}</div>
-                                        {prod.shelfNo && <div className="text-[9px] font-mono text-zinc-400">Shelf {prod.shelfNo}</div>}
-                                      </div>
-                                    )}
                                   </td>
 
                                   {/* Cartons / Plate */}
@@ -1317,16 +1336,6 @@ export default function StockProducts() {
                                     </div>
                                   </td>
 
-                                  {/* Voucher No */}
-                                  <td className="py-4 px-4 font-mono text-[11px] font-black text-rose-700">
-                                    {prod.voucherNo || (wh1Entries[0]?.voucherNo ? `No. ${wh1Entries[0].voucherNo}` : "—")}
-                                  </td>
-
-                                  {/* Supplier */}
-                                  <td className="py-4 px-4 font-bold text-zinc-900 truncate max-w-[130px]" title={prod.customer || wh1Entries[0]?.customer || "—"}>
-                                    {prod.customer || (wh1Entries[0]?.customer || "—")}
-                                  </td>
-
                                   {/* Plate Number */}
                                   <td className="py-4 px-4 font-mono text-[11px] text-zinc-600">
                                     {prod.plateNumber || (wh1Entries[0]?.plateNumber || "—")}
@@ -1424,11 +1433,33 @@ export default function StockProducts() {
                                   </div>
                                 </td>
 
-                                {/* Dosage */}
-                                <td className="py-4 px-4 font-bold text-zinc-600 truncate">{prod.dosage || "—"}</td>
+                                {/* Mfg Date */}
+                                <td className="py-4 px-4 font-mono text-[11px] text-zinc-700 whitespace-nowrap">
+                                  {prod.manufacturingDate || (prod as any).mfgDate || prod.batches?.[0]?.mfgDate || "—"}
+                                </td>
 
-                                {/* Shelf Number */}
-                                <td className="py-4 px-4 font-mono font-bold text-zinc-600 truncate">{prod.shelfNo || "—"}</td>
+                                {/* Expiry Date */}
+                                <td className="py-4 px-4 font-mono text-[11px] whitespace-nowrap">
+                                  {(() => {
+                                    const rawExp = prod.expiry || (prod as any).expiryDate || prod.batches?.[0]?.expiry
+                                    if (!rawExp || rawExp === "—") return <span className="text-zinc-400 font-normal">—</span>
+                                    const status = getExpiryStatus(rawExp)
+                                    return (
+                                      <div>
+                                        <div className="font-bold text-zinc-900">{rawExp}</div>
+                                        {status.days !== null && (
+                                          <div className={`text-[10px] ${
+                                            status.tier === "EXPIRED" ? "text-rose-600 font-black" :
+                                            status.tier === "CRITICAL" ? "text-rose-700 font-bold" :
+                                            status.tier === "WARNING" ? "text-amber-700 font-bold" : "text-emerald-700 font-bold"
+                                          }`}>
+                                            {status.days < 0 ? `(${Math.abs(status.days)} days ago)` : `(${status.days} days remaining)`}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )
+                                  })()}
+                                </td>
 
                                 {/* Cartons */}
                                 <td className="py-4 px-4 text-right font-mono font-bold text-zinc-700">
@@ -2150,6 +2181,20 @@ export default function StockProducts() {
                         />
                       </label>
                       <label className="space-y-1">
+                        <span className="text-[11px] font-black uppercase text-sky-900">
+                          Processed <span className="text-[10px] text-zinc-400 lowercase font-normal">(optional ready lot)</span>
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          placeholder="0.00"
+                          value={addProcessedQuantity}
+                          onChange={(e) => setAddProcessedQuantity(e.target.value)}
+                          className="h-11 w-full rounded-xl border border-sky-200 bg-sky-50/30 px-3 text-xs font-mono font-bold text-sky-950"
+                        />
+                      </label>
+                      <label className="space-y-1">
                         <span className="text-[11px] font-black uppercase text-zinc-700">Notes <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
                         <input
                           type="text"
@@ -2262,6 +2307,7 @@ export default function StockProducts() {
         onSaveEntry={handleSaveWH1Entry}
         onSaveLeave={handleSaveWH1Leave}
         onSaveReject={handleSaveWH1Reject}
+        onSaveProcessed={handleSaveWH1Processed}
       />
 
       {/* EDIT WH1 SUB ENTRY MODAL */}

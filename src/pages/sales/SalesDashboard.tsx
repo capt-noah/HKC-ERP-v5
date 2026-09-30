@@ -76,7 +76,10 @@ export default function SalesDashboard() {
   }, 0)
   const issuedAmount = postedIssues.reduce((sum, issue) => sum + Number(issue?.total_amount || 0), 0)
   const postedIssueCount = postedIssues.length
-  const orderAmount = salesOrders.reduce((sum, order) => sum + Number(order?.amount || 0), 0)
+  const openSalesOrders = salesOrders.filter(
+    (order) => order?.stage !== "Delivered" && order?.stage !== "Shipped" && order?.deliveryStatus !== "Fully Delivered"
+  )
+  const openOrderAmount = openSalesOrders.reduce((sum, order) => sum + Number(order?.amount || 0), 0)
 
   const recentActivity = useMemo(() => safeIssues.slice(0, 6), [safeIssues])
   const isLoading = erp.isLoading() || salesLoading
@@ -97,11 +100,12 @@ export default function SalesDashboard() {
           </div>
         </div>
 
-        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {isLoading ? Array.from({ length: 3 }).map((_, index) => <MetricSkeleton key={index} />) : [
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {isLoading ? Array.from({ length: 4 }).map((_, index) => <MetricSkeleton key={index} />) : [
             { label: "Posted Sales", value: `ETB ${money(issuedAmount)}`, note: `${postedIssues.length.toLocaleString()} posted issues`, Icon: DollarSign },
+            { label: "Receivables (AR Due)", value: `ETB ${money(totalCustomerCreditDue)}`, note: `${creditIssues.length.toLocaleString()} credit issues pending`, Icon: DollarSign },
             { label: "Issued Records", value: postedIssueCount.toLocaleString(), note: "Posted sales issue records", Icon: PackageCheck },
-            { label: "Open Orders", value: `ETB ${money(orderAmount)}`, note: `${salesOrders.length.toLocaleString()} sales orders`, Icon: Truck },
+            { label: "Open Orders", value: `ETB ${money(openOrderAmount)}`, note: `${openSalesOrders.length.toLocaleString()} unfulfilled orders`, Icon: Truck },
           ].map((card) => {
             const Icon = card.Icon
             return (

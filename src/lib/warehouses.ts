@@ -377,5 +377,44 @@ export function resolveWarehouseFullName(warehouseOrId?: string | null, customLi
   return raw
 }
 
+export function resolveWarehouseCode(warehouseOrId?: string | null, customList: Warehouse[] = []): string {
+  if (!warehouseOrId) return "—"
+  const raw = String(warehouseOrId).trim()
+  if (!raw || raw === "Not Assigned") return "—"
+  if (raw === "Head Office" || raw.toLowerCase() === "head office") return "HQ"
+
+  const pool = customList && customList.length > 0 ? withOperatingWarehouses(customList) : getRegisteredWarehouses()
+  const canonicalKey = getWarehouseCanonicalKey(raw)
+
+  if (canonicalKey) {
+    const matched = pool.find((w) => getWarehouseCanonicalKey(w) === canonicalKey)
+    if (matched && matched.code) return matched.code
+    if (matched && matched.id) return matched.id
+  }
+
+  const lower = raw.toLowerCase()
+  let found = pool.find(
+    (w) =>
+      w.id?.toLowerCase() === lower ||
+      w.code?.toLowerCase() === lower ||
+      w.name?.toLowerCase() === lower
+  )
+
+  if (!found) {
+    found = pool.find(
+      (w) => matchesWarehouse(w.id, raw) || matchesWarehouse(w.code, raw)
+    )
+  }
+
+  if (found && found.code) {
+    return found.code
+  }
+  if (found && found.id) {
+    return found.id
+  }
+
+  return raw
+}
+
 
 

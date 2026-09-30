@@ -210,6 +210,15 @@ inventoryRouter.patch(stockMovementRoutes.map((r) => `${r}/:id`), requireInvento
   }
 })
 
+inventoryRouter.patch(stockMovementRoutes.map((r) => `${r}/:id/difference`), requireInventoryMutation, async (req, res, next) => {
+  try {
+    const result = await inventoryService.updateMovementDifference(req.params.id, req.body, "stock_movements")
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
 inventoryRouter.delete(stockMovementRoutes.map((r) => `${r}/:id`), requireInventoryMutation, async (req, res, next) => {
   try {
     const result = await inventoryService.deleteMovement(req.params.id, "stock_movements")
@@ -224,7 +233,11 @@ const exportMovementRoutes = [
   "/export_warehouse_movements",
   "/export-warehouse-movements",
   "/inventory/export-movements",
+  "/inventory/export_movements",
   "/inventory/export_warehouse_movements",
+  "/inventory/export-warehouse-movements",
+  "/export-movements",
+  "/export_movements",
 ]
 
 inventoryRouter.get(exportMovementRoutes, async (req, res, next) => {
@@ -257,6 +270,15 @@ inventoryRouter.get(exportMovementRoutes.map((r) => `${r}/:id`), async (req, res
 inventoryRouter.patch(exportMovementRoutes.map((r) => `${r}/:id`), requireInventoryMutation, async (req, res, next) => {
   try {
     const result = await inventoryService.updateMovement(req.params.id, req.body, "export_warehouse_movements")
+    res.status(result.status).json(result.body)
+  } catch (err) {
+    next(err)
+  }
+})
+
+inventoryRouter.patch(exportMovementRoutes.map((r) => `${r}/:id/difference`), requireInventoryMutation, async (req, res, next) => {
+  try {
+    const result = await inventoryService.updateMovementDifference(req.params.id, req.body, "export_warehouse_movements")
     res.status(result.status).json(result.body)
   } catch (err) {
     next(err)

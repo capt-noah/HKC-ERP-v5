@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react"
-import { X, ArrowDownLeft, MinusCircle, ChevronDown, CheckCircle2, ArrowUpRight } from "lucide-react"
+import { X, ArrowDownLeft, MinusCircle, ChevronDown, CheckCircle2, Info } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
-import { loadResource } from "@/lib/apiPersistence"
 import { useErpStore, type Product, type WH1Entry } from "@/lib/erpStore"
 
 interface WH1AddMovementModalProps {
@@ -9,7 +8,7 @@ interface WH1AddMovementModalProps {
   product: Product | null
   onClose: () => void
   onSaveEntry: (productId: string, entryData: Omit<WH1Entry, "entryId">) => Promise<void>
-  onSaveLeave: (productId: string, leaveData: {
+  onSaveLeave?: (productId: string, leaveData: {
     date: string
     voucherNo?: string
     party: string
@@ -28,6 +27,13 @@ interface WH1AddMovementModalProps {
     reason?: string
     notes?: string
   }) => Promise<void>
+  onSaveProcessed?: (productId: string, processedData: {
+    date: string
+    voucherNo?: string
+    quantity: number
+    notes?: string
+    plateNumber?: string
+  }) => Promise<void>
 }
 
 const TON_TO_QUINTAL = 10
@@ -37,12 +43,12 @@ export default function WH1AddMovementModal({
   product,
   onClose,
   onSaveEntry,
-  onSaveLeave,
   onSaveReject,
+  onSaveProcessed,
 }: WH1AddMovementModalProps) {
   const erp = useErpStore()
   const { showToast } = useFeedback()
-  const [activeTab, setActiveTab] = useState<"entry" | "leave" | "reject">("entry")
+  const [activeTab, setActiveTab] = useState<"entry" | "processed" | "reject">("entry")
   const [isSaving, setIsSaving] = useState(false)
 
   // Inbound Entry Form State
@@ -54,27 +60,23 @@ export default function WH1AddMovementModal({
   const [packagingUnit, setPackagingUnit] = useState("Quintal")
   const [quantity, setQuantity] = useState("")
   const [unitPrice, setUnitPrice] = useState("")
+  const [sellingPrice, setSellingPrice] = useState("")
   const [entryDate, setEntryDate] = useState("")
   const [notes, setNotes] = useState("")
-
-  // Outbound Leave Form State
-  const [leaveDate, setLeaveDate] = useState("")
-  const [leaveVoucherNo, setLeaveVoucherNo] = useState("")
-  const [leaveCustomer, setLeaveCustomer] = useState("")
-  const [leavePlateNumber, setLeavePlateNumber] = useState("")
-  const [leaveQuantity, setLeaveQuantity] = useState("")
-  const [leaveUnitPrice, setLeaveUnitPrice] = useState("")
-  const [existingSalesIssues, setExistingSalesIssues] = useState<any[]>([])
-  const [selectedIssueId, setSelectedIssueId] = useState("")
 
   // Reject Loss Form State
   const [rejectDate, setRejectDate] = useState("")
   const [rejectQuantity, setRejectQuantity] = useState("")
-  const [selectedRejectEntryId, setSelectedRejectEntryId] = useState("")
   const [rejectParty, setRejectParty] = useState("")
   const [showRejectSupplierDropdown, setShowRejectSupplierDropdown] = useState(false)
-  const [rejectReason, setRejectReason] = useState("Cleaning & Impurities")
   const [rejectNotes, setRejectNotes] = useState("")
+
+  // Processed Goods Form State
+  const [processedDate, setProcessedDate] = useState("")
+  const [processedQuantity, setProcessedQuantity] = useState("")
+  const [processedVoucher, setProcessedVoucher] = useState("")
+  const [processedPlate, setProcessedPlate] = useState("")
+  const [processedNotes, setProcessedNotes] = useState("")
 
   useEffect(() => {
     if (isOpen && product) {
@@ -96,16 +98,9 @@ export default function WH1AddMovementModal({
       setPackagingUnit(product.unit || "Quintal")
       setQuantity("")
       setUnitPrice(product.unitCost ? String(product.unitCost) : "")
+      setSellingPrice(product.sellingPrice ? String(product.sellingPrice) : "")
       setEntryDate(new Date().toISOString().slice(0, 10))
       setNotes("")
-
-      // Reset Leave fields
-      setLeaveDate(new Date().toISOString().slice(0, 10))
-      setLeaveVoucherNo("")
-      setLeaveCustomer("")
-      setLeavePlateNumber("")
-      setLeaveQuantity("")
-      setSelectedIssueId("")
 
       // Associated suppliers for this product
       const itemSuppliers = Array.from(
@@ -130,98 +125,31 @@ export default function WH1AddMovementModal({
       // Reset Reject fields
       setRejectDate(new Date().toISOString().slice(0, 10))
       setRejectQuantity("")
-      setSelectedRejectEntryId("")
       setRejectParty(defaultSupplier)
       setShowRejectSupplierDropdown(false)
-      setRejectReason("Cleaning & Impurities")
       setRejectNotes("")
 
-      // Load matching sales issues for fallback reconciliation
-      loadResource<any>("sales_issues")
-        .then((issues: any[]) => {
-          if (Array.isArray(issues)) {
-            const matching = issues.filter((iss: any) => {
-              const items = iss.items || iss.line_items || []
-              return items.some(
-                (it: any) =>
-                  it.item_id === product.id ||
-                  it.productId === product.id ||
-                  (it.item_name || "").toLowerCase().trim() === product.name.toLowerCase().trim()
-              )
-            })
-            setExistingSalesIssues(matching)
-          }
-        })
-        .catch(() => setExistingSalesIssues([]))
+      // Reset Processed fields
+      setProcessedDate(new Date().toISOString().slice(0, 10))
+      setProcessedQuantity("")
+      setProcessedVoucher("")
+      setProcessedPlate(product.plateNumber || "")
+      setProcessedNotes("")
     }
   }, [isOpen, product])
-
-  const isVoucherAlreadyReconciled = (voucher: string) => {
-    if (!product || !voucher) return false
-    const clean = voucher.toLowerCase().trim()
-    if (!clean) return false
-    const raw = clean.replace(/^fs-/, "")
-    return (product.binCardEntries || []).some((b) => {
-      if (b.type !== "leave") return false
-      const bVoucher = (b.voucherNo || "").toLowerCase().trim()
-      const bRawVoucher = bVoucher.replace(/^fs-/, "")
-      const bRemark = (b.remark || "").toLowerCase().trim()
-
-      return (
-        bVoucher === clean ||
-        bRawVoucher === raw ||
-        (clean && bVoucher.includes(clean)) ||
-        (raw && bVoucher.includes(raw)) ||
-        (clean && bRemark.includes(clean)) ||
-        (raw && bRemark.includes(raw))
-      )
-    })
-  }
-
-  const isIssueAlreadyReconciled = (iss: any) => {
-    const fsNo = String(iss.fs_no || iss.id || "").toLowerCase().trim()
-    return isVoucherAlreadyReconciled(fsNo)
-  }
-
-  const isCurrentVoucherAlreadyReconciled = isVoucherAlreadyReconciled(leaveVoucherNo)
-
-  const handleSelectIssue = (issueId: string) => {
-    setSelectedIssueId(issueId)
-    const found = existingSalesIssues.find((i) => i.id === issueId || String(i.fs_no) === issueId)
-    if (found) {
-      setLeaveVoucherNo(found.fs_no ? String(found.fs_no) : found.id)
-      setLeaveCustomer(found.customer_name || found.customer || "")
-      setLeavePlateNumber(found.plate_number || found.plateNumber || "")
-      if (found.sale_date) setLeaveDate(found.sale_date)
-
-      // Find matching quantity and selling price for this product
-      const item = (found.items || found.line_items || []).find(
-        (it: any) =>
-          it.item_id === product?.id ||
-          it.productId === product?.id ||
-          (it.item_name || "").toLowerCase().trim() === (product?.name || "").toLowerCase().trim()
-      )
-      if (item) {
-        setLeaveQuantity(String(item.quantity || item.qty || ""))
-        const uPrice = Number(item.unit_price || item.unitPrice || 0)
-        if (uPrice > 0) {
-          setLeaveUnitPrice(String(uPrice))
-        } else if (product?.sellingPrice) {
-          setLeaveUnitPrice(String(product.sellingPrice))
-        }
-      } else if (product?.sellingPrice) {
-        setLeaveUnitPrice(String(product.sellingPrice))
-      }
-    }
-  }
 
   if (!isOpen || !product) return null
 
   const handleSaveEntrySubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const rawQty = Number(quantity)
+    const costPrice = Number(unitPrice)
     if (!entryDate || !Number.isFinite(rawQty) || rawQty <= 0) {
       showToast("Validation Error", "warning", "Please provide a valid entry date and positive quantity.")
+      return
+    }
+    if (!Number.isFinite(costPrice) || costPrice <= 0) {
+      showToast("Validation Error", "warning", "Cost Price is mandatory and must be greater than 0 ETB.")
       return
     }
 
@@ -249,7 +177,8 @@ export default function WH1AddMovementModal({
         entryDate,
         quantityReceived: finalQty,
         quantityRemaining: finalQty,
-        unitPrice: Number(unitPrice) || 0,
+        unitPrice: costPrice,
+        sellingPrice: Number(sellingPrice) > 0 ? Number(sellingPrice) : undefined,
         notes: notes.trim(),
       })
       showToast("Success", "success", `Inbound entry of ${finalQty.toLocaleString()} Quintals recorded.`)
@@ -261,67 +190,22 @@ export default function WH1AddMovementModal({
     }
   }
 
-  const handleSaveLeaveSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const rawQty = Number(leaveQuantity)
-    if (!leaveDate || !Number.isFinite(rawQty) || rawQty <= 0) {
-      showToast("Validation Error", "warning", "Please provide a valid leave date and positive quantity.")
-      return
-    }
-
-    if (isCurrentVoucherAlreadyReconciled) {
-      showToast(
-        "Already Reconciled",
-        "warning",
-        `Sales Issue ${leaveVoucherNo} has already been deducted and recorded in the movement ledger. Duplicate deduction prevented.`
-      )
-      return
-    }
-
-    if (rawQty > product.quantity) {
-      showToast("Stock Error", "warning", `Cannot dispatch ${rawQty} Qtl. Current balance is only ${product.quantity} Qtl.`)
-      return
-    }
-
-    setIsSaving(true)
-    try {
-      await onSaveLeave(product.id, {
-        date: leaveDate,
-        voucherNo: leaveVoucherNo.trim(),
-        party: leaveCustomer.trim() || "Customer Dispatch",
-        plateNumber: leavePlateNumber.trim() || "—",
-        quantityIssued: rawQty,
-        unitPrice: Number(leaveUnitPrice) > 0 ? Number(leaveUnitPrice) : undefined,
-        remark: leaveVoucherNo ? `Sales Issue FS-${leaveVoucherNo}` : "Outbound Dispatch",
-      })
-      showToast("Success", "success", `Outbound leave of ${rawQty.toLocaleString()} Quintals reconciled.`)
-      onClose()
-    } catch (err: any) {
-      showToast("Save Error", "warning", err.message || "Failed to reconcile leave.")
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  const handleSelectRejectEntry = (entryId: string) => {
-    setSelectedRejectEntryId(entryId)
-    if (entryId && product?.wh1Entries) {
-      const found = product.wh1Entries.find((e) => (e.entryId || e.id) === entryId)
-      if (found && (found.customer || (found as any).party)) {
-        setRejectParty(found.customer || (found as any).party || "")
-      }
-    }
-  }
-
-  const selectedRejectEntry = product?.wh1Entries?.find(
-    (e) => (e.entryId || e.id) === selectedRejectEntryId
+  const availableRejectStock = product?.quantity || 0
+  const totalRemainingStock = (product?.wh1Entries || []).reduce(
+    (sum, e) => sum + Number(e.quantityRemaining ?? e.quantityReceived ?? 0),
+    0
   )
-  const availableRejectStock = selectedRejectEntry
-    ? selectedRejectEntry.quantityRemaining
-    : product?.quantity || 0
-  const effectiveRejectUnitCost = selectedRejectEntry
-    ? Number(selectedRejectEntry.unitPrice ?? product?.unitCost ?? 0)
-    : Number(product?.unitCost || 0)
+  const totalRemainingValue = (product?.wh1Entries || []).reduce(
+    (sum, e) =>
+      sum +
+      Number(e.quantityRemaining ?? e.quantityReceived ?? 0) *
+        Number(e.unitPrice ?? product.unitCost ?? 0),
+    0
+  )
+  const effectiveRejectUnitCost =
+    totalRemainingStock > 0
+      ? totalRemainingValue / totalRemainingStock
+      : Number(product?.unitCost || 0)
   const computedRejectLossValue = (Number(rejectQuantity) || 0) * effectiveRejectUnitCost
 
   const handleSaveRejectSubmit = async (e: React.FormEvent) => {
@@ -336,9 +220,7 @@ export default function WH1AddMovementModal({
       showToast(
         "Stock Error",
         "warning",
-        selectedRejectEntry
-          ? `Cannot reject ${rawQty} Qtl from Entry No. ${selectedRejectEntry.voucherNo || selectedRejectEntry.entryId}. Available in this child entry is only ${selectedRejectEntry.quantityRemaining} Qtl.`
-          : `Cannot reject ${rawQty} Qtl. Total warehouse balance is only ${product.quantity} Qtl.`
+        `Cannot reject ${rawQty} ${product.unit || "Qtl"}. Total warehouse balance is only ${product.quantity} ${product.unit || "Qtl"}.`
       )
       return
     }
@@ -346,23 +228,51 @@ export default function WH1AddMovementModal({
     setIsSaving(true)
     try {
       await onSaveReject(product.id, {
-        entryId: selectedRejectEntryId || undefined,
         date: rejectDate,
-        voucherNo: selectedRejectEntry?.voucherNo || undefined,
-        party: rejectParty.trim() || selectedRejectEntry?.customer || product.customer || product.supplierName || "Direct Supplier",
-        plateNumber: selectedRejectEntry?.plateNumber || undefined,
+        party: rejectParty.trim() || product.customer || product.supplierName || "Direct Supplier",
         rejectQuantity: rawQty,
-        reason: rejectReason.trim() || "Cleaning & Impurities",
+        reason: "Reject / Cleaning Loss",
         notes: rejectNotes.trim() || undefined,
       })
       showToast(
         "Success",
         "success",
-        `Reject loss deduction of ${rawQty.toLocaleString()} Quintals recorded (Loss Value: ETB ${computedRejectLossValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`
+        `Reject loss deduction of ${rawQty.toLocaleString()} ${product.unit || "Quintals"} recorded (Loss Value: ETB ${computedRejectLossValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}).`
       )
       onClose()
     } catch (err: any) {
       showToast("Save Error", "warning", err.message || "Failed to record rejection deduction.")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleSaveProcessedSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!product || !onSaveProcessed) return
+    const rawQty = parseFloat(processedQuantity)
+    if (isNaN(rawQty) || rawQty <= 0) {
+      showToast("Validation Error", "warning", "Please specify a valid processed quantity.")
+      return
+    }
+
+    setIsSaving(true)
+    try {
+      await onSaveProcessed(product.id, {
+        date: processedDate || new Date().toISOString().slice(0, 10),
+        voucherNo: processedVoucher.trim() || undefined,
+        quantity: rawQty,
+        notes: processedNotes.trim() || undefined,
+        plateNumber: processedPlate.trim() || undefined,
+      })
+      showToast(
+        "Processed Goods Recorded",
+        "success",
+        `Categorized ${rawQty.toLocaleString()} ${product.unit || "Quintals"} as processed goods.`
+      )
+      onClose()
+    } catch (err: any) {
+      showToast("Save Error", "warning", err.message || "Failed to record processed goods.")
     } finally {
       setIsSaving(false)
     }
@@ -404,15 +314,15 @@ export default function WH1AddMovementModal({
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab("leave")}
+              onClick={() => setActiveTab("processed")}
               className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                activeTab === "leave"
-                  ? "bg-white text-amber-800 shadow-xs border border-zinc-200/60"
+                activeTab === "processed"
+                  ? "bg-white text-sky-800 shadow-xs border border-zinc-200/60"
                   : "text-zinc-500 hover:text-zinc-800"
               }`}
             >
-              <ArrowUpRight className="size-3.5 text-amber-600" />
-              Outbound Dispatch
+              <CheckCircle2 className="size-3.5 text-sky-600" />
+              Processed Goods
             </button>
             <button
               type="button"
@@ -567,14 +477,46 @@ export default function WH1AddMovementModal({
                 </label>
 
                 <label className="space-y-1 block">
-                  <span className="text-zinc-500 uppercase text-[10px] font-black">Unit Cost / Price (ETB)</span>
+                  <span className="text-zinc-700 uppercase text-[10px] font-black">Cost Price (ETB) *</span>
                   <input
                     type="number"
-                    step="0.01"
+                    step="any"
+                    min="0.01"
                     placeholder="0.00"
                     value={unitPrice}
                     onChange={(e) => setUnitPrice(e.target.value)}
-                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                    required
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono font-bold text-zinc-900"
+                  />
+                </label>
+
+                <label className="space-y-1 block">
+                  <div className="flex items-center justify-between">
+                    <span className="text-blue-900 uppercase text-[10px] font-black">
+                      Selling Price (ETB) <span className="text-[9px] text-zinc-400 font-normal lowercase">(optional)</span>
+                    </span>
+                    {(() => {
+                      const cost = Number(unitPrice || 0)
+                      const sell = Number(sellingPrice || 0)
+                      if (cost > 0 && sell > 0) {
+                        const pct = Math.round(((sell - cost) / cost) * 100)
+                        return (
+                          <span className={`text-[10px] font-black font-mono ${pct >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                            {pct >= 0 ? `+${pct}%` : `${pct}%`}
+                          </span>
+                        )
+                      }
+                      return null
+                    })()}
+                  </div>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder="0.00"
+                    value={sellingPrice}
+                    onChange={(e) => setSellingPrice(e.target.value)}
+                    className="h-10 w-full border border-blue-200 bg-blue-50/30 rounded-xl px-3 font-mono font-bold text-blue-950"
                   />
                 </label>
 
@@ -627,106 +569,76 @@ export default function WH1AddMovementModal({
             </form>
           )}
 
-          {/* TAB 2: RECONCILE SALES ISSUE (OUTBOUND) */}
-          {activeTab === "leave" && (
-            <form onSubmit={handleSaveLeaveSubmit} className="space-y-4 text-xs font-semibold">
-              {isCurrentVoucherAlreadyReconciled && (
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-2 text-emerald-900 text-[11px] font-bold">
-                  <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
-                  <span>Sales Issue {leaveVoucherNo} has already been deducted and recorded in the movement ledger. No additional deduction is needed.</span>
+          {/* TAB 2: PROCESSED GOODS CATEGORIZATION */}
+          {activeTab === "processed" && (
+            <form onSubmit={handleSaveProcessedSubmit} className="space-y-4 text-xs font-semibold">
+              <div className="p-3.5 bg-sky-50 border border-sky-200 rounded-2xl text-sky-950 text-xs flex items-start gap-2.5">
+                <Info className="size-4 text-sky-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-bold text-sky-950">Informational Categorization</p>
+                  <p className="text-[11px] text-sky-800 mt-0.5 leading-relaxed">
+                    Recording processed goods documents cleaned, sorted commodity surplus remaining in the warehouse. It does not alter your physical inventory total or financial stock valuation.
+                  </p>
                 </div>
-              )}
-
-              {existingSalesIssues.length > 0 && (
-                <label className="space-y-1 block">
-                  <span className="text-zinc-500 uppercase text-[10px] font-black">Select Existing Sales Issue</span>
-                  <select
-                    value={selectedIssueId}
-                    onChange={(e) => handleSelectIssue(e.target.value)}
-                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono cursor-pointer bg-zinc-50/50"
-                  >
-                    <option value="">-- Choose from sales issues --</option>
-                    {existingSalesIssues.map((iss) => {
-                      const alreadyDone = isIssueAlreadyReconciled(iss)
-                      return (
-                        <option key={iss.id} value={iss.id}>
-                          FS-{iss.fs_no || iss.id} &bull; {iss.customer_name || iss.customer} &bull; {iss.sale_date || "—"} {alreadyDone ? "✓ (Already Deducted)" : "⚠️ (Missing Leave Deduction)"}
-                        </option>
-                      )
-                    })}
-                  </select>
-                </label>
-              )}
+              </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="space-y-1 block">
-                  <span className="text-zinc-500 uppercase text-[10px] font-black">FS / Sales Issue Voucher #</span>
-                  <input
-                    type="text"
-                    placeholder="e.g. 3095"
-                    value={leaveVoucherNo}
-                    onChange={(e) => setLeaveVoucherNo(e.target.value)}
-                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
-                    required
-                  />
-                </label>
-
-                <label className="space-y-1 block">
-                  <span className="text-zinc-500 uppercase text-[10px] font-black">Buying Customer</span>
-                  <input
-                    type="text"
-                    placeholder="e.g. Horizon Coffee Export"
-                    value={leaveCustomer}
-                    onChange={(e) => setLeaveCustomer(e.target.value)}
-                    className="h-10 w-full border border-zinc-200 rounded-xl px-3"
-                    required
-                  />
-                </label>
-
-                <label className="space-y-1 block">
-                  <span className="text-zinc-500 uppercase text-[10px] font-black">Dispatch Truck Plate</span>
-                  <input
-                    type="text"
-                    placeholder="e.g. ET-3-99120"
-                    value={leavePlateNumber}
-                    onChange={(e) => setLeavePlateNumber(e.target.value)}
-                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
-                  />
-                </label>
-
-                <label className="space-y-1 block">
-                  <span className="text-zinc-500 uppercase text-[10px] font-black">Leave / Dispatch Date</span>
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Date Processed</span>
                   <input
                     type="date"
-                    value={leaveDate}
-                    onChange={(e) => setLeaveDate(e.target.value)}
+                    value={processedDate}
+                    onChange={(e) => setProcessedDate(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono font-bold"
+                    required
+                  />
+                </label>
+
+                <label className="space-y-1 block">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">
+                    Quantity Processed ({product.unit || "Quintal"})
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="e.g. 485"
+                    value={processedQuantity}
+                    onChange={(e) => setProcessedQuantity(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono font-bold text-sky-900"
+                    required
+                  />
+                </label>
+
+                <label className="space-y-1 block">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Parcel / Batch / Reference (Optional)</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. Surplus from SO-2500 run"
+                    value={processedVoucher}
+                    onChange={(e) => setProcessedVoucher(e.target.value)}
                     className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
-                    required
                   />
                 </label>
 
-                <label className="space-y-1 block md:col-span-1">
-                  <span className="text-zinc-500 uppercase text-[10px] font-black">Quantity Dispatched (Quintal)</span>
+                <label className="space-y-1 block">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Truck Plate / Staging Bay (Optional)</span>
                   <input
-                    type="number"
-                    step="0.01"
-                    placeholder="e.g. 80"
-                    value={leaveQuantity}
-                    onChange={(e) => setLeaveQuantity(e.target.value)}
-                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono font-bold text-amber-900"
-                    required
+                    type="text"
+                    placeholder="e.g. Bay 2 / Warehouse Floor"
+                    value={processedPlate}
+                    onChange={(e) => setProcessedPlate(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 uppercase font-mono"
                   />
                 </label>
 
-                <label className="space-y-1 block md:col-span-1">
-                  <span className="text-zinc-500 uppercase text-[10px] font-black">Selling Unit Price (ETB)</span>
+                <label className="space-y-1 block md:col-span-2">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">Cleaning Line / QC Notes</span>
                   <input
-                    type="number"
-                    step="0.01"
-                    placeholder={`e.g. ${product.sellingPrice || 280}`}
-                    value={leaveUnitPrice}
-                    onChange={(e) => setLeaveUnitPrice(e.target.value)}
-                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono font-bold text-emerald-900"
+                    type="text"
+                    placeholder="e.g. Cleaned & destoned grade-1 mung bean surplus ready in store"
+                    value={processedNotes}
+                    onChange={(e) => setProcessedNotes(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3"
                   />
                 </label>
               </div>
@@ -742,18 +654,11 @@ export default function WH1AddMovementModal({
                 </button>
                 <button
                   type="submit"
-                  disabled={isSaving || isCurrentVoucherAlreadyReconciled}
-                  className={`px-5 py-2 rounded-xl font-bold text-xs shadow-sm transition-all cursor-pointer ${
-                    isCurrentVoucherAlreadyReconciled
-                      ? "bg-zinc-200 text-zinc-400 cursor-not-allowed"
-                      : "bg-amber-700 hover:bg-amber-800 text-white"
-                  }`}
+                  disabled={isSaving}
+                  className="px-5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs shadow-sm transition-all cursor-pointer inline-flex items-center gap-1.5"
                 >
-                  {isSaving
-                    ? "Reconciling Leave..."
-                    : isCurrentVoucherAlreadyReconciled
-                    ? "Already Deducted"
-                    : "Reconcile Outbound Leave"}
+                  <CheckCircle2 className="size-4 text-white" />
+                  {isSaving ? "Saving..." : "Record Processed Goods"}
                 </button>
               </div>
             </form>
@@ -762,38 +667,12 @@ export default function WH1AddMovementModal({
           {/* TAB 3: REJECT LOSS (CLEANING DEDUCTION) */}
           {activeTab === "reject" && (
             <form onSubmit={handleSaveRejectSubmit} className="space-y-4 text-xs font-semibold">
-              {/* Child Entry Source Selector */}
-              <label className="space-y-1 block">
-                <span className="text-zinc-500 uppercase text-[10px] font-black">
-                  Source Inbound Entry / Specific Truckload
-                </span>
-                <select
-                  value={selectedRejectEntryId}
-                  onChange={(e) => handleSelectRejectEntry(e.target.value)}
-                  className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono cursor-pointer bg-zinc-50/50 text-xs"
-                >
-                  <option value="">
-                    -- Auto FIFO / All Warehouse Balance (Avg: ETB {(product.unitCost || 0).toLocaleString()}/Qtl) --
-                  </option>
-                  {(product.wh1Entries || []).map((entry, idx) => {
-                    const eId = entry.entryId || entry.id || String(idx)
-                    return (
-                      <option key={eId} value={eId}>
-                        Entry #{idx + 1} {entry.voucherNo ? `(GRV-${entry.voucherNo})` : ""} &bull; {entry.customer || "Direct"} &bull; {entry.plateNumber || "—"} &bull; Avail: {entry.quantityRemaining} {product.unit} @ ETB {entry.unitPrice}/Qtl
-                      </option>
-                    )
-                  })}
-                </select>
-              </label>
-
               {/* Dynamic Live Loss Card */}
               <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200/80 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-rose-900 font-extrabold flex items-center gap-1.5">
                     <MinusCircle className="size-3.5 text-rose-600" />
-                    {selectedRejectEntry
-                      ? `Deducting from Inbound Entry No. ${selectedRejectEntry.voucherNo || selectedRejectEntry.entryId}`
-                      : "Deducting from Total Warehouse Balance (FIFO)"}
+                    Deducting from Total Warehouse Balance (Average Unit Cost)
                   </span>
                   <span className="font-mono text-zinc-500 text-[11px]">
                     Available: <strong className="text-zinc-900">{availableRejectStock.toLocaleString()} {product.unit}</strong>
@@ -801,7 +680,7 @@ export default function WH1AddMovementModal({
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 border-t border-rose-200/50 text-[11px]">
                   <div className="bg-white/80 p-2 rounded-xl border border-rose-100">
-                    <span className="text-zinc-400 block text-[9px] uppercase font-bold">Acquisition Unit Cost</span>
+                    <span className="text-zinc-400 block text-[9px] uppercase font-bold">Average Unit Cost</span>
                     <span className="font-mono font-black text-zinc-900">
                       ETB {effectiveRejectUnitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
@@ -820,7 +699,7 @@ export default function WH1AddMovementModal({
                   </div>
                 </div>
                 <p className="text-[10px] text-rose-800/80 italic pt-0.5">
-                  💡 Zero-Homogenization: Stock asset value will decrease exactly by ETB {computedRejectLossValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} at this entry's exact unit acquisition cost.
+                  💡 Stock asset value will decrease by ETB {computedRejectLossValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} based on weighted average acquisition cost.
                 </p>
               </div>
 
@@ -836,23 +715,7 @@ export default function WH1AddMovementModal({
                   />
                 </label>
 
-                <label className="space-y-1 block">
-                  <span className="text-zinc-500 uppercase text-[10px] font-black">Rejection Reason / Category</span>
-                  <select
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 cursor-pointer bg-white"
-                  >
-                    <option value="Cleaning & Impurities">Cleaning & Impurities</option>
-                    <option value="Moisture Loss / Drying">Moisture Loss / Drying</option>
-                    <option value="Foreign Matter / Stones">Foreign Matter / Stones</option>
-                    <option value="Broken / Damaged Kernels">Broken / Damaged Kernels</option>
-                    <option value="Grading Degradation">Grading Degradation</option>
-                    <option value="Other Rejection">Other Rejection</option>
-                  </select>
-                </label>
-
-                <div className="space-y-1 relative md:col-span-1">
+                <div className="space-y-1 relative">
                   <span className="text-zinc-500 uppercase text-[10px] font-black">Supplier / Source</span>
                   <div className="relative flex items-center">
                     <input
@@ -939,11 +802,11 @@ export default function WH1AddMovementModal({
                   />
                 </label>
 
-                <label className="space-y-1 block md:col-span-2">
+                <label className="space-y-1 block md:col-span-1">
                   <span className="text-zinc-500 uppercase text-[10px] font-black">Quality / QC Notes (Optional)</span>
                   <input
                     type="text"
-                    placeholder="e.g. Broken seeds removed during optical sorting"
+                    placeholder="e.g. Broken seeds removed during sorting"
                     value={rejectNotes}
                     onChange={(e) => setRejectNotes(e.target.value)}
                     className="h-10 w-full border border-zinc-200 rounded-xl px-3"

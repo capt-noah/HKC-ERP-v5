@@ -169,13 +169,19 @@ export async function listSalesIssues(query = {}) {
       )
     }
 
+    const total = fullIssues.length
+    const hasPagination = query.page !== undefined || query.pageSize !== undefined
+    const page = Math.max(1, parseInt(query.page, 10) || 1)
+    const pageSize = Math.max(1, parseInt(query.pageSize, 10) || 10)
+    const pagedRows = hasPagination ? fullIssues.slice((page - 1) * pageSize, page * pageSize) : fullIssues
+
     return {
       status: 200,
       body: {
-        rows: fullIssues,
-        total: fullIssues.length,
-        page: 1,
-        pageSize: fullIssues.length,
+        rows: pagedRows,
+        total,
+        page: hasPagination ? page : 1,
+        pageSize: hasPagination ? pageSize : total,
       },
     }
   } catch (err) {

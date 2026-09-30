@@ -178,3 +178,57 @@ export async function deleteMovement(id, tableName = "stock_movements") {
     return { status: 200, body: { success: true, message: `Movement '${cleanId}' deleted.` } }
   })
 }
+
+export async function updateMovementDifference(id, body = {}, tableName = "export_warehouse_movements") {
+  const cleanId = String(id).trim()
+  const diffQty = Number(
+    body.differenceQty !== undefined
+      ? body.differenceQty
+      : body.rejectQuantity !== undefined
+      ? body.rejectQuantity
+      : body.reject_quantity !== undefined
+      ? body.reject_quantity
+      : 0
+  )
+  const notes = body.notes || body.reason || null
+
+  return await withTransaction(async (conn) => {
+    const [existing] = await conn.query(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [cleanId])
+    if (existing.length === 0) {
+      return { status: 404, body: { error: `Movement '${cleanId}' not found in ${tableName}.` } }
+    }
+
+    const row = existing[0]
+    const oldDiff = Number(row.reject_quantity || 0)
+    const deltaDiff = diffQty - oldDiff
+
+    let newReason = row.reason
+    if (notes) {
+      if (!newReason) {
+        newReason = `[Diff: ${diffQty} Qtl - ${notes}]`
+      } else if (newReason.includes("[Diff:")) {
+        newReason = newReason.replace(/\[Diff:[^\]]+\]/, `[Diff: ${diffQty} Qtl - ${notes}]`)
+      } else {
+        newReason = `${newReason} [Diff: ${diffQty} Qtl - ${notes}]`
+      }
+    } else if (diffQty === 0 && newReason && newReason.includes("[Diff:")) {
+      newReason = newReason.replace(/\[Diff:[^\]]+\]/, "").trim()
+    }
+
+    await conn.query(
+      `UPDATE \`${tableName}\` SET reject_quantity = ?, reason = ?, updated_at = NOW(3) WHERE id = ?`,
+      [diffQty, newReason, cleanId]
+    )
+
+    // Adjust export product quantity if difference changed
+    if (tableName === "export_warehouse_movements" && row.product_id && deltaDiff !== 0) {
+      await conn.query(
+        "UPDATE export_products SET quantity = GREATEST(0, quantity - ?), updated_at = NOW(3) WHERE id = ?",
+        [deltaDiff, row.product_id]
+      )
+    }
+
+    const [rows] = await conn.query(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [cleanId])
+    return { status: 200, body: unwrapRow(rows[0], "relational") }
+  })
+}

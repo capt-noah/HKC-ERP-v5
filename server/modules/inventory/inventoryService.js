@@ -20,6 +20,7 @@ import {
   getMovement,
   recordMovement,
   updateMovement,
+  updateMovementDifference,
   deleteMovement,
 } from "./inventoryMovementLogic.js"
 
@@ -60,6 +61,7 @@ export const inventoryService = {
   getMovement,
   recordMovement,
   updateMovement,
+  updateMovementDifference,
   deleteMovement,
 
   // Transfer Operations
