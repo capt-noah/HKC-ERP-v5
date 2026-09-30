@@ -11,14 +11,12 @@ import {
   ChevronDown,
   FileCheck,
   Receipt,
-  ArrowRightLeft
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, type PurchaseOrder, type PurchaseOrderAttachment } from "@/lib/erpStore"
 import { useFinanceStore } from "@/lib/financeStore"
-import { useAuthStore } from "@/lib/authStore"
 import { useFeedback } from "@/context/FeedbackContext"
 import { DataTable } from "@/components/DataTable"
 import { type TableColumn } from "@/components/ResizableTable"
@@ -49,10 +47,6 @@ export default function PurchaseOrders() {
   // Filter & Search State
   const [filterTab, setFilterTab] = useState<string>("ALL")
   const [searchQuery, setSearchQuery] = useState("")
-
-  // Current User & Finance Permission
-  const { user } = useAuthStore()
-  const canMaintainGL = user?.roles?.includes("finance_manager") || user?.roles?.includes("superadmin")
 
   // Modals State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
@@ -1050,16 +1044,6 @@ export default function PurchaseOrders() {
                 {/* Actions */}
                 <td style={{ width: `${colWidths._actions}px` }} className="py-4 px-2 text-center whitespace-nowrap overflow-hidden">
                   <div className="flex items-center justify-center gap-1.5 flex-nowrap" onClick={(e) => e.stopPropagation()}>
-                    {canMaintainGL && (
-                      <button
-                        type="button"
-                        onClick={() => setSplitPo(po)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-900 font-extrabold text-[11px] transition-all border border-purple-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                        title="Finance Maintain COA Routing & Multi-Line Split"
-                      >
-                        <ArrowRightLeft className="size-3 text-purple-700" /> Split GL
-                      </button>
-                    )}
                     {isCredit && dueVal > 0 && (
                       <button
                         type="button"

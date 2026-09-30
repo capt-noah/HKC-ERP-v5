@@ -499,6 +499,7 @@ class ErpStore {
   private suppliers: Supplier[] = []
   private quotations: Quotation[] = []
   private deliveryNotes: DeliveryNote[] = []
+  private salesIssues: any[] = []
   private transfers: Transfer[] = []
   private stockMovements: StockMovementLog[] = []
   private quarantineRecords: QuarantineRecord[] = []
@@ -994,6 +995,7 @@ class ErpStore {
         exportProducts,
         pharmaProducts,
         pharmaBatches,
+        salesIssues,
       ] = await Promise.all([
         loadResource<SalesOrder>("sales_orders").catch(() => []),
         loadResource<PurchaseOrder>("purchase_orders").catch(() => []),
@@ -1003,7 +1005,10 @@ class ErpStore {
         loadResource<Product>("export_products").catch(() => []),
         loadResource<Product>("pharma_products").catch(() => []),
         loadResource<any>("pharma_product_batches").catch(() => []),
+        loadResource<any>("sales_issues").catch(() => []),
       ])
+
+      this.salesIssues = salesIssues || []
 
       this.salesOrders = sortNewestFirst((salesOrders || []).map((so: any) => ({
         ...so,
@@ -1302,6 +1307,14 @@ class ErpStore {
 
   public getDeliveryNotes(): DeliveryNote[] {
     return [...this.deliveryNotes]
+  }
+
+  public getSalesIssues(): any[] {
+    return [...this.salesIssues]
+  }
+
+  public setSalesIssues(issues: any[]): void {
+    this.salesIssues = issues
   }
 
   public getTransfers(): Transfer[] {
@@ -3659,21 +3672,29 @@ class ErpStore {
   }
 
   // --- Actions: Customers ---
-  public addCustomer(customer: Customer) {
+  public async addCustomer(customer: Customer) {
     const existing = this.customers.find((c) => c.id === customer.id || (c.name && c.name.toLowerCase() === customer.name.toLowerCase()))
     if (existing) {
-      this.updateCustomer(existing.id, customer)
+      await this.updateCustomer(existing.id, customer)
       return existing
     }
     this.customers.unshift(customer)
-    createResource("customers", customer).catch((err) => console.error("Failed to persist new Customer:", err))
+    try {
+      await createResource("customers", customer)
+    } catch (err) {
+      console.error("Failed to persist new Customer:", err)
+    }
     this.notify()
     return customer
   }
 
-  public updateCustomer(id: string, updates: Partial<Customer>) {
+  public async updateCustomer(id: string, updates: Partial<Customer>) {
     this.customers = this.customers.map((c) => (c.id === id ? { ...c, ...updates } : c))
-    updateResource("customers", id, updates).catch((err) => console.error("Failed to update Customer:", err))
+    try {
+      await updateResource("customers", id, updates)
+    } catch (err) {
+      console.error("Failed to update Customer:", err)
+    }
     this.notify()
   }
 

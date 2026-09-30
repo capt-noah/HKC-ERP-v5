@@ -47,6 +47,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
 
   const [auditNote, setAuditNote] = useState("")
   const [isSaving, setIsSaving] = useState(false)
+  const isPurchase = invoice ? (invoice.invoice_type === "Purchase" || Boolean(invoice.purchase_order_id)) : false
 
   // Initialize state on invoice change
   useEffect(() => {
@@ -56,6 +57,8 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
     const invSubtotal = Number(invoice.subtotal || invTotal)
     const invTax = Number(invoice.tax_amount || 0)
 
+    const isPurchase = invoice.invoice_type === "Purchase" || Boolean(invoice.purchase_order_id)
+    const isCredit = (invoice.payment_terms || "").toLowerCase().includes("credit") || Number(invoice.balance_due || 0) > 0
     const isExportWh =
       String(invoice.warehouse_id || "").toUpperCase().startsWith("WH1") ||
       String(invoice.warehouse_id || "").toUpperCase().includes("EXP")
@@ -67,233 +70,315 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
       firstItem.includes("BEAN")
     const isExport = isExportWh || isExportCrop
 
+    const resolveAcc = (idOrCode?: string) => {
+      if (!idOrCode) return null
+      const clean = String(idOrCode).trim()
+      const unPrefixed = clean.replace(/^ACC-/, "")
+      return (
+        accounts.find(
+          (a) =>
+            a.id === clean ||
+            a.code === clean ||
+            a.code === unPrefixed ||
+            a.id === `ACC-${clean}` ||
+            a.id === unPrefixed
+        ) || null
+      )
+    }
+
     // Check existing saved distribution or live journal entries
     const existingDist = invoice.gl_distribution
     const { salesLines, cogsLines } = financeStore.getInvoiceJournalEntries(invoice)
 
-    // 1. REVENUE SECTION - DEBITS (Settlement / AR / Cash / Bank)
-    if (existingDist?.revenue_lines && existingDist.revenue_lines.some((l) => Number(l.debit) > 0)) {
+    // 1. REVENUE / PROCUREMENT SECTION - DEBITS
+    const distRev = (existingDist?.revenue_lines as any[]) || []
+    const rawSalesLines = (salesLines as any[]) || []
+    const distCogs = (existingDist?.cogs_lines as any[]) || []
+    const rawCogsLines = (cogsLines as any[]) || []
+
+    if (distRev.length > 0 && distRev.some((l: any) => Number(l.debit || (l.amount && l.id?.startsWith("dr-"))) > 0)) {
       setRevDebitLines(
-        existingDist.revenue_lines
-          .filter((l) => Number(l.debit) > 0)
-          .map((l, idx) => {
-            const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id)
+        distRev
+          .filter((l: any) => Number(l.debit || (l.amount && l.id?.startsWith("dr-"))) > 0)
+          .map((l: any, idx: number) => {
+            const acc = resolveAcc(l.account_code || l.accountId || l.account_id || l.accountCode || l.code)
             return {
               id: l.id || `dr-rev-${idx}-${Date.now()}`,
-              accountId: acc?.id || l.account_id,
-              accountCode: acc?.code || l.account_code || l.account_id,
-              accountName: acc?.name || l.account_name || "Account " + l.account_id,
-              description: l.description || "Customer Settlement",
-              amount: Number(l.debit) || 0,
-              partyType: l.party_type ?? "Customer",
+              accountId: acc?.id || l.accountId || l.account_id || l.accountCode || l.account_code || "1300-03",
+              accountCode: acc?.code || l.accountCode || l.account_code || l.accountId || l.account_id || "1300-03",
+              accountName: acc?.name || l.accountName || l.account_name || "Account " + (acc?.code || l.accountCode || l.account_code),
+              description: l.description || (isPurchase ? "Procurement Goods / Expense" : "Customer Settlement"),
+              amount: Number(l.debit || l.debit_amount || l.amount) || 0,
+              partyType: l.party_type ?? (isPurchase ? "Supplier" : "Customer"),
               partyId: l.party_id ?? null,
-              partyName: l.party_name ?? invoice.customer_name,
+              partyName: l.party_name ?? (invoice.supplier_name || invoice.customer_name),
             }
           })
       )
-    } else if (salesLines.length > 0 && salesLines.some((l) => Number(l.debit_amount) > 0)) {
+    } else if (rawSalesLines.length > 0 && rawSalesLines.some((l: any) => Number(l.debit_amount || (l.amount && (l.id?.startsWith("dr-") || l.debit))) > 0)) {
       setRevDebitLines(
-        salesLines
-          .filter((l) => Number(l.debit_amount) > 0)
-          .map((l, idx) => {
-            const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id)
+        rawSalesLines
+          .filter((l: any) => Number(l.debit_amount || (l.amount && (l.id?.startsWith("dr-") || l.debit))) > 0)
+          .map((l: any, idx: number) => {
+            const acc = resolveAcc(l.account_id || l.accountId || l.accountCode || l.account_code)
             return {
               id: l.id || `dr-rev-${idx}-${Date.now()}`,
-              accountId: acc?.id || l.account_id,
-              accountCode: acc?.code || l.account_id,
-              accountName: acc?.name || "Account " + l.account_id,
-              description: "Customer Settlement / Receivables",
-              amount: Number(l.debit_amount) || 0,
-              partyType: l.party_type ?? "Customer",
+              accountId: acc?.id || l.account_id || l.accountId,
+              accountCode: acc?.code || l.account_id || l.accountId,
+              accountName: acc?.name || l.account_name || l.accountName || "Account " + (acc?.code || l.account_id),
+              description: isPurchase ? "Procurement Goods / Expense" : "Customer Settlement / Receivables",
+              amount: Number(l.debit_amount || l.amount || l.debit) || 0,
+              partyType: l.party_type ?? (isPurchase ? "Supplier" : "Customer"),
               partyId: l.party_id ?? null,
-              partyName: l.party_name ?? invoice.customer_name,
+              partyName: l.party_name ?? (invoice.supplier_name || invoice.customer_name),
             }
           })
       )
     } else {
-      // Default: AR account for total invoice amount
-      const defaultArCode = isExport ? "1300-01" : "1300-03"
-      const defaultArAcc = accounts.find((a) => a.code === defaultArCode) || accounts.find((a) => a.code === "1300-03")
-      setRevDebitLines([
-        {
-          id: `dr-rev-init-${Date.now()}`,
-          accountId: defaultArAcc?.id || defaultArCode,
-          accountCode: defaultArAcc?.code || defaultArCode,
-          accountName: defaultArAcc?.name || (isExport ? "EXPORT SALES RECIVEABLE" : "VET MEDICEN SALES RECIVABLE"),
-          description: `Customer Invoice Due (${invoice.customer_name})`,
-          amount: invTotal,
-          partyType: "Customer",
-          partyId: `CUST-${invoice.customer_name.replace(/\s+/g, "").toUpperCase()}`,
-          partyName: invoice.customer_name,
-        },
-      ])
+      if (isPurchase) {
+        const defaultDrCode = "1410-01"
+        const defaultDrAcc = resolveAcc(defaultDrCode) || accounts[0]
+        setRevDebitLines([
+          {
+            id: `dr-rev-init-${Date.now()}`,
+            accountId: defaultDrAcc?.id || defaultDrCode,
+            accountCode: defaultDrAcc?.code || defaultDrCode,
+            accountName: defaultDrAcc?.name || "STOCK OF GREEN MUNG",
+            description: invoice.notes || `Procurement Allocation (${invoice.supplier_name || invoice.customer_name})`,
+            amount: invTotal,
+            partyType: "Supplier",
+            partyId: invoice.supplier_name ? `SUPP-${invoice.supplier_name.replace(/\s+/g, "").toUpperCase()}` : null,
+            partyName: invoice.supplier_name || invoice.customer_name,
+          },
+        ])
+      } else {
+        // Default: AR account for total invoice amount
+        const defaultArCode = isExport ? "1300-01" : "1300-03"
+        const defaultArAcc = resolveAcc(defaultArCode) || resolveAcc("1300-03")
+        setRevDebitLines([
+          {
+            id: `dr-rev-init-${Date.now()}`,
+            accountId: defaultArAcc?.id || defaultArCode,
+            accountCode: defaultArAcc?.code || defaultArCode,
+            accountName: defaultArAcc?.name || (isExport ? "EXPORT SALES RECIVEABLE" : "VET MEDICEN SALES RECIVABLE"),
+            description: `Customer Invoice Due (${invoice.customer_name})`,
+            amount: invTotal,
+            partyType: "Customer",
+            partyId: `CUST-${invoice.customer_name.replace(/\s+/g, "").toUpperCase()}`,
+            partyName: invoice.customer_name,
+          },
+        ])
+      }
     }
 
-    // 2. REVENUE SECTION - CREDITS (Sales Revenue & Tax Payable)
-    if (existingDist?.revenue_lines && existingDist.revenue_lines.some((l) => Number(l.credit) > 0)) {
+    // 2. REVENUE / SETTLEMENT SECTION - CREDITS
+    if (distRev.length > 0 && distRev.some((l: any) => Number(l.credit || (l.amount && l.id?.startsWith("cr-"))) > 0)) {
       setRevCreditLines(
-        existingDist.revenue_lines
-          .filter((l) => Number(l.credit) > 0)
-          .map((l, idx) => {
-            const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id)
+        distRev
+          .filter((l: any) => Number(l.credit || (l.amount && l.id?.startsWith("cr-"))) > 0)
+          .map((l: any, idx: number) => {
+            const acc = resolveAcc(l.account_code || l.accountId || l.account_id || l.accountCode || l.code)
             return {
               id: l.id || `cr-rev-${idx}-${Date.now()}`,
-              accountId: acc?.id || l.account_id,
-              accountCode: acc?.code || l.account_code || l.account_id,
-              accountName: acc?.name || l.account_name || "Account " + l.account_id,
-              description: l.description || "Sales Revenue Recognition",
-              amount: Number(l.credit) || 0,
+              accountId: acc?.id || l.accountId || l.account_id || l.accountCode || l.account_code || "4000-01-01",
+              accountCode: acc?.code || l.accountCode || l.account_code || l.accountId || l.account_id || "4000-01-01",
+              accountName: acc?.name || l.accountName || l.account_name || "Account " + (acc?.code || l.accountCode || l.account_code),
+              description: l.description || (isPurchase ? "Supplier Settlement / Bank" : "Sales Revenue Recognition"),
+              amount: Number(l.credit || l.credit_amount || l.amount) || 0,
             }
           })
       )
-    } else if (salesLines.length > 0 && salesLines.some((l) => Number(l.credit_amount) > 0)) {
+    } else if (rawSalesLines.length > 0 && rawSalesLines.some((l: any) => Number(l.credit_amount || (l.amount && (l.id?.startsWith("cr-") || l.credit))) > 0)) {
       setRevCreditLines(
-        salesLines
-          .filter((l) => Number(l.credit_amount) > 0)
-          .map((l, idx) => {
-            const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id)
+        rawSalesLines
+          .filter((l: any) => Number(l.credit_amount || (l.amount && (l.id?.startsWith("cr-") || l.credit))) > 0)
+          .map((l: any, idx: number) => {
+            const acc = resolveAcc(l.account_id || l.accountId || l.accountCode || l.account_code)
             return {
               id: l.id || `cr-rev-${idx}-${Date.now()}`,
-              accountId: acc?.id || l.account_id,
-              accountCode: acc?.code || l.account_id,
-              accountName: acc?.name || "Account " + l.account_id,
-              description: acc?.name || "Sales Revenue",
-              amount: Number(l.credit_amount) || 0,
+              accountId: acc?.id || l.account_id || l.accountId,
+              accountCode: acc?.code || l.account_id || l.accountId,
+              accountName: acc?.name || l.account_name || l.accountName || "Account " + (acc?.code || l.account_id),
+              description: acc?.name || (isPurchase ? "Supplier Settlement / Bank" : "Sales Revenue"),
+              amount: Number(l.credit_amount || l.amount || l.credit) || 0,
             }
           })
       )
     } else {
-      // Default: Sales Revenue for Subtotal, and VAT for Tax (if applicable)
-      let defaultRevCode = isExport ? "4000-02-01" : "4000-01-01"
-      if (isExport) {
-        if (firstItem.includes("SOYA") || firstItem.includes("SOY")) defaultRevCode = "4000-02-02"
-        else if (firstItem.includes("REDISH") || firstItem.includes("REDDISH") || firstItem.includes("RED")) defaultRevCode = "4000-02-03"
-        else if (firstItem.includes("SESAME")) defaultRevCode = "4000-02-04"
+      if (isPurchase) {
+        const defaultCrCode = isCredit ? "2100-06" : "1000-02-26"
+        const defaultCrAcc = resolveAcc(defaultCrCode) || resolveAcc("1000-02-26") || accounts[0]
+        setRevCreditLines([
+          {
+            id: `cr-rev-init-${Date.now()}`,
+            accountId: defaultCrAcc?.id || defaultCrCode,
+            accountCode: defaultCrAcc?.code || defaultCrCode,
+            accountName: defaultCrAcc?.name || (isCredit ? "Other Accruals & Payables" : "CBE Bank Operating"),
+            description: isCredit ? "Supplier Credit Settlement" : "Bank Disbursement",
+            amount: invTotal,
+          },
+        ])
+      } else {
+        // Default: Sales Revenue for Subtotal, and VAT for Tax (if applicable)
+        let defaultRevCode = isExport ? "4000-02-01" : "4000-01-01"
+        if (isExport) {
+          if (firstItem.includes("SOYA") || firstItem.includes("SOY")) defaultRevCode = "4000-02-02"
+          else if (firstItem.includes("REDISH") || firstItem.includes("REDDISH") || firstItem.includes("RED")) defaultRevCode = "4000-02-03"
+          else if (firstItem.includes("SESAME")) defaultRevCode = "4000-02-04"
+        }
+        const defaultRevAcc = resolveAcc(defaultRevCode) || resolveAcc("4000-01-01")
+        const vatAcc = resolveAcc("2000-05")
+
+        const initialCredits: SplitLineItem[] = [
+          {
+            id: `cr-rev-init-1-${Date.now()}`,
+            accountId: defaultRevAcc?.id || defaultRevCode,
+            accountCode: defaultRevAcc?.code || defaultRevCode,
+            accountName: defaultRevAcc?.name || "Sales Revenue",
+            description: "Operating Sales Revenue",
+            amount: invSubtotal,
+          },
+        ]
+
+        if (invTax > 0 && vatAcc) {
+          initialCredits.push({
+            id: `cr-rev-init-2-${Date.now()}`,
+            accountId: vatAcc.id,
+            accountCode: vatAcc.code,
+            accountName: vatAcc.name,
+            description: "VAT Output Payable (15%)",
+            amount: invTax,
+          })
+        }
+
+        setRevCreditLines(initialCredits)
       }
-      const defaultRevAcc = accounts.find((a) => a.code === defaultRevCode) || accounts.find((a) => a.code === "4000-01-01")
-      const vatAcc = accounts.find((a) => a.code === "2000-05")
-
-      const initialCredits: SplitLineItem[] = [
-        {
-          id: `cr-rev-init-1-${Date.now()}`,
-          accountId: defaultRevAcc?.id || defaultRevCode,
-          accountCode: defaultRevAcc?.code || defaultRevCode,
-          accountName: defaultRevAcc?.name || "Sales Revenue",
-          description: "Operating Sales Revenue",
-          amount: invSubtotal,
-        },
-      ]
-
-      if (invTax > 0 && vatAcc) {
-        initialCredits.push({
-          id: `cr-rev-init-2-${Date.now()}`,
-          accountId: vatAcc.id,
-          accountCode: vatAcc.code,
-          accountName: vatAcc.name,
-          description: "VAT Output Payable (15%)",
-          amount: invTax,
-        })
-      }
-
-      setRevCreditLines(initialCredits)
     }
 
     // 3. COGS & INVENTORY SECTION
     const hasExistingCogs =
-      (existingDist?.cogs_lines && existingDist.cogs_lines.length > 0) ||
-      cogsLines.length > 0
+      (distCogs.length > 0) ||
+      rawCogsLines.length > 0
 
     setHasCogsSection(hasExistingCogs)
 
-    if (existingDist?.cogs_lines && existingDist.cogs_lines.length > 0) {
+    if (distCogs.length > 0) {
       setCogsDebitLines(
-        existingDist.cogs_lines
-          .filter((l) => Number(l.debit) > 0)
-          .map((l, idx) => {
-            const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id)
+        distCogs
+          .filter((l: any) => Number(l.debit || (l.amount && l.id?.startsWith("dr-"))) > 0)
+          .map((l: any, idx: number) => {
+            const acc = resolveAcc(l.account_code || l.accountId || l.account_id || l.accountCode || l.code)
             return {
               id: l.id || `dr-cogs-${idx}-${Date.now()}`,
-              accountId: acc?.id || l.account_id,
-              accountCode: acc?.code || l.account_code || l.account_id,
-              accountName: acc?.name || l.account_name || "Account " + l.account_id,
+              accountId: acc?.id || l.accountId || l.account_id || "5000-01",
+              accountCode: acc?.code || l.accountCode || l.account_code || "5000-01",
+              accountName: acc?.name || l.accountName || l.account_name || "Account " + (acc?.code || l.accountCode || l.account_code || l.account_id),
               description: l.description || "Cost of Goods Sold",
-              amount: Number(l.debit) || 0,
+              amount: Number(l.debit || l.debit_amount || l.amount) || 0,
             }
           })
       )
       setCogsCreditLines(
-        existingDist.cogs_lines
-          .filter((l) => Number(l.credit) > 0)
-          .map((l, idx) => {
-            const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id)
+        distCogs
+          .filter((l: any) => Number(l.credit || (l.amount && l.id?.startsWith("cr-"))) > 0)
+          .map((l: any, idx: number) => {
+            const acc = resolveAcc(l.account_code || l.accountId || l.account_id || l.accountCode || l.code)
             return {
               id: l.id || `cr-cogs-${idx}-${Date.now()}`,
-              accountId: acc?.id || l.account_id,
-              accountCode: acc?.code || l.account_code || l.account_id,
-              accountName: acc?.name || l.account_name || "Account " + l.account_id,
+              accountId: acc?.id || l.accountId || l.account_id || "1400-01",
+              accountCode: acc?.code || l.accountCode || l.account_code || "1400-01",
+              accountName: acc?.name || l.accountName || l.account_name || "Account " + (acc?.code || l.accountCode || l.account_code || l.account_id),
               description: l.description || "Inventory Asset Derecognition",
-              amount: Number(l.credit) || 0,
+              amount: Number(l.credit || l.credit_amount || l.amount) || 0,
             }
           })
       )
-    } else if (cogsLines.length > 0) {
+    } else if (rawCogsLines.length > 0) {
       setCogsDebitLines(
-        cogsLines
-          .filter((l) => Number(l.debit_amount) > 0)
-          .map((l, idx) => {
-            const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id)
+        rawCogsLines
+          .filter((l: any) => Number(l.debit_amount || (l.amount && (l.id?.startsWith("dr-") || l.debit))) > 0)
+          .map((l: any, idx: number) => {
+            const acc = resolveAcc(l.account_id || l.accountId || l.accountCode || l.account_code)
             return {
               id: l.id || `dr-cogs-${idx}-${Date.now()}`,
-              accountId: acc?.id || l.account_id,
-              accountCode: acc?.code || l.account_id,
-              accountName: acc?.name || "Account " + l.account_id,
+              accountId: acc?.id || l.account_id || "5000-01",
+              accountCode: acc?.code || l.account_id || "5000-01",
+              accountName: acc?.name || "Account " + (acc?.code || l.account_id),
               description: "Cost of Goods Sold Expense",
-              amount: Number(l.debit_amount) || 0,
+              amount: Number(l.debit_amount || l.amount || l.debit) || 0,
             }
           })
       )
       setCogsCreditLines(
-        cogsLines
-          .filter((l) => Number(l.credit_amount) > 0)
-          .map((l, idx) => {
-            const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id)
+        rawCogsLines
+          .filter((l: any) => Number(l.credit_amount || (l.amount && (l.id?.startsWith("cr-") || l.credit))) > 0)
+          .map((l: any, idx: number) => {
+            const acc = resolveAcc(l.account_id || l.accountId || l.accountCode || l.account_code)
             return {
               id: l.id || `cr-cogs-${idx}-${Date.now()}`,
-              accountId: acc?.id || l.account_id,
-              accountCode: acc?.code || l.account_id,
-              accountName: acc?.name || "Account " + l.account_id,
-              description: "Warehouse Inventory Derecognition",
-              amount: Number(l.credit_amount) || 0,
+              accountId: acc?.id || l.account_id || "1400-01",
+              accountCode: acc?.code || l.account_id || "1400-01",
+              accountName: acc?.name || "Account " + (acc?.code || l.account_id),
+              description: "Inventory Asset Derecognition",
+              amount: Number(l.credit_amount || l.amount || l.credit) || 0,
             }
           })
       )
     } else {
-      // Default placeholder if user enables COGS
-      const defaultCogsCode = isExport ? "5010-01" : "5000-01"
-      const defaultStockCode = isExport ? "1410-01" : "1400-01"
-      const defaultCogsAcc = accounts.find((a) => a.code === defaultCogsCode) || accounts.find((a) => a.code === "5000-01")
-      const defaultStockAcc = accounts.find((a) => a.code === defaultStockCode) || accounts.find((a) => a.code === "1400-01")
+      // Default placeholder if user enables Section B
+      if (isPurchase) {
+        const defaultStockCode = isExport ? "1410-01" : "1400-01"
+        const defaultStockAcc = accounts.find((a) => a.code === defaultStockCode) || accounts.find((a) => a.code === "1410-01")
+        const defaultClearingCode = "1410-99"
+        const defaultClearingAcc = accounts.find((a) => a.code === defaultClearingCode) || accounts.find((a) => a.code === "1400-01")
 
-      setCogsDebitLines([
-        {
-          id: `dr-cogs-init-${Date.now()}`,
-          accountId: defaultCogsAcc?.id || defaultCogsCode,
-          accountCode: defaultCogsAcc?.code || defaultCogsCode,
-          accountName: defaultCogsAcc?.name || "Cost of Goods Sold",
-          description: "Inventory Cost of Goods Sold",
-          amount: 0,
-        },
-      ])
-      setCogsCreditLines([
-        {
-          id: `cr-cogs-init-${Date.now()}`,
-          accountId: defaultStockAcc?.id || defaultStockCode,
-          accountCode: defaultStockAcc?.code || defaultStockCode,
-          accountName: defaultStockAcc?.name || "Inventory Stock",
-          description: "Inventory Stock In Hand Derecognition",
-          amount: 0,
-        },
-      ])
+        setCogsDebitLines([
+          {
+            id: `dr-cogs-init-${Date.now()}`,
+            accountId: defaultStockAcc?.id || defaultStockCode,
+            accountCode: defaultStockAcc?.code || defaultStockCode,
+            accountName: defaultStockAcc?.name || "STOCK OF GREEN MUNG",
+            description: "Inventory Stock In Hand",
+            amount: 0,
+          },
+        ])
+        setCogsCreditLines([
+          {
+            id: `cr-cogs-init-${Date.now()}`,
+            accountId: defaultClearingAcc?.id || defaultClearingCode,
+            accountCode: defaultClearingAcc?.code || defaultClearingCode,
+            accountName: defaultClearingAcc?.name || "Inventory Clearing / In-Transit Allocation",
+            description: "Inventory Clearing / In-Transit Allocation",
+            amount: 0,
+          },
+        ])
+      } else {
+        const defaultCogsCode = isExport ? "5010-01" : "5000-01"
+        const defaultStockCode = isExport ? "1410-01" : "1400-01"
+        const defaultCogsAcc = accounts.find((a) => a.code === defaultCogsCode) || accounts.find((a) => a.code === "5000-01")
+        const defaultStockAcc = accounts.find((a) => a.code === defaultStockCode) || accounts.find((a) => a.code === "1400-01")
+
+        setCogsDebitLines([
+          {
+            id: `dr-cogs-init-${Date.now()}`,
+            accountId: defaultCogsAcc?.id || defaultCogsCode,
+            accountCode: defaultCogsAcc?.code || defaultCogsCode,
+            accountName: defaultCogsAcc?.name || "Cost of Goods Sold",
+            description: "Inventory Cost of Goods Sold",
+            amount: 0,
+          },
+        ])
+        setCogsCreditLines([
+          {
+            id: `cr-cogs-init-${Date.now()}`,
+            accountId: defaultStockAcc?.id || defaultStockCode,
+            accountCode: defaultStockAcc?.code || defaultStockCode,
+            accountName: defaultStockAcc?.name || "Inventory Stock",
+            description: "Inventory Stock In Hand Derecognition",
+            amount: 0,
+          },
+        ])
+      }
     }
 
     setAuditNote(existingDist?.notes || "")
@@ -560,8 +645,8 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
           <div className="flex items-start justify-between pb-4 border-b border-zinc-100">
             <div>
               <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase bg-purple-100 text-purple-900 border border-purple-200 flex items-center gap-1">
-                  <ArrowRightLeft className="size-3 text-purple-700" />
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wider uppercase bg-zinc-100 text-zinc-900 border border-zinc-200 flex items-center gap-1">
+                  <ArrowRightLeft className="size-3 text-zinc-700" />
                   Finance GL Distribution & Split
                 </span>
                 <span className="text-xs font-mono font-bold text-zinc-500">
@@ -601,12 +686,12 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
               onClick={() => setActiveTab("revenue")}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 activeTab === "revenue"
-                  ? "bg-purple-900 text-white shadow-xs"
+                  ? "bg-zinc-900 text-white shadow-xs"
                   : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
               }`}
             >
               <Layers className="size-3.5" />
-              Section A: Revenue & Receivables Split
+              {isPurchase ? "Section A: Procurement & Payables Split" : "Section A: Revenue & Receivables Split"}
               {isRevBalanced ? (
                 <span className="size-2 rounded-full bg-emerald-400" />
               ) : (
@@ -622,12 +707,12 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
               }}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 activeTab === "cogs"
-                  ? "bg-purple-900 text-white shadow-xs"
+                  ? "bg-zinc-900 text-white shadow-xs"
                   : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
               }`}
             >
               <Box className="size-3.5" />
-              Section B: Inventory & COGS Cost Split
+              {isPurchase ? "Section B: Inventory Movement & Stock Allocation" : "Section B: Inventory & COGS Cost Split"}
               {hasCogsSection && (
                 isCogsBalanced ? (
                   <span className="size-2 rounded-full bg-emerald-400" />
@@ -642,16 +727,16 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
             {/* ═════════ TAB 1: REVENUE & SETTLEMENT ═════════ */}
             {activeTab === "revenue" && (
               <div className="space-y-4">
-                {/* 1. DEBITS (Settlement / Cash / Bank / Customer AR) */}
+                {/* 1. DEBITS */}
                 <div className="bg-zinc-50/70 border border-zinc-200 rounded-2xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-xs font-black uppercase tracking-wider text-zinc-900 flex items-center gap-1.5">
                         <span className="size-2 rounded-full bg-emerald-500" />
-                        Debit: Settlement & Accounts Receivable
+                        {isPurchase ? "Debit: Procurement Goods & Expense Accounts" : "Debit: Settlement & Accounts Receivable"}
                       </h3>
                       <p className="text-[11px] font-medium text-zinc-500">
-                        Choose which account(s) receive the customer debt or direct funds (e.g. split between Trade AR and Bank Cash).
+                        {isPurchase ? "Choose which inventory or expense account(s) absorb the purchase value." : "Choose which account(s) receive the customer debt or direct funds (e.g. split between Trade AR and Bank Cash)."}
                       </p>
                     </div>
                     <button
@@ -674,7 +759,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                             <span className="text-[10px] font-black font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded">
                               DEBIT #{idx + 1}
                             </span>
-                            <span className="text-[11px] text-zinc-700 font-bold">Funding / Receivable Account</span>
+                            <span className="text-[11px] text-zinc-700 font-bold">{isPurchase ? "Stock / Expense Account" : "Funding / Receivable Account"}</span>
                           </span>
                           {revDebitLines.length > 1 && (
                             <button
@@ -722,15 +807,15 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                                   amount: e.target.value === "" ? 0 : Number(e.target.value),
                                 })
                               }
-                              className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-mono font-black text-zinc-950 outline-none focus:ring-1 focus:ring-purple-500"
+                              className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-mono font-black text-zinc-950 outline-none focus:ring-1 focus:ring-zinc-900"
                             />
                             {revDebitLines.length > 1 && (
                               <button
                                 type="button"
                                 onClick={() => handleAutoFillRevDebit(idx)}
-                                className="mt-1 text-[10px] font-bold text-purple-700 hover:underline flex items-center gap-1 cursor-pointer"
+                                className="mt-1 text-[10px] font-bold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
                               >
-                                <Sparkles className="size-3" /> Auto-fill remainder
+                                <Sparkles className="size-3 text-emerald-600" /> Auto-fill remainder
                               </button>
                             )}
                           </div>
@@ -753,16 +838,16 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                   </div>
                 </div>
 
-                {/* 2. CREDITS (Revenue & Tax) */}
+                {/* 2. CREDITS */}
                 <div className="bg-zinc-50/70 border border-zinc-200 rounded-2xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-xs font-black uppercase tracking-wider text-zinc-900 flex items-center gap-1.5">
                         <span className="size-2 rounded-full bg-blue-500" />
-                        Credit: Sales Revenue & Tax Liability
+                        {isPurchase ? "Credit: Accounts Payable & Funding Sources" : "Credit: Sales Revenue & Tax Liability"}
                       </h3>
                       <p className="text-[11px] font-medium text-zinc-500">
-                        Distribute revenue among product categories, services (cleaning, storage, freight), and VAT output tax.
+                        {isPurchase ? "Distribute AP liabilities or direct bank/cash funding sources for this purchase." : "Distribute revenue among product categories, services (cleaning, storage, freight), and VAT output tax."}
                       </p>
                     </div>
                     <button
@@ -770,7 +855,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                       onClick={handleAddRevCredit}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-700 hover:bg-zinc-100 shadow-2xs transition-colors cursor-pointer"
                     >
-                      <Plus className="size-3.5 text-blue-600" /> Add Revenue Line
+                      <Plus className="size-3.5 text-blue-600" /> Add Credit Line
                     </button>
                   </div>
 
@@ -785,7 +870,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                             <span className="text-[10px] font-black font-mono bg-blue-50 text-blue-800 border border-blue-200 px-1.5 py-0.2 rounded">
                               CREDIT #{idx + 1}
                             </span>
-                            <span className="text-[11px] text-zinc-700 font-bold">Revenue / Liability Account</span>
+                            <span className="text-[11px] text-zinc-700 font-bold">{isPurchase ? "AP / Bank Disbursement Account" : "Revenue / Liability Account"}</span>
                           </span>
                           {revCreditLines.length > 1 && (
                             <button
@@ -843,15 +928,15 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                                   amount: e.target.value === "" ? 0 : Number(e.target.value),
                                 })
                               }
-                              className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-mono font-black text-zinc-950 outline-none focus:ring-1 focus:ring-purple-500"
+                              className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-mono font-black text-zinc-950 outline-none focus:ring-1 focus:ring-zinc-900"
                             />
                             {revCreditLines.length > 1 && (
                               <button
                                 type="button"
                                 onClick={() => handleAutoFillRevCredit(idx)}
-                                className="mt-1 text-[10px] font-bold text-purple-700 hover:underline flex items-center gap-1 cursor-pointer"
+                                className="mt-1 text-[10px] font-bold text-emerald-700 hover:underline flex items-center gap-1 cursor-pointer"
                               >
-                                <Sparkles className="size-3" /> Auto-fill remainder
+                                <Sparkles className="size-3 text-emerald-600" /> Auto-fill remainder
                               </button>
                             )}
                           </div>
@@ -920,19 +1005,25 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
             {activeTab === "cogs" && (
               <div className="space-y-4">
                 <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs text-amber-900 font-medium">
-                  <strong>Cost of Goods Sold Derecognition:</strong> This section controls how inventory is taken off the balance sheet (Credited) and booked into Cost of Goods Sold expenses (Debited).
+                  {isPurchase ? (
+                    <span><strong>Inventory & Stock Allocation:</strong> This section controls warehouse inventory asset recognition (Debited) and clearing / in-transit allocations (Credited).</span>
+                  ) : (
+                    <span><strong>Cost of Goods Sold Derecognition:</strong> This section controls how inventory is taken off the balance sheet (Credited) and booked into Cost of Goods Sold expenses (Debited).</span>
+                  )}
                 </div>
 
-                {/* 1. COGS DEBITS */}
+                {/* 1. COGS / STOCK DEBITS */}
                 <div className="bg-zinc-50/70 border border-zinc-200 rounded-2xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-xs font-black uppercase tracking-wider text-zinc-900 flex items-center gap-1.5">
                         <span className="size-2 rounded-full bg-rose-500" />
-                        Debit: Cost of Goods Sold Expense
+                        {isPurchase ? "Debit: Warehouse Inventory Stock In Hand Asset" : "Debit: Cost of Goods Sold Expense"}
                       </h3>
                       <p className="text-[11px] font-medium text-zinc-500">
-                        Expense account(s) charged for the cost value of products sold (e.g. 5000-01 Vet Drug or 5010-xx Export Commodities).
+                        {isPurchase
+                          ? "Inventory balance sheet asset account(s) charged for the received goods."
+                          : "Expense account(s) charged for the cost value of products sold (e.g. 5000-01 Vet Drug or 5010-xx Export Commodities)."}
                       </p>
                     </div>
                     <button
@@ -940,7 +1031,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                       onClick={handleAddCogsDebit}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-700 hover:bg-zinc-100 shadow-2xs transition-colors cursor-pointer"
                     >
-                      <Plus className="size-3.5 text-rose-600" /> Add COGS Debit
+                      <Plus className="size-3.5 text-rose-600" /> {isPurchase ? "Add Stock Debit" : "Add COGS Debit"}
                     </button>
                   </div>
 
@@ -953,9 +1044,9 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                         <div className="flex items-center justify-between text-xs font-bold text-zinc-600">
                           <span className="flex items-center gap-1.5">
                             <span className="text-[10px] font-black font-mono bg-rose-50 text-rose-800 border border-rose-200 px-1.5 py-0.2 rounded">
-                              COGS DR #{idx + 1}
+                              {isPurchase ? "STOCK DR" : "COGS DR"} #{idx + 1}
                             </span>
-                            <span className="text-[11px] text-zinc-700 font-bold">COGS Expense Account</span>
+                            <span className="text-[11px] text-zinc-700 font-bold">{isPurchase ? "Inventory Stock Account" : "COGS Expense Account"}</span>
                           </span>
                           {cogsDebitLines.length > 1 && (
                             <button
@@ -981,15 +1072,15 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                                   accountName: acc.name,
                                 })
                               }
-                              suggestedCodes={["5000-01", "5010-01", "5010-02", "5010-03", "5010-04"]}
-                              placeholder="Select COGS account..."
+                              suggestedCodes={["5000-01", "5010-01", "5010-02", "5010-03", "5010-04", "1400-01", "1410-01"]}
+                              placeholder="Select account..."
                               required
                             />
                           </div>
 
                           <div className="md:col-span-3">
                             <label className="block text-xs font-bold text-zinc-700 mb-1">
-                              Cost Amount (ETB) *
+                              {isPurchase ? "Stock Value (ETB) *" : "Cost Amount (ETB) *"}
                             </label>
                             <input
                               type="number"
@@ -1003,17 +1094,17 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                                   amount: e.target.value === "" ? 0 : Number(e.target.value),
                                 })
                               }
-                              className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-mono font-black text-zinc-950 outline-none focus:ring-1 focus:ring-purple-500"
+                              className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-mono font-black text-zinc-950 outline-none focus:ring-1 focus:ring-zinc-900"
                             />
                           </div>
 
                           <div className="md:col-span-3">
                             <label className="block text-xs font-bold text-zinc-700 mb-1">
-                              Cost Description
+                              {isPurchase ? "Stock Description" : "Cost Description"}
                             </label>
                             <input
                               type="text"
-                              placeholder="e.g. Batch COGS"
+                              placeholder={isPurchase ? "e.g. Warehouse intake" : "e.g. Batch COGS"}
                               value={line.description}
                               onChange={(e) => handleUpdateCogsDebit(line.id, { description: e.target.value })}
                               className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-medium text-zinc-800 outline-none"
@@ -1031,10 +1122,12 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                     <div>
                       <h3 className="text-xs font-black uppercase tracking-wider text-zinc-900 flex items-center gap-1.5">
                         <span className="size-2 rounded-full bg-amber-500" />
-                        Credit: Warehouse Inventory Stock Asset
+                        {isPurchase ? "Credit: Inventory Clearing / In-Transit Account" : "Credit: Warehouse Inventory Stock Asset"}
                       </h3>
                       <p className="text-[11px] font-medium text-zinc-500">
-                        Inventory balance sheet asset account(s) being derecognized (e.g. 1400-01 Vet Drug or 1410-xx Export Stock).
+                        {isPurchase
+                          ? "Clearing or in-transit contra account(s) relieved upon warehouse intake."
+                          : "Inventory balance sheet asset account(s) being derecognized (e.g. 1400-01 Vet Drug or 1410-xx Export Stock)."}
                       </p>
                     </div>
                     <button
@@ -1042,7 +1135,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                       onClick={handleAddCogsCredit}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-700 hover:bg-zinc-100 shadow-2xs transition-colors cursor-pointer"
                     >
-                      <Plus className="size-3.5 text-amber-600" /> Add Inventory Credit
+                      <Plus className="size-3.5 text-amber-600" /> {isPurchase ? "Add Clearing Credit" : "Add Inventory Credit"}
                     </button>
                   </div>
 
@@ -1055,9 +1148,9 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                         <div className="flex items-center justify-between text-xs font-bold text-zinc-600">
                           <span className="flex items-center gap-1.5">
                             <span className="text-[10px] font-black font-mono bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.2 rounded">
-                              STOCK CR #{idx + 1}
+                              {isPurchase ? "CLEARING CR" : "STOCK CR"} #{idx + 1}
                             </span>
-                            <span className="text-[11px] text-zinc-700 font-bold">Inventory Asset Account</span>
+                            <span className="text-[11px] text-zinc-700 font-bold">{isPurchase ? "Clearing / Contra Account" : "Inventory Asset Account"}</span>
                           </span>
                           {cogsCreditLines.length > 1 && (
                             <button
@@ -1105,7 +1198,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                                   amount: e.target.value === "" ? 0 : Number(e.target.value),
                                 })
                               }
-                              className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-mono font-black text-zinc-950 outline-none focus:ring-1 focus:ring-purple-500"
+                              className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-mono font-black text-zinc-950 outline-none focus:ring-1 focus:ring-zinc-900"
                             />
                           </div>
 
@@ -1172,7 +1265,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                 placeholder="Explain the transaction split rationale (e.g. Multi-commodity allocation, split payment 50% cash / 50% credit)..."
                 value={auditNote}
                 onChange={(e) => setAuditNote(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-medium text-zinc-800 outline-none focus:ring-1 focus:ring-purple-500"
+                className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-medium text-zinc-800 outline-none focus:ring-1 focus:ring-zinc-900"
               />
             </div>
 
@@ -1195,7 +1288,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
                 <button
                   type="submit"
                   disabled={!canSave || isSaving}
-                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 disabled:opacity-50 text-white font-black text-xs transition-all shadow-md shadow-purple-900/20 active:scale-95 cursor-pointer"
+                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-zinc-900 hover:bg-black disabled:opacity-50 text-white font-black text-xs transition-all shadow-md active:scale-95 cursor-pointer"
                 >
                   {isSaving ? (
                     <>

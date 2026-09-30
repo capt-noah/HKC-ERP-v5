@@ -69,6 +69,12 @@ export const PurchaseCOASplitSection: React.FC<PurchaseCOASplitSectionProps> = (
     onDebitLinesChange(debitLines.map((l) => (l.id === id ? { ...l, ...updates } : l)))
   }
 
+  const handleAutoFillDebit = (index: number) => {
+    const otherSum = debitLines.filter((_, i) => i !== index).reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
+    const remainder = Math.max(0, Math.round((poTotal - otherSum) * 100) / 100)
+    onDebitLinesChange(debitLines.map((l, i) => (i === index ? { ...l, amount: remainder } : l)))
+  }
+
   const handleAddCreditLine = () => {
     const currentSum = creditLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
     const remainder = Math.max(0, Math.round((poTotal - currentSum) * 100) / 100)
@@ -94,6 +100,12 @@ export const PurchaseCOASplitSection: React.FC<PurchaseCOASplitSectionProps> = (
 
   const handleUpdateCreditLine = (id: string, updates: Partial<SplitLineItem>) => {
     onCreditLinesChange(creditLines.map((l) => (l.id === id ? { ...l, ...updates } : l)))
+  }
+
+  const handleAutoFillCredit = (index: number) => {
+    const otherSum = creditLines.filter((_, i) => i !== index).reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
+    const remainder = Math.max(0, Math.round((poTotal - otherSum) * 100) / 100)
+    onCreditLinesChange(creditLines.map((l, i) => (i === index ? { ...l, amount: remainder } : l)))
   }
 
   return (
@@ -141,7 +153,7 @@ export const PurchaseCOASplitSection: React.FC<PurchaseCOASplitSectionProps> = (
           </div>
 
           <div className="space-y-2">
-            {debitLines.map((line) => (
+            {debitLines.map((line, idx) => (
               <div
                 key={line.id}
                 className="p-2 rounded-xl bg-white border border-zinc-200 shadow-2xs space-y-1.5"
@@ -192,13 +204,25 @@ export const PurchaseCOASplitSection: React.FC<PurchaseCOASplitSectionProps> = (
                   )}
                 </div>
 
-                <input
-                  type="text"
-                  placeholder="Memo / Line Description (Optional)"
-                  value={line.description}
-                  onChange={(e) => handleUpdateDebitLine(line.id, { description: e.target.value })}
-                  className="w-full px-2.5 py-1 text-[11px] rounded-lg bg-zinc-50 border border-transparent hover:border-zinc-200 focus:border-zinc-300 focus:bg-white text-zinc-700 outline-none"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Memo / Line Description (Optional)"
+                    value={line.description}
+                    onChange={(e) => handleUpdateDebitLine(line.id, { description: e.target.value })}
+                    className="flex-1 px-2.5 py-1 text-[11px] rounded-lg bg-zinc-50 border border-transparent hover:border-zinc-200 focus:border-zinc-300 focus:bg-white text-zinc-700 outline-none"
+                  />
+                  {debitLines.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleAutoFillDebit(idx)}
+                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 shrink-0 px-1 py-0.5 cursor-pointer"
+                      title="Fill remaining balance into this line"
+                    >
+                      Auto-fill
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -228,7 +252,7 @@ export const PurchaseCOASplitSection: React.FC<PurchaseCOASplitSectionProps> = (
           </div>
 
           <div className="space-y-2">
-            {creditLines.map((line) => (
+            {creditLines.map((line, idx) => (
               <div
                 key={line.id}
                 className="p-2 rounded-xl bg-white border border-zinc-200 shadow-2xs space-y-1.5"
@@ -279,13 +303,25 @@ export const PurchaseCOASplitSection: React.FC<PurchaseCOASplitSectionProps> = (
                   )}
                 </div>
 
-                <input
-                  type="text"
-                  placeholder="Memo / Line Description (Optional)"
-                  value={line.description}
-                  onChange={(e) => handleUpdateCreditLine(line.id, { description: e.target.value })}
-                  className="w-full px-2.5 py-1 text-[11px] rounded-lg bg-zinc-50 border border-transparent hover:border-zinc-200 focus:border-zinc-300 focus:bg-white text-zinc-700 outline-none"
-                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Memo / Line Description (Optional)"
+                    value={line.description}
+                    onChange={(e) => handleUpdateCreditLine(line.id, { description: e.target.value })}
+                    className="flex-1 px-2.5 py-1 text-[11px] rounded-lg bg-zinc-50 border border-transparent hover:border-zinc-200 focus:border-zinc-300 focus:bg-white text-zinc-700 outline-none"
+                  />
+                  {creditLines.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleAutoFillCredit(idx)}
+                      className="text-[10px] font-bold text-blue-700 hover:text-blue-900 shrink-0 px-1 py-0.5 cursor-pointer"
+                      title="Fill remaining balance into this line"
+                    >
+                      Auto-fill
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>

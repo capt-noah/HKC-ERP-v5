@@ -161,6 +161,13 @@ export default function Ledger() {
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false)
   const [showBeginningBalancesModal, setShowBeginningBalancesModal] = useState(false)
   const [showPeriodClosingModal, setShowPeriodClosingModal] = useState(false)
+  const [reversalTarget, setReversalTarget] = useState<{
+    entryId: string
+    lineId?: string
+    entryDescription?: string
+    date?: string
+    amount?: number
+  } | null>(null)
   const periodLockStatus = store.getPeriodLockStatus()
 
   // Posting modal state
@@ -253,7 +260,19 @@ export default function Ledger() {
     }
   }
 
-  const handleReverseEntry = (entryId: string, lineId?: string) => {
+  const handleTriggerReverse = (
+    entryId: string,
+    lineId?: string,
+    description?: string,
+    date?: string,
+    amount?: number
+  ) => {
+    setReversalTarget({ entryId, lineId, entryDescription: description, date, amount })
+  }
+
+  const handleConfirmReverse = () => {
+    if (!reversalTarget) return
+    const { entryId, lineId } = reversalTarget
     const res = store.reverseJournalEntry(entryId, lineId)
     if (res.success) {
       showToast(
@@ -264,6 +283,7 @@ export default function Ledger() {
     } else {
       showToast("Reversal Failed", "warning", res.error || "Could not reverse entry.")
     }
+    setReversalTarget(null)
   }
 
   const handleCreateAccount = (e: React.FormEvent) => {
@@ -1113,8 +1133,9 @@ export default function Ledger() {
                               >
                                 {!isReversal && !isReversed ? (
                                   <button
-                                    onClick={() => handleReverseEntry(ent.id)}
-                                    className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-full transition-colors"
+                                    onClick={() => handleTriggerReverse(ent.id, undefined, ent.description, ent.entry_date, totalDebit)}
+                                    className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 rounded-full transition-colors cursor-pointer"
+                                    title={`Reverse entry ${ent.id}`}
                                   >
                                     <RotateCcw className="size-3" /> Reverse
                                   </button>
@@ -1939,6 +1960,72 @@ export default function Ledger() {
                   className="px-5 py-2 rounded-full bg-rose-600 text-white font-bold text-xs hover:bg-rose-700 transition-all shadow-sm"
                 >
                   Confirm Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: Reversal Confirmation Modal */}
+        {reversalTarget && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-zinc-200 text-left space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="size-11 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                  <RotateCcw className="size-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-zinc-900">Confirm Journal Entry Reversal</h3>
+                  <p className="text-xs font-semibold text-zinc-500">General Ledger audit offset</p>
+                </div>
+              </div>
+
+              <div className="bg-zinc-50 border border-zinc-200 rounded-2xl p-3.5 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-500 font-medium">Journal Entry:</span>
+                  <span className="font-mono font-black text-zinc-900">{reversalTarget.entryId}</span>
+                </div>
+                {reversalTarget.date && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-zinc-500 font-medium">Posting Date:</span>
+                    <span className="font-medium text-zinc-800">{reversalTarget.date}</span>
+                  </div>
+                )}
+                {reversalTarget.entryDescription && (
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-zinc-500 font-medium shrink-0">Description:</span>
+                    <span className="font-medium text-zinc-800 text-right truncate max-w-[240px]" title={reversalTarget.entryDescription}>
+                      {reversalTarget.entryDescription}
+                    </span>
+                  </div>
+                )}
+                {reversalTarget.amount !== undefined && (
+                  <div className="flex items-center justify-between pt-1.5 border-t border-zinc-200/60 font-mono">
+                    <span className="text-zinc-600 font-bold font-sans">Total Value:</span>
+                    <span className="font-black text-zinc-950">ETB {reversalTarget.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-xs text-zinc-600 font-medium leading-relaxed">
+                This action will post an immediate <strong>mirror reversal</strong> entry, swapping all debits and credits to neutralize this transaction. The original record remains preserved in the ledger tagged as <span className="text-rose-700 font-bold">Reversed</span> for audit trail compliance.
+              </p>
+
+              <div className="flex justify-end gap-2.5 pt-2 border-t border-zinc-100">
+                <button
+                  type="button"
+                  onClick={() => setReversalTarget(null)}
+                  className="px-4 py-2 rounded-xl border border-zinc-200 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmReverse}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs transition-all shadow-md active:scale-95 cursor-pointer"
+                >
+                  <RotateCcw className="size-3.5" />
+                  Yes, Reverse Entry
                 </button>
               </div>
             </div>

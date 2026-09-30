@@ -208,12 +208,16 @@ export default function Invoices() {
     const invId = activeInvoice.id
     const siId = activeInvoice.sales_issue_id || ""
     const soId = activeInvoice.sales_order_id || ""
+    const poId = activeInvoice.purchase_order_id || ""
+    const vNo = activeInvoice.voucher_no || (activeInvoice.invoice_type === "Purchase" ? activeInvoice.invoice_number.replace(/^INV-/, "") : "")
     const fsNo = activeInvoice.fs_no || ""
 
     fetchTradeAndAdviceDocs({
       invoiceId: invId,
       salesIssueId: siId,
       salesOrderId: soId,
+      purchaseOrderId: poId,
+      voucherNo: vNo,
       fsNo: fsNo,
       customerName: activeInvoice.customer_name,
     })
@@ -232,7 +236,7 @@ export default function Invoices() {
     return () => {
       cancelled = true
     }
-  }, [activeInvoice?.id, activeInvoice?.amount_paid])
+  }, [activeInvoice?.id, activeInvoice?.amount_paid, activeInvoice?.purchase_order_id, activeInvoice?.voucher_no])
 
   // Aggregates
   const totalReceivables = useMemo(() => {
@@ -731,20 +735,13 @@ export default function Invoices() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <span className="text-[10px] font-black uppercase tracking-wider text-zinc-600 flex items-center gap-1.5">
-                        <ArrowRightLeft className="size-3.5 text-purple-700" />
+                        <ArrowRightLeft className="size-3.5 text-zinc-700" />
                         COA Account Breakdown & GL Distribution
                       </span>
                       <span className="text-[11px] font-medium text-zinc-500 block mt-0.5">
                         Multi-account double-entry splits for this transaction in the General Ledger.
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setSplittingInvoice(activeInvoice)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-purple-100 hover:bg-purple-200 text-purple-900 border border-purple-300 font-bold text-xs transition-colors cursor-pointer"
-                    >
-                      <ArrowRightLeft className="size-3 text-purple-700" /> Maintain / Edit COA Split
-                    </button>
                   </div>
 
                   {(() => {
@@ -752,43 +749,105 @@ export default function Invoices() {
                     const dist = activeInvoice.gl_distribution
                     const accounts = store.getAccounts()
 
-                    // Debits and credits for Revenue & Settlement
-                    const revDebits = dist?.revenue_lines?.filter((l) => Number(l.debit) > 0) || salesLines.filter((l) => Number(l.debit_amount) > 0)
-                    const revCredits = dist?.revenue_lines?.filter((l) => Number(l.credit) > 0) || salesLines.filter((l) => Number(l.credit_amount) > 0)
-                    const cogsDebits = dist?.cogs_lines?.filter((l) => Number(l.debit) > 0) || cogsLines.filter((l) => Number(l.debit_amount) > 0)
-                    const cogsCredits = dist?.cogs_lines?.filter((l) => Number(l.credit) > 0) || cogsLines.filter((l) => Number(l.credit_amount) > 0)
-
-                    const hasEntries = revDebits.length > 0 || revCredits.length > 0
-
-                    if (!hasEntries) {
-                      return (
-                        <div className="p-3 bg-white rounded-xl border border-zinc-200 text-xs text-zinc-500 flex items-center justify-between">
-                          <span>Standard system accounts mapped for this invoice. Click &quot;Maintain / Edit COA Split&quot; to configure custom splits.</span>
-                        </div>
+                    const resolveAcc = (rawIdOrCode: any, fallbackName = "Account") => {
+                      if (!rawIdOrCode) return { code: "N/A", name: fallbackName }
+                      const clean = String(rawIdOrCode).trim()
+                      const unPrefixed = clean.replace(/^ACC-/, "")
+                      const found = accounts.find((a) =>
+                        a.id === clean ||
+                        a.code === clean ||
+                        a.code === unPrefixed ||
+                        a.id === `ACC-${clean}` ||
+                        a.id === unPrefixed
                       )
+                      if (found) {
+                        return { code: found.code, name: found.name }
+                      }
+                      return { code: unPrefixed, name: fallbackName }
+                    }
+
+                    const isPurchase = activeInvoice.invoice_type === "Purchase" || Boolean(activeInvoice.purchase_order_id)
+                    const isCredit = (activeInvoice.payment_terms || "").toLowerCase().includes("credit") || Number(activeInvoice.balance_due || 0) > 0
+
+                    const isExportWh =
+                      String(activeInvoice.warehouse_id || "").toUpperCase().startsWith("WH1") ||
+                      String(activeInvoice.warehouse_id || "").toUpperCase().includes("EXP")
+                    const firstItem = activeInvoice.line_items?.[0]?.description?.toUpperCase() || ""
+                    const isExportCrop =
+                      firstItem.includes("MUNG") ||
+                      firstItem.includes("SOYA") ||
+                      firstItem.includes("SESAME") ||
+                      firstItem.includes("BEAN")
+                    const isExport = isExportWh || isExportCrop
+
+                    // Debits and credits for Revenue & Settlement
+                    let revDebits = dist?.revenue_lines?.filter((l) => Number(l.debit) > 0) || salesLines.filter((l) => Number(l.debit_amount) > 0)
+                    let revCredits = dist?.revenue_lines?.filter((l) => Number(l.credit) > 0) || salesLines.filter((l) => Number(l.credit_amount) > 0)
+                    let cogsDebits = dist?.cogs_lines?.filter((l) => Number(l.debit) > 0) || cogsLines.filter((l) => Number(l.debit_amount) > 0)
+                    let cogsCredits = dist?.cogs_lines?.filter((l) => Number(l.credit) > 0) || cogsLines.filter((l) => Number(l.credit_amount) > 0)
+
+                    // Provide standard defaults if lines are empty so accounts are always shown clearly
+                    if (revDebits.length === 0 && revCredits.length === 0) {
+                      if (isPurchase) {
+                        revDebits = [{ account_code: "1410-01", account_name: "STOCK OF GREEN MUNG", debit: activeInvoice.total }] as any
+                        revCredits = [{ account_code: isCredit ? "2100-06" : "1000-02-26", account_name: isCredit ? "Other Accruals & Payables" : "CBE Bank Operating", credit: activeInvoice.total }] as any
+                      } else {
+                        const defaultArCode = isExport ? "1300-01" : "1300-03"
+                        const defaultRevCode = isExport ? "4000-02-01" : "4000-01-01"
+                        revDebits = [{ account_code: defaultArCode, account_name: isExport ? "EXPORT SALES RECIVEABLE" : "VET MEDICEN SALES RECIVABLE", debit: activeInvoice.total }] as any
+                        const defCredits: any[] = [{ account_code: defaultRevCode, account_name: isExport ? "Revenue - Export Commodities" : "Sales Revenue - Pharmaceuticals", credit: activeInvoice.subtotal || activeInvoice.total }]
+                        if (Number(activeInvoice.tax_amount || 0) > 0) {
+                          defCredits.push({ account_code: "2000-05", account_name: "VAT Output Payable (15%)", credit: activeInvoice.tax_amount })
+                        }
+                        revCredits = defCredits as any
+                      }
+                    }
+
+                    if (cogsDebits.length === 0 && cogsCredits.length === 0) {
+                      if (isPurchase) {
+                        const defaultStockCode = isExport ? "1410-01" : "1400-01"
+                        const defaultStockName = isExport ? "STOCK OF GREEN MUNG" : "Merchandise Inventory"
+                        const defaultClearingCode = "1410-99"
+                        const defaultClearingName = "Inventory Clearing / In-Transit Allocation"
+                        cogsDebits = [{ account_code: defaultStockCode, account_name: defaultStockName, debit: activeInvoice.total }] as any
+                        cogsCredits = [{ account_code: defaultClearingCode, account_name: defaultClearingName, credit: activeInvoice.total }] as any
+                      } else {
+                        const defaultCogsCode = isExport ? "5010-01" : "5000-01"
+                        const defaultCogsName = isExport ? "Cost of Goods Sold - Export" : "Cost of Goods Sold - Pharmaceuticals"
+                        const defaultStockCode = isExport ? "1410-01" : "1400-01"
+                        const defaultStockName = isExport ? "STOCK OF GREEN MUNG" : "Merchandise Inventory"
+                        const cogsVal = Number(activeInvoice.subtotal || activeInvoice.total || 0)
+                        cogsDebits = [{ account_code: defaultCogsCode, account_name: defaultCogsName, debit: cogsVal }] as any
+                        cogsCredits = [{ account_code: defaultStockCode, account_name: defaultStockName, credit: cogsVal }] as any
+                      }
                     }
 
                     return (
                       <div className="space-y-2">
-                        {/* Section A: Revenue & Settlement */}
+                        {/* Section A */}
                         <div className="bg-white rounded-xl border border-zinc-200 p-3 space-y-2">
                           <div className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
-                            Section A: Revenue & Settlement
+                            {isPurchase ? "Section A: Procurement & Payables Settlement" : "Section A: Revenue & Settlement"}
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                             {/* Debits */}
                             <div className="space-y-1">
-                              <span className="text-[10px] font-bold text-emerald-800 uppercase block">Debit Accounts (Receivable / Bank / Cash)</span>
+                              <span className="text-[10px] font-bold text-emerald-800 uppercase block">
+                                {isPurchase ? "Debit Accounts (Stock / Asset / Expense)" : "Debit Accounts (Receivable / Bank / Cash)"}
+                              </span>
                               <div className="space-y-1">
                                 {revDebits.map((l: any, i: number) => {
-                                  const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id || a.code === l.account_code)
-                                  const amt = Number(l.debit || l.debit_amount || 0)
+                                  const resolved = resolveAcc(
+                                    l.account_code || l.accountId || l.account_id || l.accountCode || l.code,
+                                    l.account_name || l.accountName || (isPurchase ? "Stock / Expense" : "Receivable / Cash")
+                                  )
+                                  const amt = Number(l.debit || l.debit_amount || l.amount || 0)
                                   return (
                                     <div key={i} className="flex items-center justify-between p-1.5 rounded-lg bg-emerald-50/60 border border-emerald-100 font-mono text-[11px]">
-                                      <span className="font-bold text-emerald-950 truncate max-w-[180px]">
-                                        {acc?.code || l.account_code || l.account_id} - {acc?.name || l.account_name || "Account"}
+                                      <span className="font-bold text-emerald-950 truncate max-w-[200px]" title={`${resolved.code} - ${resolved.name}`}>
+                                        {resolved.code} - {resolved.name}
                                       </span>
-                                      <span className="font-black text-emerald-800">ETB {money(amt)}</span>
+                                      <span className="font-black text-emerald-800 shrink-0 ml-2">ETB {money(amt)}</span>
                                     </div>
                                   )
                                 })}
@@ -797,17 +856,22 @@ export default function Invoices() {
 
                             {/* Credits */}
                             <div className="space-y-1">
-                              <span className="text-[10px] font-bold text-zinc-700 uppercase block">Credit Accounts (Revenue / VAT / AP)</span>
+                              <span className="text-[10px] font-bold text-zinc-700 uppercase block">
+                                {isPurchase ? "Credit Accounts (Accounts Payable / Bank / Cash)" : "Credit Accounts (Revenue / VAT / AP)"}
+                              </span>
                               <div className="space-y-1">
                                 {revCredits.map((l: any, i: number) => {
-                                  const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id || a.code === l.account_code)
-                                  const amt = Number(l.credit || l.credit_amount || 0)
+                                  const resolved = resolveAcc(
+                                    l.account_code || l.accountId || l.account_id || l.accountCode || l.code,
+                                    l.account_name || l.accountName || (isPurchase ? "AP / Bank Disbursement" : "Revenue / VAT")
+                                  )
+                                  const amt = Number(l.credit || l.credit_amount || l.amount || 0)
                                   return (
                                     <div key={i} className="flex items-center justify-between p-1.5 rounded-lg bg-zinc-50 border border-zinc-200 font-mono text-[11px]">
-                                      <span className="font-bold text-zinc-900 truncate max-w-[180px]">
-                                        {acc?.code || l.account_code || l.account_id} - {acc?.name || l.account_name || "Account"}
+                                      <span className="font-bold text-zinc-900 truncate max-w-[200px]" title={`${resolved.code} - ${resolved.name}`}>
+                                        {resolved.code} - {resolved.name}
                                       </span>
-                                      <span className="font-black text-zinc-950">ETB {money(amt)}</span>
+                                      <span className="font-black text-zinc-950 shrink-0 ml-2">ETB {money(amt)}</span>
                                     </div>
                                   )
                                 })}
@@ -816,53 +880,61 @@ export default function Invoices() {
                           </div>
                         </div>
 
-                        {/* Section B: COGS & Inventory (if available) */}
-                        {(cogsDebits.length > 0 || cogsCredits.length > 0) && (
-                          <div className="bg-white rounded-xl border border-zinc-200 p-3 space-y-2">
-                            <div className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
-                              Section B: Inventory & Cost of Goods Sold (COGS)
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                              {/* COGS Debits */}
+                        {/* Section B: COGS & Inventory / Stock Allocation (Always Rendered Under Section A) */}
+                        <div className="bg-white rounded-xl border border-zinc-200 p-3 space-y-2">
+                          <div className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
+                            {isPurchase ? "Section B: Inventory Movement & Stock Allocation" : "Section B: Inventory & Cost of Goods Sold (COGS)"}
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            {/* COGS / Stock Debits */}
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-amber-800 uppercase block">
+                                {isPurchase ? "Debit Accounts (Stock In Hand / Asset)" : "Debit Accounts (COGS Expense)"}
+                              </span>
                               <div className="space-y-1">
-                                <span className="text-[10px] font-bold text-amber-800 uppercase block">Debit Accounts (COGS Expense)</span>
-                                <div className="space-y-1">
-                                  {cogsDebits.map((l: any, i: number) => {
-                                    const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id || a.code === l.account_code)
-                                    const amt = Number(l.debit || l.debit_amount || 0)
-                                    return (
-                                      <div key={i} className="flex items-center justify-between p-1.5 rounded-lg bg-amber-50/60 border border-amber-100 font-mono text-[11px]">
-                                        <span className="font-bold text-amber-950 truncate max-w-[180px]">
-                                          {acc?.code || l.account_code || l.account_id} - {acc?.name || l.account_name || "COGS"}
-                                        </span>
-                                        <span className="font-black text-amber-900">ETB {money(amt)}</span>
-                                      </div>
-                                    )
-                                  })}
-                                </div>
+                                {cogsDebits.map((l: any, i: number) => {
+                                  const resolved = resolveAcc(
+                                    l.account_code || l.accountId || l.account_id || l.accountCode || l.code,
+                                    l.account_name || l.accountName || (isPurchase ? "Inventory Stock" : "COGS Expense")
+                                  )
+                                  const amt = Number(l.debit || l.debit_amount || l.amount || 0)
+                                  return (
+                                    <div key={i} className="flex items-center justify-between p-1.5 rounded-lg bg-amber-50/60 border border-amber-100 font-mono text-[11px]">
+                                      <span className="font-bold text-amber-950 truncate max-w-[200px]" title={`${resolved.code} - ${resolved.name}`}>
+                                        {resolved.code} - {resolved.name}
+                                      </span>
+                                      <span className="font-black text-amber-900 shrink-0 ml-2">ETB {money(amt)}</span>
+                                    </div>
+                                  )
+                                })}
                               </div>
+                            </div>
 
-                              {/* Inventory Credits */}
+                            {/* Inventory / Clearing Credits */}
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-bold text-zinc-700 uppercase block">
+                                {isPurchase ? "Credit Accounts (Inventory Clearing / In-Transit)" : "Credit Accounts (Inventory Asset Relieved)"}
+                              </span>
                               <div className="space-y-1">
-                                <span className="text-[10px] font-bold text-zinc-700 uppercase block">Credit Accounts (Inventory Asset Relieved)</span>
-                                <div className="space-y-1">
-                                  {cogsCredits.map((l: any, i: number) => {
-                                    const acc = accounts.find((a) => a.id === l.account_id || a.code === l.account_id || a.code === l.account_code)
-                                    const amt = Number(l.credit || l.credit_amount || 0)
-                                    return (
-                                      <div key={i} className="flex items-center justify-between p-1.5 rounded-lg bg-zinc-50 border border-zinc-200 font-mono text-[11px]">
-                                        <span className="font-bold text-zinc-900 truncate max-w-[180px]">
-                                          {acc?.code || l.account_code || l.account_id} - {acc?.name || l.account_name || "Inventory"}
-                                        </span>
-                                        <span className="font-black text-zinc-950">ETB {money(amt)}</span>
-                                      </div>
-                                    )
-                                  })}
-                                </div>
+                                {cogsCredits.map((l: any, i: number) => {
+                                  const resolved = resolveAcc(
+                                    l.account_code || l.accountId || l.account_id || l.accountCode || l.code,
+                                    l.account_name || l.accountName || (isPurchase ? "Inventory Clearing" : "Inventory Asset")
+                                  )
+                                  const amt = Number(l.credit || l.credit_amount || l.amount || 0)
+                                  return (
+                                    <div key={i} className="flex items-center justify-between p-1.5 rounded-lg bg-zinc-50 border border-zinc-200 font-mono text-[11px]">
+                                      <span className="font-bold text-zinc-900 truncate max-w-[200px]" title={`${resolved.code} - ${resolved.name}`}>
+                                        {resolved.code} - {resolved.name}
+                                      </span>
+                                      <span className="font-black text-zinc-950 shrink-0 ml-2">ETB {money(amt)}</span>
+                                    </div>
+                                  )
+                                })}
                               </div>
                             </div>
                           </div>
-                        )}
+                        </div>
                       </div>
                     )
                   })()}
@@ -918,10 +990,10 @@ export default function Invoices() {
                   <button
                     type="button"
                     onClick={() => setSplittingInvoice(activeInvoice)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-[11px] transition-all shadow-sm cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-black text-white font-extrabold text-[11px] transition-all border border-zinc-800 shadow-sm cursor-pointer active:scale-95"
                     title="Split or adjust General Ledger accounts for this invoice"
                   >
-                    <ArrowRightLeft className="size-3 text-white" /> Split GL Accounts
+                    <ArrowRightLeft className="size-3 text-zinc-300" /> Split GL Accounts
                   </button>
 
                   {!isSelectedInvoicePaid && (
@@ -1338,14 +1410,6 @@ export default function Invoices() {
         description={`Are you sure you want to delete invoice ${deletingInvoice?.invoice_number}? This cannot be undone.`}
         onClose={() => setDeletingInvoice(null)}
         onConfirmDelete={handleConfirmDeleteInvoice}
-      />
-
-      {/* Document preview modal */}
-      <DocumentPreviewModal
-        isOpen={!!previewDocUrl}
-        onClose={() => setPreviewDocUrl("")}
-        fileUrl={previewDocUrl}
-        fileName={previewDocName}
       />
 
       {/* Export / Print Modal */}

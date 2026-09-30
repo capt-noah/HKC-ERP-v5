@@ -18,7 +18,7 @@ import {
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
-import { useErpStore, getTradeLicenseStatus, type SalesOrder, type Quotation, type SalesOrderItem } from "@/lib/erpStore"
+import { useErpStore, getTradeLicenseStatus, type SalesOrder, type Quotation, type SalesOrderItem, type Customer } from "@/lib/erpStore"
 import { useFinanceStore, calculateMultiTax, resolveAutoTaxScheduleId } from "@/lib/financeStore"
 import { useAuthStore } from "@/lib/authStore"
 import { withOperatingWarehouses, isWH1, matchesWarehouse, getUserPermittedWarehouses } from "@/lib/warehouses"
@@ -814,7 +814,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
     try {
       if (selectedCust && (stagedTradePaperUrl !== (selectedCust.tradePaperUrl || "") || stagedTradePaperName !== (selectedCust.tradePaperFileName || ""))) {
-        erp.updateCustomer(selectedCust.id, {
+        await erp.updateCustomer(selectedCust.id, {
           tradePaperFileName: stagedTradePaperName || selectedCust.tradePaperFileName,
           tradePaperUrl: stagedTradePaperUrl || selectedCust.tradePaperUrl,
           tradePaperUploadedAt: new Date().toISOString(),
@@ -829,20 +829,27 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           country: "Ethiopia",
           region: "Addis Ababa",
           contactPerson: finalCustName,
-          phone: isWh1Order ? "" : custPhone.trim(),
+          phone: custPhone.trim(),
           tin: custTin.trim() || undefined,
           email: custEmail.trim() || `${finalCustName.toLowerCase().replace(/\s+/g, "")}@example.com`,
           address: custAddress.trim() || "Addis Ababa, Ethiopia",
           category: isWh1Order ? "Commodities Exporter / Union" : "Pharmaceutical Distributor",
+          warehouseTarget: targetWh,
           tradePaperFileName: stagedTradePaperName || (isWh1Order ? "Bank Permit.pdf" : "Trade License.pdf"),
           tradePaperUrl: stagedTradePaperUrl,
           tradePaperUploadedAt: new Date().toISOString(),
         }
         if (saveCustomerToRegistry) {
-          erp.addCustomer(selectedCust)
+          await erp.addCustomer(selectedCust)
         }
-      } else if (saveCustomerToRegistry && custTin.trim() && !selectedCust.tin) {
-        erp.updateCustomer(selectedCust.id, { tin: custTin.trim() })
+      } else if (saveCustomerToRegistry) {
+        const custUpdates: Partial<Customer> = {}
+        if (custTin.trim() && !selectedCust.tin) custUpdates.tin = custTin.trim()
+        if (custPhone.trim() && !selectedCust.phone) custUpdates.phone = custPhone.trim()
+        if (targetWh && !selectedCust.warehouseTarget) custUpdates.warehouseTarget = targetWh
+        if (Object.keys(custUpdates).length > 0) {
+          await erp.updateCustomer(selectedCust.id, custUpdates)
+        }
       }
 
     const soId = `SO-${Date.now().toString().slice(-6)}`
@@ -864,7 +871,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       id: soId,
       customerId: selectedCust.id,
       customer: selectedCust.name,
-      customerPhone: isWh1Order ? "" : custPhone.trim(),
+      customerPhone: custPhone.trim() || selectedCust.phone || "",
       customerGroup: selectedCust.category,
       warehouse: finalHeaderWh,
       warehouseName: finalHeaderWhName,

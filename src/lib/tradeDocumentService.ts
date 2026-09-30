@@ -132,14 +132,16 @@ export async function fetchTradeAndAdviceDocs(params: {
   salesIssueId?: string
   invoiceId?: string
   fsNo?: string
+  purchaseOrderId?: string
+  voucherNo?: string
 }): Promise<{
   tradeLicense: DocumentInfo | null
   paymentAdvice: DocumentInfo | null
   allDocs: ShipmentDocAttachment[]
 }> {
-  const { customerId, customerName, salesOrderId, salesIssueId, invoiceId, fsNo } = params
+  const { customerId, customerName, salesOrderId, salesIssueId, invoiceId, fsNo, purchaseOrderId, voucherNo } = params
 
-  const searchIds = [salesOrderId, salesIssueId, invoiceId, fsNo, customerId].filter(Boolean) as string[]
+  const searchIds = [salesOrderId, salesIssueId, invoiceId, fsNo, customerId, purchaseOrderId, voucherNo].filter(Boolean) as string[]
   let attachedDocs: ShipmentDocAttachment[] = []
   const seenUrls = new Set<string>()
 
@@ -167,8 +169,10 @@ export async function fetchTradeAndAdviceDocs(params: {
         const matchInv = invoiceId && p.linked_invoice_id && (p.linked_invoice_id === invoiceId || p.linked_invoice_id === `INV-SI-${invoiceId}` || p.linked_invoice_id.includes(invoiceId))
         const matchSi = salesIssueId && (p.sales_issue_id === salesIssueId || p.linked_invoice_id === `INV-SI-${salesIssueId}` || p.reference?.includes(salesIssueId))
         const matchSo = salesOrderId && (p.sales_order_id === salesOrderId || p.reference?.includes(salesOrderId))
+        const matchPo = purchaseOrderId && (p.purchase_order_id === purchaseOrderId || p.reference?.includes(purchaseOrderId))
+        const matchVoucher = voucherNo && p.reference?.includes(voucherNo)
         const matchFs = fsNo && p.reference?.includes(fsNo)
-        return Boolean((matchInv || matchSi || matchSo || matchFs) && p.payment_advice_url)
+        return Boolean((matchInv || matchSi || matchSo || matchPo || matchVoucher || matchFs) && p.payment_advice_url)
       })
 
       matchingPayments.forEach((p) => {
@@ -178,8 +182,8 @@ export async function fetchTradeAndAdviceDocs(params: {
             seenUrls.add(key)
             attachedDocs.push({
               id: p.id,
-              record_id: invoiceId || salesIssueId || salesOrderId || p.id,
-              record_type: "invoice",
+              record_id: invoiceId || salesIssueId || purchaseOrderId || salesOrderId || p.id,
+              record_type: purchaseOrderId ? "purchase_order" : "invoice",
               document_type: "Payment Advice",
               file_name: p.payment_advice_filename || "Payment Slip",
               file_url: p.payment_advice_url,
@@ -192,6 +196,89 @@ export async function fetchTradeAndAdviceDocs(params: {
       })
     } catch (err) {
       console.warn("Notice: payment slip resolution:", err)
+    }
+
+    // Seamlessly aggregate attachments directly from Purchase Orders
+    if (purchaseOrderId || voucherNo || invoiceId?.startsWith("INV-PO-") || invoiceId?.startsWith("INV-VOUCHER-")) {
+      try {
+        const pos = erpStore.getPurchaseOrders()
+        const matchedPo = pos.find((p) =>
+          (purchaseOrderId && p.id === purchaseOrderId) ||
+          (voucherNo && (p.voucherNo === voucherNo || p.poNumber === voucherNo)) ||
+          (invoiceId && (p.id === invoiceId || `INV-${p.voucherNo}` === invoiceId || `INV-PO-${p.id}` === invoiceId))
+        )
+
+        if (matchedPo) {
+          // A. PO payment advice attachment
+          if (matchedPo.paymentAdviceAttachment?.url) {
+            const key = matchedPo.paymentAdviceAttachment.url.trim()
+            if (!seenUrls.has(key)) {
+              seenUrls.add(key)
+              attachedDocs.push({
+                id: matchedPo.paymentAdviceAttachment.id || `po-adv-${matchedPo.id}`,
+                record_id: matchedPo.id,
+                record_type: "purchase_order",
+                document_type: "Payment Advice",
+                file_name: matchedPo.paymentAdviceAttachment.name || "Payment Advice Slip",
+                file_url: matchedPo.paymentAdviceAttachment.url,
+                file_size: matchedPo.paymentAdviceAttachment.size || 102400,
+                uploaded_at: matchedPo.paymentAdviceAttachment.uploadedAt || matchedPo.date || new Date().toISOString(),
+                uploaded_by: "Procurement Officer",
+              })
+            }
+          }
+
+          // B. PO general / vendor invoice attachments
+          if (Array.isArray(matchedPo.attachments)) {
+            matchedPo.attachments.forEach((att: any, idx: number) => {
+              const url = typeof att === "string" ? att : att?.url
+              const name = typeof att === "string" ? `Vendor Invoice ${idx + 1}` : att?.name || `Vendor Invoice ${idx + 1}`
+              if (url) {
+                const key = url.trim()
+                if (!seenUrls.has(key)) {
+                  seenUrls.add(key)
+                  attachedDocs.push({
+                    id: (typeof att === "object" && att?.id) ? att.id : `po-att-${matchedPo.id}-${idx + 1}`,
+                    record_id: matchedPo.id,
+                    record_type: "purchase_order",
+                    document_type: "Vendor Invoice",
+                    file_name: name,
+                    file_url: url,
+                    file_size: (typeof att === "object" && att?.size) ? att.size : 102400,
+                    uploaded_at: (typeof att === "object" && att?.uploadedAt) ? att.uploadedAt : matchedPo.date || new Date().toISOString(),
+                    uploaded_by: "Procurement Officer",
+                  })
+                }
+              }
+            })
+          }
+
+          // C. PO installment payments slips
+          if (Array.isArray(matchedPo.installmentPayments)) {
+            matchedPo.installmentPayments.forEach((inst, idx) => {
+              if (inst.paymentAdviceUrl) {
+                const key = inst.paymentAdviceUrl.trim()
+                if (!seenUrls.has(key)) {
+                  seenUrls.add(key)
+                  attachedDocs.push({
+                    id: inst.id || `po-inst-${matchedPo.id}-${idx + 1}`,
+                    record_id: matchedPo.id,
+                    record_type: "purchase_order",
+                    document_type: "Payment Advice",
+                    file_name: inst.paymentAdviceFilename || `Installment Slip #${idx + 1}`,
+                    file_url: inst.paymentAdviceUrl,
+                    file_size: 102400,
+                    uploaded_at: inst.date || matchedPo.date || new Date().toISOString(),
+                    uploaded_by: "Procurement Officer",
+                  })
+                }
+              }
+            })
+          }
+        }
+      } catch (poErr) {
+        console.warn("Notice: PO attachment resolution:", poErr)
+      }
     }
   }
 

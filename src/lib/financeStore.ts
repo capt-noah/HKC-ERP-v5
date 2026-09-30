@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { deleteResource, loadResource, persistResources } from "./apiPersistence"
 import { useAuthStore } from "./authStore"
+import { erpStore, type PurchaseOrder } from "./erpStore"
 import { validateJournalVoucher } from "../core/finance/ledgerEngine"
 import { sortNewestFirst } from "./utils"
 import { COMPANY_CHART_OF_ACCOUNTS, DEFAULT_COMPANY_SETTINGS_COA, type GlAccountMapping, DEFAULT_GL_ACCOUNT_MAPPINGS } from "./companyCOA"
@@ -856,6 +857,33 @@ class FinanceStore {
             const actualStatus: Invoice["status"] = isFullyPaid ? "Paid" : (actualAmountPaid > 0 ? "Partially Paid" : "Sent")
             const actualSettlement: Invoice["settlement_status"] = isFullyPaid ? "Fully Settled" : (actualAmountPaid > 0 ? "Ongoing" : "Unpaid")
 
+            let rawAccEntries = si.account_entries || si.accountEntries
+            if (typeof rawAccEntries === "string") {
+              try { rawAccEntries = JSON.parse(rawAccEntries) } catch { rawAccEntries = null }
+            }
+            let siGlDist: any = undefined
+            if (rawAccEntries) {
+              if (Array.isArray(rawAccEntries.revenue_lines) || Array.isArray(rawAccEntries.cogs_lines)) {
+                siGlDist = {
+                  revenue_lines: rawAccEntries.revenue_lines || [],
+                  cogs_lines: rawAccEntries.cogs_lines || [],
+                }
+              } else if (Array.isArray(rawAccEntries.debit_lines) || Array.isArray(rawAccEntries.credit_lines)) {
+                siGlDist = {
+                  revenue_lines: [
+                    ...(rawAccEntries.debit_lines || []).map((l: any) => ({ ...l, debit: Number(l.amount || l.debit || 0), credit: 0 })),
+                    ...(rawAccEntries.credit_lines || []).map((l: any) => ({ ...l, debit: 0, credit: Number(l.amount || l.credit || 0) })),
+                  ],
+                  cogs_lines: [],
+                }
+              } else if (Array.isArray(rawAccEntries)) {
+                siGlDist = {
+                  revenue_lines: rawAccEntries.filter((r: any) => !r.is_cogs && r.category !== "cogs"),
+                  cogs_lines: rawAccEntries.filter((r: any) => r.is_cogs || r.category === "cogs"),
+                }
+              }
+            }
+
             const mappedInvoice: Invoice = {
               id: invId,
               invoice_number: `INV-${si.fs_no || si.reference_no || si.id}`,
@@ -877,6 +905,7 @@ class FinanceStore {
               sales_issue_id: si.id,
               sales_order_id: linkedSoId,
               fs_no: si.fs_no,
+              gl_distribution: siGlDist,
             }
 
             if (existingInvIdx >= 0) {
@@ -898,6 +927,7 @@ class FinanceStore {
                 payment_terms: mappedInvoice.payment_terms,
                 sales_issue_id: si.id,
                 fs_no: si.fs_no,
+                gl_distribution: current.gl_distribution || siGlDist,
               }
               // Update in place and remove any remaining stale duplicates for this issue
               this.invoices = this.invoices.filter((inv, idx) => idx === existingInvIdx || !isMatchingInvoice(inv))
@@ -1017,15 +1047,15 @@ class FinanceStore {
               }
             }
 
-            // Sync Credit Purchase Orders into Accounts Payable Invoices
+            // Sync Purchase Orders (Cash & Credit) into Accounts Payable / Invoices
             const isCredit = (po.paymentType || po.payment_type) === "Credit"
-            if (isCredit) {
+            const totalAmt = Number(po.amount || po.total_amount || 0)
+            if (totalAmt > 0) {
               const poInvId = `INV-PO-${po.id}`
               const existingPoInvIdx = this.invoices.findIndex((i) => i.id === poInvId || i.purchase_order_id === po.id || (po.voucherNo && i.voucher_no === po.voucherNo))
-              const totalAmt = Number(po.amount || 0)
-              const paidAmt = Number(po.amountPaid ?? po.amount_paid ?? 0)
-              const dueAmt = typeof po.balanceDue === "number" ? po.balanceDue : Math.max(0, totalAmt - paidAmt)
-              const isPaid = dueAmt <= 0.01 || po.settlementStatus === "Fully Settled"
+              const paidAmt = isCredit ? Number(po.amountPaid ?? po.amount_paid ?? 0) : totalAmt
+              const dueAmt = isCredit ? (typeof po.balanceDue === "number" ? po.balanceDue : Math.max(0, totalAmt - paidAmt)) : 0
+              const isPaid = !isCredit || dueAmt <= 0.01 || po.settlementStatus === "Fully Settled"
               const invObj: Invoice = {
                 id: poInvId,
                 invoice_number: po.voucherNo || po.poNumber || `BILL-${po.id.slice(-6)}`,
@@ -1051,7 +1081,7 @@ class FinanceStore {
                 total: totalAmt,
                 amount_paid: paidAmt,
                 balance_due: dueAmt,
-                payment_terms: po.paymentTerms || po.payment_terms || "Credit",
+                payment_terms: po.paymentTerms || po.payment_terms || (isCredit ? "Credit" : "Cash"),
                 settlement_status: isPaid ? "Fully Settled" : paidAmt > 0 ? "Ongoing" : "Unpaid",
                 status: isPaid ? "Paid" : paidAmt > 0 ? "Partially Paid" : "Sent",
                 notes: po.notes || po.reasonForPayment || "",
@@ -2776,28 +2806,131 @@ class FinanceStore {
     const invNum = invoice.invoice_number
     const siId = invoice.sales_issue_id
     const soId = invoice.sales_order_id
+    const poId = invoice.purchase_order_id
+    const vNo = invoice.voucher_no
 
-    // Find Sales Journal Entry
+    // Helper to identify COGS entries
+    const isCogs = (e: JournalEntry) =>
+      e.id.startsWith("JE-COGS-") ||
+      e.description.toLowerCase().includes("inventory cost") ||
+      e.description.toLowerCase().includes("cogs")
+
+    // 1. Find Sales / Purchase Journal Entry (Section A) - MUST NOT match COGS
     const salesEntry = this.entries.find((e) => {
+      if (isCogs(e)) return false
+      if (poId && (e.id === `JE-PO-${poId}` || e.source_id === poId)) return true
+      if (vNo && (e.id === `JE-PO-${vNo}` || e.source_id === vNo || (e as any).entry_number === vNo)) return true
       if (siId && (e.id === `JE-SALE-${siId}` || e.source_id === siId)) return true
-      if (e.id === `JE-SALE-${invNum}` || e.id === `JE-INV-${invNum}`) return true
+      if (e.id === `JE-SALE-${invNum}` || e.id === `JE-INV-${invNum}` || e.id === `JE-PO-${invNum}`) return true
       if (e.source_id === invId || e.source_id === invNum) return true
       if (e.source_type === "Sales Invoice" && (e.description.includes(invNum) || (invId && e.description.includes(invId)))) return true
+      if ((e.source_type === "Payment Voucher" || (e.source_type as string) === "Purchase Order" || e.source_type === "Purchase Invoice") && (e.description.includes(invNum) || (poId && e.description.includes(poId)))) return true
       if (soId && e.source_id === soId && (e.source_type === "Sales Invoice" || e.source_type === "Sales Issue")) return true
       return false
     }) || null
 
-    const salesLines = salesEntry ? this.lines.filter((l) => l.journal_entry_id === salesEntry.id) : []
+    let salesLines = salesEntry ? this.lines.filter((l) => l.journal_entry_id === salesEntry.id) : []
 
-    // Find COGS Journal Entry
+    // 2. Fallback: If no journal lines found for Purchase Order, check PO accountEntries from erpStore
+    if (salesLines.length === 0 && (poId || invoice.invoice_type === "Purchase")) {
+      const pos = erpStore.getPurchaseOrders()
+      const matchedPo = pos.find((p: PurchaseOrder) => p.id === poId || (vNo && p.voucherNo === vNo) || p.voucherNo === invNum || p.poNumber === invNum)
+      if (matchedPo?.accountEntries && matchedPo.accountEntries.length > 0) {
+        salesLines = matchedPo.accountEntries.map((e: any, idx: number) => ({
+          id: `${invoice.id}-po-line-${idx + 1}`,
+          journal_entry_id: `JE-PO-${matchedPo.id}`,
+          account_id: e.accountId || e.account_id || e.accountCode || e.account_code || e.code,
+          debit_amount: Number(e.debit || e.debit_amount || 0),
+          credit_amount: Number(e.credit || e.credit_amount || 0),
+          currency: "ETB",
+          exchange_rate_at_time: 1.0,
+          warehouse_id: null,
+          party_type: "Supplier",
+          party_id: matchedPo.supplierId || null,
+          party_name: matchedPo.supplier || matchedPo.paidTo || null,
+        }))
+      }
+    }
+
+    // 3. Fallback: If no journal lines found for Sales Issue, check SI accountEntries from erpStore or invoice.gl_distribution
+    if (salesLines.length === 0 && (siId || invoice.sales_issue_id || invoice.invoice_type === "Sales" || !invoice.invoice_type)) {
+      const salesIssues = erpStore.getSalesIssues()
+      const matchedSi = (salesIssues as any[]).find((s) => s.id === siId || s.id === invoice.sales_issue_id || s.fs_no === invoice.fs_no || s.reference_no === invoice.fs_no)
+      let rawAcc = matchedSi?.account_entries || matchedSi?.accountEntries || invoice.gl_distribution
+      if (typeof rawAcc === "string") {
+        try { rawAcc = JSON.parse(rawAcc) } catch { rawAcc = null }
+      }
+      let revList: any[] = []
+      if (rawAcc) {
+        if (Array.isArray(rawAcc.revenue_lines)) {
+          revList = rawAcc.revenue_lines
+        } else if (Array.isArray(rawAcc.debit_lines) || Array.isArray(rawAcc.credit_lines)) {
+          revList = [
+            ...(rawAcc.debit_lines || []).map((l: any) => ({ ...l, debit: Number(l.amount || l.debit || 0), credit: 0 })),
+            ...(rawAcc.credit_lines || []).map((l: any) => ({ ...l, debit: 0, credit: Number(l.amount || l.credit || 0) })),
+          ]
+        } else if (Array.isArray(rawAcc)) {
+          revList = rawAcc.filter((r: any) => !r.is_cogs && r.category !== "cogs")
+        }
+      }
+
+      if (revList.length > 0) {
+        salesLines = revList.map((e: any, idx: number) => ({
+          id: `${invoice.id}-si-line-${idx + 1}`,
+          journal_entry_id: `JE-SALE-${matchedSi?.id || siId || invoice.id}`,
+          account_id: e.accountId || e.account_id || e.accountCode || e.account_code || e.code,
+          debit_amount: Number(e.debit || e.debit_amount || (e.amount && (e.id?.startsWith("dr-") || e.debit) ? e.amount : 0)),
+          credit_amount: Number(e.credit || e.credit_amount || (e.amount && (e.id?.startsWith("cr-") || e.credit) ? e.amount : 0)),
+          currency: "ETB",
+          exchange_rate_at_time: 1.0,
+          warehouse_id: matchedSi?.warehouse_id || invoice.warehouse_id || null,
+          party_type: "Customer",
+          party_id: matchedSi?.customer_id || null,
+          party_name: matchedSi?.customer_name || invoice.customer_name || null,
+        }))
+      }
+    }
+
+    // 4. Find COGS Journal Entry (Section B)
     const cogsEntry = this.entries.find((e) => {
-      if (siId && (e.id === `JE-COGS-${siId}` || (e.source_id === siId && (e.id.startsWith("JE-COGS") || e.description.toLowerCase().includes("cogs") || e.description.toLowerCase().includes("cost"))))) return true
+      if (e.id.startsWith("JE-COGS-") && (e.id === `JE-COGS-${siId}` || e.source_id === siId || e.id === `JE-COGS-${invNum}` || (invId && e.id === `JE-COGS-${invId}`))) return true
+      if (siId && (e.id === `JE-COGS-${siId}` || (e.source_id === siId && isCogs(e)))) return true
       if (e.id === `JE-COGS-${invNum}`) return true
-      if ((e.source_id === invId || e.source_id === invNum) && (e.id.startsWith("JE-COGS") || e.description.toLowerCase().includes("cogs") || e.description.toLowerCase().includes("cost"))) return true
+      if ((e.source_id === invId || e.source_id === invNum) && isCogs(e)) return true
       return false
     }) || null
 
-    const cogsLines = cogsEntry ? this.lines.filter((l) => l.journal_entry_id === cogsEntry.id) : []
+    let cogsLines = cogsEntry ? this.lines.filter((l) => l.journal_entry_id === cogsEntry.id) : []
+
+    // 5. Fallback: If no journal lines found for COGS, check SI accountEntries or invoice.gl_distribution
+    if (cogsLines.length === 0 && (siId || invoice.sales_issue_id)) {
+      const salesIssues = erpStore.getSalesIssues()
+      const matchedSi = (salesIssues as any[]).find((s) => s.id === siId || s.id === invoice.sales_issue_id || s.fs_no === invoice.fs_no)
+      let rawAcc = matchedSi?.account_entries || matchedSi?.accountEntries || invoice.gl_distribution
+      if (typeof rawAcc === "string") {
+        try { rawAcc = JSON.parse(rawAcc) } catch { rawAcc = null }
+      }
+      let cogsList: any[] = []
+      if (rawAcc) {
+        if (Array.isArray(rawAcc.cogs_lines)) {
+          cogsList = rawAcc.cogs_lines
+        } else if (Array.isArray(rawAcc)) {
+          cogsList = rawAcc.filter((r: any) => r.is_cogs || r.category === "cogs")
+        }
+      }
+      if (cogsList.length > 0) {
+        cogsLines = cogsList.map((e: any, idx: number) => ({
+          id: `${invoice.id}-cogs-line-${idx + 1}`,
+          journal_entry_id: `JE-COGS-${matchedSi?.id || siId || invoice.id}`,
+          account_id: e.accountId || e.account_id || e.accountCode || e.account_code || e.code,
+          debit_amount: Number(e.debit || e.debit_amount || 0),
+          credit_amount: Number(e.credit || e.credit_amount || 0),
+          currency: "ETB",
+          exchange_rate_at_time: 1.0,
+          warehouse_id: matchedSi?.warehouse_id || invoice.warehouse_id || null,
+        }))
+      }
+    }
 
     return { salesEntry, salesLines, cogsEntry, cogsLines }
   }

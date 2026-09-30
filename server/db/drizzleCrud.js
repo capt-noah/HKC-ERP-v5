@@ -394,12 +394,18 @@ export async function drizzleUpdateRow({ resource, id, body }) {
         delete rawUpdate.payload
       }
 
-      // Safeguard: Never allow partial updates (such as trade paper sync) to wipe customer or supplier names
-      if ((tableName === "customers" || tableName === "suppliers") && existingPayload.name && !rawUpdate.name) {
-        rawUpdate.name = existingPayload.name
-      }
-      if ((tableName === "customers" || tableName === "suppliers") && existingPayload.phone && !rawUpdate.phone) {
-        rawUpdate.phone = existingPayload.phone
+      // Safeguard: Never allow partial updates (such as trade paper sync) to wipe customer or supplier fields
+      if (tableName === "customers" || tableName === "suppliers") {
+        const fieldsToPreserve = [
+          "name", "phone", "tin", "warehouseTarget", "warehouse_target",
+          "category", "email", "address", "contactPerson", "contact_person",
+          "country", "region", "creditLimit", "status"
+        ]
+        for (const field of fieldsToPreserve) {
+          if (existingPayload[field] !== undefined && (rawUpdate[field] === undefined || rawUpdate[field] === "")) {
+            rawUpdate[field] = existingPayload[field]
+          }
+        }
       }
 
       const mergedPayload = { ...existingPayload, ...rawUpdate, id: targetId }
