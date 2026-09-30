@@ -19,6 +19,7 @@
     "db:studio": "drizzle-kit studio",
     "db:export": "node server/db/exportData.js",
     "db:seed:mysql": "node server/db/seedMysql.js",
+    "db:clean": "node server/db/cleanData.js",
     "admin:reset": "node server/scripts/resetPassword.js",
     "reset:password": "node server/scripts/resetPassword.js"
   },
