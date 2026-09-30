@@ -4,8 +4,9 @@ import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
-import { useFinanceStore } from "@/lib/financeStore"
+import { useFinanceStore, isCogsAccount } from "@/lib/financeStore"
 import { erpStore } from "@/lib/erpStore"
+import { cn } from "@/lib/utils"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
 import { Link } from "react-router-dom"
 
@@ -28,50 +29,16 @@ export default function FinanceOverview() {
   const accountById = new Map(accounts.flatMap((account) => [[account.id, account], [account.code, account]]))
   const entryById = new Map(journalEntries.map((entry) => [entry.id, entry]))
 
-  const isCogsAccount = (account?: { code?: string | null; name?: string | null; peachtree_type?: string | null }) => {
-    if (!account) return false
-    if (account.peachtree_type === "Cost of Sales") return true
-    if (account.code === "5001" || account.code?.startsWith("6")) return true
-    if (/cogs|cost of (goods|sales)/i.test(account.name || "")) return true
-    return false
-  }
-
-  // Profitability calculations across GL lines
-  let totalRevenue = 0
-  let totalCogs = 0
-  let totalExpenses = 0
-
-  for (const line of journalLines) {
-    const account = accountById.get(line.account_id)
-    if (!account) continue
-    if (account.account_type === "Revenue") {
-      totalRevenue += line.credit_amount - line.debit_amount
-    } else if (account.account_type === "Expense") {
-      const amt = line.debit_amount - line.credit_amount
-      totalExpenses += amt
-      if (isCogsAccount(account)) {
-        totalCogs += amt
-      }
-    }
-  }
-
-  const grossProfit = totalRevenue - totalCogs
-  const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0
-  const netProfit = totalRevenue - totalExpenses
-  const netMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0
-
-  const cashLines = journalLines.filter((line) => {
-    const account = accountById.get(line.account_id)
-    return (
-      account?.account_type === "Asset" &&
-      (account.peachtree_type === "Cash" ||
-        account.code?.startsWith("1000") ||
-        /cash|bank|cbe|boa|aib|abay|unb|cbo|ahadu|oib/i.test(account.name || ""))
-    )
-  })
-  const cashDebits = cashLines.reduce((s, l) => s + l.debit_amount, 0)
-  const cashCredits = cashLines.reduce((s, l) => s + l.credit_amount, 0)
-  const cashPosition = cashDebits - cashCredits
+  const {
+    totalRevenue,
+    totalCogs,
+    grossProfit,
+    grossMargin,
+    netProfit,
+    netMargin,
+    cashPosition,
+    isCashNegative,
+  } = store.getFinancialMetrics()
 
   // Find distinct years from journal entries or fallback to current year
   const entryYears = new Set<number>()
@@ -290,7 +257,10 @@ export default function FinanceOverview() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Cash Position</span>
-                <div className="size-7 rounded-lg bg-emerald-100/80 text-emerald-700 flex items-center justify-center">
+                <div className={cn(
+                  "size-7 rounded-lg flex items-center justify-center",
+                  isCashNegative ? "bg-amber-100/80 text-amber-700" : "bg-emerald-100/80 text-emerald-700"
+                )}>
                   <Wallet className="size-4" />
                 </div>
               </div>
@@ -298,16 +268,29 @@ export default function FinanceOverview() {
                 <Skeleton className="h-7 w-32 bg-zinc-200/80 my-1" />
               ) : (
                 <div className="flex items-baseline gap-1.5 mt-1 min-w-0 overflow-hidden">
-                  <span className="text-xs font-extrabold text-emerald-800/70 font-sans tracking-wide shrink-0">
+                  <span className={cn(
+                    "text-xs font-extrabold font-sans tracking-wide shrink-0",
+                    isCashNegative ? "text-amber-800/70" : "text-emerald-800/70"
+                  )}>
                     ETB
                   </span>
-                  <span className="text-lg sm:text-xl font-black font-mono text-emerald-700 truncate" title={`ETB ${cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}>
-                    {cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <span
+                    className={cn(
+                      "text-lg sm:text-xl font-black font-mono truncate",
+                      isCashNegative ? "text-amber-700" : "text-emerald-700"
+                    )}
+                    title={`ETB ${isCashNegative ? `(${Math.abs(cashPosition).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` : cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  >
+                    {isCashNegative
+                      ? `(${Math.abs(cashPosition).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+                      : cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
               )}
             </div>
-            <p className="text-[11px] text-gray-400 mt-2 font-medium">Liquid cash & bank reserves</p>
+            <p className={cn("text-[11px] mt-2 font-medium", isCashNegative ? "text-amber-600 font-bold" : "text-gray-400")}>
+              {isCashNegative ? "Net Cash Outflow / Overdraft" : "Liquid cash & bank reserves"}
+            </p>
           </GlassCard>
         </div>
 

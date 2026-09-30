@@ -65,6 +65,8 @@ export async function listSalesIssues(query = {}) {
           available_quantity: Number(item.available_quantity || item.availableQuantity || matchedProd?.quantity || 1000),
           quantity: Number(item.quantity || item.qty || 0),
           unit_price: Number(item.unit_price || item.unitPrice || item.price || 0),
+          unit_cost: Number(item.unit_cost || item.cost_price || matchedProd?.unitCost || matchedProd?.unit_cost || 0),
+          cost_price: Number(item.cost_price || item.unit_cost || matchedProd?.unitCost || matchedProd?.unit_cost || 0),
           amount: Number(item.amount || item.total_price || item.totalPrice || (Number(item.quantity || 0) * Number(item.unit_price || 0))),
         })
         itemsByIssueId.set(issueId, existing)

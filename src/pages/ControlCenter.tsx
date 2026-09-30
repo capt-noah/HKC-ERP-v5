@@ -52,7 +52,7 @@ import { useResizableTable, ResizableTh, type TableColumn } from "@/components/R
 import { Skeleton } from "@/components/ui/skeleton"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, type SalesOrder } from "@/lib/erpStore"
-import { useFinanceStore } from "@/lib/financeStore"
+import { useFinanceStore, isCogsAccount } from "@/lib/financeStore"
 import { useAuthStore } from "@/lib/authStore"
 import { useFeedback } from "@/context/FeedbackContext"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
@@ -333,7 +333,8 @@ export default function ControlCenter() {
   useEffect(() => {
     void erp.loadSalesData()
     void erp.loadInventoryData()
-  }, [erp])
+    void finance.loadFromApi()
+  }, [erp, finance])
 
   useEffect(() => {
     fetchAllShipmentDocs().then((docs) => {
@@ -728,16 +729,21 @@ export default function ControlCenter() {
       0
     )
 
-  const isCogsAccount = (account?: { code?: string | null; name?: string | null; peachtree_type?: string | null }) => {
-    if (!account) return false
-    if (account.peachtree_type === "Cost of Sales") return true
-    if (account.code === "5001" || account.code?.startsWith("6")) return true
-    if (/cogs|cost of (goods|sales)/i.test(account.name || "")) return true
-    return false
-  }
-
   const { postedRevenue, totalCogs, grossProfit, grossMargin, netProfit, netMargin } = useMemo(() => {
-    // 1. Calculate from active Sales Issues (primary source of fulfilled enterprise sales)
+    const glMetrics = finance.getFinancialMetrics()
+    if (glMetrics.totalRevenue > 0 || glMetrics.totalCogs > 0 || glMetrics.totalExpenses > 0) {
+      return {
+        postedRevenue: glMetrics.totalRevenue,
+        totalCogs: glMetrics.totalCogs,
+        grossProfit: glMetrics.grossProfit,
+        grossMargin: glMetrics.grossMargin,
+        totalExpenses: glMetrics.totalExpenses,
+        netProfit: glMetrics.netProfit,
+        netMargin: glMetrics.netMargin,
+      }
+    }
+
+    // Fallback only if GL lines are empty (e.g., fresh system before first GL posting)
     const activeIssues = salesIssues.filter((si) => si.status !== "Cancelled")
     const salesIssueRev = activeIssues.reduce((sum, si) => sum + Number(si.total_amount || 0), 0)
     let salesIssueCogs = 0
@@ -751,43 +757,19 @@ export default function ControlCenter() {
       }
     })
 
-    // 2. Or from Journal Entry Lines if available
-    const accounts = finance.getAccounts()
-    const lines = finance.getJournalEntryLines()
-    let glRev = 0
-    let glCogs = 0
-    let glExp = 0
-
-    lines.forEach((line) => {
-      const account = accounts.find((item) => item.id === line.account_id)
-      if (!account) return
-      if (account.account_type === "Revenue") {
-        glRev += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
-      } else if (account.account_type === "Expense") {
-        const amt = Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
-        glExp += amt
-        if (isCogsAccount(account)) {
-          glCogs += amt
-        }
-      }
-    })
-
-    const rev = Math.max(salesIssueRev, glRev)
-    const cogs = glCogs > 0 ? glCogs : salesIssueCogs
-    const gp = Math.max(0, rev - cogs)
-    const gm = rev > 0 ? (gp / rev) * 100 : 0
-    const exp = Math.max(glExp, cogs)
-    const np = rev - exp
-    const nm = rev > 0 ? (np / rev) * 100 : 0
+    const gp = Math.max(0, salesIssueRev - salesIssueCogs)
+    const gm = salesIssueRev > 0 ? (gp / salesIssueRev) * 100 : 0
+    const np = salesIssueRev - salesIssueCogs
+    const nm = salesIssueRev > 0 ? (np / salesIssueRev) * 100 : 0
 
     return {
-      postedRevenue: rev,
-      totalCogs: cogs,
+      postedRevenue: salesIssueRev,
+      totalCogs: salesIssueCogs,
       grossProfit: gp,
-      grossMargin: gm,
-      totalExpenses: exp,
+      grossMargin: Math.round(gm * 10) / 10,
+      totalExpenses: salesIssueCogs,
       netProfit: np,
-      netMargin: nm,
+      netMargin: Math.round(nm * 10) / 10,
     }
   }, [salesIssues, finance])
 
@@ -799,16 +781,39 @@ export default function ControlCenter() {
       monthlyMap[m] = { revenue: 0, orders: 0 }
     })
 
-    // 1. Aggregate posted revenue from Sales Issues
-    salesIssues.forEach((si) => {
-      if (si.status === "Cancelled") return
-      const dateStr = si.sale_date || (si as any).created_at
+    const accounts = finance.getAccounts()
+    const entries = finance.getJournalEntries()
+    const lines = finance.getJournalEntryLines()
+    const entryMap = new Map(entries.map((e) => [e.id, e]))
+    const accountMap = new Map(accounts.flatMap((account) => [[account.id, account], [account.code, account]]))
+
+    // 1. Aggregate posted revenue from GL entries
+    lines.forEach((line) => {
+      const entry = entryMap.get(line.journal_entry_id)
+      const dateStr = entry?.entry_date || (line as any).created_at
       const d = dateStr ? new Date(dateStr) : null
       if (d && !isNaN(d.getTime())) {
         const monthLabel = months[d.getMonth()]
-        monthlyMap[monthLabel].revenue += Number(si.total_amount || 0)
+        const acc = accountMap.get(line.account_id)
+        if (acc?.account_type === "Revenue") {
+          monthlyMap[monthLabel].revenue += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
+        }
       }
     })
+
+    // Fallback to Sales Issues if GL lines are empty
+    const hasGlData = Object.values(monthlyMap).some((m) => m.revenue > 0)
+    if (!hasGlData && salesIssues.length > 0) {
+      salesIssues.forEach((si) => {
+        if (si.status === "Cancelled") return
+        const dateStr = si.sale_date || (si as any).created_at
+        const d = dateStr ? new Date(dateStr) : null
+        if (d && !isNaN(d.getTime())) {
+          const monthLabel = months[d.getMonth()]
+          monthlyMap[monthLabel].revenue += Number(si.total_amount || 0)
+        }
+      })
+    }
 
     // 2. Aggregate sales pipeline from Sales Orders
     erp.getSalesOrders().forEach((so) => {
@@ -820,23 +825,6 @@ export default function ControlCenter() {
         monthlyMap[monthLabel].orders += Number(so.amount || 0)
       }
     })
-
-    // 3. Fallback to Journal Revenue Entries if sales issues are not populated
-    if (salesIssues.length === 0) {
-      finance.getJournalEntries().forEach((entry) => {
-        const entryDate = entry.entry_date ? new Date(entry.entry_date) : null
-        if (entryDate && !isNaN(entryDate.getTime())) {
-          const monthLabel = months[entryDate.getMonth()]
-          const lines = finance.getJournalEntryLines().filter((l) => l.journal_entry_id === entry.id)
-          lines.forEach((line) => {
-            const acc = finance.getAccounts().find((a) => a.id === line.account_id)
-            if (acc?.account_type === "Revenue") {
-              monthlyMap[monthLabel].revenue += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
-            }
-          })
-        }
-      })
-    }
 
     return months.map((month) => ({
       name: month,
@@ -857,6 +845,7 @@ export default function ControlCenter() {
     const entries = finance.getJournalEntries()
     const lines = finance.getJournalEntryLines()
     const entryMap = new Map(entries.map((e) => [e.id, e]))
+    const accountMap = new Map(accounts.flatMap((account) => [[account.id, account], [account.code, account]]))
 
     lines.forEach((line) => {
       const entry = entryMap.get(line.journal_entry_id)
@@ -864,7 +853,7 @@ export default function ControlCenter() {
       const d = dateStr ? new Date(dateStr) : null
       if (d && !isNaN(d.getTime())) {
         const monthLabel = months[d.getMonth()]
-        const acc = accounts.find((a) => a.id === line.account_id)
+        const acc = accountMap.get(line.account_id)
         if (acc) {
           if (acc.account_type === "Revenue") {
             monthlyMap[monthLabel].revenue += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)

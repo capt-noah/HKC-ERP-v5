@@ -19,6 +19,29 @@ import {
 export type { TaxRule, TaxSchedule, TaxLineDetail, TaxCalculationResult, GlAccountMapping }
 export { calculateMultiTax, resolveAutoTaxScheduleId, DEFAULT_GL_ACCOUNT_MAPPINGS }
 
+export interface FinancialMetrics {
+  totalRevenue: number
+  totalCogs: number
+  totalExpenses: number
+  operatingExpenses: number
+  grossProfit: number
+  grossMargin: number
+  netProfit: number
+  netMargin: number
+  cashPosition: number
+  cashDebits: number
+  cashCredits: number
+  isCashNegative: boolean
+}
+
+export function isCogsAccount(account?: { code?: string | null; name?: string | null; peachtree_type?: string | null } | null): boolean {
+  if (!account) return false
+  if (account.peachtree_type === "Cost of Sales") return true
+  if (account.code === "5001" || account.code?.startsWith("5000") || account.code?.startsWith("5010") || account.code?.startsWith("6")) return true
+  if (/cogs|cost of (goods|sales)/i.test(account.name || "")) return true
+  return false
+}
+
 export interface AccountItem {
   id: string
   code: string
@@ -2395,6 +2418,63 @@ class FinanceStore {
     void persistResources([{ resource: "invoices", items: this.invoices }])
     this.notify()
     return { success: true, count: newInvoices.length }
+  }
+
+  // --- Canonical Executive Financial Metrics Engine ---
+  public getFinancialMetrics(): FinancialMetrics {
+    const accountById = new Map(this.accounts.flatMap((account) => [[account.id, account], [account.code, account]]))
+    let totalRevenue = 0
+    let totalCogs = 0
+    let totalExpenses = 0
+    let operatingExpenses = 0
+    let cashDebits = 0
+    let cashCredits = 0
+
+    for (const line of this.lines) {
+      const account = accountById.get(line.account_id)
+      if (!account) continue
+
+      if (account.account_type === "Revenue") {
+        totalRevenue += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
+      } else if (account.account_type === "Expense") {
+        const amt = Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
+        totalExpenses += amt
+        if (isCogsAccount(account)) {
+          totalCogs += amt
+        } else {
+          operatingExpenses += amt
+        }
+      } else if (
+        account.account_type === "Asset" &&
+        (account.peachtree_type === "Cash" ||
+          account.code?.startsWith("1000") ||
+          /cash|bank|cbe|boa|aib|abay|unb|cbo|ahadu|oib/i.test(account.name || ""))
+      ) {
+        cashDebits += Number(line.debit_amount || 0)
+        cashCredits += Number(line.credit_amount || 0)
+      }
+    }
+
+    const grossProfit = totalRevenue - totalCogs
+    const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0
+    const netProfit = totalRevenue - totalExpenses
+    const netMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0
+    const cashPosition = cashDebits - cashCredits
+
+    return {
+      totalRevenue: Math.round(totalRevenue * 100) / 100,
+      totalCogs: Math.round(totalCogs * 100) / 100,
+      totalExpenses: Math.round(totalExpenses * 100) / 100,
+      operatingExpenses: Math.round(operatingExpenses * 100) / 100,
+      grossProfit: Math.round(grossProfit * 100) / 100,
+      grossMargin: Math.round(grossMargin * 10) / 10,
+      netProfit: Math.round(netProfit * 100) / 100,
+      netMargin: Math.round(netMargin * 10) / 10,
+      cashPosition: Math.round(cashPosition * 100) / 100,
+      cashDebits: Math.round(cashDebits * 100) / 100,
+      cashCredits: Math.round(cashCredits * 100) / 100,
+      isCashNegative: cashPosition < 0,
+    }
   }
 
   // --- A/R and A/P Aging Engines ---
