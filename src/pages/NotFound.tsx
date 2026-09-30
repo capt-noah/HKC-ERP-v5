@@ -1,5 +1,4 @@
 import { useNavigate, useLocation } from "react-router-dom"
-import { motion } from "framer-motion"
 import { useAuthStore } from "@/lib/authStore"
 import {
   ArrowLeft,
@@ -62,21 +61,15 @@ export default function NotFound() {
 
       {/* Massive 404 Watermark Typography BEHIND Foreground Content */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none z-0">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.85 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.6, ease: "easeOut" }}
+        <div
           className="text-[220px] sm:text-[320px] md:text-[440px] font-black tracking-tighter leading-none select-none text-emerald-950/[0.04] dark:text-emerald-400/[0.05] font-mono pointer-events-none"
         >
           404
-        </motion.div>
+        </div>
       </div>
 
       {/* Foreground Sheer Ultra-Transparent Container */}
-      <motion.div
-        initial={{ opacity: 0, y: 16, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.35, ease: "easeOut" }}
+      <div
         className="relative z-10 w-full max-w-lg"
       >
         <div className="p-8 sm:p-10 rounded-3xl bg-white/[0.07] backdrop-blur-[1px] flex flex-col items-center text-center">
@@ -173,7 +166,7 @@ export default function NotFound() {
             </div>
           )}
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }

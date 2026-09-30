@@ -1,5 +1,4 @@
 import { useMemo } from "react"
-import { motion } from "framer-motion"
 import { Printer, Download, X } from "lucide-react"
 import { exportToExcel, printBinCardDocument } from "@/lib/exportUtils"
 import type { Product } from "@/lib/erpStore"
@@ -102,12 +101,7 @@ export default function StockBinCardPrintModal({
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="w-full max-w-4xl bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-zinc-200 my-8 space-y-6 max-h-[90vh] flex flex-col"
-      >
+      <div className="w-full max-w-4xl bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-zinc-200 my-8 space-y-6 max-h-[90vh] flex flex-col">
         {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-zinc-100 pb-4 shrink-0">
           <div>
@@ -268,7 +262,7 @@ export default function StockBinCardPrintModal({
             </div>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }

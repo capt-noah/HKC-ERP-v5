@@ -202,6 +202,17 @@ export function handleAuthExpiry() {
   }, 1000)
 }
 
+export function normalizeRole(role: string): Role {
+  const clean = String(role || "").toLowerCase().trim()
+  if (clean === "admin" || clean === "super_admin" || clean === "superadmin") return "superadmin"
+  if (clean === "sales" || clean === "sales_manager") return "sales_manager"
+  if (clean === "hr" || clean === "hr_manager") return "hr_manager"
+  if (clean === "inventory" || clean === "inventory_admin" || clean === "inventory_manager") return "inventory_admin"
+  if (clean === "finance" || clean === "finance_manager") return "finance_manager"
+  if (clean === "hkc_docs" || clean === "hkc_docs_manager" || clean === "hkcdocs" || clean === "docs_specialist" || clean === "docs") return "hkc_docs_manager"
+  return clean as Role
+}
+
 function getInitialAuthState(): { user: User | null; token: string | null; sessionExpiresAt: string | null } {
   if (typeof window === "undefined") return { user: null, token: null, sessionExpiresAt: null }
   try {
@@ -211,8 +222,12 @@ function getInitialAuthState(): { user: User | null; token: string | null; sessi
       const token = parsed?.state?.token
       const sessionExpiresAt = parsed?.state?.sessionExpiresAt || null
       if (token && typeof token === "string" && !isTokenExpired(token)) {
+        let user = parsed.state.user || null
+        if (user && Array.isArray(user.roles)) {
+          user = { ...user, roles: user.roles.map(normalizeRole) }
+        }
         return {
-          user: parsed.state.user || null,
+          user,
           token: token,
           sessionExpiresAt,
         }
@@ -233,7 +248,11 @@ export const useAuthStore = create<AuthState>()(
       showExpiryWarning: false,
       setShowExpiryWarning: (show: boolean) => set({ showExpiryWarning: show }),
       login: (user: User, token: string, sessionExpiresAt?: string | null) => {
-        set({ user, token, sessionExpiresAt: sessionExpiresAt || null, showExpiryWarning: false })
+        let normalizedUser = user
+        if (user && Array.isArray(user.roles)) {
+          normalizedUser = { ...user, roles: user.roles.map(normalizeRole) }
+        }
+        set({ user: normalizedUser, token, sessionExpiresAt: sessionExpiresAt || null, showExpiryWarning: false })
         scheduleSessionExpiryTimer(token, sessionExpiresAt)
       },
       refreshToken: (token: string, sessionExpiresAt?: string | null) => {

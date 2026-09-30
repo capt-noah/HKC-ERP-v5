@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback } from "react"
-import { motion } from "framer-motion"
 import {
   User,
   ShieldCheck,
@@ -818,12 +817,7 @@ export default function Profile() {
           /* ========================================================================= */
           /* LOADED PROFILE CONTENT                                                    */
           /* ========================================================================= */
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, ease: "easeOut" }}
-            className="space-y-6"
-          >
+          <div className="space-y-6">
             {/* 1. Profile Hero Glass Card */}
             <GlassCard className="p-6 md:p-8 rounded-3xl border border-white/80 shadow-xl bg-white/75 relative overflow-hidden">
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 relative z-10">
@@ -1533,7 +1527,7 @@ export default function Profile() {
                 </div>
               )}
             </GlassCard>
-          </motion.div>
+          </div>
         )}
       </main>
 
@@ -1541,11 +1535,8 @@ export default function Profile() {
       {/* CHANGE PASSWORD MODAL                                                     */}
       {/* ========================================================================= */}
       {showPasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div
             className="w-full max-w-md p-6 sm:p-8 rounded-3xl bg-white/95 dark:bg-zinc-900/95 border border-white/80 shadow-2xl backdrop-blur-xl relative overflow-hidden"
           >
             <div className="flex items-center justify-between pb-4 border-b border-black/5">
@@ -1685,7 +1676,7 @@ export default function Profile() {
                 </button>
               </div>
             </form>
-          </motion.div>
+          </div>
         </div>
       )}
     </div>

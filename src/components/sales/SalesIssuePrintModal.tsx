@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react"
-import { motion } from "framer-motion"
 import { Printer, Download, X } from "lucide-react"
 import type { SalesIssue } from "@/lib/salesIssuesApi"
 import { useErpStore } from "@/lib/erpStore"
@@ -118,12 +117,7 @@ export default function SalesIssuePrintModal({
 
   return (
     <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto print:p-0 print:bg-white print:static print:block">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="w-full max-w-4xl bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-zinc-200 my-8 space-y-6 print:m-0 print:p-0 print:border-none print:shadow-none print:bg-white print:rounded-none max-h-[90vh] overflow-y-auto"
-      >
+      <div className="w-full max-w-4xl bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-zinc-200 my-8 space-y-6 print:m-0 print:p-0 print:border-none print:shadow-none print:bg-white print:rounded-none max-h-[90vh] overflow-y-auto">
         {/* Top Control Bar */}
         <div className="flex items-center justify-between border-b border-zinc-100 pb-4 print:hidden">
           <div>
@@ -287,7 +281,7 @@ export default function SalesIssuePrintModal({
             </div>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }

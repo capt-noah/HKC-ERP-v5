@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, Fragment } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { useSearchParams } from "react-router-dom"
 import { 
   Plus, 
@@ -47,9 +46,6 @@ import { getExpiryStatus, getExpiringItemsSummary, getDaysUntilExpiry } from "@/
 
 const packagingUnits = ["Box", "Bottle", "Vial", "Sachet"]
 const TON_TO_QUINTAL = 10
-
-const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
 interface StockEditForm {
   name: string
@@ -910,14 +906,11 @@ export default function StockProducts() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading" sections={navSections} />
 
-      <motion.div 
-        variants={stagger} 
-        initial="hidden" 
-        animate="visible" 
+      <div 
         className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12"
       >
         {/* Header Section */}
-        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight">Stock</h1>
             <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">
@@ -927,10 +920,10 @@ export default function StockProducts() {
           <div className="flex flex-wrap items-center gap-3 self-end md:self-start">
             <SubPageNav items={getSectionChildren("/inventory")} />
           </div>
-        </motion.div>
+        </div>
         {/* Tab Selection Row (Visible only for WH2 / WH3 commercial store access) */}
         {hasCommercialStoreAccess && (
-          <motion.div variants={fade} className="flex items-center gap-2 border-b border-zinc-200/60 mb-6 overflow-x-auto no-scrollbar pb-1">
+          <div className="flex items-center gap-2 border-b border-zinc-200/60 mb-6 overflow-x-auto no-scrollbar pb-1">
             {[
               { id: "Register", label: "Stock" },
               { id: "Store Transfer", label: "Store Transfer" },
@@ -947,28 +940,21 @@ export default function StockProducts() {
                     {tab.label}
                   </span>
                   {isActive && (
-                    <motion.div
-                      layoutId="stock-tabs"
+                    <div
                       className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-950"
                     />
                   )}
                 </button>
               )
             })}
-          </motion.div>
+          </div>
         )}
 
         {/* Tab Contents */}
-        <AnimatePresence mode="wait">
-          {activeTab === "Register" && (
-            <motion.div
-              key="products-tab"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.15 }}
-              className="space-y-4"
-            >
+        {activeTab === "Register" && (
+          <div
+            className="space-y-4"
+          >
               {/* Expiry Risk Alert Banner */}
               {(expirySummary.totalExpiredCount > 0 || expirySummary.totalCriticalCount > 0) && (
                 <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
@@ -1593,54 +1579,34 @@ export default function StockProducts() {
                   </div>
                 )}
               </GlassCard>
-            </motion.div>
+            </div>
           )}
 
           {activeTab === "Store Transfer" && (
-            <motion.div
-              key="store-transfers-tab"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.15 }}
-            >
+            <div>
               <StoreTransfersTab />
-            </motion.div>
+            </div>
           )}
 
           {activeTab === "Quarantine" && (
-            <motion.div
-              key="quarantine-tab"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.15 }}
-            >
+            <div>
               <QuarantineTab warehouseId={selectedWarehouse} />
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
-      </motion.div>
+      </div>
 
       {/* MODAL: EDIT PRODUCT DETAILS */}
-      <AnimatePresence>
-        {editingProduct && (() => {
-          const isEditWH1 = isWH1(editForm.warehouse)
-          return (
-            <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 bg-black/35 backdrop-blur-sm"
-                onClick={() => setEditingProduct(null)}
-              />
-              <motion.div
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 10 }}
-                className="relative w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl z-[121]"
-              >
+      {editingProduct && (() => {
+        const isEditWH1 = isWH1(editForm.warehouse)
+        return (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black/35 backdrop-blur-sm"
+              onClick={() => setEditingProduct(null)}
+            />
+            <div
+              className="relative w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl z-[121]"
+            >
                 <EditModalHeader
                   title={isEditWH1 ? `Edit Commodity Details: ${editingProduct.name}` : `Edit Medicine Details: ${editingProduct.name}`}
                   subtitle={`SKU / Card No: ${editingProduct.sku}`}
@@ -1945,22 +1911,17 @@ export default function StockProducts() {
                     {isSavingEdit ? <LoadingDots color="bg-white" size="sm" /> : "Save Stock Details"}
                   </button>
                 </div>
-              </motion.div>
+              </div>
             </div>
           )
         })()}
-      </AnimatePresence>
 
       {/* MODAL: ADD NEW STOCK ITEM / ENTRY */}
-      <AnimatePresence>
-        {isAddModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 12 }}
-              className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200"
-            >
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+          <div
+            className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200"
+          >
               <div className="flex items-center justify-between pb-4 mb-6 border-b border-zinc-200">
                 <div>
                   <h3 className="text-xl font-black text-zinc-900">
@@ -2361,10 +2322,9 @@ export default function StockProducts() {
                   </div>
                 </div>
               </div>
-            </motion.div>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
 
       {/* WH1 ADD MOVEMENT MODAL (INBOUND, RECONCILE LEAVE & REJECT LOSS) */}
       <WH1AddMovementModal
@@ -2378,15 +2338,11 @@ export default function StockProducts() {
       />
 
       {/* EDIT WH1 SUB ENTRY MODAL */}
-      <AnimatePresence>
-        {editingSubEntry && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.96 }}
-              className="bg-white rounded-3xl p-6 sm:p-8 max-w-3xl w-full shadow-2xl border border-zinc-200"
-            >
+      {editingSubEntry && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+          <div
+            className="bg-white rounded-3xl p-6 sm:p-8 max-w-3xl w-full shadow-2xl border border-zinc-200"
+          >
               <EditModalHeader
                 title={`Edit Entry: ${editingSubEntry.entry.entryId}`}
                 subtitle={`Product: ${editingSubEntry.product.name}`}
@@ -2616,10 +2572,9 @@ export default function StockProducts() {
                   </div>
                 </div>
               </div>
-            </motion.div>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
 
       {/* MODAL: BIN CARD MOVEMENT ENTRY (WH2 / WH3) */}
       <StockBinEntryModal

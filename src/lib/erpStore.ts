@@ -422,6 +422,7 @@ export interface Customer {
   phone?: string
   email?: string
   address?: string
+  tin?: string
   category?: string
   warehouseTarget?: string
   creditLimit?: number
@@ -479,6 +480,7 @@ export interface Supplier {
   address?: string
   category?: string
   taxId?: string
+  tin?: string
   warehouseTarget?: string
   rating?: string
   tradePaperUrl?: string

@@ -3,13 +3,8 @@ import type { HkcDocRecord } from "./erpStore"
 import { sortNewestFirst } from "./utils"
 
 export async function loadHkcDocRecords(): Promise<HkcDocRecord[]> {
-  try {
-    const records = await loadResource<HkcDocRecord>("hkc_doc_records")
-    return sortNewestFirst(records)
-  } catch (err) {
-    console.error("loadHkcDocRecords error:", err)
-    return []
-  }
+  const records = await loadResource<HkcDocRecord>("hkc_doc_records")
+  return sortNewestFirst(records)
 }
 
 export async function createHkcDocRecord(record: Omit<HkcDocRecord, "id" | "createdAt" | "updatedAt">): Promise<HkcDocRecord> {

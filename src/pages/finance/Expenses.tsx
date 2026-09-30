@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { 
   Check, 
   X, 
@@ -26,9 +25,6 @@ import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { Skeleton } from "@/components/ui/skeleton"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
-
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.08 } } }
 
 export default function Expenses() {
   const { showToast } = useFeedback()
@@ -397,8 +393,8 @@ export default function Expenses() {
         </div>
       )}
 
-      <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
-        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
+      <div className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight">Operating Expenses</h1>
             <p className="text-sm text-gray-400 mt-1">Manage operating expenditure, payment accounts, Peachtree tax checkboxes & treasury audits.</p>
@@ -406,10 +402,10 @@ export default function Expenses() {
           <div className="flex items-center gap-3 self-end md:self-start">
             <SubPageNav items={getSectionChildren("/finance")} />
           </div>
-        </motion.div>
+        </div>
 
         {/* Expenses Executive Summary KPI Banner */}
-        <motion.div variants={fade} className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <GlassCard className="p-4 flex flex-col justify-between">
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Approved Expenses YTD</span>
             {isLoading ? (
@@ -445,11 +441,11 @@ export default function Expenses() {
             )}
             <span className="text-[10px] text-gray-400 mt-1">Operating & Overhead Ledger</span>
           </GlassCard>
-        </motion.div>
+        </div>
 
         {/* Operating Expenses Table Card */}
         <div className="grid grid-cols-1 gap-4">
-          <GlassCard transition={{ delay: 0.12, duration: 0.4, ease: "easeOut" }} className="flex flex-col">
+          <GlassCard className="flex flex-col">
             <FinanceTableToolbar
               title="Audit Expenses & Claims"
               subtitle="Claims requiring corporate treasury approval."
@@ -693,30 +689,23 @@ export default function Expenses() {
             )}
           </GlassCard>
         </div>
-      </motion.div>
+      </div>
 
       {/* =========================================================================
           ADD EXPENSE MODAL: WEBSITE STANDARD (Rounded-3xl, P-6/8, Light Green Section)
           ========================================================================= */}
-      <AnimatePresence>
-        {isAddModalOpen && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsAddModalOpen(false)}
-              className="absolute inset-0 bg-black/35 backdrop-blur-sm"
-            />
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          <div
+            onClick={() => setIsAddModalOpen(false)}
+            className="absolute inset-0 bg-black/35 backdrop-blur-sm"
+          />
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 12 }}
-              className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 z-[121] relative"
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between border-b border-zinc-200 pb-4 mb-4">
+          <div
+            className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 z-[121] relative"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-zinc-200 pb-4 mb-4">
                 <div>
                   <h3 className="text-lg font-black text-zinc-950 tracking-tight flex items-center gap-2">
                     <Receipt className="size-5 text-emerald-700" />
@@ -1043,31 +1032,23 @@ export default function Expenses() {
                   </button>
                 </div>
               </form>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* =========================================================================
           EDIT EXPENSE MODAL: STANDARD WITH EditModalHeader & 3-DOTS DELETE
           ========================================================================= */}
-      <AnimatePresence>
-        {editingExpense && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setEditingExpense(null)}
-              className="absolute inset-0 bg-black/35 backdrop-blur-sm"
-            />
+      {editingExpense && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          <div
+            onClick={() => setEditingExpense(null)}
+            className="absolute inset-0 bg-black/35 backdrop-blur-sm"
+          />
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 12 }}
-              className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 z-[121] relative"
-            >
+          <div
+            className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 z-[121] relative"
+          >
               <EditModalHeader
                 title={`Edit Expense: ${editingExpense.merchant}`}
                 subtitle={`Ref: ${editingExpense.id} • Date: ${editingExpense.date} • Debit GL: ${editingExpense.gl_account_id || "8000-30"}`}
@@ -1479,30 +1460,22 @@ export default function Expenses() {
                   </form>
                 )
               })()}
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* =========================================================================
           CONFIRMATION MODAL: APPROVE EXPENSE CLAIM & POST TO GL
           ========================================================================= */}
-      <AnimatePresence>
-        {isApproveConfirmOpen && editingExpense && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsApproveConfirmOpen(false)}
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-zinc-200 relative z-[151]"
-            >
+      {isApproveConfirmOpen && editingExpense && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+          <div
+            onClick={() => setIsApproveConfirmOpen(false)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+          />
+          <div
+            className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-zinc-200 relative z-[151]"
+          >
               <div className="flex items-center gap-3 mb-4">
                 <div className="size-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
                   <Check className="size-5 stroke-[2.5]" />
@@ -1564,79 +1537,70 @@ export default function Expenses() {
                   <Check className="size-3.5 stroke-[2.5]" /> Confirm & Post to GL
                 </button>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* =========================================================================
           CONFIRMATION MODAL: REJECT EXPENSE CLAIM
           ========================================================================= */}
-      <AnimatePresence>
-        {isRejectConfirmOpen && editingExpense && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsRejectConfirmOpen(false)}
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-zinc-200 relative z-[151]"
-            >
-              <div className="flex items-center gap-3 mb-4">
-                <div className="size-10 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
-                  <X className="size-5 stroke-[2.5]" />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-zinc-900">Reject Expense Claim</h3>
-                  <p className="text-xs text-zinc-500">Decline claim and prevent cash disbursement</p>
-                </div>
+      {isRejectConfirmOpen && editingExpense && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+          <div
+            onClick={() => setIsRejectConfirmOpen(false)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+          />
+          <div
+            className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-zinc-200 relative z-[151]"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="size-10 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                <X className="size-5 stroke-[2.5]" />
               </div>
-
-              <div className="rounded-2xl bg-rose-50/70 border border-rose-200/80 p-4 space-y-2 mb-4 text-xs text-rose-950 font-bold">
-                <div className="flex justify-between">
-                  <span className="text-zinc-500 font-semibold">Expense ID:</span>
-                  <span className="font-mono">{editingExpense.id}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-500 font-semibold">Merchant / Payee:</span>
-                  <span>{editMerchant || editingExpense.merchant}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-500 font-semibold">Claim Amount:</span>
-                  <span className="font-mono">ETB {parsedEditAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                </div>
+              <div>
+                <h3 className="text-base font-black text-zinc-900">Reject Expense Claim</h3>
+                <p className="text-xs text-zinc-500">Decline claim and prevent cash disbursement</p>
               </div>
+            </div>
 
-              <p className="text-xs text-zinc-600 mb-6 leading-relaxed">
-                Are you sure you want to reject this expense claim? It will be marked as REJECTED and will not be disbursed or posted to the General Ledger.
-              </p>
-
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsRejectConfirmOpen(false)}
-                  className="h-10 rounded-full border border-zinc-200 px-5 text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmReject}
-                  className="h-10 rounded-full bg-rose-600 hover:bg-rose-700 text-white px-5 text-xs font-bold transition-colors shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
-                >
-                  <X className="size-3.5 stroke-[2.5]" /> Confirm Rejection
-                </button>
+            <div className="rounded-2xl bg-rose-50/70 border border-rose-200/80 p-4 space-y-2 mb-4 text-xs text-rose-950 font-bold">
+              <div className="flex justify-between">
+                <span className="text-zinc-500 font-semibold">Expense ID:</span>
+                <span className="font-mono">{editingExpense.id}</span>
               </div>
-            </motion.div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500 font-semibold">Merchant / Payee:</span>
+                <span>{editMerchant || editingExpense.merchant}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-500 font-semibold">Claim Amount:</span>
+                <span className="font-mono">ETB {parsedEditAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-600 mb-6 leading-relaxed">
+              Are you sure you want to reject this expense claim? It will be marked as REJECTED and will not be disbursed or posted to the General Ledger.
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsRejectConfirmOpen(false)}
+                className="h-10 rounded-full border border-zinc-200 px-5 text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReject}
+                className="h-10 rounded-full bg-rose-600 hover:bg-rose-700 text-white px-5 text-xs font-bold transition-colors shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <X className="size-3.5 stroke-[2.5]" /> Confirm Rejection
+              </button>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
 
       {/* =========================================================================
           CONFIRMATION MODAL: RecordDeleteModal FOR EXPENSE DELETION

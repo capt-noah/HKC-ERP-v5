@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
-import { motion, AnimatePresence } from "framer-motion"
 import { X, Download, ExternalLink, FileText, Image as ImageIcon } from "lucide-react"
 import { resolveFileUrl } from "@/lib/fileUpload"
 
@@ -107,30 +106,21 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
     document.body.removeChild(link)
   }
 
-  if (typeof document === "undefined") return null
+  if (typeof document === "undefined" || !isOpen) return null
 
   return createPortal(
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md">
-          {/* Backdrop Click Dismiss */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 cursor-pointer"
-          />
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md">
+      {/* Backdrop Click Dismiss */}
+      <div
+        onClick={onClose}
+        className="absolute inset-0 cursor-pointer"
+      />
 
-          {/* Modal Container */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 15 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 15 }}
-            transition={{ type: "spring", duration: 0.35 }}
-            onClick={(e) => e.stopPropagation()}
-            className="relative w-full max-w-5xl h-[88vh] bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col z-10"
-          >
+      {/* Modal Container */}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-5xl h-[88vh] bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl flex flex-col z-10"
+      >
             {/* Header */}
             <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-zinc-800 bg-zinc-900/95 text-white shrink-0">
               <div className="flex items-center gap-3 min-w-0 pr-2">
@@ -220,10 +210,8 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                 <div className="text-zinc-500 text-xs font-bold animate-pulse">Loading document preview...</div>
               )}
             </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>,
+          </div>
+        </div>,
     document.body
   )
 }

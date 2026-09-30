@@ -1,5 +1,4 @@
 import { useState } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { 
   Search, 
   Plus, 
@@ -14,9 +13,6 @@ import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useHRStore } from "@/lib/hrStore"
 import { hrApi, makeId } from "@/lib/hrApi"
 import { useFeedback } from "@/context/FeedbackContext"
-
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
 export default function Recruitment() {
   const { showToast } = useFeedback()
@@ -176,9 +172,9 @@ export default function Recruitment() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+      <div className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         {/* Header Block */}
-        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight mt-1">Recruitment & Hiring</h1>
             <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">
@@ -189,10 +185,10 @@ export default function Recruitment() {
           <div className="flex flex-wrap items-center gap-3 self-end md:self-start">
             <SubPageNav items={getSectionChildren("/hr")} />
           </div>
-        </motion.div>
+        </div>
 
         {/* Tab Switcher & Controls */}
-        <motion.div variants={fade} className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-200/60 mb-6 pb-2 gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-200/60 mb-6 pb-2 gap-4">
           <div className="flex gap-2">
             {[
               { id: "Openings", label: `Job Openings (${openings.length})` },
@@ -209,8 +205,7 @@ export default function Recruitment() {
                     {tab.label}
                   </span>
                   {isActive && (
-                    <motion.div
-                      layoutId="recruitment-tabs"
+                    <div
                       className="absolute bottom-0 left-0 right-0 h-0.5 bg-green-700"
                     />
                   )}
@@ -261,22 +256,17 @@ export default function Recruitment() {
               </button>
             )}
           </div>
-        </motion.div>
+        </div>
 
         {/* Tab Content */}
-        <AnimatePresence mode="wait">
-          {activeTab === "Openings" && (
-            <motion.div
-              key="openings-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
-            >
-              {filteredOpenings.map((job) => {
-                const jobApps = applicants.filter((a) => a.jobOpeningId === job.id)
-                return (
-                  <GlassCard key={job.id} className="p-6 flex flex-col justify-between" whileHover={{ y: -2 }}>
+        {activeTab === "Openings" && (
+          <div
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
+          >
+            {filteredOpenings.map((job) => {
+              const jobApps = applicants.filter((a) => a.jobOpeningId === job.id)
+              return (
+                <GlassCard key={job.id} className="p-6 flex flex-col justify-between">
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-[10px] font-mono font-bold text-zinc-400">{job.id}</span>
@@ -309,16 +299,11 @@ export default function Recruitment() {
                   </GlassCard>
                 )
               })}
-            </motion.div>
+            </div>
           )}
 
           {activeTab === "Applicants" && (
-            <motion.div
-              key="applicants-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-            >
+            <div>
               <GlassCard className="p-0 overflow-hidden border border-black/5 shadow-xs">
                 {/* Table Toolbar Header */}
                 <div className="flex items-center justify-between px-5 py-3.5 bg-black/[0.02] border-b border-black/5">
@@ -416,15 +401,14 @@ export default function Recruitment() {
                   </table>
                 </div>
               </GlassCard>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
-      </motion.div>
+      </div>
 
       {/* Add Opening Modal */}
       {showAddOpeningModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-lg bg-white/95 backdrop-blur-lg border border-black/10 rounded-3xl p-6 shadow-2xl relative">
+          <div className="w-full max-w-lg bg-white/95 backdrop-blur-lg border border-black/10 rounded-3xl p-6 shadow-2xl relative">
             <button onClick={() => setShowAddOpeningModal(false)} className="absolute right-5 top-5 p-1 text-gray-400 hover:text-black rounded-lg">
               <X className="size-5" />
             </button>
@@ -460,14 +444,14 @@ export default function Recruitment() {
                 <button type="submit" className="flex-1 bg-black text-white hover:bg-zinc-800 rounded-2xl py-3 text-sm font-bold shadow-md">Publish Opening</button>
               </div>
             </form>
-          </motion.div>
+          </div>
         </div>
       )}
 
       {/* Add Candidate Modal */}
       {showAddApplicantModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-lg bg-white/95 backdrop-blur-lg border border-black/10 rounded-3xl p-6 shadow-2xl relative">
+          <div className="w-full max-w-lg bg-white/95 backdrop-blur-lg border border-black/10 rounded-3xl p-6 shadow-2xl relative">
             <button onClick={() => setShowAddApplicantModal(false)} className="absolute right-5 top-5 p-1 text-gray-400 hover:text-black rounded-lg">
               <X className="size-5" />
             </button>
@@ -500,7 +484,7 @@ export default function Recruitment() {
                 <button type="submit" className="flex-1 bg-green-700 text-white hover:bg-green-800 rounded-2xl py-3 text-sm font-bold shadow-md">Register Candidate</button>
               </div>
             </form>
-          </motion.div>
+          </div>
         </div>
       )}
     </div>

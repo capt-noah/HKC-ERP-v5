@@ -1,5 +1,4 @@
 import { useMemo, useState, useEffect } from "react"
-import { motion } from "framer-motion"
 import { useNavigate } from "react-router-dom"
 import {
   Archive,
@@ -27,9 +26,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useAuthStore } from "@/lib/authStore"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import { getExpiringItemsSummary } from "@/lib/expiryUtils"
-
-const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
 function KpiSkeleton() {
   return (
@@ -219,8 +215,8 @@ export default function InventoryDashboard() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
-        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
+      <div className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight mt-1">Inventory Dashboard</h1>
             <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">
@@ -231,23 +227,21 @@ export default function InventoryDashboard() {
           <div className="flex flex-wrap items-center gap-3 self-end md:self-start">
             <SubPageNav items={getSectionChildren("/inventory")} />
           </div>
-        </motion.div>
+        </div>
 
-        <motion.div variants={stagger} initial="hidden" animate="visible" className="space-y-6">
+        <div className="space-y-6">
           {/* KPI Row (3 Columns) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {isLoading ? Array.from({ length: 3 }).map((_, index) => <KpiSkeleton key={index} />) : [
               { label: "TOTAL ITEMS", value: filteredProducts.length.toLocaleString(), Icon: Archive, note: "Saved inventory products" },
               { label: "TOTAL QUANTITY", value: totalInventoryQuantity.toLocaleString(), Icon: Package, note: "Current stock balance" },
               { label: "TOTAL VALUE", value: `ETB ${money(totalInventoryValue)}`, Icon: WarehouseIcon, note: "Quantity multiplied by unit cost" },
-            ].map((kpi, index) => {
+            ].map((kpi) => {
               const Icon = kpi.Icon
               return (
                 <GlassCard
                   key={kpi.label}
                   className="relative p-5 flex flex-col justify-between"
-                  whileHover={{ y: -2 }}
-                  transition={{ delay: 0.05 * index, duration: 0.3 }}
                 >
                   <div>
                     <div className="flex items-center justify-between mb-2">
@@ -540,8 +534,8 @@ export default function InventoryDashboard() {
               </GlassCard>
             </div>
           </div>
-        </motion.div>
-      </motion.div>
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { X, ArrowDownLeft, MinusCircle, ChevronDown, CheckCircle2, Info } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useErpStore, type Product, type WH1Entry } from "@/lib/erpStore"
@@ -280,14 +279,8 @@ export default function WH1AddMovementModal({
   }
 
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.96 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.96 }}
-          className="bg-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl border border-zinc-200"
-        >
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+      <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl border border-zinc-200">
           {/* Header */}
           <div className="flex items-center justify-between pb-3 mb-4 border-b border-zinc-150">
             <div>
@@ -840,8 +833,7 @@ export default function WH1AddMovementModal({
               </div>
             </form>
           )}
-        </motion.div>
+        </div>
       </div>
-    </AnimatePresence>
   )
 }

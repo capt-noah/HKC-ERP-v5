@@ -2,7 +2,7 @@ import { useEffect } from "react"
 import { Routes, Route, Navigate, useLocation } from "react-router-dom"
 import { ProtectedRoute } from "@/components/ProtectedRoute"
 import { Toaster } from "sonner"
-import { useAuthStore } from "@/lib/authStore"
+import { useAuthStore, normalizeRole } from "@/lib/authStore"
 import { SessionExpiryWarningModal } from "@/components/auth/SessionExpiryWarningModal"
 
 function ScrollToTop() {
@@ -50,7 +50,7 @@ import NotFound from "@/pages/NotFound"
 
 function RoleHomeRedirect() {
   const user = useAuthStore((state) => state.user)
-  const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
+  const userRoles = (user?.roles || ((user as any)?.role ? [(user as any).role] : [])).map(normalizeRole)
   const primaryRole = userRoles[0]
 
   switch (primaryRole) {

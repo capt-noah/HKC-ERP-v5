@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { Plus } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -10,10 +9,10 @@ import { loadHkcDocRecords } from "@/lib/hkcDocsApi"
 import HkcDocsTable from "@/components/hkcDocs/HkcDocsTable"
 import HkcDocAddModal from "@/components/hkcDocs/HkcDocAddModal"
 import HkcDocEditModal from "@/components/hkcDocs/HkcDocEditModal"
-
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
+import { useFeedback } from "@/context/FeedbackContext"
 
 export default function HkcDocs() {
+  const { showToast } = useFeedback()
   const [records, setRecords] = useState<HkcDocRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
@@ -27,6 +26,10 @@ export default function HkcDocs() {
     try {
       const data = await loadHkcDocRecords()
       setRecords(data)
+    } catch (err: any) {
+      console.error("loadHkcDocRecords error:", err)
+      showToast("Fetch Notice", "warning", err.message || "Failed to load HKC Docs records.")
+      setRecords([])
     } finally {
       setIsLoading(false)
     }
@@ -55,12 +58,7 @@ export default function HkcDocs() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div 
-        variants={fade} 
-        initial="hidden" 
-        animate="visible" 
-        className="max-w-[98%] mx-auto px-3 sm:px-6 lg:px-8 pt-20 sm:pt-24 pb-12"
-      >
+      <div className="max-w-[98%] mx-auto px-3 sm:px-6 lg:px-8 pt-20 sm:pt-24 pb-12">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-6 sm:mb-8 gap-4">
           <div>
@@ -115,28 +113,24 @@ export default function HkcDocs() {
         </GlassCard>
 
         {/* MODAL: ADD RECORD */}
-        <AnimatePresence>
-          {isAddModalOpen && (
-            <HkcDocAddModal
-              isOpen={isAddModalOpen}
-              onClose={() => setIsAddModalOpen(false)}
-              onSaveSuccess={handleSaveSuccess}
-            />
-          )}
-        </AnimatePresence>
+        {isAddModalOpen && (
+          <HkcDocAddModal
+            isOpen={isAddModalOpen}
+            onClose={() => setIsAddModalOpen(false)}
+            onSaveSuccess={handleSaveSuccess}
+          />
+        )}
 
         {/* MODAL: EDIT RECORD */}
-        <AnimatePresence>
-          {editingRecord && (
-            <HkcDocEditModal
-              record={editingRecord}
-              onClose={() => setEditingRecord(null)}
-              onSaveSuccess={handleSaveSuccess}
-              onDeleteSuccess={handleDeleteSuccess}
-            />
-          )}
-        </AnimatePresence>
-      </motion.div>
+        {editingRecord && (
+          <HkcDocEditModal
+            record={editingRecord}
+            onClose={() => setEditingRecord(null)}
+            onSaveSuccess={handleSaveSuccess}
+            onDeleteSuccess={handleDeleteSuccess}
+          />
+        )}
+      </div>
     </div>
   )
 }

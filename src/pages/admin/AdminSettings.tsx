@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
@@ -34,17 +33,6 @@ import { DEFAULT_ETHIOPIAN_TAX_BRACKETS, DEFAULT_ETHIOPIAN_PENSION_CONFIG, type 
 import { isExportWarehouse, getWarehouseType } from "@/lib/warehouses"
 import { cn } from "@/lib/utils"
 import { LoadingDots } from "@/components/ui/LoadingDots"
-
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
-const listContainer = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.06,
-    },
-  },
-}
 
 function AdminSettingsSkeleton() {
   return (
@@ -604,7 +592,7 @@ export default function AdminSettings() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div variants={fade} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-3 sm:px-6 lg:px-8 pt-20 sm:pt-24 pb-12">
+      <div className="max-w-[98%] mx-auto px-3 sm:px-6 lg:px-8 pt-20 sm:pt-24 pb-12">
         {/* Header */}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 sm:mb-8">
           <div>
@@ -664,10 +652,9 @@ export default function AdminSettings() {
 
           {/* Settings Tab Content */}
           <div className="flex flex-col gap-6">
-            <AnimatePresence mode="wait">
                 {/* Tab 1: Company Profile */}
                 {activeTab === "general" && (
-                  <motion.div key="general" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
+                  <div key="general" className="flex flex-col gap-5">
                     <GlassCard>
                       <div className="flex items-center gap-3.5 mb-6 pb-4 border-b border-black/5">
                         <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-700">
@@ -764,12 +751,12 @@ export default function AdminSettings() {
                         </div>
                       </div>
                     </GlassCard>
-                  </motion.div>
+                  </div>
                 )}
 
                 {/* Tab 2: Pension & Employment Tax */}
                 {activeTab === "pension" && (
-                  <motion.div key="pension" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
+                  <div key="pension" className="flex flex-col gap-5">
                     {/* 1. Ethiopian Statutory Pension Configuration */}
                     <GlassCard>
                       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-4 border-b border-black/5">
@@ -969,12 +956,12 @@ export default function AdminSettings() {
                         </table>
                       </div>
                     </GlassCard>
-                  </motion.div>
+                  </div>
                 )}
 
                 {/* Tab 3: Tax Rates & Rules (Corporate & Commercial Taxes) */}
                 {activeTab === "tax" && (
-                  <motion.div key="tax" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
+                  <div key="tax" className="flex flex-col gap-5">
                     {/* Standard Commercial Tax Rules (VAT, Withholding, Duties) */}
                     <GlassCard>
                       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-4 border-b border-black/5">
@@ -1047,12 +1034,12 @@ export default function AdminSettings() {
                         </div>
                       )}
                     </GlassCard>
-                  </motion.div>
+                  </div>
                 )}
 
                 {/* Tab 4: Warehouse Facilities */}
                 {activeTab === "warehouses" && (
-                  <motion.div key="warehouses" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
+                  <div key="warehouses" className="flex flex-col gap-5">
                     <GlassCard>
                       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 pb-4 border-b border-black/5">
                         <div className="flex items-center gap-3.5">
@@ -1171,12 +1158,12 @@ export default function AdminSettings() {
                         </div>
                       )}
                     </GlassCard>
-                  </motion.div>
+                  </div>
                 )}
 
                 {/* Tab 5: Processing & Storage Rates */}
                 {activeTab === "rates" && (
-                  <motion.div key="rates" variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
+                  <div key="rates" className="flex flex-col gap-5">
                     <GlassCard>
                       <div className="flex items-center gap-3.5 mb-6 pb-4 border-b border-black/5">
                         <div className="p-2.5 rounded-2xl bg-amber-100 text-amber-700">
@@ -1261,9 +1248,8 @@ export default function AdminSettings() {
                         <p className="text-[11px] text-gray-400 mt-1">Initial grace window before storage fees begin accruing.</p>
                       </div>
                     </GlassCard>
-                  </motion.div>
+                  </div>
                 )}
-              </AnimatePresence>
 
             {/* Bottom Action Buttons (for tabs with general form inputs) */}
             {["general", "pension", "tax", "rates"].includes(activeTab) && (
@@ -1287,18 +1273,12 @@ export default function AdminSettings() {
           </div>
         </div>
         )}
-      </motion.div>
+      </div>
 
       {/* Modal: Add/Edit Tax Rule */}
-      <AnimatePresence>
-        {taxModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl border border-black/10"
-            >
+      {taxModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl border border-black/10">
               <div className="flex items-center justify-between pb-4 mb-5 border-b border-black/5">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-xl bg-indigo-100 text-indigo-700">
@@ -1475,21 +1455,14 @@ export default function AdminSettings() {
                   {editingTaxRule ? "Update Tax Rate" : "Save Tax Rule"}
                 </button>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* Modal: Add/Edit Progressive Tax Bracket Tier */}
-      <AnimatePresence>
-        {bracketModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl border border-black/10"
-            >
+      {bracketModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl border border-black/10">
               <div className="flex items-center justify-between pb-4 mb-5 border-b border-black/5">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-xl bg-emerald-100 text-emerald-700">
@@ -1592,21 +1565,14 @@ export default function AdminSettings() {
                   {editingBracketIndex !== null ? "Update Tier" : "Add Tier"}
                 </button>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* Modal: Add/Edit Warehouse */}
-      <AnimatePresence>
-        {whModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl border border-black/10"
-            >
+      {whModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl border border-black/10">
               <div className="flex items-center justify-between pb-4 mb-5 border-b border-black/5">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-xl bg-amber-100 text-amber-700">
@@ -1750,10 +1716,9 @@ export default function AdminSettings() {
                   {isSavingWh ? <LoadingDots color="bg-white" size="sm" /> : (editingWarehouse ? "Save Changes" : "Create Warehouse")}
                 </button>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
     </div>
   )
 }

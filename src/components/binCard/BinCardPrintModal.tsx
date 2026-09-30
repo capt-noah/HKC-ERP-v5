@@ -1,4 +1,3 @@
-import { motion } from "framer-motion"
 import { Printer, Download, X, MapPin, Phone } from "lucide-react"
 import type { BinCard } from "@/lib/binCardApi"
 import { exportToExcel, printBinCardDocument } from "@/lib/exportUtils"
@@ -67,10 +66,7 @@ export default function BinCardPrintModal({
 
   return (
     <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto print:p-0 print:bg-white print:static print:block">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
+      <div
         className="w-full max-w-4xl bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-2xl border border-zinc-200 dark:border-zinc-800 my-8 space-y-6 print:m-0 print:p-0 print:border-none print:shadow-none print:bg-white print:rounded-none"
       >
         {/* Actions & Close Bar (Hidden on Print) */}
@@ -232,7 +228,7 @@ export default function BinCardPrintModal({
             </table>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }

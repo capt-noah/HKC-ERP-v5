@@ -1,5 +1,4 @@
 import { useEffect } from "react"
-import { motion } from "framer-motion"
 import { Wallet, Calendar, ArrowUpRight, DollarSign, TrendingUp, TrendingDown, BarChart3 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -11,9 +10,6 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { Link } from "react-router-dom"
 
 import { Skeleton } from "@/components/ui/skeleton"
-
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.08 } } }
 
 export default function FinanceOverview() {
   const store = useFinanceStore()
@@ -165,9 +161,9 @@ export default function FinanceOverview() {
         </div>
       )}
 
-      <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+      <div className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         {/* Header */}
-        <motion.div variants={fade} className="flex items-start justify-between mb-8">
+        <div className="flex items-start justify-between mb-8">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight">Finance Dashboard</h1>
             <p className="text-sm text-gray-400 mt-1">Real-time treasury status, profitability and cash flow insights.</p>
@@ -175,12 +171,12 @@ export default function FinanceOverview() {
           <div className="flex items-center gap-3">
             <SubPageNav items={getSectionChildren("/finance")} />
           </div>
-        </motion.div>
+        </div>
 
         {/* Executive Profitability & Treasury Strip */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
           {/* Card 1: Operating Revenue */}
-          <GlassCard transition={{ delay: 0.1, duration: 0.4, ease: "easeOut" }} className="p-4 flex flex-col justify-between">
+          <GlassCard className="p-4 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Operating Revenue</span>
@@ -205,7 +201,7 @@ export default function FinanceOverview() {
           </GlassCard>
 
           {/* Card 2: Cost of Goods Sold */}
-          <GlassCard transition={{ delay: 0.15, duration: 0.4, ease: "easeOut" }} className="p-4 flex flex-col justify-between">
+          <GlassCard className="p-4 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Cost of Goods Sold</span>
@@ -230,7 +226,7 @@ export default function FinanceOverview() {
           </GlassCard>
 
           {/* Card 3: Gross Profit & Margin */}
-          <GlassCard transition={{ delay: 0.2, duration: 0.4, ease: "easeOut" }} className="p-4 flex flex-col justify-between">
+          <GlassCard className="p-4 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Gross Profit</span>
@@ -260,7 +256,7 @@ export default function FinanceOverview() {
           </GlassCard>
 
           {/* Card 4: Net Operating Income (EBIT) */}
-          <GlassCard transition={{ delay: 0.25, duration: 0.4, ease: "easeOut" }} className="p-4 flex flex-col justify-between">
+          <GlassCard className="p-4 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Net Operating Income</span>
@@ -290,7 +286,7 @@ export default function FinanceOverview() {
           </GlassCard>
 
           {/* Card 5: Liquid Cash Position */}
-          <GlassCard transition={{ delay: 0.3, duration: 0.4, ease: "easeOut" }} className="p-4 flex flex-col justify-between">
+          <GlassCard className="p-4 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Cash Position</span>
@@ -316,7 +312,7 @@ export default function FinanceOverview() {
         </div>
 
         {/* Slim horizontal timeline strip showing invoice due dates across upcoming months */}
-        <GlassCard transition={{ delay: 0.2, duration: 0.4, ease: "easeOut" }} className="mb-6 p-4">
+        <GlassCard className="mb-6 p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Calendar className="size-4 text-emerald-700" />
@@ -379,7 +375,7 @@ export default function FinanceOverview() {
         {/* Mid grid: Cash Flow Chart + Unpaid Invoices List */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-4 mb-6">
           {/* Revenue vs Expenses vs Net Profit Chart */}
-          <GlassCard transition={{ delay: 0.25, duration: 0.4, ease: "easeOut" }}>
+          <GlassCard>
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="font-semibold text-base text-black">Cash Flow & Profit Trends</h3>
@@ -453,7 +449,7 @@ export default function FinanceOverview() {
           </GlassCard>
 
           {/* Unpaid Invoices List Card */}
-          <GlassCard transition={{ delay: 0.3, duration: 0.4, ease: "easeOut" }} className="flex flex-col justify-between">
+          <GlassCard className="flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -508,7 +504,7 @@ export default function FinanceOverview() {
             </div>
           </GlassCard>
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }

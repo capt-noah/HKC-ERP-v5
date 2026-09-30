@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef } from "react"
-import { motion } from "framer-motion"
 import {
   X,
   Users,
@@ -317,12 +316,7 @@ export const PeachtreePartnerBalancesModal: React.FC<PeachtreePartnerBalancesMod
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-sm">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 15 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 15 }}
-        className="relative w-full max-w-6xl max-h-[92vh] bg-white dark:bg-zinc-950 rounded-3xl overflow-hidden shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col"
-      >
+      <div className="relative w-full max-w-6xl max-h-[92vh] bg-white dark:bg-zinc-950 rounded-3xl overflow-hidden shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col">
         {/* Top Header */}
         <div className="flex flex-wrap items-center justify-between p-4 sm:p-5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/60 shrink-0 gap-3">
           <div className="flex items-center gap-3">
@@ -635,7 +629,7 @@ export const PeachtreePartnerBalancesModal: React.FC<PeachtreePartnerBalancesMod
             </div>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }

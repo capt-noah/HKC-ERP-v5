@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { 
   Plus, 
   X, 
@@ -566,23 +565,16 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
       {/* =========================================================================
           ADD MODAL: EXACT STOCK ITEM MODAL DESIGN (Rounded-3xl, P-6/8, Light Green Section)
           ========================================================================= */}
-      <AnimatePresence>
-        {isAddModalOpen && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsAddModalOpen(false)}
-              className="absolute inset-0 bg-black/35 backdrop-blur-sm"
-            />
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          <div
+            onClick={() => setIsAddModalOpen(false)}
+            className="absolute inset-0 bg-black/35 backdrop-blur-sm"
+          />
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 12 }}
-              className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 z-[121] relative"
-            >
+          <div
+            className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 z-[121] relative"
+          >
               {/* Modal Header matching Stock Item Modal */}
               <div className="flex items-center justify-between pb-4 mb-6 border-b border-zinc-200">
                 <div>
@@ -809,31 +801,23 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
                   </div>
                 </div>
               </form>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* =========================================================================
           EDIT MODAL: WITH 3-DOTS MENU DELETE BUTTON (Light Green Theme, No Yellow)
           ========================================================================= */}
-      <AnimatePresence>
-        {editingRecord && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setEditingRecord(null)}
-              className="absolute inset-0 bg-black/35 backdrop-blur-sm"
-            />
+      {editingRecord && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          <div
+            onClick={() => setEditingRecord(null)}
+            className="absolute inset-0 bg-black/35 backdrop-blur-sm"
+          />
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 12 }}
-              className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 z-[121] relative"
-            >
+          <div
+            className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 z-[121] relative"
+          >
               {(() => {
                 const editProd = allProducts.find((p) => p.id === editingRecord.productId || (editingRecord.sku && p.sku === editingRecord.sku))
                 const editProductName = editingRecord.productName || editProd?.name || "Medicine"
@@ -965,10 +949,9 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
             </>
           )
         })()}
-      </motion.div>
+      </div>
     </div>
   )}
-      </AnimatePresence>
 
       {/* =========================================================================
           CONFIRMATION MODAL: RECORD DELETE MODAL

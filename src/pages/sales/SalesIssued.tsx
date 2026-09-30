@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react"
 import { useSearchParams } from "react-router-dom"
-import { motion, AnimatePresence } from "framer-motion"
 import { FileText, Plus, Send, Trash2, X, Download, Upload, CheckCircle2, Receipt, ArrowRight, Pencil, AlertCircle, Lock, ExternalLink } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -1456,12 +1455,11 @@ export default function SalesIssued() {
       </main>
 
       {/* MODAL 1: ADD / EDIT SALES ISSUE */}
-      <AnimatePresence>
-        {formOpen && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-            <BodyScrollLock />
-            <motion.div className="absolute inset-0 bg-black/35 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setFormOpen(false)} />
-            <motion.div className="relative max-h-[90vh] w-full max-w-5xl overflow-y-auto no-scrollbar rounded-3xl bg-white p-6 shadow-2xl" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}>
+      {formOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          <BodyScrollLock />
+          <div className="absolute inset-0 bg-black/35 backdrop-blur-sm" onClick={() => setFormOpen(false)} />
+          <div className="relative max-h-[90vh] w-full max-w-5xl overflow-y-auto no-scrollbar rounded-3xl bg-white p-6 shadow-2xl">
               {editing ? (
                 <EditModalHeader
                   title={isPostedEditing ? `Edit Posted Sales Issue (${editing.fs_no})` : `Edit Sales Issue (${editing.fs_no})`}
@@ -2257,23 +2255,16 @@ export default function SalesIssued() {
                   {isSaving ? <LoadingDots color="bg-white" size="sm" /> : "Save"}
                 </button>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* MODAL 2: RECORD PAYMENT INSTALLMENT */}
-      <AnimatePresence>
-        {payingIssue && (
-          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
-            <BodyScrollLock />
-            <motion.div className="absolute inset-0 bg-black/40 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setPayingIssue(null)} />
-            <motion.div
-              className="relative max-h-[90vh] w-full max-w-lg overflow-y-auto no-scrollbar rounded-3xl bg-white p-6 shadow-2xl border border-zinc-200"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-            >
+      {payingIssue && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+          <BodyScrollLock />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setPayingIssue(null)} />
+          <div className="relative max-h-[90vh] w-full max-w-lg overflow-y-auto no-scrollbar rounded-3xl bg-white p-6 shadow-2xl border border-zinc-200">
               {/* Header */}
               <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
                 <div className="flex items-center gap-2.5">
@@ -2456,10 +2447,9 @@ export default function SalesIssued() {
                   </form>
                 )
               })()}
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* Document preview modal for inspecting trade licenses & payment advices */}
       <DocumentPreviewModal

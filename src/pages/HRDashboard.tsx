@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react"
-import { motion } from "framer-motion"
 import { CalendarClock, DollarSign, Users } from "lucide-react"
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { FloatingNav } from "@/components/FloatingNav"
@@ -8,9 +7,6 @@ import { HRPageSkeleton } from "@/components/HRSkeleton"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { type HRData, loadHRData, money } from "@/lib/hrApi"
-
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.06 } } }
 
 const today = new Date().toISOString().slice(0, 10)
 
@@ -91,14 +87,14 @@ export default function HRDashboard() {
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
-      <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
-        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
+      <div className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight mt-1">HR Dashboard</h1>
             <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">Workforce, leave, and payroll summary overview.</p>
           </div>
           <SubPageNav items={getSectionChildren("/hr")} />
-        </motion.div>
+        </div>
 
         {error && <GlassCard className="p-5 mb-5 text-sm font-bold text-rose-700 border-rose-200 bg-rose-50">{error}</GlassCard>}
         {!data && !error ? (
@@ -106,7 +102,7 @@ export default function HRDashboard() {
         ) : (
           <>
 
-        <motion.div variants={fade} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
           <GlassCard className="p-4">
             <div className="flex items-center justify-between border-b border-black/5 pb-2 mb-3">
               <span className="text-xs font-black text-zinc-900 uppercase tracking-tight flex items-center gap-1.5">
@@ -168,7 +164,7 @@ export default function HRDashboard() {
               </div>
             </div>
           </GlassCard>
-        </motion.div>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           <SummaryCard title="Employee Summary" rows={[...Object.entries(summary.employeesByWarehouse), ...Object.entries(summary.employeesByStatus)]} empty="No employees have been registered yet." />
@@ -184,7 +180,7 @@ export default function HRDashboard() {
         />
           </>
         )}
-      </motion.div>
+      </div>
     </div>
   )
 }

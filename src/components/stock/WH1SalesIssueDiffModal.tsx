@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { X, Scale, CheckCircle2 } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import type { Product } from "@/lib/erpStore"
@@ -83,14 +82,8 @@ export default function WH1SalesIssueDiffModal({
   }
 
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.96, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.96, y: 10 }}
-          className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl border border-zinc-200"
-        >
+    <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+      <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl border border-zinc-200">
           {/* Header */}
           <div className="flex items-center justify-between pb-3.5 mb-4 border-b border-zinc-150">
             <div className="flex items-center gap-2.5">
@@ -218,8 +211,7 @@ export default function WH1SalesIssueDiffModal({
               </button>
             </div>
           </form>
-        </motion.div>
+        </div>
       </div>
-    </AnimatePresence>
   )
 }

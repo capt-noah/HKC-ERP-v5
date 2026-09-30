@@ -2,6 +2,7 @@ import { Router } from "express"
 import { getResource, listResources } from "../db/resourceRegistry.js"
 import { crudService } from "../modules/common/crudService.js"
 import { validateStrongPassword, sanitizeUser } from "../modules/auth/authUtils.js"
+import { normalizeRole } from "../modules/auth/authMiddleware.js"
 import bcrypt from "bcryptjs"
 
 export const crudRouter = Router()
@@ -22,7 +23,7 @@ crudRouter.use("/:resource", (req, res, next) => {
     return res.status(401).json({ error: "Unauthorized", code: "UNAUTHORIZED" })
   }
 
-  const userRoles = user.roles || (user.role ? [user.role] : [])
+  const userRoles = (user.roles || (user.role ? [user.role] : [])).map(normalizeRole)
   if (userRoles.includes("superadmin")) {
     return next()
   }

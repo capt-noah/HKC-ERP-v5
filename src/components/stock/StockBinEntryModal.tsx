@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react"
-import { motion } from "framer-motion"
 import { ChevronDown } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { EditModalHeader } from "@/components/EditModalHeader"
@@ -163,12 +162,7 @@ export default function StockBinEntryModal({
   return (
     <>
       <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          className="w-full max-w-lg bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-zinc-200 my-8 space-y-6"
-        >
+        <div className="w-full max-w-lg bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-zinc-200 my-8 space-y-6">
           {isEditing ? (
             <EditModalHeader
               title="Edit Movement Entry"
@@ -453,7 +447,7 @@ export default function StockBinEntryModal({
               </button>
             </div>
           </form>
-        </motion.div>
+        </div>
       </div>
 
       {isDeleteModalOpen && (

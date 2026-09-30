@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, Fragment } from "react"
 import { Navigate } from "react-router-dom"
-import { motion, AnimatePresence } from "framer-motion"
 import {
   Plus,
   X,
@@ -62,8 +61,6 @@ function ProcessingServicesSkeletonRows() {
     </>
   )
 }
-
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
 const STAGE_STEPS: { stage: ProcessingServiceStage; label: string; desc: string }[] = [
   { stage: "Received", label: "Received", desc: "Raw commodity received at WH1" },
@@ -462,7 +459,7 @@ export default function ProcessingServices() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div variants={fade} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+      <div className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         {/* Top Header */}
         <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-6 gap-4">
           <div>
@@ -884,16 +881,9 @@ export default function ProcessingServices() {
         </GlassCard>
 
         {/* MODAL: EDIT PROCESSING SERVICE ORDER */}
-        <AnimatePresence>
-          {editingOrder && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-md">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.96, y: 12 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96, y: 12 }}
-                transition={{ duration: 0.2 }}
-                className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 dark:border-zinc-800"
-              >
+        {editingOrder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-md">
+            <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 dark:border-zinc-800">
                 <EditModalHeader
                   title={`Edit Processing Service: ${editingOrder.reference_number || editingOrder.id}`}
                   subtitle={`Client: ${editingOrder.client_company_name} • Toll Service Order`}
@@ -1388,22 +1378,14 @@ export default function ProcessingServices() {
                     </button>
                   </div>
                 </div>
-              </motion.div>
+              </div>
             </div>
           )}
-        </AnimatePresence>
 
         {/* MODAL: CREATE PROCESSING SERVICE ORDER */}
-        <AnimatePresence>
-          {isCreateOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-md">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.96, y: 12 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96, y: 12 }}
-                transition={{ duration: 0.2 }}
-                className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 dark:border-zinc-800"
-              >
+        {isCreateOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-md">
+            <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 dark:border-zinc-800">
                 <div className="flex items-center justify-between pb-4 mb-4 border-b border-zinc-200 dark:border-zinc-800">
                   <div>
                     <h3 className="text-xl font-black text-zinc-900 dark:text-zinc-100">Create Processing Service Order</h3>
@@ -1611,10 +1593,9 @@ export default function ProcessingServices() {
                     </button>
                   </div>
                 </form>
-              </motion.div>
+              </div>
             </div>
           )}
-        </AnimatePresence>
 
         {/* REUSABLE DELETE CONFIRMATION MODAL */}
         <RecordDeleteModal
@@ -1648,7 +1629,7 @@ export default function ProcessingServices() {
           fileUrl={previewUrl}
           fileName={previewName}
         />
-      </motion.div>
+      </div>
     </div>
   )
 }

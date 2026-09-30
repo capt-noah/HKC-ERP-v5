@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import {
   X,
   Edit,
@@ -23,9 +22,6 @@ import { useResizableTable, ResizableTh, type TableColumn } from "@/components/R
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { Skeleton } from "@/components/ui/skeleton"
-
-const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
 const TAX_TYPES: TaxRule["type"][] = [
   "VAT/GST",
@@ -260,7 +256,7 @@ export default function Taxes() {
 
       <main className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         {/* Title Header with SubPageNav */}
-        <motion.div initial="hidden" animate="visible" variants={fade} className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight">Tax Engine & Schedules</h1>
             <p className="text-xs font-semibold text-zinc-500 mt-1">Multi-tax calculation rules, rate schedules, and Chart of Accounts double-entry mapping.</p>
@@ -268,10 +264,10 @@ export default function Taxes() {
           <div className="flex flex-wrap items-center gap-3">
             <SubPageNav items={getSectionChildren("Finance")} />
           </div>
-        </motion.div>
+        </div>
 
         {/* TOP STATS CARDS */}
-        <motion.div initial="hidden" animate="visible" variants={stagger} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-blue-500 shadow-sm">
             <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Active Tax Rules</span>
             {isLoading ? (
@@ -313,10 +309,10 @@ export default function Taxes() {
             )}
             <span className="text-[10px] text-gray-400 mt-0.5">GL Auto-Posting Enabled</span>
           </GlassCard>
-        </motion.div>
+        </div>
 
         {/* TABS SELECTOR */}
-        <motion.div variants={fade} className="flex items-center gap-2 border-b border-zinc-200 pb-2 mb-6">
+        <div className="flex items-center gap-2 border-b border-zinc-200 pb-2 mb-6">
           <button
             onClick={() => setActiveTab("rules")}
             className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
@@ -339,11 +335,11 @@ export default function Taxes() {
             <Layers className="size-4" />
             Tax Schedules (Multi-Tax Bundles) ({taxSchedules.length})
           </button>
-        </motion.div>
+        </div>
 
         {/* TAB 1: TAX RULES */}
         {activeTab === "rules" && (
-          <motion.div variants={fade} className="space-y-4">
+          <div className="space-y-4">
             <GlassCard className="p-6">
               <FinanceTableToolbar
                 title="Tax Rules & Rates Master"
@@ -519,12 +515,12 @@ export default function Taxes() {
                 </div>
               )}
             </GlassCard>
-          </motion.div>
+          </div>
         )}
 
         {/* TAB 2: TAX SCHEDULES (BUNDLES) */}
         {activeTab === "schedules" && (
-          <motion.div variants={fade} className="space-y-4">
+          <div className="space-y-4">
             <GlassCard className="p-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-100 pb-4 mb-6">
                 <div>
@@ -606,27 +602,23 @@ export default function Taxes() {
                 })}
               </div>
             </GlassCard>
-          </motion.div>
+          </div>
         )}
       </main>
 
       {/* MODAL: ADD TAX RULE */}
-      <AnimatePresence>
-        {showAddRuleModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-zinc-200"
-            >
-              <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
-                <h3 className="text-base font-black text-zinc-900">Add Tax Rule</h3>
-                <button onClick={() => setShowAddRuleModal(false)} className="text-zinc-400 hover:text-zinc-600 cursor-pointer">
-                  <X className="size-5" />
-                </button>
-              </div>
-              <form onSubmit={handleAddRuleSubmit} className="flex flex-col gap-3 text-xs">
+      {showAddRuleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div
+            className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-zinc-200"
+          >
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
+              <h3 className="text-base font-black text-zinc-900">Add Tax Rule</h3>
+              <button onClick={() => setShowAddRuleModal(false)} className="text-zinc-400 hover:text-zinc-600 cursor-pointer">
+                <X className="size-5" />
+              </button>
+            </div>
+            <form onSubmit={handleAddRuleSubmit} className="flex flex-col gap-3 text-xs">
                 <div>
                   <label className="font-bold text-zinc-700 mb-1 block">Tax Rule Name</label>
                   <input
@@ -743,21 +735,16 @@ export default function Taxes() {
                   </button>
                 </div>
               </form>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* MODAL: EDIT TAX RULE */}
-      <AnimatePresence>
-        {showEditRuleModal && editingRule && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-zinc-200"
-            >
+      {showEditRuleModal && editingRule && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div
+            className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-zinc-200"
+          >
               <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
                 <h3 className="text-base font-black text-zinc-900">Edit Tax Rule ({editingRule.id})</h3>
                 <button onClick={() => setShowEditRuleModal(false)} className="text-zinc-400 hover:text-zinc-600 cursor-pointer">
@@ -878,21 +865,16 @@ export default function Taxes() {
                   </button>
                 </div>
               </form>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* MODAL: CREATE TAX SCHEDULE / BUNDLE */}
-      <AnimatePresence>
-        {showAddScheduleModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-zinc-200"
-            >
+      {showAddScheduleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div
+            className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-zinc-200"
+          >
               <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
                 <h3 className="text-base font-black text-zinc-900">Create Tax Schedule (Bundle)</h3>
                 <button onClick={() => setShowAddScheduleModal(false)} className="text-zinc-400 hover:text-zinc-600 cursor-pointer">
@@ -986,10 +968,9 @@ export default function Taxes() {
                   </button>
                 </div>
               </form>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
     </div>
   )
 }

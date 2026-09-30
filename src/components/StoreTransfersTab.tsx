@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { 
   Plus, 
   X, 
@@ -757,16 +756,10 @@ export default function StoreTransfersTab() {
       {/* =========================================================================
           STREAMLINED SINGLE-STEP TRANSFER ENTRY MODAL (MATCHING STOCK MODAL DESIGN)
           ========================================================================= */}
-      <AnimatePresence>
-        {isFormOpen && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
-            {/* Modal Body */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 12 }}
-              className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 flex flex-col text-xs"
-            >
+      {isFormOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+          {/* Modal Body */}
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto no-scrollbar shadow-2xl border border-zinc-200 flex flex-col text-xs">
               {/* Header */}
               <div className="flex items-center justify-between pb-4 mb-6 border-b border-zinc-200 shrink-0">
                 <div>
@@ -1081,32 +1074,23 @@ export default function StoreTransfersTab() {
                   <Check className="size-4" /> Sign & Dispatch
                 </button>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* =========================================================================
           DETAIL INSPECTION MODAL (CLEAN DOCUMENT PREVIEW)
           ========================================================================= */}
-      <AnimatePresence>
-        {selectedTransfer && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedTransfer(null)}
-              className="absolute inset-0 bg-black/40 backdrop-blur-xs"
-            />
+      {selectedTransfer && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          <div
+            onClick={() => setSelectedTransfer(null)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-xs"
+          />
 
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              transition={{ duration: 0.2 }}
-              className="relative w-full max-w-3xl rounded-3xl bg-white p-6 shadow-2xl z-[121] border border-zinc-200 max-h-[90vh] flex flex-col overflow-hidden text-xs"
-            >
+          <div
+            className="relative w-full max-w-3xl rounded-3xl bg-white p-6 shadow-2xl z-[121] border border-zinc-200 max-h-[90vh] flex flex-col overflow-hidden text-xs"
+          >
               {/* Header */}
               <div className="flex items-center justify-between pb-4 border-b border-zinc-200 shrink-0">
                 <div>
@@ -1264,35 +1248,26 @@ export default function StoreTransfersTab() {
                   )
                 )}
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* =========================================================================
           RECEIPT CONFIRMATION MODAL (MATCHING STOCK MODAL DESIGN)
           ========================================================================= */}
-      <AnimatePresence>
-        {isReceiptOpen && receivingTransfer && (
-          <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => {
-                setIsReceiptOpen(false)
-                setReceivingTransfer(null)
-              }}
-              className="absolute inset-0 bg-black/40 backdrop-blur-xs"
-            />
+      {isReceiptOpen && receivingTransfer && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+          <div
+            onClick={() => {
+              setIsReceiptOpen(false)
+              setReceivingTransfer(null)
+            }}
+            className="absolute inset-0 bg-black/40 backdrop-blur-xs"
+          />
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 12 }}
-              transition={{ duration: 0.2 }}
-              className="relative w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl z-[131] border border-zinc-200 text-xs"
-            >
+          <div
+            className="relative w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl z-[131] border border-zinc-200 text-xs"
+          >
               {/* Header */}
               <div className="flex items-center justify-between pb-3.5 border-b border-zinc-200 mb-4">
                 <div>
@@ -1398,10 +1373,9 @@ export default function StoreTransfersTab() {
                   {isProcessingReceipt ? "Processing..." : "Confirm & Post into Stock"}
                 </button>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* =========================================================================
           PRINT & EXPORT MODAL (MATERIAL TRANSFER NOTE)

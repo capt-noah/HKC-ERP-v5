@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { Clock, ShieldAlert, LogOut, RefreshCw, AlertTriangle } from "lucide-react"
 import { useAuthStore, getEffectiveTimeRemaining, handleAuthExpiry } from "@/lib/authStore"
 import { useFeedback } from "@/context/FeedbackContext"
@@ -100,76 +99,70 @@ export function SessionExpiryWarningModal() {
   if (!isOpen) return null
 
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-9999 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 15 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          transition={{ duration: 0.2 }}
-          className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white dark:bg-zinc-900 border border-amber-200/80 dark:border-amber-500/30 shadow-2xl p-6 select-none"
-        >
-          {/* Top Amber Status Bar */}
-          <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500" />
+    <div className="fixed inset-0 z-9999 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div
+        className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white dark:bg-zinc-900 border border-amber-200/80 dark:border-amber-500/30 shadow-2xl p-6 select-none"
+      >
+        {/* Top Amber Status Bar */}
+        <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-amber-400 via-orange-500 to-rose-500" />
 
-          {/* Header */}
-          <div className="flex items-start gap-3.5 mb-4">
-            <div className="size-11 rounded-2xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0 shadow-inner">
-              <Clock className="size-6 animate-pulse" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-black text-zinc-900 dark:text-zinc-100 tracking-tight">
-                  Session Expiring Soon
-                </h3>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
-                  <ShieldAlert className="size-3" />
-                  6h Policy
-                </span>
-              </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                Your session is about to expire due to security compliance.
-              </p>
-            </div>
+        {/* Header */}
+        <div className="flex items-start gap-3.5 mb-4">
+          <div className="size-11 rounded-2xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0 shadow-inner">
+            <Clock className="size-6 animate-pulse" />
           </div>
-
-          {/* Countdown Clock Display */}
-          <div className="my-5 p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/40 flex items-center justify-between">
-            <div className="flex items-center gap-2.5 text-xs text-amber-900 dark:text-amber-200 font-medium">
-              <AlertTriangle className="size-4 text-amber-600 shrink-0" />
-              <span>Time remaining before auto-logout:</span>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-black text-zinc-900 dark:text-zinc-100 tracking-tight">
+                Session Expiring Soon
+              </h3>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
+                <ShieldAlert className="size-3" />
+                6h Policy
+              </span>
             </div>
-            <div className="text-2xl font-black font-mono tracking-wider text-amber-600 dark:text-amber-400 bg-white dark:bg-zinc-900 px-3 py-1 rounded-xl border border-amber-200 dark:border-amber-800 shadow-xs">
-              {formatTime(secondsRemaining)}
-            </div>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+              Your session is about to expire due to security compliance.
+            </p>
           </div>
+        </div>
 
-          {/* Explanation */}
-          <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed mb-6">
-            To protect your work, click <strong>Stay Signed In</strong> to extend your session for another 6 hours without interrupting your active page or forms.
-          </p>
-
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-center gap-2.5">
-            <button
-              onClick={handleExtendSession}
-              disabled={isRefreshing}
-              className="w-full sm:flex-1 h-11 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50"
-            >
-              <RefreshCw className={`size-4 ${isRefreshing ? "animate-spin" : ""}`} />
-              <span>{isRefreshing ? "Extending Session..." : "Stay Signed In (Extend 6h)"}</span>
-            </button>
-            <button
-              onClick={handleManualLogout}
-              disabled={isRefreshing}
-              className="w-full sm:w-auto h-11 px-4 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
-            >
-              <LogOut className="size-4" />
-              <span>Sign Out</span>
-            </button>
+        {/* Countdown Clock Display */}
+        <div className="my-5 p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/40 flex items-center justify-between">
+          <div className="flex items-center gap-2.5 text-xs text-amber-900 dark:text-amber-200 font-medium">
+            <AlertTriangle className="size-4 text-amber-600 shrink-0" />
+            <span>Time remaining before auto-logout:</span>
           </div>
-        </motion.div>
+          <div className="text-2xl font-black font-mono tracking-wider text-amber-600 dark:text-amber-400 bg-white dark:bg-zinc-900 px-3 py-1 rounded-xl border border-amber-200 dark:border-amber-800 shadow-xs">
+            {formatTime(secondsRemaining)}
+          </div>
+        </div>
+
+        {/* Explanation */}
+        <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed mb-6">
+          To protect your work, click <strong>Stay Signed In</strong> to extend your session for another 6 hours without interrupting your active page or forms.
+        </p>
+
+        {/* Action Buttons */}
+        <div className="flex flex-col sm:flex-row items-center gap-2.5">
+          <button
+            onClick={handleExtendSession}
+            disabled={isRefreshing}
+            className="w-full sm:flex-1 h-11 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 transition-all cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw className={`size-4 ${isRefreshing ? "animate-spin" : ""}`} />
+            <span>{isRefreshing ? "Extending Session..." : "Stay Signed In (Extend 6h)"}</span>
+          </button>
+          <button
+            onClick={handleManualLogout}
+            disabled={isRefreshing}
+            className="w-full sm:w-auto h-11 px-4 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+          >
+            <LogOut className="size-4" />
+            <span>Sign Out</span>
+          </button>
+        </div>
       </div>
-    </AnimatePresence>
+    </div>
   )
 }

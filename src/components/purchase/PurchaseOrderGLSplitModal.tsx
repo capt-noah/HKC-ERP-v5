@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { X, Plus, Trash2, CheckCircle2, AlertTriangle, ArrowRightLeft, Sparkles } from "lucide-react"
 import { type PurchaseOrder, type VoucherAccountRow, useErpStore } from "@/lib/erpStore"
 import { useFinanceStore } from "@/lib/financeStore"
@@ -276,24 +275,15 @@ export const PurchaseOrderGLSplitModal: React.FC<PurchaseOrderGLSplitModalProps>
   }
 
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
-        {/* Backdrop */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-          className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+      />
 
-        {/* Modal Window */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 10 }}
-          className="relative z-10 bg-white rounded-3xl p-5 sm:p-6 max-w-4xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[92vh] flex flex-col"
-        >
+      {/* Modal Window */}
+      <div className="relative z-10 bg-white rounded-3xl p-5 sm:p-6 max-w-4xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[92vh] flex flex-col">
           {/* Header */}
           <div className="flex items-start justify-between pb-4 border-b border-zinc-100">
             <div>
@@ -657,9 +647,8 @@ export const PurchaseOrderGLSplitModal: React.FC<PurchaseOrderGLSplitModalProps>
               </button>
             </div>
           </form>
-        </motion.div>
+        </div>
       </div>
-    </AnimatePresence>
   )
 }
 

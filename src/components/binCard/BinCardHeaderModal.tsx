@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react"
-import { motion } from "framer-motion"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
@@ -96,10 +95,7 @@ export default function BinCardHeaderModal({
   return (
     <>
       <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
+        <div
           className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-3xl p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800"
         >
           {/* Shared Standard Edit Modal Header */}
@@ -205,13 +201,13 @@ export default function BinCardHeaderModal({
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="min-w-[130px] inline-flex items-center justify-center px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                className="min-w-[130px] inline-flex items-center justify-center px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? <LoadingDots color="bg-white" size="sm" /> : (card ? "Save Bin Card" : "Create Bin Card")}
               </button>
             </div>
           </form>
-        </motion.div>
+        </div>
       </div>
 
       {/* Shared Delete Confirmation Modal */}

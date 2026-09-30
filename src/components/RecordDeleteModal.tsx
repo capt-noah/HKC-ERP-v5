@@ -1,4 +1,3 @@
-import { motion, AnimatePresence } from "framer-motion"
 import { Trash2, X } from "lucide-react"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { BodyScrollLock } from "@/components/ui/BodyScrollLock"
@@ -24,27 +23,19 @@ export function RecordDeleteModal({
   onClose,
   onConfirmDelete,
 }: RecordDeleteModalProps) {
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-          <BodyScrollLock />
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-black/50 backdrop-blur-xs"
-          />
+  if (!isOpen) return null
 
-          {/* Modal Card */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-            className="relative z-10 bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-rose-100 overflow-hidden"
-          >
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <BodyScrollLock />
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        className="absolute inset-0 bg-black/50 backdrop-blur-xs"
+      />
+
+      {/* Modal Card */}
+      <div className="relative z-10 bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-rose-100 overflow-hidden">
             {/* Header Title & Close Button */}
             <div className="flex items-start justify-between gap-3 mb-3">
               <h3 className="text-lg font-black text-zinc-950 tracking-tight">{title}</h3>
@@ -105,9 +96,7 @@ export function RecordDeleteModal({
                 )}
               </button>
             </div>
-          </motion.div>
+          </div>
         </div>
-      )}
-    </AnimatePresence>
   )
 }

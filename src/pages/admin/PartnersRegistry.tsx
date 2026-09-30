@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import {
   Users,
   Building2,
@@ -33,8 +32,6 @@ import { LoadingDots } from "@/components/ui/LoadingDots"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { saveTradeLicense } from "@/lib/tradeDocumentService"
 
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
-
 export default function PartnersRegistry() {
   const erp = useErpStore()
   const isLoading = erp.isLoading()
@@ -60,6 +57,7 @@ export default function PartnersRegistry() {
 
   // Customer Form State
   const [custName, setCustName] = useState("")
+  const [custTin, setCustTin] = useState("")
   const [custCountry, setCustCountry] = useState("Ethiopia")
   const [custRegion, setCustRegion] = useState("")
   const [custContactPerson, setCustContactPerson] = useState("")
@@ -87,6 +85,7 @@ export default function PartnersRegistry() {
 
   const openAddCustomer = () => {
     setCustName("")
+    setCustTin("")
     setCustCountry("Ethiopia")
     setCustRegion("")
     setCustContactPerson("")
@@ -105,6 +104,7 @@ export default function PartnersRegistry() {
   const openEditCustomer = (c: Customer) => {
     setEditingCustomer(c)
     setCustName(c.name || "")
+    setCustTin(c.tin || "")
     setCustCountry(c.country || "Ethiopia")
     setCustRegion(c.region || "")
     setCustContactPerson(c.contactPerson || "")
@@ -180,6 +180,7 @@ export default function PartnersRegistry() {
           email: custEmail,
           address: custAddress,
           category: custCategory,
+          tin: custTin.trim(),
           warehouseTarget: custWarehouseTarget,
           tradePaperFileName: custTradePaperName,
           tradePaperUrl: custTradePaperUrl,
@@ -211,6 +212,7 @@ export default function PartnersRegistry() {
           email: custEmail,
           address: custAddress,
           category: custCategory,
+          tin: custTin.trim(),
           warehouseTarget: custWarehouseTarget,
           tradePaperFileName: custTradePaperName,
           tradePaperUrl: custTradePaperUrl,
@@ -259,6 +261,7 @@ export default function PartnersRegistry() {
           address: suppAddress.trim(),
           category: "Agricultural Producer / Union",
           taxId: suppTaxId.trim(),
+          tin: suppTaxId.trim(),
         })
         showToast("Supplier Updated", "success", `Supplier ${suppName} successfully updated in registry.`)
       } else {
@@ -273,6 +276,7 @@ export default function PartnersRegistry() {
           address: suppAddress.trim(),
           category: "Agricultural Producer / Union",
           taxId: suppTaxId.trim(),
+          tin: suppTaxId.trim(),
           warehouseTarget: "WH1",
           rating: "A",
           status: "Active",
@@ -303,7 +307,8 @@ export default function PartnersRegistry() {
       (c.name || "").toLowerCase().includes(q) ||
       (c.contactPerson || "").toLowerCase().includes(q) ||
       (c.phone || "").toLowerCase().includes(q) ||
-      (c.email || "").toLowerCase().includes(q)
+      (c.email || "").toLowerCase().includes(q) ||
+      (c.tin || "").toLowerCase().includes(q)
     )
   })
 
@@ -339,7 +344,7 @@ export default function PartnersRegistry() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div variants={fade} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-3 sm:px-6 lg:px-8 pt-20 sm:pt-24 pb-12">
+      <div className="max-w-[98%] mx-auto px-3 sm:px-6 lg:px-8 pt-20 sm:pt-24 pb-12">
         {/* Header */}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 sm:mb-8">
           <div>
@@ -453,6 +458,7 @@ export default function PartnersRegistry() {
                     <th className="px-4 py-3">Customer ID / Name</th>
                     <th className="px-4 py-3">Category & Region</th>
                     <th className="px-4 py-3">Contact Details</th>
+                    <th className="px-4 py-3">TIN / Tax ID</th>
                     <th className="px-4 py-3 text-center">Trade License</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
@@ -474,6 +480,9 @@ export default function PartnersRegistry() {
                             <Skeleton className="h-4 w-32 bg-zinc-200/80 rounded-md" />
                             <Skeleton className="h-3 w-40 bg-zinc-150/60 rounded-md mt-1.5" />
                           </td>
+                          <td className="px-4 py-4">
+                            <Skeleton className="h-6 w-24 bg-zinc-200/70 rounded-lg" />
+                          </td>
                           <td className="px-4 py-4 text-center">
                             <Skeleton className="h-6 w-32 bg-zinc-200/70 rounded-full mx-auto" />
                           </td>
@@ -488,7 +497,7 @@ export default function PartnersRegistry() {
                     </>
                   ) : filteredCustomers.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-8 text-center text-zinc-400 font-medium">No customers found in registry.</td>
+                      <td colSpan={6} className="p-8 text-center text-zinc-400 font-medium">No customers found in registry.</td>
                     </tr>
                   ) : (
                     displayedCustomers.map((c) => (
@@ -511,6 +520,15 @@ export default function PartnersRegistry() {
                             {c.phone && <span className="flex items-center gap-1"><Phone className="size-3 text-zinc-400" /> {c.phone}</span>}
                             {c.email && <span className="flex items-center gap-1"><Mail className="size-3 text-zinc-400" /> {c.email}</span>}
                           </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          {c.tin ? (
+                            <span className="font-mono text-xs font-bold text-zinc-800 bg-zinc-100 px-2 py-1 rounded-lg border border-zinc-200/80">
+                              {c.tin}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-zinc-400 font-medium italic">Not Set</span>
+                          )}
                         </td>
                         <td className="px-4 py-3.5 text-center">
                           <div className="flex flex-col items-center gap-1">
@@ -773,355 +791,365 @@ export default function PartnersRegistry() {
             </div>
           )}
         </GlassCard>
-      </motion.div>
+      </div>
 
       {/* MODAL: ADD/EDIT CUSTOMER */}
-      <AnimatePresence>
-        {showAddCustomerModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
-            >
-              <EditModalHeader
-                title={editingCustomer ? `Edit Customer: ${editingCustomer.name}` : "Onboard New Customer"}
-                subtitle={editingCustomer ? `ID: ${editingCustomer.id} • ${editingCustomer.category}` : "Register customer profile and default Trade License for future orders."}
-                onClose={() => setShowAddCustomerModal(false)}
-                onRequestDelete={editingCustomer ? () => handleDeleteCustomer(editingCustomer) : undefined}
-                deleteLabel="Delete Customer Profile"
-              />
+      {showAddCustomerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 max-w-xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]">
+            <EditModalHeader
+              title={editingCustomer ? `Edit Customer: ${editingCustomer.name}` : "Onboard New Customer"}
+              subtitle={editingCustomer ? `ID: ${editingCustomer.id} • ${editingCustomer.category}` : "Register customer profile and default Trade License for future orders."}
+              onClose={() => setShowAddCustomerModal(false)}
+              onRequestDelete={editingCustomer ? () => handleDeleteCustomer(editingCustomer) : undefined}
+              deleteLabel="Delete Customer Profile"
+            />
 
-              <form onSubmit={handleSaveCustomer} className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Customer / Union Name *</label>
-                    <input
-                      type="text"
-                      required
-                      value={custName}
-                      onChange={(e) => setCustName(e.target.value)}
-                      placeholder="e.g. Mekelle Agro-Vet Union"
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Primary Operating Hub *</label>
-                    <select
-                      value={custWarehouseTarget}
-                      onChange={(e) => setCustWarehouseTarget(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
-                    >
-                      {warehouses.map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.name || w.code || w.id}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Country</label>
-                    <input
-                      type="text"
-                      value={custCountry}
-                      onChange={(e) => setCustCountry(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Region / City</label>
-                    <input
-                      type="text"
-                      value={custRegion}
-                      onChange={(e) => setCustRegion(e.target.value)}
-                      placeholder="e.g. Tigray / Mekelle"
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Contact Person</label>
-                    <input
-                      type="text"
-                      value={custContactPerson}
-                      onChange={(e) => setCustContactPerson(e.target.value)}
-                      placeholder="Officer Name"
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Phone Number</label>
-                    <input
-                      type="text"
-                      value={custPhone}
-                      onChange={(e) => setCustPhone(e.target.value)}
-                      placeholder="+251 ..."
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Email Address</label>
-                    <input
-                      type="email"
-                      value={custEmail}
-                      onChange={(e) => setCustEmail(e.target.value)}
-                      placeholder="contact@domain.com"
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    />
-                  </div>
-                </div>
-
-                {/* Customer Documents Section */}
-                <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
-                  {(() => {
-                    const isWh1 = isWH1(custWarehouseTarget)
-                    const docTitle = isWh1 ? "Customer Bank Permit" : "Trade License / Business Permit"
-                    return (
-                      <>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-black uppercase text-zinc-900 tracking-wider block">Customer Compliance Document</span>
-                          {isWh1 && (
-                            <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
-                              WH1 Bank Permit (Permanent • No Expiration)
-                            </span>
-                          )}
-                        </div>
-                        
-                        <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-zinc-800">{docTitle}</span>
-                            {(() => {
-                              if (!custTradePaperName) {
-                                return (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">
-                                    Not Attached
-                                  </span>
-                                )
-                              }
-
-                              if (isNewlyUploadedCustLicense) {
-                                return (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                    <CheckCircle2 className="size-3 text-emerald-600" /> Valid & Attached (New)
-                                  </span>
-                                )
-                              }
-
-                              if (isWh1) {
-                                return (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                    <CheckCircle2 className="size-3 text-emerald-600" /> Bank Permit Attached (Permanent)
-                                  </span>
-                                )
-                              }
-
-                              if (editingCustomer) {
-                                const evaluation = getTradeLicenseStatus(editingCustomer, custWarehouseTarget)
-                                if (evaluation.status === "expired") {
-                                  return (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-full">
-                                      <AlertTriangle className="size-3 text-rose-600" /> Expired License
-                                    </span>
-                                  )
-                                }
-                                if (evaluation.status === "valid") {
-                                  return (
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                      <CheckCircle2 className="size-3 text-emerald-600" /> Valid ({evaluation.daysRemaining}d left)
-                                    </span>
-                                  )
-                                }
-                              }
-
-                              return (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                                  <CheckCircle2 className="size-3" /> Attached
-                                </span>
-                              )
-                            })()}
-                          </div>
-                          {!isWh1 && editingCustomer && getTradeLicenseStatus(editingCustomer, custWarehouseTarget).status === "expired" && !isNewlyUploadedCustLicense && custTradePaperName && (
-                            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold flex items-center gap-2">
-                              <AlertTriangle className="size-3.5 text-rose-600 shrink-0" />
-                              <span>This trade license has expired (&gt;6 months). Please select a renewed file to upload.</span>
-                            </div>
-                          )}
-                          <div className="flex items-center gap-2 pt-1">
-                            <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
-                              <Upload className="size-3" /> Select File
-                              <input type="file" className="hidden" onChange={handleFileUpload} />
-                            </label>
-                            <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{custTradePaperName || "No file chosen"}</span>
-                            {custTradePaperUrl && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setPreviewUrl(custTradePaperUrl)
-                                  setPreviewName(custTradePaperName || docTitle)
-                                }}
-                                className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
-                              >
-                                View Doc ↗
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </>
-                    )
-                  })()}
-                </div>
-
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
-                  <button
-                    type="button"
-                    disabled={isSubmittingCustomer}
-                    onClick={() => setShowAddCustomerModal(false)}
-                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmittingCustomer}
-                    className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {isSubmittingCustomer ? <LoadingDots color="bg-white" size="sm" /> : (editingCustomer ? "Save Changes" : "Create Customer")}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* MODAL: ADD/EDIT SUPPLIER */}
-      <AnimatePresence>
-        {showAddSupplierModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
-            >
-              <EditModalHeader
-                title={editingSupplier ? `Edit Supplier: ${editingSupplier.name}` : "Onboard New Supplier"}
-                subtitle={editingSupplier ? `ID: ${editingSupplier.id} • ${editingSupplier.city || "Domestic"}` : "Register domestic supplier / union details and contact profile."}
-                onClose={() => setShowAddSupplierModal(false)}
-                onRequestDelete={editingSupplier ? () => handleDeleteSupplier(editingSupplier) : undefined}
-                deleteLabel="Delete Supplier Profile"
-              />
-
-              <form onSubmit={handleSaveSupplier} className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Supplier / Farm / Union Name *</label>
-                    <input
-                      type="text"
-                      required
-                      value={suppName}
-                      onChange={(e) => setSuppName(e.target.value)}
-                      placeholder="e.g. Oromia Coffee Farmers Coop / Abyssinia Agro"
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Tax ID / TIN</label>
-                    <input
-                      type="text"
-                      value={suppTaxId}
-                      onChange={(e) => setSuppTaxId(e.target.value)}
-                      placeholder="e.g. 0012345678"
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Contact Person</label>
-                    <input
-                      type="text"
-                      value={suppContactPerson}
-                      onChange={(e) => setSuppContactPerson(e.target.value)}
-                      placeholder="e.g. Ato Bekele Tadesse"
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Phone Number</label>
-                    <input
-                      type="text"
-                      value={suppPhone}
-                      onChange={(e) => setSuppPhone(e.target.value)}
-                      placeholder="+251 91 123 4567"
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">Email Address</label>
-                    <input
-                      type="email"
-                      value={suppEmail}
-                      onChange={(e) => setSuppEmail(e.target.value)}
-                      placeholder="supplier@trade.et"
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">City / Region / Zone</label>
-                    <input
-                      type="text"
-                      value={suppCity}
-                      onChange={(e) => setSuppCity(e.target.value)}
-                      placeholder="e.g. Jimma / Sidama / Addis Ababa"
-                      className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
-                    />
-                  </div>
-                </div>
-
+            <form onSubmit={handleSaveCustomer} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-zinc-700 mb-1">Physical Address / Farm Location</label>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Customer / Union Name *</label>
                   <input
                     type="text"
-                    value={suppAddress}
-                    onChange={(e) => setSuppAddress(e.target.value)}
-                    placeholder="e.g. Woreda 04, Kebele 12 / Warehouse Depot 2"
+                    required
+                    value={custName}
+                    onChange={(e) => setCustName(e.target.value)}
+                    placeholder="e.g. Mekelle Agro-Vet Union"
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
                   />
                 </div>
-
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
-                  <button
-                    type="button"
-                    disabled={isSubmittingSupplier}
-                    onClick={() => setShowAddSupplierModal(false)}
-                    className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Primary Operating Hub *</label>
+                  <select
+                    value={custWarehouseTarget}
+                    onChange={(e) => setCustWarehouseTarget(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmittingSupplier}
-                    className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {isSubmittingSupplier ? <LoadingDots color="bg-white" size="sm" /> : (editingSupplier ? "Save Changes" : "Create Supplier")}
-                  </button>
+                    {warehouses.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name || w.code || w.id}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-              </form>
-            </motion.div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Country</label>
+                  <input
+                    type="text"
+                    value={custCountry}
+                    onChange={(e) => setCustCountry(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Region / City</label>
+                  <input
+                    type="text"
+                    value={custRegion}
+                    onChange={(e) => setCustRegion(e.target.value)}
+                    placeholder="e.g. Tigray / Mekelle"
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Phone Number</label>
+                  <input
+                    type="text"
+                    value={custPhone}
+                    onChange={(e) => setCustPhone(e.target.value)}
+                    placeholder="+251 ..."
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">TIN / Tax ID</label>
+                  <input
+                    type="text"
+                    value={custTin}
+                    onChange={(e) => setCustTin(e.target.value)}
+                    placeholder="e.g. 0012345678"
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Contact Person</label>
+                  <input
+                    type="text"
+                    value={custContactPerson}
+                    onChange={(e) => setCustContactPerson(e.target.value)}
+                    placeholder="Officer Name"
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Email Address</label>
+                  <input
+                    type="email"
+                    value={custEmail}
+                    onChange={(e) => setCustEmail(e.target.value)}
+                    placeholder="contact@domain.com"
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 mb-1">Physical / Business Address</label>
+                <input
+                  type="text"
+                  value={custAddress}
+                  onChange={(e) => setCustAddress(e.target.value)}
+                  placeholder="e.g. Subcity, Woreda, Building"
+                  className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                />
+              </div>
+
+              {/* Customer Documents Section */}
+              <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3">
+                {(() => {
+                  const isWh1 = isWH1(custWarehouseTarget)
+                  const docTitle = isWh1 ? "Customer Bank Permit" : "Trade License / Business Permit"
+                  return (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black uppercase text-zinc-900 tracking-wider block">Customer Compliance Document</span>
+                        {isWh1 && (
+                          <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">
+                            WH1 Bank Permit (Permanent • No Expiration)
+                          </span>
+                        )}
+                      </div>
+                      
+                      <div className="p-3 bg-white rounded-xl border border-zinc-200 shadow-sm space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-zinc-800">{docTitle}</span>
+                          {(() => {
+                            if (!custTradePaperName) {
+                              return (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full">
+                                  Not Attached
+                                </span>
+                              )
+                            }
+
+                            if (isNewlyUploadedCustLicense) {
+                              return (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                  <CheckCircle2 className="size-3 text-emerald-600" /> Valid & Attached (New)
+                                </span>
+                              )
+                            }
+
+                            if (isWh1) {
+                              return (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                  <CheckCircle2 className="size-3 text-emerald-600" /> Bank Permit Attached (Permanent)
+                                </span>
+                              )
+                            }
+
+                            if (editingCustomer) {
+                              const evaluation = getTradeLicenseStatus(editingCustomer, custWarehouseTarget)
+                              if (evaluation.status === "expired") {
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-full">
+                                    <AlertTriangle className="size-3 text-rose-600" /> Expired License
+                                  </span>
+                                )
+                              }
+                              if (evaluation.status === "valid") {
+                                return (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                    <CheckCircle2 className="size-3 text-emerald-600" /> Valid ({evaluation.daysRemaining}d left)
+                                  </span>
+                                )
+                              }
+                            }
+
+                            return (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                                <CheckCircle2 className="size-3" /> Attached
+                              </span>
+                            )
+                          })()}
+                        </div>
+                        {!isWh1 && editingCustomer && getTradeLicenseStatus(editingCustomer, custWarehouseTarget).status === "expired" && !isNewlyUploadedCustLicense && custTradePaperName && (
+                          <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] font-semibold flex items-center gap-2">
+                            <AlertTriangle className="size-3.5 text-rose-600 shrink-0" />
+                            <span>This trade license has expired (&gt;6 months). Please select a renewed file to upload.</span>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 pt-1">
+                          <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
+                            <Upload className="size-3" /> Select File
+                            <input type="file" className="hidden" onChange={handleFileUpload} />
+                          </label>
+                          <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{custTradePaperName || "No file chosen"}</span>
+                          {custTradePaperUrl && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreviewUrl(custTradePaperUrl)
+                                setPreviewName(custTradePaperName || docTitle)
+                              }}
+                              className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                            >
+                              View Doc ↗
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )
+                })()}
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
+                <button
+                  type="button"
+                  disabled={isSubmittingCustomer}
+                  onClick={() => setShowAddCustomerModal(false)}
+                  className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingCustomer}
+                  className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isSubmittingCustomer ? <LoadingDots color="bg-white" size="sm" /> : (editingCustomer ? "Save Changes" : "Create Customer")}
+                </button>
+              </div>
+            </form>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
+
+      {/* MODAL: ADD/EDIT SUPPLIER */}
+      {showAddSupplierModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 max-w-xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]">
+            <EditModalHeader
+              title={editingSupplier ? `Edit Supplier: ${editingSupplier.name}` : "Onboard New Supplier"}
+              subtitle={editingSupplier ? `ID: ${editingSupplier.id} • ${editingSupplier.city || "Domestic"}` : "Register domestic supplier / union details and contact profile."}
+              onClose={() => setShowAddSupplierModal(false)}
+              onRequestDelete={editingSupplier ? () => handleDeleteSupplier(editingSupplier) : undefined}
+              deleteLabel="Delete Supplier Profile"
+            />
+
+            <form onSubmit={handleSaveSupplier} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Supplier / Farm / Union Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={suppName}
+                    onChange={(e) => setSuppName(e.target.value)}
+                    placeholder="e.g. Oromia Coffee Farmers Coop / Abyssinia Agro"
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Tax ID / TIN</label>
+                  <input
+                    type="text"
+                    value={suppTaxId}
+                    onChange={(e) => setSuppTaxId(e.target.value)}
+                    placeholder="e.g. 0012345678"
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Contact Person</label>
+                  <input
+                    type="text"
+                    value={suppContactPerson}
+                    onChange={(e) => setSuppContactPerson(e.target.value)}
+                    placeholder="e.g. Ato Bekele Tadesse"
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Phone Number</label>
+                  <input
+                    type="text"
+                    value={suppPhone}
+                    onChange={(e) => setSuppPhone(e.target.value)}
+                    placeholder="+251 91 123 4567"
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Email Address</label>
+                  <input
+                    type="email"
+                    value={suppEmail}
+                    onChange={(e) => setSuppEmail(e.target.value)}
+                    placeholder="supplier@trade.et"
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">City / Region / Zone</label>
+                  <input
+                    type="text"
+                    value={suppCity}
+                    onChange={(e) => setSuppCity(e.target.value)}
+                    placeholder="e.g. Jimma / Sidama / Addis Ababa"
+                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 mb-1">Physical Address / Farm Location</label>
+                <input
+                  type="text"
+                  value={suppAddress}
+                  onChange={(e) => setSuppAddress(e.target.value)}
+                  placeholder="e.g. Woreda 04, Kebele 12 / Warehouse Depot 2"
+                  className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
+                <button
+                  type="button"
+                  disabled={isSubmittingSupplier}
+                  onClick={() => setShowAddSupplierModal(false)}
+                  className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingSupplier}
+                  className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isSubmittingSupplier ? <LoadingDots color="bg-white" size="sm" /> : (editingSupplier ? "Save Changes" : "Create Supplier")}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* REUSABLE DELETE CONFIRMATION MODALS */}
       <RecordDeleteModal

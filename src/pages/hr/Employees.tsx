@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react"
-import { motion } from "framer-motion"
 import { Eye, ImagePlus, MoreHorizontal, Pencil, UserCheck, UserMinus, X } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -16,9 +15,6 @@ import { resolveWarehouseFullName, withOperatingWarehouses } from "@/lib/warehou
 import type { Warehouse } from "@/lib/erpStore"
 import { EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, WAREHOUSE_OPTIONS, employeeDuplicateKey, emptyEmployee, hrApi, initials, loadHRData, makeId, money, type AttendanceRecord, type Employee, type LeaveRequest, type PayrollRecord } from "@/lib/hrApi"
 import { uploadFile, resolveFileUrl } from "@/lib/fileUpload"
-
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
 type FormState = Omit<Employee, "id">
 
@@ -234,21 +230,21 @@ export default function Employees() {
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
-      <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
-        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
+      <div className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight mt-1">Employees</h1>
             <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">Employee registration and personnel directory.</p>
           </div>
           <SubPageNav items={getSectionChildren("/hr")} />
-        </motion.div>
+        </div>
 
         {error && <GlassCard className="p-5 mb-5 text-sm font-bold text-rose-700 border-rose-200 bg-rose-50">{error}</GlassCard>}
 
         {loading ? (
           <HRPageSkeleton rows={7} cards={4} />
         ) : (
-        <motion.div variants={fade}>
+        <div>
           <GlassCard className="p-0 overflow-hidden border border-black/5 shadow-xs">
             <HRTableToolbar
               title="Employees"
@@ -401,9 +397,9 @@ export default function Employees() {
               </div>
             )}
           </GlassCard>
-        </motion.div>
+        </div>
         )}
-      </motion.div>
+      </div>
 
       {showForm && (
         <EmployeeForm
@@ -476,7 +472,7 @@ function EmployeeForm({
   }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-5xl max-h-[90vh] overflow-y-auto no-scrollbar bg-white rounded-3xl p-6 shadow-2xl border border-black/10">
+      <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto no-scrollbar bg-white rounded-3xl p-6 shadow-2xl border border-black/10">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-black text-black">{title}</h3>
           <button onClick={onClose} disabled={saving} className="p-1.5 rounded-lg hover:bg-black/5 disabled:opacity-40"><X className="size-5" /></button>
@@ -524,7 +520,7 @@ function EmployeeForm({
             </button>
           </div>
         </form>
-      </motion.div>
+      </div>
     </div>
   )
 }
@@ -558,7 +554,7 @@ function EmployeeDetails({
   const employeePayroll = payroll.filter((record) => record.employee_id === employee.id)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-4xl max-h-[90vh] overflow-y-auto no-scrollbar bg-white rounded-3xl p-6 shadow-2xl border border-black/10">
+      <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto no-scrollbar bg-white rounded-3xl p-6 shadow-2xl border border-black/10">
         <div className="flex items-center justify-between mb-5"><h3 className="text-lg font-black text-black">{employee.full_name}</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Detail title="Personal Information" rows={[["Phone", employee.phone], ["Email", employee.email || "-"], ["Address", employee.address], ["Gender", employee.gender], ["National ID", employee.national_id_image ? "Uploaded" : "Not uploaded"]]} />
@@ -576,10 +572,10 @@ function EmployeeDetails({
         <History title="Attendance History" empty="No attendance records exist for this employee." rows={employeeAttendance.map((record) => `${record.attendance_date} - ${record.status} (${record.hours_worked || 0} hrs)`)} />
         <History title="Leave History" empty="No leave records exist for this employee." rows={employeeLeaves.map((request) => `${request.leave_type}: ${request.start_date} to ${request.end_date} - ${request.status}`)} />
         <History title="Payroll History" empty="No payroll records exist for this employee." rows={employeePayroll.map((record) => `Net ETB ${money(record.net_pay)} - ${record.payment_status}`)} />
-      </motion.div>
+      </div>
       {showNationalId && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md">
-          <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+          <div className="w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-black/10 px-5 py-4">
               <div className="min-w-0">
                 <h4 className="truncate text-sm font-black text-black">National ID Document</h4>
@@ -590,7 +586,7 @@ function EmployeeDetails({
             <div className="max-h-[72vh] overflow-auto bg-zinc-100 p-4">
               <img src={resolveFileUrl(employee.national_id_image)} alt={`${employee.full_name} National ID document`} className="mx-auto max-h-[68vh] w-auto max-w-full rounded-xl bg-white object-contain shadow-sm" />
             </div>
-          </motion.div>
+          </div>
         </div>
       )}
     </div>

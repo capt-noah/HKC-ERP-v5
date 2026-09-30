@@ -1,5 +1,4 @@
 import { useState, useMemo } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import {
   Search,
   Plus,
@@ -469,23 +468,16 @@ export default function TransactionMappingMatrix() {
       </GlassCard>
 
       {/* EDIT GL MAPPING MODAL matching Sales Issue Edit Modal design */}
-      <AnimatePresence>
-        {editingRule && (
-          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-            <BodyScrollLock />
-            <motion.div
-              className="absolute inset-0 bg-black/35 backdrop-blur-sm"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={closeEdit}
-            />
-            <motion.div
-              className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto no-scrollbar rounded-3xl bg-white p-6 shadow-2xl"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-            >
+      {editingRule && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          <BodyScrollLock />
+          <div
+            className="absolute inset-0 bg-black/35 backdrop-blur-sm"
+            onClick={closeEdit}
+          />
+          <div
+            className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto no-scrollbar rounded-3xl bg-white p-6 shadow-2xl"
+          >
               <EditModalHeader
                 title={`Edit GL Mapping (${editingRule.label})`}
                 subtitle={
@@ -699,10 +691,9 @@ export default function TransactionMappingMatrix() {
                   </button>
                 </div>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* ADD CUSTOM MAPPING MODAL */}
       <AddCustomMappingModal

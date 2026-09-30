@@ -1,5 +1,4 @@
 import { useState, useMemo } from "react"
-import { motion } from "framer-motion"
 import {
   Download,
   CheckSquare,
@@ -34,9 +33,6 @@ import {
   type ExportFormat,
   type DateFilterOptions,
 } from "@/lib/peachtreeExportUtils"
-
-const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
 type ExportSectionKey = "JOURNAL" | "DISBURSEMENTS" | "SALES_INVOICES" | "PAYROLL" | "COA" | "FIXED_ASSETS"
 
@@ -266,14 +262,11 @@ export default function FinanceExport() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div
-        variants={stagger}
-        initial="hidden"
-        animate="visible"
+      <div
         className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12 space-y-6"
       >
         {/* Top Header */}
-        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-3xl font-black text-black tracking-tight">Peachtree Export Center</h1>
@@ -286,10 +279,10 @@ export default function FinanceExport() {
           <div className="flex flex-wrap items-center gap-3">
             <SubPageNav items={getSectionChildren("/finance")} />
           </div>
-        </motion.div>
+        </div>
 
         {/* Simplified Toolbar & Filter Bar */}
-        <motion.div variants={fade} className="relative z-20">
+        <div className="relative z-20">
           <GlassCard className="p-4 flex flex-col md:flex-row items-center justify-between gap-4 flex-wrap">
             {/* Left: Search Box */}
             <div className="flex items-center gap-2.5 bg-zinc-100/90 rounded-full px-4 h-10 w-full md:max-w-xs border border-zinc-200/70">
@@ -363,7 +356,7 @@ export default function FinanceExport() {
               </button>
             </div>
           </GlassCard>
-        </motion.div>
+        </div>
 
         {/* Section Cards Grid */}
         {finance.isLoading() ? (
@@ -392,13 +385,13 @@ export default function FinanceExport() {
             ))}
           </div>
         ) : (
-          <motion.div variants={stagger} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {displayedCards.map((card) => {
             const isSelected = selectedSections.has(card.key)
             const CardIcon = card.icon
 
             return (
-              <motion.div key={card.key} variants={fade}>
+              <div key={card.key}>
                 <div
                   onClick={() => toggleSection(card.key)}
                   className={`p-6 rounded-2xl border transition-all cursor-pointer relative flex flex-col justify-between min-h-[220px] group ${
@@ -455,12 +448,12 @@ export default function FinanceExport() {
                     </div>
                   </div>
                 </div>
-              </motion.div>
+              </div>
             )
           })}
-        </motion.div>
+        </div>
         )}
-      </motion.div>
+      </div>
     </div>
   )
 }

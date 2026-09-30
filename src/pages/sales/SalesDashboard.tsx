@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react"
-import { motion } from "framer-motion"
 import { DollarSign, PackageCheck, Truck } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { FloatingNav } from "@/components/FloatingNav"
@@ -9,9 +8,6 @@ import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore } from "@/lib/erpStore"
 import { listSalesIssues, type SalesIssue } from "@/lib/salesIssuesApi"
 import { Skeleton } from "@/components/ui/skeleton"
-
-const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
 function money(value: number) {
   return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -88,8 +84,8 @@ export default function SalesDashboard() {
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
-      <motion.main variants={stagger} initial="hidden" animate="visible" className="mx-auto max-w-[98%] px-4 pb-12 pt-24 md:px-6 lg:px-8">
-        <motion.div variants={fade} className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+      <main className="mx-auto max-w-[98%] px-4 pb-12 pt-24 md:px-6 lg:px-8">
+        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <h1 className="mt-1 text-3xl font-black tracking-tight text-black">Sales Dashboard</h1>
             <p className="mt-1 max-w-xl text-xs font-semibold leading-relaxed text-zinc-500">
@@ -99,17 +95,17 @@ export default function SalesDashboard() {
           <div className="flex flex-wrap items-center gap-3 self-end md:self-start">
             <SubPageNav items={getSectionChildren("/sales")} />
           </div>
-        </motion.div>
+        </div>
 
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
           {isLoading ? Array.from({ length: 3 }).map((_, index) => <MetricSkeleton key={index} />) : [
             { label: "Posted Sales", value: `ETB ${money(issuedAmount)}`, note: `${postedIssues.length.toLocaleString()} posted issues`, Icon: DollarSign },
             { label: "Issued Records", value: postedIssueCount.toLocaleString(), note: "Posted sales issue records", Icon: PackageCheck },
             { label: "Open Orders", value: `ETB ${money(orderAmount)}`, note: `${salesOrders.length.toLocaleString()} sales orders`, Icon: Truck },
-          ].map((card, index) => {
+          ].map((card) => {
             const Icon = card.Icon
             return (
-              <GlassCard key={card.label} className="p-5" transition={{ delay: 0.05 * index, duration: 0.3 }}>
+              <GlassCard key={card.label} className="p-5">
                 <div className="mb-3 flex items-center justify-between">
                   <span className="text-[9px] font-black uppercase tracking-widest text-zinc-400">{card.label}</span>
                   <div className="flex size-9 items-center justify-center rounded-xl bg-black/5">
@@ -186,7 +182,7 @@ export default function SalesDashboard() {
             </div>
           </GlassCard>
         </div>
-      </motion.main>
+      </main>
     </div>
   )
 }

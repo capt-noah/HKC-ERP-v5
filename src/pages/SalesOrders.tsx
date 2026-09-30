@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { 
   Plus, 
   CheckCircle2, 
@@ -86,8 +85,6 @@ function resolveSalesOrderDocs(
     paymentAdvice,
   }
 }
-
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
 export default function SalesOrders() {
   const { showToast } = useFeedback()
@@ -209,6 +206,7 @@ export default function SalesOrders() {
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [saveCustomerToRegistry, setSaveCustomerToRegistry] = useState(true)
   const [custPhone, setCustPhone] = useState("")
+  const [custTin, setCustTin] = useState("")
   const [custEmail, setCustEmail] = useState("")
   const [custAddress, setCustAddress] = useState("")
   const [newPaymentType, setNewPaymentType] = useState<"Cash" | "Credit">("Credit")
@@ -348,6 +346,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     setCustomerSearchInput("")
     setShowCustomerDropdown(false)
     setCustPhone("")
+    setCustTin("")
     setCustEmail("")
     setCustAddress("")
     setNewDesc("")
@@ -822,24 +821,29 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         })
       }
 
-    if (!selectedCust) {
-      const newCustId = `CUST-${Date.now().toString().slice(-4)}`
-      selectedCust = {
-        id: newCustId,
-        name: finalCustName,
-        country: "Ethiopia",
-        region: "Addis Ababa",
-        contactPerson: finalCustName,
-        phone: isWh1Order ? "" : custPhone.trim(),
-        email: custEmail.trim() || `${finalCustName.toLowerCase().replace(/\s+/g, "")}@example.com`,
-        address: custAddress.trim() || "Addis Ababa, Ethiopia",
-        category: isWh1Order ? "Commodities Exporter / Union" : "Pharmaceutical Distributor",
-        tradePaperFileName: stagedTradePaperName || (isWh1Order ? "Bank Permit.pdf" : "Trade License.pdf"),
-        tradePaperUrl: stagedTradePaperUrl,
-        tradePaperUploadedAt: new Date().toISOString(),
+      if (!selectedCust) {
+        const newCustId = `CUST-${Date.now().toString().slice(-4)}`
+        selectedCust = {
+          id: newCustId,
+          name: finalCustName,
+          country: "Ethiopia",
+          region: "Addis Ababa",
+          contactPerson: finalCustName,
+          phone: isWh1Order ? "" : custPhone.trim(),
+          tin: custTin.trim() || undefined,
+          email: custEmail.trim() || `${finalCustName.toLowerCase().replace(/\s+/g, "")}@example.com`,
+          address: custAddress.trim() || "Addis Ababa, Ethiopia",
+          category: isWh1Order ? "Commodities Exporter / Union" : "Pharmaceutical Distributor",
+          tradePaperFileName: stagedTradePaperName || (isWh1Order ? "Bank Permit.pdf" : "Trade License.pdf"),
+          tradePaperUrl: stagedTradePaperUrl,
+          tradePaperUploadedAt: new Date().toISOString(),
+        }
+        if (saveCustomerToRegistry) {
+          erp.addCustomer(selectedCust)
+        }
+      } else if (saveCustomerToRegistry && custTin.trim() && !selectedCust.tin) {
+        erp.updateCustomer(selectedCust.id, { tin: custTin.trim() })
       }
-      erp.addCustomer(selectedCust)
-    }
 
     const soId = `SO-${Date.now().toString().slice(-6)}`
     const finalItems = orderItems.map((i) => ({
@@ -1019,7 +1023,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div variants={fade} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+      <div className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         {/* Top Header */}
         <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
@@ -1267,119 +1271,107 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
             </>
           )}
         />
-      </motion.div>
+      </div>
 
       {/* MODAL: GENERATE SALES INVOICE */}
-      <AnimatePresence>
-        {isInvoiceModalOpen && selectedOrder && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-zinc-200"
-            >
-              <h2 className="text-xl font-black text-zinc-950 mb-1">Generate Sales Invoice</h2>
-              <p className="text-xs font-semibold text-zinc-500 mb-4">
-                Creates an Accounts Receivable invoice in Finance for customer <span className="font-bold text-zinc-800">{selectedOrder.customer}</span>.
-              </p>
+      {isInvoiceModalOpen && selectedOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div 
+            className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-zinc-200"
+          >
+            <h2 className="text-xl font-black text-zinc-950 mb-1">Generate Sales Invoice</h2>
+            <p className="text-xs font-semibold text-zinc-500 mb-4">
+              Creates an Accounts Receivable invoice in Finance for customer <span className="font-bold text-zinc-800">{selectedOrder.customer}</span>.
+            </p>
 
-              <div className="space-y-4 mb-6">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-bold text-zinc-700">Tax Schedule / Multi-Tax Profile</label>
-                    <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                      ⚡ Auto-Determined
+            <div className="space-y-4 mb-6">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-zinc-700">Tax Schedule / Multi-Tax Profile</label>
+                  <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    ⚡ Auto-Determined
+                  </span>
+                </div>
+                <select
+                  value={selectedTaxScheduleId}
+                  onChange={(e) => setSelectedTaxScheduleId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
+                >
+                  {taxSchedules.map((sch) => (
+                    <option key={sch.id} value={sch.id}>
+                      {sch.name} ({sch.appliesTo})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-700 mb-1">Payment Terms</label>
+                <select 
+                  value={paymentTerms}
+                  onChange={(e) => setPaymentTerms(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
+                >
+                  <option value="Net 30">Net 30 Days</option>
+                  <option value="Net 15">Net 15 Days</option>
+                  <option value="Payment on Delivery">Payment on Delivery</option>
+                </select>
+              </div>
+
+              {/* Dynamic Multi-Tax Breakdown Card */}
+              <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200/80 font-mono text-xs space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-zinc-500 font-sans">Contract Subtotal:</span>
+                  <span className="font-bold">ETB {orderTaxCalc.subtotal.toLocaleString()}</span>
+                </div>
+                {orderTaxCalc.taxLines.map((tl: any) => (
+                  <div key={tl.ruleId} className="flex justify-between text-[11px]">
+                    <span className="text-zinc-500 font-sans">
+                      {tl.isDeduction ? "–" : "+"} {tl.ruleName} ({tl.ratePercent}%):
+                    </span>
+                    <span className={`font-bold ${tl.isDeduction ? "text-amber-700" : "text-blue-700"}`}>
+                      {tl.isDeduction ? "-ETB " : "+ETB "}
+                      {tl.taxAmount.toLocaleString()}
                     </span>
                   </div>
-                  <select
-                    value={selectedTaxScheduleId}
-                    onChange={(e) => setSelectedTaxScheduleId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
-                  >
-                    {taxSchedules.map((sch) => (
-                      <option key={sch.id} value={sch.id}>
-                        {sch.name} ({sch.appliesTo})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-zinc-700 mb-1">Payment Terms</label>
-                  <select 
-                    value={paymentTerms}
-                    onChange={(e) => setPaymentTerms(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
-                  >
-                    <option value="Net 30">Net 30 Days</option>
-                    <option value="Net 15">Net 15 Days</option>
-                    <option value="Payment on Delivery">Payment on Delivery</option>
-                  </select>
-                </div>
-
-                {/* Dynamic Multi-Tax Breakdown Card */}
-                <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200/80 font-mono text-xs space-y-1.5">
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500 font-sans">Contract Subtotal:</span>
-                    <span className="font-bold">ETB {orderTaxCalc.subtotal.toLocaleString()}</span>
-                  </div>
-                  {orderTaxCalc.taxLines.map((tl: any) => (
-                    <div key={tl.ruleId} className="flex justify-between text-[11px]">
-                      <span className="text-zinc-500 font-sans">
-                        {tl.isDeduction ? "–" : "+"} {tl.ruleName} ({tl.ratePercent}%):
-                      </span>
-                      <span className={`font-bold ${tl.isDeduction ? "text-amber-700" : "text-blue-700"}`}>
-                        {tl.isDeduction ? "-ETB " : "+ETB "}
-                        {tl.taxAmount.toLocaleString()}
-                      </span>
-                    </div>
-                  ))}
-                  <div className="flex justify-between pt-1.5 border-t border-zinc-200 font-black text-sm">
-                    <span className="font-sans">Net Invoiced / Due:</span>
-                    <span className="text-emerald-700">ETB {orderTaxCalc.netTotal.toLocaleString()}</span>
-                  </div>
+                ))}
+                <div className="flex justify-between pt-1.5 border-t border-zinc-200 font-black text-sm">
+                  <span className="font-sans">Net Invoiced / Due:</span>
+                  <span className="text-emerald-700">ETB {orderTaxCalc.netTotal.toLocaleString()}</span>
                 </div>
               </div>
+            </div>
 
-              <div className="flex items-center justify-end gap-3">
-                <button 
-                  onClick={() => setIsInvoiceModalOpen(false)}
-                  className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={handleConfirmInvoice}
-                  className="px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md"
-                >
-                  Generate Sales Invoice
-                </button>
-              </div>
-            </motion.div>
+            <div className="flex items-center justify-end gap-3">
+              <button 
+                onClick={() => setIsInvoiceModalOpen(false)}
+                className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleConfirmInvoice}
+                className="px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md"
+              >
+                Generate Sales Invoice
+              </button>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
 
       {/* MODAL: NEW SALES ORDER */}
-      <AnimatePresence>
-        {isNewOrderOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            {/* Backdrop: Click outside to close */}
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsNewOrderOpen(false)}
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
-            />
+      {isNewOrderOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop: Click outside to close */}
+          <div 
+            onClick={() => setIsNewOrderOpen(false)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
+          />
 
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative z-10 bg-white rounded-3xl p-6 max-w-5xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
-            >
+          <div 
+            className="relative z-10 bg-white rounded-3xl p-6 max-w-5xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
+          >
               {/* Header with Close X Button */}
               <div className="flex items-start justify-between mb-4">
                 <div>
@@ -1398,7 +1390,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
               <form onSubmit={handleCreateOrder} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
-                  <div className="md:col-span-4 relative" ref={customerComboboxRef}>
+                  <div className={`${isWH1(newWarehouse) ? "md:col-span-4" : "md:col-span-3"} relative`} ref={customerComboboxRef}>
                     <label className="block text-xs font-bold text-zinc-700 mb-1">Customer / Union Name *</label>
                     <div className="relative flex items-center">
                       <input
@@ -1417,6 +1409,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                           if (match) {
                             setNewCustomerId(match.id)
                             setCustPhone(match.phone || "")
+                            setCustTin(match.tin || "")
                             setCustEmail(match.email || "")
                             setCustAddress(match.address || "")
                             const evaluation = getTradeLicenseStatus(match)
@@ -1445,6 +1438,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                               setCustomerSearchInput("")
                               setNewCustomerId("")
                               setCustPhone("")
+                              setCustTin("")
                               setCustEmail("")
                               setCustAddress("")
                               setStagedTradePaperName("")
@@ -1491,6 +1485,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                 setNewCustomerId(c.id)
                                 setCustomerSearchInput(c.name)
                                 setCustPhone(c.phone || "")
+                                setCustTin(c.tin || "")
                                 setCustEmail(c.email || "")
                                 setCustAddress(c.address || "")
                                 setCreateFormErrors((prev) => {
@@ -1558,6 +1553,19 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         )}
 
                         <div className={isWh1Order ? "md:col-span-3" : "md:col-span-2"}>
+                          <label className="block text-xs font-bold text-zinc-700 mb-1">
+                            Customer TIN <span className="text-[10px] text-zinc-400 font-normal">(optional)</span>
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. 0012345678"
+                            value={custTin}
+                            onChange={(e) => setCustTin(e.target.value)}
+                            className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold font-mono outline-none"
+                          />
+                        </div>
+
+                        <div className={isWh1Order ? "md:col-span-2" : "md:col-span-2"}>
                           <label className="block text-xs font-bold text-zinc-700 mb-1">Payment Method *</label>
                           <select
                             value={newPaymentType}
@@ -1569,7 +1577,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                           </select>
                         </div>
 
-                        <div className="md:col-span-3">
+                        <div className={isWh1Order ? "md:col-span-3" : "md:col-span-2"}>
                           <label className="block text-xs font-bold text-zinc-700 mb-1">
                             Fulfillment Warehouse *
                           </label>
@@ -2036,30 +2044,22 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   </button>
                 </div>
               </form>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* MODAL: EDIT SALES ORDER */}
-      <AnimatePresence>
-        {isEditOrderOpen && editingOrder && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            {/* Backdrop: Click outside to close */}
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsEditOrderOpen(false)}
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
-            />
+      {isEditOrderOpen && editingOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop: Click outside to close */}
+          <div 
+            onClick={() => setIsEditOrderOpen(false)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
+          />
 
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative z-10 bg-white rounded-3xl p-6 max-w-5xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
-            >
+          <div 
+            className="relative z-10 bg-white rounded-3xl p-6 max-w-5xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
+          >
       <EditModalHeader
         title={`Edit Sales Order (${editingOrder.id})`}
         subtitle="Update contract terms, customer details, products, and required order documentation."
@@ -2584,21 +2584,16 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           </button>
         </div>
               </form>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* MODAL: NEW QUOTATION */}
-      <AnimatePresence>
-        {isNewQuotationOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
-            >
+      {isNewQuotationOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div 
+            className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
+          >
               <h2 className="text-xl font-black text-zinc-950 mb-1">Draft Pro-Forma Quotation</h2>
               <p className="text-xs font-semibold text-zinc-500 mb-5">Generates an ERPNext-aligned pro-forma quotation.</p>
 
@@ -2670,10 +2665,9 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   </button>
                 </div>
               </form>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* REUSABLE DELETE CONFIRMATION MODAL */}
       <RecordDeleteModal

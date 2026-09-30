@@ -1,4 +1,3 @@
-import { motion } from "framer-motion"
 import { Printer, Download, X, FileText, AlertTriangle, Clock } from "lucide-react"
 import { printStoreTransferDocument, exportStoreTransferExcel } from "@/lib/exportUtils"
 import type { Transfer } from "@/lib/erpStore"
@@ -61,12 +60,7 @@ export default function StoreTransferPrintModal({
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="w-full max-w-4xl bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-zinc-200 my-8 space-y-6 max-h-[90vh] flex flex-col"
-      >
+      <div className="w-full max-w-4xl bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-zinc-200 my-8 space-y-6 max-h-[90vh] flex flex-col">
         {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-zinc-100 pb-4 shrink-0">
           <div>
@@ -242,7 +236,7 @@ export default function StoreTransferPrintModal({
             </div>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }

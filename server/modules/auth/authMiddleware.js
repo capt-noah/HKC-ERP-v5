@@ -5,6 +5,18 @@ import { validateSession } from "./sessionService.js"
 
 const JWT_SECRET = config.jwtSecret
 
+export function normalizeRole(role) {
+  if (!role) return "viewer"
+  const clean = String(role).toLowerCase().trim()
+  if (clean === "admin" || clean === "super_admin" || clean === "superadmin") return "superadmin"
+  if (clean === "sales" || clean === "sales_manager") return "sales_manager"
+  if (clean === "hr" || clean === "hr_manager") return "hr_manager"
+  if (clean === "inventory" || clean === "inventory_admin" || clean === "inventory_manager") return "inventory_admin"
+  if (clean === "finance" || clean === "finance_manager") return "finance_manager"
+  if (clean === "hkc_docs" || clean === "hkc_docs_manager" || clean === "hkcdocs" || clean === "docs_specialist" || clean === "docs") return "hkc_docs_manager"
+  return clean
+}
+
 export function authenticateToken(req, res, next) {
   if (req.method === "OPTIONS") {
     return next()
@@ -52,8 +64,8 @@ export function authenticateToken(req, res, next) {
           }
         }
         if (Array.isArray(currentRoles) && currentRoles.length > 0) {
-          decodedUser.roles = currentRoles
-          decodedUser.role = currentRoles[0]
+          decodedUser.roles = currentRoles.map(normalizeRole)
+          decodedUser.role = normalizeRole(currentRoles[0])
         }
 
         let currentWhIds = sessionCheck.user.warehouse_ids
@@ -69,6 +81,13 @@ export function authenticateToken(req, res, next) {
         }
         decodedUser.warehouse_ids = currentWhIds
         decodedUser.warehouse_id = currentWhIds[0] || sessionCheck.user.warehouse_id || null
+      }
+
+      if (Array.isArray(decodedUser.roles)) {
+        decodedUser.roles = decodedUser.roles.map(normalizeRole)
+      }
+      if (decodedUser.role) {
+        decodedUser.role = normalizeRole(decodedUser.role)
       }
 
       req.user = decodedUser
@@ -91,7 +110,7 @@ export function authenticateToken(req, res, next) {
 }
 
 export function authorizeRoles(...allowedRoles) {
-  const flatRoles = allowedRoles.flat().map((r) => String(r).toLowerCase().trim())
+  const flatRoles = allowedRoles.flat().map((r) => normalizeRole(r))
 
   return (req, res, next) => {
     if (req.method === "OPTIONS") {
@@ -113,7 +132,7 @@ export function authorizeRoles(...allowedRoles) {
     if (!Array.isArray(userRoles)) {
       userRoles = [String(userRoles)]
     }
-    userRoles = userRoles.map((r) => String(r).toLowerCase().trim())
+    userRoles = userRoles.map((r) => normalizeRole(r))
 
     // Superadmin always has universal access across all modules
     if (userRoles.includes("superadmin")) {

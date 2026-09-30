@@ -393,6 +393,15 @@ export async function drizzleUpdateRow({ resource, id, body }) {
         rawUpdate = { ...rawUpdate, ...rawUpdate.payload }
         delete rawUpdate.payload
       }
+
+      // Safeguard: Never allow partial updates (such as trade paper sync) to wipe customer or supplier names
+      if ((tableName === "customers" || tableName === "suppliers") && existingPayload.name && !rawUpdate.name) {
+        rawUpdate.name = existingPayload.name
+      }
+      if ((tableName === "customers" || tableName === "suppliers") && existingPayload.phone && !rawUpdate.phone) {
+        rawUpdate.phone = existingPayload.phone
+      }
+
       const mergedPayload = { ...existingPayload, ...rawUpdate, id: targetId }
       const payloadString = JSON.stringify(mergedPayload)
 

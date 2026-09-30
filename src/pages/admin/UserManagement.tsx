@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react"
-import { motion } from "framer-motion"
 import { Search, Plus, Filter, X, ShieldCheck, UserCheck, Trash2, Users, UserX, Edit, Eye, EyeOff } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -21,7 +20,7 @@ export function normalizeRole(r: string): Role {
   if (clean === "hr" || clean === "hr_manager") return "hr_manager"
   if (clean === "inventory" || clean === "inventory_admin" || clean === "inventory_manager") return "inventory_admin"
   if (clean === "finance" || clean === "finance_manager") return "finance_manager"
-  if (clean === "hkc_docs" || clean === "hkc_docs_manager" || clean === "docs_specialist" || clean === "docs") return "hkc_docs_manager"
+  if (clean === "hkc_docs" || clean === "hkc_docs_manager" || clean === "hkcdocs" || clean === "docs_specialist" || clean === "docs") return "hkc_docs_manager"
   return clean as Role
 }
 
@@ -51,8 +50,6 @@ interface Employee {
   email: string
   status: string
 }
-
-const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
 
 const roleLabels: Record<string, string> = {
   superadmin: "Super Admin",
@@ -483,9 +480,9 @@ export default function UserManagement() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-3 sm:px-6 pt-20 sm:pt-24 pb-12">
+      <div className="max-w-[98%] mx-auto px-3 sm:px-6 pt-20 sm:pt-24 pb-12">
         {/* Header Block */}
-        <motion.div variants={fade} className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 sm:mb-8">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 sm:mb-8">
           <div>
             <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight">User Management</h1>
             <p className="text-xs sm:text-sm text-gray-500 mt-1">Manage user accounts, warehouse scopes, and authorization access levels.</p>
@@ -494,10 +491,10 @@ export default function UserManagement() {
           <div className="shrink-0">
             <SubPageNav items={getSectionChildren("/admin")} />
           </div>
-        </motion.div>
+        </div>
 
         {/* Controls Row */}
-        <motion.div variants={fade} className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2.5 sm:gap-3 mb-6 flex-wrap">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2.5 sm:gap-3 mb-6 flex-wrap">
           {/* Search */}
           <div className="relative flex items-center h-[38px] sm:h-[40px] px-3.5 rounded-full glass-card border border-black/5 hover:bg-white/50 focus-within:bg-white/80 transition-all flex-1 min-w-[140px] sm:w-48 sm:flex-none">
             <Search className="size-3.5 text-gray-400 mr-2 shrink-0" />
@@ -546,10 +543,10 @@ export default function UserManagement() {
             <Plus className="size-3.5" />
             <span>Add User</span>
           </button>
-        </motion.div>
+        </div>
 
         {/* User Table Grid */}
-        <motion.div variants={fade}>
+        <div>
           <GlassCard>
             {loading ? (
               <UserTableSkeleton />
@@ -759,17 +756,13 @@ export default function UserManagement() {
               </div>
             )}
           </GlassCard>
-        </motion.div>
-      </motion.div>
+        </div>
+      </div>
 
       {/* Add User Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="w-full max-w-lg bg-white/95 backdrop-blur-lg border border-black/10 rounded-3xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto no-scrollbar"
-          >
+          <div className="w-full max-w-lg bg-white/95 backdrop-blur-lg border border-black/10 rounded-3xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto no-scrollbar">
             <button
               onClick={() => setShowAddModal(false)}
               className="absolute right-5 top-5 p-1 text-gray-400 hover:text-black rounded-lg transition-colors"
@@ -1090,18 +1083,14 @@ export default function UserManagement() {
                 </button>
               </div>
             </form>
-          </motion.div>
+          </div>
         </div>
       )}
 
       {/* Edit User Modal */}
       {showEditModal && editingUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="w-full max-w-lg bg-white/95 backdrop-blur-lg border border-black/10 rounded-3xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto no-scrollbar"
-          >
+          <div className="w-full max-w-lg bg-white/95 backdrop-blur-lg border border-black/10 rounded-3xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto no-scrollbar">
             <button
               onClick={() => {
                 setShowEditModal(false)
@@ -1434,7 +1423,7 @@ export default function UserManagement() {
                 </div>
               </div>
             </form>
-          </motion.div>
+          </div>
         </div>
       )}
     </div>

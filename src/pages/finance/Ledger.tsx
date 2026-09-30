@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { 
   Search, 
   Plus, 
@@ -44,9 +43,6 @@ import PeachtreeBeginningBalancesModal from "@/components/finance/PeachtreeBegin
 import { PeachtreePeriodClosingModal } from "@/components/finance/PeachtreePeriodClosingModal"
 import TransactionMappingMatrix from "@/components/finance/TransactionMappingMatrix"
 import FiscalPeriodsTab from "@/components/finance/FiscalPeriodsTab"
-
-const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
 export default function Ledger() {
   const { showToast } = useFeedback()
@@ -740,14 +736,11 @@ export default function Ledger() {
         </div>
       )}
 
-      <motion.div 
-        variants={stagger} 
-        initial="hidden" 
-        animate="visible" 
+      <div 
         className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12"
       >
         {/* Title Header Block */}
-        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight">Journal Entries & Ledger Engine</h1>
             <p className="text-xs font-semibold text-zinc-500 max-w-2xl leading-relaxed mt-1">
@@ -757,10 +750,10 @@ export default function Ledger() {
           <div className="flex items-center gap-3 self-end md:self-start">
             <SubPageNav items={getSectionChildren("/finance")} />
           </div>
-        </motion.div>
+        </div>
 
         {/* Tab Selection Switcher Bar */}
-        <motion.div variants={fade} className="flex border-b border-zinc-200/60 mb-6 pb-px items-center justify-between overflow-x-auto scrollbar-none">
+        <div className="flex border-b border-zinc-200/60 mb-6 pb-px items-center justify-between overflow-x-auto scrollbar-none">
           <div className="flex gap-1 min-w-max">
             {[
               { id: "Entries", label: "Journal Entries", icon: FileText },
@@ -781,8 +774,7 @@ export default function Ledger() {
                     {tab.label}
                   </span>
                   {isActive && (
-                    <motion.div
-                      layoutId="ledger-tabs"
+                    <div
                       className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-600"
                     />
                   )}
@@ -794,20 +786,14 @@ export default function Ledger() {
           <div className="text-[10px] font-mono font-black text-emerald-700 uppercase hidden lg:flex items-center gap-1.5 shrink-0 ml-4">
             <CheckCircle2 className="size-3.5" /> Ledger State: Balanced
           </div>
-        </motion.div>
+        </div>
 
         {/* Tab Content Rendering */}
-        <AnimatePresence mode="wait">
-          {/* TAB 1: Journal Entries */}
-          {activeTab === "Entries" && (
-            <motion.div
-              key="entries-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col gap-4"
-            >
+        {/* TAB 1: Journal Entries */}
+        {activeTab === "Entries" && (
+          <div
+            className="flex flex-col gap-4"
+          >
               <GlassCard className="flex flex-col p-0">
                 {periodLockStatus.is_locked && (
                   <div className="mx-6 mt-6 p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-900 flex items-center justify-between">
@@ -1198,30 +1184,19 @@ export default function Ledger() {
                   </div>
                 )}
               </GlassCard>
-            </motion.div>
+            </div>
           )}
 
           {/* TAB 2: Fiscal Periods Dedicated Dashboard */}
           {activeTab === "Periods" && (
-            <motion.div
-              key="periods-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-            >
+            <div>
               <FiscalPeriodsTab />
-            </motion.div>
+            </div>
           )}
 
           {/* TAB 3: Chart of Accounts Tree */}
           {activeTab === "Chart" && (
-            <motion.div
-              key="chart-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
+            <div
               className="flex flex-col gap-4"
             >
               {/* Single Clean Toolbar Card */}
@@ -1374,34 +1349,22 @@ export default function Ledger() {
                   )
                 })}
               </div>
-            </motion.div>
+            </div>
           )}
 
           {/* TAB 3: Transaction Mappings Matrix */}
           {activeTab === "Mappings" && (
-            <motion.div
-              key="mappings-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-            >
+            <div>
               <TransactionMappingMatrix />
-            </motion.div>
+            </div>
           )}
 
-        </AnimatePresence>
-
         {/* MODAL 1: Post Journal Entry */}
-        <AnimatePresence>
-          {showPostModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white rounded-3xl p-6 max-w-2xl w-full shadow-2xl border border-zinc-200 overflow-hidden"
-              >
+        {showPostModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <div
+              className="bg-white rounded-3xl p-6 max-w-2xl w-full shadow-2xl border border-zinc-200 overflow-hidden"
+            >
                 <div className="flex items-center justify-between border-b border-zinc-100 pb-4 mb-4">
                   <h3 className="text-base font-black text-zinc-900">Post New Journal Entry</h3>
                   <button onClick={() => setShowPostModal(false)} className="text-zinc-400 hover:text-zinc-600">
@@ -1535,21 +1498,16 @@ export default function Ledger() {
                     </button>
                   </div>
                 </form>
-              </motion.div>
+              </div>
             </div>
           )}
-        </AnimatePresence>
 
         {/* MODAL 2A: Add Sub-Account (Child) */}
-        <AnimatePresence>
-          {showAddChildModal && childParentAccount && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-emerald-500/20"
-              >
+        {showAddChildModal && childParentAccount && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <div
+              className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-emerald-500/20"
+            >
                 {/* Modal Header */}
                 <div className="flex items-center justify-between border-b border-emerald-100 pb-3 mb-4">
                   <div className="flex items-center gap-2.5">
@@ -1653,21 +1611,16 @@ export default function Ledger() {
                     </button>
                   </div>
                 </form>
-              </motion.div>
+              </div>
             </div>
           )}
-        </AnimatePresence>
 
         {/* MODAL 2: Add Top-Level Account Node */}
-        <AnimatePresence>
-          {showAddAccountModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-zinc-900/10"
-              >
+        {showAddAccountModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <div
+              className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-zinc-900/10"
+            >
                 {/* Modal Header */}
                 <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
                   <div className="flex items-center gap-2.5">
@@ -1777,21 +1730,16 @@ export default function Ledger() {
                     </button>
                   </div>
                 </form>
-              </motion.div>
+              </div>
             </div>
           )}
-        </AnimatePresence>
 
         {/* MODAL 3: Edit Account Node */}
-        <AnimatePresence>
-          {showEditAccountModal && editingAccount && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-blue-500/20"
-              >
+        {showEditAccountModal && editingAccount && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <div
+              className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-2 border-blue-500/20"
+            >
                 {/* Modal Header with 3-dot dropdown menu */}
                 <div className="flex items-center justify-between border-b border-blue-100 pb-3 mb-4">
                   <div className="flex items-center gap-2.5">
@@ -1958,50 +1906,44 @@ export default function Ledger() {
                     </button>
                   </div>
                 </form>
-              </motion.div>
+              </div>
             </div>
           )}
-        </AnimatePresence>
 
         {/* MODAL 4: Delete Account Confirmation Modal */}
-        <AnimatePresence>
-          {showDeleteConfirmModal && editingAccount && (
-            <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-zinc-200 text-center"
-              >
-                <div className="size-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3">
-                  <AlertTriangle className="size-6" />
-                </div>
-                <h3 className="text-base font-black text-zinc-900 mb-1">Delete Account Node?</h3>
-                <p className="text-xs text-zinc-500 font-semibold mb-4 leading-relaxed">
-                  Are you sure you want to delete <strong className="text-zinc-900 font-mono">{editingAccount.code} - {editingAccount.name}</strong>?
-                  Accounts with active transaction entries cannot be deleted.
-                </p>
+        {showDeleteConfirmModal && editingAccount && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div
+              className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-zinc-200 text-center"
+            >
+              <div className="size-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-3">
+                <AlertTriangle className="size-6" />
+              </div>
+              <h3 className="text-base font-black text-zinc-900 mb-1">Delete Account Node?</h3>
+              <p className="text-xs text-zinc-500 font-semibold mb-4 leading-relaxed">
+                Are you sure you want to delete <strong className="text-zinc-900 font-mono">{editingAccount.code} - {editingAccount.name}</strong>?
+                Accounts with active transaction entries cannot be deleted.
+              </p>
 
-                <div className="flex justify-center gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setShowDeleteConfirmModal(false)}
-                    className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold text-xs"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleConfirmDelete}
-                    className="px-5 py-2 rounded-full bg-rose-600 text-white font-bold text-xs hover:bg-rose-700 transition-all shadow-sm"
-                  >
-                    Confirm Delete
-                  </button>
-                </div>
-              </motion.div>
+              <div className="flex justify-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirmModal(false)}
+                  className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  className="px-5 py-2 rounded-full bg-rose-600 text-white font-bold text-xs hover:bg-rose-700 transition-all shadow-sm"
+                >
+                  Confirm Delete
+                </button>
+              </div>
             </div>
-          )}
-        </AnimatePresence>
+          </div>
+        )}
 
         {/* MODAL 5: Peachtree Beginning Balances & Cutover Modal */}
         <PeachtreeBeginningBalancesModal
@@ -2015,7 +1957,7 @@ export default function Ledger() {
           onClose={() => setShowPeriodClosingModal(false)}
         />
 
-      </motion.div>
+      </div>
     </div>
   )
 }

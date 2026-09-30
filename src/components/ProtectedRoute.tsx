@@ -1,6 +1,6 @@
 import { useEffect } from "react"
 import { Navigate, useLocation } from "react-router-dom"
-import { useAuthStore } from "@/lib/authStore"
+import { useAuthStore, normalizeRole } from "@/lib/authStore"
 import type { Role } from "@/lib/authStore"
 import { erpStore } from "@/lib/erpStore"
 import { financeStore } from "@/lib/financeStore"
@@ -19,7 +19,7 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
   useEffect(() => {
     if (!authenticated || !user) return
 
-    const roles = user.roles || []
+    const roles = (user.roles || []).map(normalizeRole)
     const isSuper = roles.includes("superadmin")
     const pathname = location.pathname
 
@@ -65,14 +65,14 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
-  const userRoles = user.roles || ((user as any).role ? [(user as any).role] : [])
+  const userRoles = (user.roles || ((user as any).role ? [(user as any).role] : [])).map(normalizeRole)
 
   // Superadmin has access to everything
   if (userRoles.includes("superadmin")) {
     return <>{children}</>
   }
 
-  if (allowedRoles && !allowedRoles.some(r => userRoles.includes(r))) {
+  if (allowedRoles && !allowedRoles.map(normalizeRole).some(r => userRoles.includes(r))) {
     // Redirect them to their home based on role if they try to access unauthorized page
     let homeRoute = "/"
     const firstRole = userRoles[0]

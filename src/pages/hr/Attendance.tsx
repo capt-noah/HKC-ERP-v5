@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react"
-import { motion } from "framer-motion"
 import { Save, UserCheck, UserX } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -10,8 +9,6 @@ import { useFeedback } from "@/context/FeedbackContext"
 import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { WAREHOUSE_OPTIONS, hrApi, initials, loadHRData, makeId, type AttendanceRecord, type Employee } from "@/lib/hrApi"
 
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 const today = new Date().toISOString().slice(0, 10)
 
 type AttendanceDraft = Pick<AttendanceRecord, "status" | "notes">
@@ -196,8 +193,8 @@ export default function Attendance() {
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
-      <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
-        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
+      <div className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight mt-1">Attendance</h1>
             <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">
@@ -205,7 +202,7 @@ export default function Attendance() {
             </p>
           </div>
           <SubPageNav items={getSectionChildren("/hr")} />
-        </motion.div>
+        </div>
 
         {error && <GlassCard className="p-5 mb-5 text-sm font-bold text-rose-700 border-rose-200 bg-rose-50">{error}</GlassCard>}
 
@@ -344,7 +341,7 @@ export default function Attendance() {
             </div>
           </GlassCard>
         )}
-      </motion.div>
+      </div>
     </div>
   )
 }

@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import {
   X,
   CheckCircle2,
@@ -334,14 +333,10 @@ export const PeachtreeBankReconciliationModal: React.FC<PeachtreeBankReconciliat
   const selectedAcc = accounts.find((a) => a.id === selectedAccountId)
 
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.96 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.96 }}
-          className="bg-white rounded-3xl shadow-2xl border border-zinc-200 w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden"
-        >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm">
+      <div
+        className="bg-white rounded-3xl shadow-2xl border border-zinc-200 w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden"
+      >
           {/* Header */}
           <div className="px-6 py-4 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/80">
             <div className="flex items-center gap-3">
@@ -848,8 +843,7 @@ export const PeachtreeBankReconciliationModal: React.FC<PeachtreeBankReconciliat
               )}
             </div>
           )}
-        </motion.div>
+        </div>
       </div>
-    </AnimatePresence>
   )
 }

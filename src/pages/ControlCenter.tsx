@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
-import { motion, AnimatePresence } from "framer-motion"
 import {
   DollarSign,
   Package,
@@ -68,9 +67,6 @@ import { getExpiringItemsSummary } from "@/lib/expiryUtils"
 import { formatDateTimeDisplay, parseSafeDate } from "@/lib/dateUtils"
 import { resolveActivityDetails, isAutoSyncActivityLog, type UserActivityLog } from "@/lib/activityUtils"
 import { cn } from "@/lib/utils"
-
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.08 } } }
 
 const emptyHRData: HRData = { employees: [], attendance: [], leaves: [], payrollPeriods: [], payrollRecords: [] }
 
@@ -1173,20 +1169,20 @@ export default function ControlCenter() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-3 sm:px-6 lg:px-8 pt-20 sm:pt-24 pb-12">
+      <div className="max-w-[98%] mx-auto px-3 sm:px-6 lg:px-8 pt-20 sm:pt-24 pb-12">
         {/* Header Block */}
-        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-6 gap-3 sm:gap-4">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-6 gap-3 sm:gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-black text-black tracking-tight">Control Center</h1>
             <p className="text-xs sm:text-sm text-gray-500 mt-1">Operational analytics and live audit logs across all ERP modules.</p>
           </div>
           <SubPageNav items={getSectionChildren("/admin")} />
-        </motion.div>
+        </div>
 
         {hrError && <GlassCard className="p-4 mb-5 text-xs font-bold text-rose-700 bg-rose-50 border-rose-200">{hrError}</GlassCard>}
 
         {/* Tab Toggle Navigation */}
-        <motion.div variants={fade} className="flex items-center gap-1.5 sm:gap-2 mb-6 border-b border-black/5 pb-3 overflow-x-auto no-scrollbar overscroll-x-contain py-1">
+        <div className="flex items-center gap-1.5 sm:gap-2 mb-6 border-b border-black/5 pb-3 overflow-x-auto no-scrollbar overscroll-x-contain py-1">
           <button
             onClick={() => handleTabChange("overview")}
             className={cn(
@@ -1221,11 +1217,11 @@ export default function ControlCenter() {
               </span>
             )}
           </button>
-        </motion.div>
+        </div>
 
         {/* Tab Content 1: Overview */}
         {activeTab === "overview" && (
-          <motion.div key="overview" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+          <div className="space-y-6">
             {/* Colored Metric Cards (Posted Revenue, Gross Profit & Inventory Value) */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
               {dataLoading ? (
@@ -1237,9 +1233,7 @@ export default function ControlCenter() {
               ) : (
                 <>
                   {/* Card 1: Posted Revenue (Emerald/Green Gradient) */}
-                  <motion.div
-                    whileHover={{ scale: 1.01 }}
-                    transition={{ duration: 0.2 }}
+                  <div
                     className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-emerald-500/15 via-emerald-600/5 to-white/70 border border-emerald-500/30 backdrop-blur-xl shadow-lg shadow-emerald-950/[0.04] flex flex-col justify-between"
                   >
                     <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-400/20 rounded-full blur-3xl pointer-events-none -mr-12 -mt-12" />
@@ -1268,12 +1262,10 @@ export default function ControlCenter() {
                       <TrendingUp className="size-4 shrink-0" />
                       <span className="truncate">Posted GL revenue transactions</span>
                     </div>
-                  </motion.div>
+                  </div>
 
                   {/* Card 2: Gross Profit & Margin (Teal/Emerald Gradient) */}
-                  <motion.div
-                    whileHover={{ scale: 1.01 }}
-                    transition={{ duration: 0.2 }}
+                  <div
                     className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-teal-500/15 via-emerald-600/5 to-white/70 border border-teal-500/30 backdrop-blur-xl shadow-lg shadow-teal-950/[0.04] flex flex-col justify-between"
                   >
                     <div className="absolute top-0 right-0 w-48 h-48 bg-teal-400/20 rounded-full blur-3xl pointer-events-none -mr-12 -mt-12" />
@@ -1307,12 +1299,10 @@ export default function ControlCenter() {
                       <Coins className="size-4 shrink-0" />
                       <span className="truncate">COGS: <span className="text-[10px] font-bold">ETB</span> {money(totalCogs)}</span>
                     </div>
-                  </motion.div>
+                  </div>
 
                   {/* Card 3: Inventory Value (Indigo/Violet Gradient) */}
-                  <motion.div
-                    whileHover={{ scale: 1.01 }}
-                    transition={{ duration: 0.2 }}
+                  <div
                     className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-indigo-500/15 via-violet-600/5 to-white/70 border border-indigo-500/30 backdrop-blur-xl shadow-lg shadow-indigo-950/[0.04] flex flex-col justify-between"
                   >
                     <div className="absolute top-0 right-0 w-48 h-48 bg-indigo-400/20 rounded-full blur-3xl pointer-events-none -mr-12 -mt-12" />
@@ -1341,7 +1331,7 @@ export default function ControlCenter() {
                       <Layers className="size-4 shrink-0" />
                       <span className="truncate">Valued across active stock batches</span>
                     </div>
-                  </motion.div>
+                  </div>
                 </>
               )}
             </div>
@@ -2434,12 +2424,12 @@ export default function ControlCenter() {
               </GlassCard>
             </>
           )}
-        </motion.div>
+        </div>
         )}
 
         {/* Tab Content 2: Activity Logs */}
         {activeTab === "logs" && (
-          <motion.div key="logs" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+          <div className="space-y-6">
             <GlassCard className="p-0 overflow-hidden border border-white/65 shadow-md">
               <div className="px-6 pt-6">
                 <FinanceTableToolbar
@@ -2665,12 +2655,12 @@ export default function ControlCenter() {
                 </div>
               </div>
             </GlassCard>
-          </motion.div>
+          </div>
         )}
 
         {/* Tab Content 3: Sales Order Approvals */}
         {activeTab === "approvals" && (
-          <motion.div key="approvals" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-6">
+          <div className="space-y-6">
             {erp.isLoading() ? (
               <div className="space-y-6 animate-pulse">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2949,164 +2939,146 @@ export default function ControlCenter() {
                 </GlassCard>
               </>
             )}
-          </motion.div>
+          </div>
         )}
-      </motion.div>
+      </div>
 
       {/* Approve Confirmation Modal */}
-      <AnimatePresence>
-        {approveModalOrder && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-zinc-200 space-y-4 text-zinc-900"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2.5 text-emerald-700">
-                  <div className="p-2 rounded-2xl bg-emerald-100">
-                    <CheckCircle2 className="size-5 text-emerald-700" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black text-zinc-950">Approve Sales Order</h3>
-                    <p className="text-[11px] font-bold text-zinc-400">Confirmation Required</p>
-                  </div>
+      {approveModalOrder && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-zinc-200 space-y-4 text-zinc-900">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2.5 text-emerald-700">
+                <div className="p-2 rounded-2xl bg-emerald-100">
+                  <CheckCircle2 className="size-5 text-emerald-700" />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setApproveModalOrder(null)}
-                  className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
-                >
-                  <X className="size-5" />
-                </button>
-              </div>
-
-              <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-200/80 space-y-2 text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="text-zinc-500 font-bold">Order ID:</span>
-                  <span className="font-mono font-black text-zinc-900">{approveModalOrder.id}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-zinc-500 font-bold">Customer:</span>
-                  <span className="font-bold text-zinc-900 truncate max-w-[200px]">{approveModalOrder.customer}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-zinc-500 font-bold">Warehouse & Terms:</span>
-                  <span className="font-bold text-zinc-800">{approveModalOrder.warehouse} • {approveModalOrder.paymentType === "Cash" ? "Sales" : "Credit"}</span>
-                </div>
-                <div className="flex justify-between items-center pt-2 border-t border-zinc-200">
-                  <span className="text-zinc-700 font-black">Total Contract Amount:</span>
-                  <span className="font-mono font-black text-emerald-700 text-sm">
-                    ETB {Number(approveModalOrder.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                  </span>
+                <div>
+                  <h3 className="text-base font-black text-zinc-950">Approve Sales Order</h3>
+                  <p className="text-[11px] font-bold text-zinc-400">Confirmation Required</p>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setApproveModalOrder(null)}
+                className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
 
-              <p className="text-xs text-zinc-600 leading-relaxed font-medium">
-                Approving this order will unlock it in <span className="font-bold text-zinc-950">Sales Issue</span>, allowing warehouse operators to pull and fulfill the items.
-              </p>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100">
-                <button
-                  type="button"
-                  onClick={() => setApproveModalOrder(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={isProcessingAction === approveModalOrder.id}
-                  onClick={handleConfirmApprove}
-                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50"
-                >
-                  <Check className="size-4 stroke-[3]" /> Confirm Approval
-                </button>
+            <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-200/80 space-y-2 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-500 font-bold">Order ID:</span>
+                <span className="font-mono font-black text-zinc-900">{approveModalOrder.id}</span>
               </div>
-            </motion.div>
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-500 font-bold">Customer:</span>
+                <span className="font-bold text-zinc-900 truncate max-w-[200px]">{approveModalOrder.customer}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-zinc-500 font-bold">Warehouse & Terms:</span>
+                <span className="font-bold text-zinc-800">{approveModalOrder.warehouse} • {approveModalOrder.paymentType === "Cash" ? "Sales" : "Credit"}</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t border-zinc-200">
+                <span className="text-zinc-700 font-black">Total Contract Amount:</span>
+                <span className="font-mono font-black text-emerald-700 text-sm">
+                  ETB {Number(approveModalOrder.amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-600 leading-relaxed font-medium">
+              Approving this order will unlock it in <span className="font-bold text-zinc-950">Sales Issue</span>, allowing warehouse operators to pull and fulfill the items.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100">
+              <button
+                type="button"
+                onClick={() => setApproveModalOrder(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isProcessingAction === approveModalOrder.id}
+                onClick={handleConfirmApprove}
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black transition-all shadow-md active:scale-95 cursor-pointer disabled:opacity-50"
+              >
+                <Check className="size-4 stroke-[3]" /> Confirm Approval
+              </button>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
 
       {/* Decline Confirmation Modal */}
-      <AnimatePresence>
-        {declineModalOrder && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-zinc-200 space-y-4 text-zinc-900"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2.5 text-rose-600">
-                  <div className="p-2 rounded-2xl bg-rose-100">
-                    <AlertCircle className="size-5 text-rose-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black text-zinc-950">Decline Sales Order</h3>
-                    <p className="text-[11px] font-bold text-zinc-400">Lock Order Fulfillment</p>
-                  </div>
+      {declineModalOrder && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-zinc-200 space-y-4 text-zinc-900">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2.5 text-rose-600">
+                <div className="p-2 rounded-2xl bg-rose-100">
+                  <AlertCircle className="size-5 text-rose-600" />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setDeclineModalOrder(null)}
-                  className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
-                >
-                  <X className="size-5" />
-                </button>
+                <div>
+                  <h3 className="text-base font-black text-zinc-950">Decline Sales Order</h3>
+                  <p className="text-[11px] font-bold text-zinc-400">Lock Order Fulfillment</p>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setDeclineModalOrder(null)}
+                className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
 
-              <p className="text-xs font-semibold text-zinc-600 leading-relaxed">
-                You are declining Sales Order <span className="font-mono font-bold text-zinc-950">{declineModalOrder.id}</span> for <span className="font-bold text-zinc-950">{declineModalOrder.customer}</span> (ETB {Number(declineModalOrder.amount || 0).toLocaleString()}). This will lock the order from being issued.
-              </p>
+            <p className="text-xs font-semibold text-zinc-600 leading-relaxed">
+              You are declining Sales Order <span className="font-mono font-bold text-zinc-950">{declineModalOrder.id}</span> for <span className="font-bold text-zinc-950">{declineModalOrder.customer}</span> (ETB {Number(declineModalOrder.amount || 0).toLocaleString()}). This will lock the order from being issued.
+            </p>
 
-              <div>
-                <label className="block text-xs font-bold text-zinc-700 mb-1">
-                  Decline Reason / Feedback Notes:
-                </label>
-                <textarea
-                  rows={3}
-                  value={declineReasonText}
-                  onChange={(e) => setDeclineReasonText(e.target.value)}
-                  placeholder="Provide a reason for declining..."
-                  className="w-full p-3 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold outline-none resize-none focus:border-zinc-400 focus:bg-white transition-all"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-bold text-zinc-700 mb-1">
+                Decline Reason / Feedback Notes:
+              </label>
+              <textarea
+                rows={3}
+                value={declineReasonText}
+                onChange={(e) => setDeclineReasonText(e.target.value)}
+                placeholder="Provide a reason for declining..."
+                className="w-full p-3 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold outline-none resize-none focus:border-zinc-400 focus:bg-white transition-all"
+              />
+            </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100">
-                <button
-                  type="button"
-                  onClick={() => setDeclineModalOrder(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={isProcessingAction === declineModalOrder.id}
-                  onClick={handleConfirmDecline}
-                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
-                >
-                  Confirm Decline
-                </button>
-              </div>
-            </motion.div>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100">
+              <button
+                type="button"
+                onClick={() => setDeclineModalOrder(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-600 hover:bg-zinc-100 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isProcessingAction === declineModalOrder.id}
+                onClick={handleConfirmDecline}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black transition-all shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
+              >
+                Confirm Decline
+              </button>
+            </div>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
 
       {/* View Full Sales Order Details Modal */}
-      <AnimatePresence>
-        {viewModalOrder && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="w-full max-w-3xl bg-white rounded-3xl p-6 shadow-2xl border border-zinc-200 space-y-5 text-zinc-900 max-h-[90vh] overflow-y-auto no-scrollbar"
-            >
+      {viewModalOrder && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div
+            className="w-full max-w-3xl bg-white rounded-3xl p-6 shadow-2xl border border-zinc-200 space-y-5 text-zinc-900 max-h-[90vh] overflow-y-auto no-scrollbar"
+          >
               {/* Header */}
               <div className="flex items-start justify-between pb-3 border-b border-zinc-100">
                 <div>
@@ -3367,10 +3339,9 @@ export default function ControlCenter() {
                   )}
                 </div>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* Document Preview Modal */}
       <DocumentPreviewModal

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
-import { motion } from "framer-motion"
 import {
   X,
   Scale,
@@ -372,10 +371,7 @@ export const PeachtreeBeginningBalancesModal: React.FC<PeachtreeBeginningBalance
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-sm">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 15 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 15 }}
+      <div
         className="relative w-full max-w-6xl max-h-[92vh] bg-white dark:bg-zinc-950 rounded-3xl overflow-hidden shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col"
       >
         {/* Top Header */}
@@ -692,7 +688,7 @@ export const PeachtreeBeginningBalancesModal: React.FC<PeachtreeBeginningBalance
             </div>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }

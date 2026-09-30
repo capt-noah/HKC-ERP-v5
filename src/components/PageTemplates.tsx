@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ChevronLeft, ChevronRight, Star, ArrowRight, CheckCircle2,
   Zap, Shield, Globe, Cpu, Users
@@ -115,23 +114,17 @@ export default function PageTemplates({ onNotify }: TemplatesProps) {
               ))}
             </div>
 
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeHeroTab}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 10 }}
-                transition={{ duration: 0.2 }}
-                className="space-y-4"
-              >
-                <h1 className="font-display font-bold text-3xl md:text-4xl lg:text-5xl text-slate-900 tracking-tight leading-none">
-                  {activeTabDetails.title}
-                </h1>
-                <p className="text-slate-500 text-sm md:text-base leading-relaxed max-w-lg">
-                  {activeTabDetails.desc}
-                </p>
-              </motion.div>
-            </AnimatePresence>
+            <div
+              key={activeHeroTab}
+              className="space-y-4"
+            >
+              <h1 className="font-display font-bold text-3xl md:text-4xl lg:text-5xl text-slate-900 tracking-tight leading-none">
+                {activeTabDetails.title}
+              </h1>
+              <p className="text-slate-500 text-sm md:text-base leading-relaxed max-w-lg">
+                {activeTabDetails.desc}
+              </p>
+            </div>
 
             <div className="flex flex-wrap items-center gap-4 pt-2">
               <button 
@@ -162,41 +155,33 @@ export default function PageTemplates({ onNotify }: TemplatesProps) {
               <span className="text-xs font-mono text-slate-400">Live Simulation</span>
             </div>
 
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeHeroTab}
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="space-y-4"
-              >
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100/50 flex items-center justify-between">
-                  <div>
-                    <span className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">{activeTabDetails.statLabel}</span>
-                    <span className="block text-3xl font-black text-slate-950 mt-1 font-mono">{activeTabDetails.stat}</span>
-                  </div>
-                  <div className="h-12 w-12 rounded-lg bg-slate-900 text-white flex items-center justify-center">
-                    {activeHeroTab === 'perf' ? <Zap className="h-5 w-5" /> : activeHeroTab === 'sec' ? <Shield className="h-5 w-5" /> : <Globe className="h-5 w-5" />}
-                  </div>
+            <div
+              key={activeHeroTab}
+              className="space-y-4"
+            >
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-100/50 flex items-center justify-between">
+                <div>
+                  <span className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">{activeTabDetails.statLabel}</span>
+                  <span className="block text-3xl font-black text-slate-950 mt-1 font-mono">{activeTabDetails.stat}</span>
                 </div>
+                <div className="h-12 w-12 rounded-lg bg-slate-900 text-white flex items-center justify-center">
+                  {activeHeroTab === 'perf' ? <Zap className="h-5 w-5" /> : activeHeroTab === 'sec' ? <Shield className="h-5 w-5" /> : <Globe className="h-5 w-5" />}
+                </div>
+              </div>
 
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs font-semibold text-slate-500">
-                    <span>Performance Threshold</span>
-                    <span>Optimal</span>
-                  </div>
-                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                    <motion.div 
-                      className="h-full bg-slate-900 rounded-full"
-                      initial={{ width: '0%' }}
-                      animate={{ width: activeHeroTab === 'perf' ? '98%' : activeHeroTab === 'sec' ? '85%' : '92%' }}
-                      transition={{ duration: 0.6, ease: 'easeOut' }}
-                    />
-                  </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs font-semibold text-slate-500">
+                  <span>Performance Threshold</span>
+                  <span>Optimal</span>
                 </div>
-              </motion.div>
-            </AnimatePresence>
+                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-slate-900 rounded-full"
+                    style={{ width: activeHeroTab === 'perf' ? '98%' : activeHeroTab === 'sec' ? '85%' : '92%' }}
+                  />
+                </div>
+              </div>
+            </div>
 
               <div className="text-center pt-2">
                 <span className="text-[10px] text-slate-400 leading-normal">
@@ -313,18 +298,12 @@ export default function PageTemplates({ onNotify }: TemplatesProps) {
               ))}
             </div>
 
-            <AnimatePresence mode="wait">
-              <motion.blockquote
-                key={testimonialIndex}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-                className="text-lg md:text-xl font-display text-slate-800 leading-relaxed font-medium mb-8 italic"
-              >
-                "{testimonials[testimonialIndex].quote}"
-              </motion.blockquote>
-            </AnimatePresence>
+            <blockquote
+              key={testimonialIndex}
+              className="text-lg md:text-xl font-display text-slate-800 leading-relaxed font-medium mb-8 italic"
+            >
+              "{testimonials[testimonialIndex].quote}"
+            </blockquote>
 
             {/* Author details */}
             <div className="flex items-center gap-3 mb-6">

@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react"
-import { motion } from "framer-motion"
 import {
   Boxes,
   Building2,
@@ -25,8 +24,6 @@ import {
   fetchProcessingServices,
   transitionProcessingServiceStage,
 } from "@/lib/processingServicesApi"
-
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
 const STAGE_COLOR_MAP: Record<ProcessingServiceStage, { bg: string; text: string; border: string }> = {
   Received: { bg: "bg-blue-500/10", text: "text-blue-700 dark:text-blue-300", border: "border-blue-500/20" },
@@ -118,7 +115,7 @@ export default function TollProcessingGoods() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div variants={fade} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+      <div className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
@@ -145,10 +142,10 @@ export default function TollProcessingGoods() {
             { label: "Processed (Milling Complete)", value: `${processedCount} Lots`, sub: "Packaged for client pickup", Icon: Sparkles, iconBg: "bg-emerald-50", iconColor: "text-emerald-700" },
             { label: "Delivered & Dispatched", value: `${deliveredCount} Lots`, sub: "Finished goods released", Icon: CheckCircle2, iconBg: "bg-purple-50", iconColor: "text-purple-700" },
             { label: "Total Physical Goods On-Site", value: `${totalVolumeOnSite.toLocaleString()} Quintals`, sub: "Non-owned client stock at WH1", Icon: Boxes, iconBg: "bg-purple-50", iconColor: "text-purple-700" },
-          ].map((s, idx) => {
+          ].map((s) => {
             const Icon = s.Icon
             return (
-              <GlassCard key={s.label} className="flex items-center justify-between" transition={{ delay: 0.05 * idx, duration: 0.4 }}>
+              <GlassCard key={s.label} className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-bold text-zinc-400 uppercase tracking-widest">{s.label}</p>
                   <p className="text-2xl font-black text-black mt-1 mb-1 font-mono">{s.value}</p>
@@ -326,7 +323,7 @@ export default function TollProcessingGoods() {
           {/* Right Inspector Drawer */}
           <div className="lg:col-span-4">
             {selectedItem ? (
-              <GlassCard transition={{ delay: 0.15, duration: 0.4 }}>
+              <GlassCard>
                 <div className="flex items-start justify-between mb-4 border-b border-zinc-200/80 pb-3">
                   <div>
                     <div className="text-[10px] font-black text-zinc-400 uppercase tracking-wider">PHYSICAL LOT INSPECTION</div>
@@ -413,14 +410,14 @@ export default function TollProcessingGoods() {
                 </div>
               </GlassCard>
             ) : (
-              <GlassCard className="text-center py-12" transition={{ delay: 0.15, duration: 0.4 }}>
+              <GlassCard className="text-center py-12">
                 <Boxes className="size-10 text-zinc-300 mx-auto mb-2" />
                 <p className="text-xs font-bold text-zinc-500">Select a lot row to view physical warehouse storage and stage actions.</p>
               </GlassCard>
             )}
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }

@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import {
   Scale,
   Download,
@@ -42,9 +41,6 @@ import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { isDateInPreset } from "@/lib/peachtreeExportUtils"
 import { Skeleton } from "@/components/ui/skeleton"
-
-const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
 export type ReportTab = "GL" | "TrialBalance" | "BalanceSheet" | "IncomeStatement" | "CashFlow"
 
@@ -364,14 +360,9 @@ export default function FinancialReports() {
         </div>
       )}
 
-      <motion.div
-        variants={stagger}
-        initial="hidden"
-        animate="visible"
-        className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12"
-      >
+      <div className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         {/* Page Title & SubPageNav Header */}
-        <motion.div variants={fade} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight">Financial Reports & Statements</h1>
             <p className="text-xs text-gray-500 font-medium mt-0.5">
@@ -381,10 +372,10 @@ export default function FinancialReports() {
           <div className="flex items-center gap-3">
             <SubPageNav items={getSectionChildren("/finance")} />
           </div>
-        </motion.div>
+        </div>
 
         {/* Tab Selection Bar */}
-        <motion.div variants={fade} className="flex border-b border-zinc-200/60 mb-6 pb-px items-center justify-between overflow-x-auto scrollbar-none">
+        <div className="flex border-b border-zinc-200/60 mb-6 pb-px items-center justify-between overflow-x-auto scrollbar-none">
           <div className="flex gap-1 min-w-max">
             {[
               { id: "GL", label: "General Ledger", icon: BookOpen },
@@ -406,8 +397,7 @@ export default function FinancialReports() {
                     {tab.label}
                   </span>
                   {isActive && (
-                    <motion.div
-                      layoutId="reports-tabs"
+                    <div
                       className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-600"
                     />
                   )}
@@ -415,20 +405,12 @@ export default function FinancialReports() {
               )
             })}
           </div>
-        </motion.div>
+        </div>
 
         {/* Tab Contents */}
-        <AnimatePresence mode="wait">
-          {/* TAB 0: General Ledger (ERPNext Account-Wise Detailed Report) */}
-          {activeTab === "GL" && (
-            <motion.div
-              key="gl-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col gap-4"
-            >
+        {/* TAB 0: General Ledger (ERPNext Account-Wise Detailed Report) */}
+        {activeTab === "GL" && (
+          <div className="flex flex-col gap-4">
               {/* Summary Metric Strip - Standardized 3 KPI Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2">
                 <GlassCard className="p-4 flex flex-col justify-between">
@@ -669,18 +651,11 @@ export default function FinancialReports() {
                   </table>
                 </div>
               </GlassCard>
-            </motion.div>
+            </div>
           )}
           {/* TAB 3: Trial Balance */}
           {activeTab === "TrialBalance" && (
-            <motion.div
-              key="tb-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col gap-4"
-            >
+            <div className="flex flex-col gap-4">
               {/* Summary Metric Strip - 3 Standard KPI Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2">
                 <GlassCard className="p-4 flex flex-col justify-between">
@@ -961,19 +936,12 @@ export default function FinancialReports() {
                   </table>
                 </div>
               </GlassCard>
-            </motion.div>
+            </div>
           )}
 
           {/* TAB 4: Balance Sheet (Separate Assets, Liabilities, and Equity) */}
           {activeTab === "BalanceSheet" && (
-            <motion.div
-              key="balance-sheet-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col gap-6"
-            >
+            <div className="flex flex-col gap-6">
               {/* Header & KPI Cards Strip */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2">
                 <GlassCard className="p-4 flex flex-col justify-between">
@@ -1214,19 +1182,12 @@ export default function FinancialReports() {
                   </div>
                 </div>
               </GlassCard>
-            </motion.div>
+            </div>
           )}
 
           {/* TAB 5: Profit & Loss Statement (ERPNext Aligned with Graphs) */}
           {activeTab === "IncomeStatement" && (
-            <motion.div
-              key="income-statement-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col gap-6"
-            >
+            <div className="flex flex-col gap-6">
               {/* Summary KPIs Strip */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
                 <GlassCard className="p-4 flex flex-col justify-between">
@@ -1483,19 +1444,12 @@ export default function FinancialReports() {
                   </div>
                 </div>
               </GlassCard>
-            </motion.div>
+            </div>
           )}
 
           {/* TAB 6: Cash Flow Statement (ERPNext Aligned with Graphs) */}
           {activeTab === "CashFlow" && (
-            <motion.div
-              key="cash-flow-tab"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col gap-6"
-            >
+            <div className="flex flex-col gap-6">
               {/* Summary KPIs */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
                 <GlassCard className="p-4 flex flex-col justify-between">
@@ -1705,10 +1659,9 @@ export default function FinancialReports() {
                   </div>
                 </div>
               </GlassCard>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
-      </motion.div>
+      </div>
     </div>
   )
 }

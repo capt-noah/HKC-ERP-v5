@@ -1,5 +1,4 @@
 import { useState } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { X, Check, Search } from "lucide-react"
 import { useFinanceStore } from "@/lib/financeStore"
 import { useFeedback } from "@/context/FeedbackContext"
@@ -82,23 +81,18 @@ export default function AddCustomMappingModal({ isOpen, onClose, onSuccess }: Ad
     }
   }
 
+  if (!isOpen) return null
+
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-        <BodyScrollLock />
-        <motion.div
-          className="absolute inset-0 bg-black/35 backdrop-blur-sm"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-        />
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 10 }}
-          className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto no-scrollbar rounded-3xl bg-white p-6 shadow-2xl"
-        >
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+      <BodyScrollLock />
+      <div
+        className="absolute inset-0 bg-black/35 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div
+        className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto no-scrollbar rounded-3xl bg-white p-6 shadow-2xl"
+      >
           {/* Header matching EditModalHeader style */}
           <div className="flex items-start justify-between mb-4 pb-2 border-b border-zinc-100">
             <div>
@@ -322,8 +316,7 @@ export default function AddCustomMappingModal({ isOpen, onClose, onSuccess }: Ad
               </button>
             </div>
           </form>
-        </motion.div>
+        </div>
       </div>
-    </AnimatePresence>
   )
 }

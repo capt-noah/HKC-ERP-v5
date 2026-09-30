@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect, Fragment } from "react"
-import { motion } from "framer-motion"
 import {
   Search,
   RefreshCw,
@@ -26,9 +25,6 @@ import StockBinCardPrintModal from "@/components/stock/StockBinCardPrintModal"
 import { getExpiryStatus } from "@/lib/expiryUtils"
 import { isExportWarehouse, isPharmaWarehouse } from "@/lib/warehouses"
 import { exportToExcel } from "@/lib/exportUtils"
-
-const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
 export default function FinanceStock() {
   const erp = useErpStore()
@@ -256,14 +252,11 @@ export default function FinanceStock() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div
-        variants={stagger}
-        initial="hidden"
-        animate="visible"
+      <div
         className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12"
       >
         {/* Header Section */}
-        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
             <div className="flex items-center gap-2.5">
               <h1 className="text-3xl font-black text-black tracking-tight">Stock &amp; Inventory Valuation</h1>
@@ -275,10 +268,10 @@ export default function FinanceStock() {
           <div className="flex flex-wrap items-center gap-3 self-end md:self-start">
             <SubPageNav items={getSectionChildren("/finance")} />
           </div>
-        </motion.div>
+        </div>
 
         {/* Executive KPI Stats Grid */}
-        <motion.div variants={fade} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {/* Card 1: Total Valuation at Cost */}
           <GlassCard className="p-4 rounded-2xl border border-zinc-200/80 bg-white/90 shadow-2xs">
             <div className="flex items-center justify-between text-zinc-500 mb-2">
@@ -349,10 +342,10 @@ export default function FinanceStock() {
               </div>
             </div>
           </GlassCard>
-        </motion.div>
+        </div>
 
         {/* Toolbar & Filters */}
-        <motion.div variants={fade} className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 mb-6 bg-white/70 p-3 rounded-2xl border border-zinc-200/70 shadow-2xs">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 mb-6 bg-white/70 p-3 rounded-2xl border border-zinc-200/70 shadow-2xs">
           {/* Left: Search input */}
           <div className="relative flex-1 min-w-[240px]">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
@@ -426,10 +419,10 @@ export default function FinanceStock() {
               <span>Export Excel</span>
             </button>
           </div>
-        </motion.div>
+        </div>
 
         {/* Stock Valuation Table */}
-        <motion.div variants={fade} className="rounded-2xl border border-zinc-200/80 bg-white overflow-hidden shadow-xs">
+        <div className="rounded-2xl border border-zinc-200/80 bg-white overflow-hidden shadow-xs">
           {isLoading ? (
             <div className="p-12 text-center space-y-3">
               <RefreshCw className="size-8 text-emerald-600 animate-spin mx-auto" />
@@ -676,8 +669,8 @@ export default function FinanceStock() {
               </table>
             </div>
           )}
-        </motion.div>
-      </motion.div>
+        </div>
+      </div>
 
       {/* Read-Only Document Print Previews */}
       {printingWH1Product && (

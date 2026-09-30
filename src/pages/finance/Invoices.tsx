@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { 
   Plus, 
   Search, 
@@ -37,9 +36,6 @@ import {
   fetchTradeAndAdviceDocs,
 } from "@/lib/tradeDocumentService"
 import { uploadFile } from "@/lib/fileUpload"
-
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.08 } } }
 
 export type InvoiceAttachment = ShipmentDocAttachment
 
@@ -476,7 +472,7 @@ export default function Invoices() {
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
       <main className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
-        <motion.div initial="hidden" animate="visible" variants={fade} className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight">Invoices & Bills</h1>
             <p className="text-xs font-semibold text-zinc-500 mt-1">Multi-tax accounting, customer receivables (AR), supplier payables (AP), partial credit installments, and real-time settlement.</p>
@@ -484,10 +480,10 @@ export default function Invoices() {
           <div className="flex flex-wrap items-center gap-3">
             <SubPageNav items={getSectionChildren("Finance")} />
           </div>
-        </motion.div>
+        </div>
 
         {/* Top KPI Cards */}
-        <motion.div initial="hidden" animate="visible" variants={stagger} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <GlassCard className="p-4 flex flex-col justify-between border-l-4 border-l-black">
             <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Total Invoiced</span>
             {isLoading ? (
@@ -527,7 +523,7 @@ export default function Invoices() {
             )}
             <span className="text-[10px] text-zinc-400 mt-0.5">Unpaid or ongoing installments</span>
           </GlassCard>
-        </motion.div>
+        </div>
 
         {/* Master-Detail Split Container */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -1145,23 +1141,16 @@ export default function Invoices() {
       </main>
 
       {/* MODAL: EDIT INVOICE & RECORD PARTIAL INSTALLMENT */}
-      <AnimatePresence>
-        {isEditModalOpen && editingInvoice && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsEditModalOpen(false)}
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            />
+      {isEditModalOpen && editingInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            onClick={() => setIsEditModalOpen(false)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+          />
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white border border-zinc-200 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative z-10 space-y-4 max-h-[90vh] overflow-y-auto no-scrollbar"
-            >
+          <div
+            className="bg-white border border-zinc-200 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative z-10 space-y-4 max-h-[90vh] overflow-y-auto no-scrollbar"
+          >
               <EditModalHeader
                 title="Record Payment Installment"
                 subtitle={`Invoice ${editingInvoice.invoice_number} • ${editingInvoice.customer_name}`}
@@ -1338,10 +1327,9 @@ export default function Invoices() {
                   </form>
                 )
               })()}
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* Delete Confirmation Modal */}
       <RecordDeleteModal
@@ -1368,23 +1356,15 @@ export default function Invoices() {
       />
 
       {/* Create Invoice Slide-Over Drawer */}
-      <AnimatePresence>
-        {showCreateDrawer && (
-          <div className="fixed inset-0 z-50 overflow-hidden">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowCreateDrawer(false)}
-              className="absolute inset-0 bg-black/40 backdrop-blur-xs"
-            />
-            <motion.div
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="absolute right-0 top-0 bottom-0 w-full max-w-xl bg-white shadow-2xl border-l border-zinc-200 overflow-y-auto"
-            >
+      {showCreateDrawer && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div
+            onClick={() => setShowCreateDrawer(false)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-xs"
+          />
+          <div
+            className="absolute right-0 top-0 bottom-0 w-full max-w-xl bg-white shadow-2xl border-l border-zinc-200 overflow-y-auto"
+          >
               <div className="p-6 space-y-6">
                 <div className="flex justify-between items-center border-b border-zinc-100 pb-4">
                   <div>
@@ -1590,10 +1570,9 @@ export default function Invoices() {
                   </div>
                 </form>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* Document Preview Modal */}
       <DocumentPreviewModal

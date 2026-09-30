@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import {
   CheckCircle2,
   Download,
@@ -31,9 +30,6 @@ import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { fetchTradeAndAdviceDocs, type ShipmentDocAttachment } from "@/lib/tradeDocumentService"
 import { PeachtreeBankReconciliationModal } from "@/components/finance/PeachtreeBankReconciliationModal"
-
-const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
 interface BankStatementLine {
   id: string
@@ -346,14 +342,9 @@ export default function Banking() {
         </div>
       )}
 
-      <motion.div
-        variants={stagger}
-        initial="hidden"
-        animate="visible"
-        className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12"
-      >
+      <div className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         {/* Header */}
-        <motion.div variants={fade} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight">Bank Reconciliation</h1>
             <p className="text-xs text-gray-500 font-medium mt-0.5">
@@ -363,9 +354,9 @@ export default function Banking() {
           <div className="flex items-center gap-3">
             <SubPageNav items={getSectionChildren("/finance")} />
           </div>
-        </motion.div>
+        </div>
 
-        <motion.div variants={fade} className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4">
               {/* KPI Summary Cards */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <GlassCard className="p-4">
@@ -625,29 +616,22 @@ export default function Banking() {
                   </div>
                 )}
               </GlassCard>
-        </motion.div>
-      </motion.div>
+        </div>
+      </div>
 
       {/* =========================================================================
           CONFIRMATION MODAL: CLEAR TRANSACTION (PEACHTREE BANK RECONCILIATION)
           ========================================================================= */}
-      <AnimatePresence>
-        {confirmingLine && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setConfirmingLine(null)}
-              className="absolute inset-0 bg-black/40 backdrop-blur-xs"
-            />
+      {confirmingLine && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+          <div
+            onClick={() => setConfirmingLine(null)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-xs"
+          />
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-zinc-200 relative z-[151]"
-            >
+          <div
+            className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-zinc-200 relative z-[151]"
+          >
               <div className="flex items-center gap-3 mb-4">
                 <div className="size-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
                   <CheckCircle2 className="size-5 stroke-[2.5]" />
@@ -706,31 +690,23 @@ export default function Banking() {
                   <Check className="size-3.5 stroke-[2.5]" /> Confirm & Clear
                 </button>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* =========================================================================
           VIEW & RECONCILE MODAL (WITH ATTACHED INVOICES, VOUCHERS & DOCUMENTS)
           ========================================================================= */}
-      <AnimatePresence>
-        {viewingLine && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setViewingLine(null)}
-              className="absolute inset-0 bg-black/40 backdrop-blur-xs"
-            />
+      {viewingLine && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+          <div
+            onClick={() => setViewingLine(null)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-xs"
+          />
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-3xl bg-white shadow-2xl border border-zinc-200 relative z-[151] overflow-hidden"
-            >
+          <div
+            className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-3xl bg-white shadow-2xl border border-zinc-200 relative z-[151] overflow-hidden"
+          >
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-100">
                 <div className="flex items-center gap-3">
@@ -1033,10 +1009,9 @@ export default function Banking() {
                   )}
                 </div>
               </div>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* Document Preview Modal */}
       <DocumentPreviewModal

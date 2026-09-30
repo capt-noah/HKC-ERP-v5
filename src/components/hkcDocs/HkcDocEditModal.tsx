@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react"
-import { motion } from "framer-motion"
 import { Save } from "lucide-react"
 import type { HkcDocAttachment, HkcDocRecord } from "@/lib/erpStore"
 import HkcDocAttachmentPanel from "./HkcDocAttachmentPanel"
@@ -135,12 +134,7 @@ export default function HkcDocEditModal({
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-md">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 12 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 12 }}
-        className="bg-white rounded-2xl sm:rounded-3xl p-5 sm:p-7 max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-zinc-200"
-      >
+      <div className="bg-white rounded-2xl sm:rounded-3xl p-5 sm:p-7 max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-zinc-200">
         <EditModalHeader
           title="Manage Shipment Documentation"
           subtitle={`Record ID: ${record.id} • ${record.shipmentId || ""}`}
@@ -223,7 +217,7 @@ export default function HkcDocEditModal({
             {isSaving ? <LoadingDots color="bg-white" size="sm" /> : <><Save className="size-4" /> Save Changes</>}
           </button>
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }

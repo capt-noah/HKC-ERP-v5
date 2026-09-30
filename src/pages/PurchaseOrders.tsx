@@ -1,5 +1,4 @@
 import { useState, useMemo, useRef, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { 
   Plus, 
   X, 
@@ -37,8 +36,6 @@ import {
   PURCHASE_OPERATIONAL_CATEGORIES, 
   resolvePurchaseAccountsFromMatrix 
 } from "@/lib/purchaseAccountDefaults"
-
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.35 } } }
 
 export default function PurchaseOrders() {
   const { showToast } = useFeedback()
@@ -809,7 +806,7 @@ export default function PurchaseOrders() {
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
 
-      <motion.div variants={fade} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+      <div className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
         {/* Top Header */}
         <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
@@ -1095,26 +1092,19 @@ export default function PurchaseOrders() {
             )
           }}
         />
-      </motion.div>
+      </div>
 
       {/* MODAL: RECORD SUPPLIER PAYMENT INSTALLMENT */}
-      <AnimatePresence>
-        {payingPo && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setPayingPo(null)}
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            />
+      {payingPo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            onClick={() => setPayingPo(null)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+          />
 
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative z-10 bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-zinc-200 max-h-[90vh] overflow-y-auto"
-            >
+          <div
+            className="relative z-10 bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-zinc-200 max-h-[90vh] overflow-y-auto"
+          >
               <div className="flex items-start justify-between mb-4 border-b border-zinc-100 pb-3">
                 <div>
                   <h3 className="text-lg font-black text-zinc-950 flex items-center gap-2">
@@ -1271,29 +1261,21 @@ export default function PurchaseOrders() {
                   </button>
                 </div>
               </form>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* MODAL: CREATE CHEQUE PAYMENT VOUCHER */}
-      <AnimatePresence>
-        {isCreateModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsCreateModalOpen(false)}
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
-            />
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            onClick={() => setIsCreateModalOpen(false)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
+          />
 
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative z-10 bg-white rounded-3xl p-6 max-w-4xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
-            >
+          <div 
+            className="relative z-10 bg-white rounded-3xl p-6 max-w-4xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
+          >
               {/* Header */}
               <div className="flex items-start justify-between mb-4">
                 <div>
@@ -1674,29 +1656,21 @@ export default function PurchaseOrders() {
                   </button>
                 </div>
               </form>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* MODAL: EDIT PAYMENT VOUCHER */}
-      <AnimatePresence>
-        {isEditModalOpen && editingPo && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsEditModalOpen(false)}
-              className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
-            />
+      {isEditModalOpen && editingPo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            onClick={() => setIsEditModalOpen(false)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm" 
+          />
 
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative z-10 bg-white rounded-3xl p-6 max-w-4xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
-            >
+          <div 
+            className="relative z-10 bg-white rounded-3xl p-6 max-w-4xl w-full shadow-2xl border border-zinc-200 overflow-y-auto no-scrollbar max-h-[90vh]"
+          >
               {/* Header with 3-Dot Options Dropdown */}
               <EditModalHeader
                 title={`Edit Purchase Voucher (${voucherNo})`}
@@ -2176,10 +2150,9 @@ export default function PurchaseOrders() {
                   </button>
                 </div>
               </form>
-            </motion.div>
+            </div>
           </div>
         )}
-      </AnimatePresence>
 
       {/* RECORD DELETE CONFIRMATION MODAL */}
       <RecordDeleteModal

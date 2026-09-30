@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react"
-import { motion, AnimatePresence } from "framer-motion"
 import { Ban, FileSpreadsheet, Info, MoreHorizontal, X } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -26,9 +25,6 @@ import {
   type Employee,
   type LeaveRequest,
 } from "@/lib/hrApi"
-
-const fade = { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
 const CYCLE_DAYS = 14
 const CYCLE_START = "2026-07-01"
@@ -227,23 +223,22 @@ export default function AttendanceLeave() {
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
-      <motion.div variants={stagger} initial="hidden" animate="visible"
-        className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+      <div className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
 
-        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight">Attendance & Leave</h1>
             <p className="text-xs font-semibold text-zinc-500 mt-1">Track team attendance and manage leave approvals.</p>
           </div>
           <SubPageNav items={getSectionChildren("/hr")} />
-        </motion.div>
+        </div>
 
         {error && <GlassCard className="p-5 mb-5 text-sm font-bold text-rose-700 border-rose-200 bg-rose-50">{error}</GlassCard>}
 
         {loading ? <HRPageSkeleton rows={6} cards={4} /> : (
           <>
             {/* Tab bar */}
-            <motion.div variants={fade} className="flex items-center justify-between border-b border-zinc-200/60 mb-6 pb-px">
+            <div className="flex items-center justify-between border-b border-zinc-200/60 mb-6 pb-px">
               <div className="flex gap-2">
                 {[
                   { id: "Attendance", label: "Team Attendance" },
@@ -254,7 +249,7 @@ export default function AttendanceLeave() {
                     <button key={tab.id} onClick={() => setActiveTab(tab.id as "Attendance" | "Leave")}
                       className="px-4 py-2.5 text-xs font-black relative tracking-tight transition-colors uppercase">
                       <span className={isActive ? "text-zinc-950" : "text-zinc-400 hover:text-zinc-700"}>{tab.label}</span>
-                      {isActive && <motion.div layoutId="attendance-tabs" className="absolute bottom-0 left-0 right-0 h-0.5 bg-green-700" />}
+                      {isActive && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-green-700" />}
                     </button>
                   )
                 })}
@@ -262,13 +257,11 @@ export default function AttendanceLeave() {
               <span className="text-[10px] font-mono font-black text-zinc-400 uppercase hidden sm:block">
                 Cycle: Jul 1 – Jul {CYCLE_DAYS}, 2026
               </span>
-            </motion.div>
+            </div>
 
-            <AnimatePresence mode="wait">
-              {/* ATTENDANCE TAB */}
-              {activeTab === "Attendance" && (
-                <motion.div key="att" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="flex flex-col gap-6">
+            {/* ATTENDANCE TAB */}
+            {activeTab === "Attendance" && (
+              <div className="flex flex-col gap-6">
 
                   {/* Stats */}
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -357,13 +350,12 @@ export default function AttendanceLeave() {
                       </p>
                     </div>
                   </GlassCard>
-                </motion.div>
+                </div>
               )}
 
               {/* LEAVE TAB */}
               {activeTab === "Leave" && (
-                <motion.div key="leave" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
+                <div>
                   <GlassCard className="p-0 overflow-hidden border border-black/5 shadow-xs">
                     <HRTableToolbar
                       title="Leave Applications"
@@ -462,78 +454,73 @@ export default function AttendanceLeave() {
                       </table>
                     </div>
                   </GlassCard>
-                </motion.div>
+                </div>
               )}
-            </AnimatePresence>
           </>
         )}
-      </motion.div>
+      </div>
 
       {/* Apply Leave Modal */}
-      <AnimatePresence>
-        {showApplyLeave && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-black/10">
-              <div className="flex items-center justify-between pb-4 border-b border-black/5 mb-4">
-                <h3 className="text-sm font-black uppercase">Submit Leave Application</h3>
-                <button onClick={() => setShowApplyLeave(false)} className="p-1 rounded-full hover:bg-black/5 text-zinc-400">
-                  <X className="size-4" />
+      {showApplyLeave && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-black/10">
+            <div className="flex items-center justify-between pb-4 border-b border-black/5 mb-4">
+              <h3 className="text-sm font-black uppercase">Submit Leave Application</h3>
+              <button onClick={() => setShowApplyLeave(false)} className="p-1 rounded-full hover:bg-black/5 text-zinc-400">
+                <X className="size-4" />
+              </button>
+            </div>
+            <form onSubmit={submitLeave} className="space-y-4">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                Employee
+                <select required value={leaveForm.employee_id}
+                  onChange={e => setLeaveForm(f => ({ ...f, employee_id: e.target.value }))}
+                  className="mt-1 w-full bg-black/[0.03] border border-black/5 rounded-xl px-3 py-2 text-xs font-bold text-black outline-none">
+                  <option value="">Select employee...</option>
+                  {employees.map(e => <option key={e.id} value={e.id}>{e.full_name} ({e.employee_number})</option>)}
+                </select>
+              </label>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                Leave Type
+                <select value={leaveForm.leave_type}
+                  onChange={e => setLeaveForm(f => ({ ...f, leave_type: e.target.value }))}
+                  className="mt-1 w-full bg-black/[0.03] border border-black/5 rounded-xl px-3 py-2 text-xs font-bold text-black outline-none">
+                  {LEAVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                  Start Date
+                  <input required type="date" value={leaveForm.start_date}
+                    onChange={e => setLeaveForm(f => ({ ...f, start_date: e.target.value }))}
+                    className="mt-1 w-full bg-black/[0.03] border border-black/5 rounded-xl px-3 py-2 text-xs font-bold text-black outline-none" />
+                </label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                  End Date
+                  <input required type="date" value={leaveForm.end_date}
+                    onChange={e => setLeaveForm(f => ({ ...f, end_date: e.target.value }))}
+                    className="mt-1 w-full bg-black/[0.03] border border-black/5 rounded-xl px-3 py-2 text-xs font-bold text-black outline-none" />
+                </label>
+              </div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                Reason
+                <textarea required rows={3} value={leaveForm.reason}
+                  onChange={e => setLeaveForm(f => ({ ...f, reason: e.target.value }))}
+                  placeholder="Reason for leave..."
+                  className="mt-1 w-full bg-black/[0.03] border border-black/5 rounded-xl px-3 py-2 text-xs font-semibold text-black outline-none resize-none" />
+              </label>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setShowApplyLeave(false)}
+                  className="px-4 py-2 rounded-full text-xs font-bold text-zinc-500 hover:bg-black/5">Cancel</button>
+                <button type="submit" disabled={saving}
+                  className="px-5 py-2 rounded-full bg-black hover:bg-zinc-800 text-white text-xs font-bold shadow-xs disabled:opacity-50">
+                  {saving ? "Submitting..." : "Submit Application"}
                 </button>
               </div>
-              <form onSubmit={submitLeave} className="space-y-4">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                  Employee
-                  <select required value={leaveForm.employee_id}
-                    onChange={e => setLeaveForm(f => ({ ...f, employee_id: e.target.value }))}
-                    className="mt-1 w-full bg-black/[0.03] border border-black/5 rounded-xl px-3 py-2 text-xs font-bold text-black outline-none">
-                    <option value="">Select employee...</option>
-                    {employees.map(e => <option key={e.id} value={e.id}>{e.full_name} ({e.employee_number})</option>)}
-                  </select>
-                </label>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                  Leave Type
-                  <select value={leaveForm.leave_type}
-                    onChange={e => setLeaveForm(f => ({ ...f, leave_type: e.target.value }))}
-                    className="mt-1 w-full bg-black/[0.03] border border-black/5 rounded-xl px-3 py-2 text-xs font-bold text-black outline-none">
-                    {LEAVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                    Start Date
-                    <input required type="date" value={leaveForm.start_date}
-                      onChange={e => setLeaveForm(f => ({ ...f, start_date: e.target.value }))}
-                      className="mt-1 w-full bg-black/[0.03] border border-black/5 rounded-xl px-3 py-2 text-xs font-bold text-black outline-none" />
-                  </label>
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                    End Date
-                    <input required type="date" value={leaveForm.end_date}
-                      onChange={e => setLeaveForm(f => ({ ...f, end_date: e.target.value }))}
-                      className="mt-1 w-full bg-black/[0.03] border border-black/5 rounded-xl px-3 py-2 text-xs font-bold text-black outline-none" />
-                  </label>
-                </div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-500">
-                  Reason
-                  <textarea required rows={3} value={leaveForm.reason}
-                    onChange={e => setLeaveForm(f => ({ ...f, reason: e.target.value }))}
-                    placeholder="Reason for leave..."
-                    className="mt-1 w-full bg-black/[0.03] border border-black/5 rounded-xl px-3 py-2 text-xs font-semibold text-black outline-none resize-none" />
-                </label>
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <button type="button" onClick={() => setShowApplyLeave(false)}
-                    className="px-4 py-2 rounded-full text-xs font-bold text-zinc-500 hover:bg-black/5">Cancel</button>
-                  <button type="submit" disabled={saving}
-                    className="px-5 py-2 rounded-full bg-black hover:bg-zinc-800 text-white text-xs font-bold shadow-xs disabled:opacity-50">
-                    {saving ? "Submitting..." : "Submit Application"}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
+            </form>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      )}
     </div>
   )
 }

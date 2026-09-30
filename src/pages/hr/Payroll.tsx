@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react"
-import { motion } from "framer-motion"
 import {
   BadgeCheck,
   Calendar,
@@ -49,9 +48,6 @@ const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"
 ] as const
-
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 
 function blankRecord(employee: Employee, periodId: string): PayrollRecord {
   const s = financeStore.getCompanySettings()
@@ -576,13 +572,10 @@ export default function Payroll() {
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
-      <motion.div
-        variants={stagger}
-        initial="hidden"
-        animate="visible"
+      <div
         className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12 print:hidden"
       >
-        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-6 gap-4">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-6 gap-4">
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight mt-1">Payroll Management</h1>
             <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">
@@ -590,7 +583,7 @@ export default function Payroll() {
             </p>
           </div>
           <SubPageNav items={getSectionChildren("/hr")} />
-        </motion.div>
+        </div>
 
         {error && (
           <GlassCard className="p-5 mb-5 text-sm font-bold text-rose-700 border-rose-200 bg-rose-50">
@@ -1067,7 +1060,7 @@ export default function Payroll() {
             </GlassCard>
           </>
         )}
-      </motion.div>
+      </div>
 
       {/* EDIT PAYROLL RECORD MODAL */}
       {editing && (
@@ -1525,9 +1518,7 @@ function Payslip({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs overflow-y-auto">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
+      <div
         id="printable-document-sheet"
         className="printable-document w-full max-w-2xl bg-white rounded-3xl p-8 shadow-2xl border border-black/10 my-8 print:my-0 print:p-6 print:shadow-none print:border-0 print:rounded-none"
       >
@@ -1669,7 +1660,7 @@ function Payslip({
             <span className="text-[10px] text-zinc-400">HKC Trading PLC Management</span>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }
@@ -1703,9 +1694,7 @@ function PayrollRegisterPrintModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs overflow-y-auto">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
+      <div
         id="printable-document-sheet"
         className="printable-document w-full max-w-6xl bg-white rounded-3xl p-8 shadow-2xl border border-black/10 my-8 print:my-0 print:p-6 print:shadow-none print:border-0 print:rounded-none"
       >
@@ -1827,7 +1816,7 @@ function PayrollRegisterPrintModal({
             <span className="text-[11px] text-zinc-500">Managing Director / GM</span>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }
@@ -1835,9 +1824,7 @@ function PayrollRegisterPrintModal({
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
+      <div
         className="w-full max-w-4xl max-h-[90vh] overflow-y-auto no-scrollbar bg-white rounded-3xl p-6 shadow-2xl border border-black/10"
       >
         <div className="flex items-center justify-between mb-5">
@@ -1847,7 +1834,7 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
           </button>
         </div>
         {children}
-      </motion.div>
+      </div>
     </div>
   )
 }
@@ -1989,9 +1976,7 @@ function PayrollPaymentConfirmationModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
+      <div
         className="w-full max-w-6xl bg-white dark:bg-zinc-900 rounded-3xl p-6 md:p-8 shadow-2xl border border-black/10 dark:border-white/10 my-8"
       >
         {/* Modal Header */}
@@ -2221,7 +2206,7 @@ function PayrollPaymentConfirmationModal({
             </button>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }

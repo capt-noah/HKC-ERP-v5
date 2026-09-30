@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react"
-import { motion } from "framer-motion"
 import { Ban, Check, FileText, MoreHorizontal, Pencil, X } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -13,8 +12,6 @@ import { getSectionChildren, navSections } from "@/lib/nav-config"
 import { LEAVE_STATUSES, LEAVE_TYPES, hrApi, leaveDays, loadHRData, makeId, type Employee, type LeaveRequest } from "@/lib/hrApi"
 import { uploadFile } from "@/lib/fileUpload"
 
-const fade = { hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4 } } }
-const stagger = { visible: { transition: { staggerChildren: 0.05 } } }
 const today = new Date().toISOString().slice(0, 10)
 const documentExtensions = [".pdf", ".docx", ".png"]
 const documentMimeTypes = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/png"]
@@ -151,11 +148,11 @@ export default function Leave() {
   return (
     <div className="min-h-screen page-gradient">
       <FloatingNav brand="HKC Trading ERP" sections={navSections} />
-      <motion.div variants={stagger} initial="hidden" animate="visible" className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
-        <motion.div variants={fade} className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
+      <div className="max-w-[98%] mx-auto px-4 md:px-6 lg:px-8 pt-24 pb-12">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-8 gap-4">
           <div><h1 className="text-3xl font-black text-black tracking-tight mt-1">Leave Requests</h1><p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">Leave records, approvals, and date-range filtering.</p></div>
           <SubPageNav items={getSectionChildren("/hr")} />
-        </motion.div>
+        </div>
         {error && <GlassCard className="p-5 mb-5 text-sm font-bold text-rose-700 border-rose-200 bg-rose-50">{error}</GlassCard>}
         {loading ? (
           <HRPageSkeleton rows={7} cards={4} />
@@ -282,7 +279,7 @@ export default function Leave() {
           )}
         </GlassCard>
         )}
-      </motion.div>
+      </div>
       {showForm && <LeaveForm form={form} setForm={setForm} employees={employees} onClose={() => setShowForm(false)} onSubmit={save} />}
     </div>
   )
@@ -311,7 +308,7 @@ function LeaveForm({ form, setForm, employees, onClose, onSubmit }: { form: Omit
       set("document_path", name)
     }
   }
-  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"><motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-3xl bg-white rounded-3xl p-6 shadow-2xl border border-black/10"><div className="flex items-center justify-between mb-5"><h3 className="text-lg font-black">Leave Request</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div><form onSubmit={onSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"><div className="w-full max-w-3xl bg-white rounded-3xl p-6 shadow-2xl border border-black/10"><div className="flex items-center justify-between mb-5"><h3 className="text-lg font-black">Leave Request</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div><form onSubmit={onSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
     <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Employee<select required value={form.employee_id} onChange={(event) => set("employee_id", event.target.value)} className="mt-1 w-full rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 text-xs font-bold outline-none"><option value="">Select employee</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.full_name} ({employee.employee_number})</option>)}</select></label>
     <Select label="Leave Type" value={form.leave_type} options={LEAVE_TYPES} onChange={(value) => set("leave_type", value)} />
     <Input label="Start Date" type="date" value={form.start_date} onChange={(value) => set("start_date", value)} required />
@@ -333,7 +330,7 @@ function LeaveForm({ form, setForm, employees, onClose, onSubmit }: { form: Omit
     <Input label="Reason" value={form.reason} onChange={(value) => set("reason", value)} required />
     <Input label="Notes" value={form.notes} onChange={(value) => set("notes", value)} />
     <div className="md:col-span-2 flex justify-end gap-3 pt-2"><button type="button" onClick={onClose} className="px-4 py-2 rounded-full bg-black/5 text-xs font-bold">Cancel</button><button type="submit" className="px-5 py-2 rounded-full bg-black text-white text-xs font-bold">Save Leave Request</button></div>
-  </form></motion.div></div>
+  </form></div></div>
 }
 
 function Input({ label, value, onChange, type = "text", required = false }: { label: string; value: string | number; onChange: (value: string) => void; type?: string; required?: boolean }) {

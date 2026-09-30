@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Copy, Check, Sparkles, Code, Eye, 
   ChevronRight, Upload, Sliders, CheckCircle
@@ -529,21 +528,13 @@ export default function ThemeShowcase({ onNotify }: ComponentShowcaseProps) {
                                 <span>{item.q}</span>
                                 <ChevronRight className={`h-4 w-4 transform transition-transform text-slate-400 ${isOpen ? 'rotate-90 text-slate-800' : 'group-hover:translate-x-0.5'}`} />
                               </button>
-                              <AnimatePresence initial={false}>
-                                {isOpen && (
-                                  <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: 'auto', opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    transition={{ duration: 0.2 }}
-                                    className="overflow-hidden"
-                                  >
-                                    <div id={`acc-content-${item.id}`} className="px-4 pb-4 text-xs text-slate-500 leading-relaxed">
-                                      {item.a}
-                                    </div>
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
+                              {isOpen && (
+                                <div className="overflow-hidden">
+                                  <div id={`acc-content-${item.id}`} className="px-4 pb-4 text-xs text-slate-500 leading-relaxed">
+                                    {item.a}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}

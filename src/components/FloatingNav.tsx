@@ -18,9 +18,8 @@ import {
   LogOut,
   Sliders,
 } from "lucide-react"
-import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
-import { useAuthStore } from "@/lib/authStore"
+import { useAuthStore, normalizeRole } from "@/lib/authStore"
 import { useErpStore } from "@/lib/erpStore"
 import { isExportWarehouse } from "@/lib/warehouses"
 import type { Role } from "@/lib/authStore"
@@ -87,7 +86,7 @@ export function FloatingNav({
   const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>([])
   const [readNotificationIds, setReadNotificationIds] = useState<string[]>([])
 
-  const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
+  const userRoles = (user?.roles || ((user as any)?.role ? [(user as any).role] : [])).map(normalizeRole)
   const isSuperAdmin = userRoles.includes("superadmin")
   const userWarehouseIds = (user?.warehouse_ids || ((user as any)?.warehouse_id ? [(user as any).warehouse_id] : [])).map((id: string) => String(id).toUpperCase())
 
@@ -248,6 +247,27 @@ export function FloatingNav({
                   )
                 })}
               </div>
+            ) : visibleSections.length === 1 ? (
+              <div
+                className={cn(
+                  "hidden lg:flex h-[46px] items-center gap-1 p-1 rounded-full border shadow-sm overflow-x-auto no-scrollbar",
+                  isDark
+                    ? "glass-nav-dark border-white/10"
+                    : "glass-nav border-white/80"
+                )}
+              >
+                <Link
+                  to={visibleSections[0].path}
+                  className={cn(
+                    "h-[36px] flex items-center px-4 rounded-full text-xs font-semibold transition-all duration-300 whitespace-nowrap",
+                    isDark
+                      ? "bg-white text-black shadow-md font-bold"
+                      : "bg-[#242427] text-white shadow-md font-bold"
+                  )}
+                >
+                  {visibleSections[0].label}
+                </Link>
+              </div>
             ) : null}
 
             {/* 3. Right Pill: Actions (Notification, User Profile, Mobile Hamburger) */}
@@ -283,21 +303,16 @@ export function FloatingNav({
                   </button>
 
                   {/* Dropdown Floating Card Popover */}
-                  <AnimatePresence>
-                    {showNotifications && (
-                      <>
-                        <div 
-                          className="fixed inset-0 z-40 cursor-default" 
-                          onClick={() => setShowNotifications(false)} 
-                        />
-                        
-                        <motion.div
-                          initial={{ opacity: 0, y: 15, scale: 0.96 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 10, scale: 0.96 }}
-                          transition={{ duration: 0.2, ease: "easeOut" }}
-                          className="absolute right-0 top-11 z-50 w-72 sm:w-80 rounded-3xl border border-zinc-200/80 bg-white text-zinc-900 p-4 sm:p-5 shadow-2xl text-left overflow-hidden max-w-[calc(100vw-32px)]"
-                        >
+                  {showNotifications && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-40 cursor-default" 
+                        onClick={() => setShowNotifications(false)} 
+                      />
+                      
+                      <div
+                        className="absolute right-0 top-11 z-50 w-72 sm:w-80 rounded-3xl border border-zinc-200/80 bg-white text-zinc-900 p-4 sm:p-5 shadow-2xl text-left overflow-hidden max-w-[calc(100vw-32px)]"
+                      >
                           <div className="flex items-center justify-between pb-3 border-b border-zinc-100 mb-3.5">
                             <div className="flex items-center gap-1.5">
                               <h3 className="text-[10px] font-black tracking-wider text-zinc-800 uppercase">Alert Center</h3>
@@ -396,16 +411,15 @@ export function FloatingNav({
                               </div>
                             )}
                           </div>
-                        </motion.div>
+                        </div>
                       </>
                     )}
-                  </AnimatePresence>
 
                   {/* Profile Avatar Button (hidden on mobile if drawer handles it or visible) */}
                   <button
                     onClick={() => navigate("/profile")}
                     className={cn(
-                      "hidden sm:flex size-8 sm:size-9 rounded-full items-center justify-center border cursor-pointer transition-all duration-300 hover:scale-105 active:scale-95",
+                      "hidden sm:flex size-8 sm:size-9 rounded-full items-center justify-center border cursor-pointer transition-colors",
                       location.pathname === "/profile"
                         ? isDark
                           ? "bg-emerald-700 text-white border-emerald-600 shadow-sm"
@@ -445,27 +459,18 @@ export function FloatingNav({
       </div>
 
       {/* Mobile Navigation Drawer / Sheet */}
-      <AnimatePresence>
-        {isMobileMenuOpen && (
-          <>
-            {/* Dark Frosted Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              onClick={() => setIsMobileMenuOpen(false)}
-              className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm lg:hidden"
-            />
+      {isMobileMenuOpen && (
+        <>
+          {/* Dark Frosted Backdrop */}
+          <div
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm lg:hidden"
+          />
 
-            {/* Mobile Sheet Container */}
-            <motion.div
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", damping: 28, stiffness: 300 }}
-              className="fixed top-0 right-0 bottom-0 z-[100] w-full max-w-[340px] sm:max-w-[380px] bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-2xl flex flex-col justify-between overflow-hidden border-l border-zinc-200 dark:border-zinc-800 lg:hidden"
-            >
+          {/* Mobile Sheet Container */}
+          <div
+            className="fixed top-0 right-0 bottom-0 z-[100] w-full max-w-[340px] sm:max-w-[380px] bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-2xl flex flex-col justify-between overflow-hidden border-l border-zinc-200 dark:border-zinc-800 lg:hidden"
+          >
               {/* Top Section */}
               <div className="flex flex-col flex-1 overflow-y-auto">
                 {/* Header */}
@@ -608,10 +613,9 @@ export function FloatingNav({
                   <LogOut className="size-3.5 text-rose-600" /> Sign Out
                 </button>
               </div>
-            </motion.div>
+            </div>
           </>
         )}
-      </AnimatePresence>
     </>
   )
 }
