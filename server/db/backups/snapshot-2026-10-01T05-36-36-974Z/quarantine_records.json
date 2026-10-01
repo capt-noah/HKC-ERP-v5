@@ -1,0 +1,21 @@
+[
+  {
+    "id": "QRN-1789550847729-NVLH",
+    "warehouse_id": "WH2-VET-ALEM",
+    "product_id": "P-1788859513561",
+    "product_name": "ASHIVER 1% INJECTION",
+    "sku": "ASH-ALI25077",
+    "batch_no": "ALI25077",
+    "quantity": "19.00",
+    "unit": "Vial",
+    "quarantine_date": "2026-09-16",
+    "proposed_release_date": "2026-11-30",
+    "status": "Quarantined",
+    "reason": "Damaged vials",
+    "name_entered": "Habtom",
+    "bin_card_entry_id": "BCE-QRN-1789550847729",
+    "disposal_notes": null,
+    "created_at": "2026-09-16T12:27:29.000Z",
+    "updated_at": "2026-09-16T12:27:29.000Z"
+  }
+]

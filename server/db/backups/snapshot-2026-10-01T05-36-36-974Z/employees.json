@@ -1,0 +1,56 @@
+[
+  {
+    "id": "EMP-786845e4-023a-4744-ab75-71560e9d9a6d",
+    "payload": {
+      "id": "EMP-786845e4-023a-4744-ab75-71560e9d9a6d",
+      "email": "elementm888@gmail.com",
+      "phone": "0924883428",
+      "gender": "male",
+      "status": "Active",
+      "address": "Addis Ababa",
+      "full_name": "test men",
+      "created_at": "2026-09-29T14:12:43.263Z",
+      "start_date": "2026-09-29",
+      "updated_at": "2026-09-29T14:12:43.263Z",
+      "bank_account": "100099886644",
+      "basic_salary": 200000,
+      "warehouse_id": "WH1 - Ethiopia Agricultural Export Hub",
+      "date_of_birth": "",
+      "payment_method": "",
+      "employee_number": "EMP-786845e4-023a-4744-ab75-71560e9d9a6d",
+      "employment_type": "Temporary",
+      "national_id_image": "",
+      "emergency_contact_name": "Menelik Almayehu",
+      "emergency_contact_phone": "0924883428"
+    },
+    "created_at": "2026-09-29T11:12:43.243Z",
+    "updated_at": "2026-09-29T11:12:43.243Z"
+  },
+  {
+    "id": "EMP-ee02bcc7-d267-4971-991b-24310a2c3d33",
+    "payload": {
+      "id": "EMP-ee02bcc7-d267-4971-991b-24310a2c3d33",
+      "email": "",
+      "phone": "0924883428",
+      "gender": "male",
+      "status": "Active",
+      "address": "Addis Ababa",
+      "full_name": "Test 2",
+      "created_at": "2026-09-29T14:16:07.933Z",
+      "start_date": "2026-09-29",
+      "updated_at": "2026-09-29T14:16:07.933Z",
+      "bank_account": "10000000",
+      "basic_salary": 12,
+      "warehouse_id": "Head Office",
+      "date_of_birth": "",
+      "payment_method": "",
+      "employee_number": "EMP-ee02bcc7-d267-4971-991b-24310a2c3d33",
+      "employment_type": "Permanent",
+      "national_id_image": "",
+      "emergency_contact_name": "Menelik Almayehu",
+      "emergency_contact_phone": "0924883428"
+    },
+    "created_at": "2026-09-29T11:16:07.912Z",
+    "updated_at": "2026-09-29T11:16:07.912Z"
+  }
+]

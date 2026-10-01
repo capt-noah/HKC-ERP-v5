@@ -1,0 +1,60 @@
+[
+  {
+    "id": "PAY-1b5647fd-55fc-463e-8065-cc12dc723fb3",
+    "payload": {
+      "id": "PAY-1b5647fd-55fc-463e-8065-cc12dc723fb3",
+      "tax": 67950,
+      "bonus": 0,
+      "notes": "",
+      "net_pay": 118050,
+      "pension": 14000,
+      "gross_pay": 200000,
+      "allowances": 0,
+      "created_at": "2026-09-29T14:14:01.980Z",
+      "updated_at": "2026-09-29T14:14:01.980Z",
+      "employee_id": "EMP-786845e4-023a-4744-ab75-71560e9d9a6d",
+      "basic_salary": 200000,
+      "overtime_pay": 0,
+      "loan_deduction": 0,
+      "other_earnings": 0,
+      "payment_status": "Pending",
+      "other_deductions": 0,
+      "total_deductions": 81950,
+      "absence_deduction": 0,
+      "payroll_period_id": "PER-2185e840-a99e-4800-985d-4f2edacab6d0",
+      "taxable_allowances": 0,
+      "non_taxable_allowances": 0
+    },
+    "created_at": "2026-09-29T11:14:01.960Z",
+    "updated_at": "2026-09-29T11:14:01.960Z"
+  },
+  {
+    "id": "PAY-923da049-7fe4-45de-bde3-7044188eb0bb",
+    "payload": {
+      "id": "PAY-923da049-7fe4-45de-bde3-7044188eb0bb",
+      "tax": 0,
+      "bonus": 0,
+      "notes": "",
+      "net_pay": 11.16,
+      "pension": 0.84,
+      "gross_pay": 12,
+      "allowances": 0,
+      "created_at": "2026-09-29T14:21:30.022Z",
+      "updated_at": "2026-09-29T14:21:30.023Z",
+      "employee_id": "EMP-ee02bcc7-d267-4971-991b-24310a2c3d33",
+      "basic_salary": 12,
+      "overtime_pay": 0,
+      "loan_deduction": 0,
+      "other_earnings": 0,
+      "payment_status": "Pending",
+      "other_deductions": 0,
+      "total_deductions": 0.84,
+      "absence_deduction": 0,
+      "payroll_period_id": "PER-2185e840-a99e-4800-985d-4f2edacab6d0",
+      "taxable_allowances": 0,
+      "non_taxable_allowances": 0
+    },
+    "created_at": "2026-09-29T11:21:30.002Z",
+    "updated_at": "2026-09-29T11:21:30.002Z"
+  }
+]

@@ -116,10 +116,22 @@ export default function WH1ChildMovementLedger({
     const allRows = [...inboundRows, ...nonEntryBinRows]
 
     allRows.sort((a, b) => {
-      const timeA = new Date(a.createdAt || (a.date && a.date !== "—" ? a.date : 0)).getTime()
-      const timeB = new Date(b.createdAt || (b.date && b.date !== "—" ? b.date : 0)).getTime()
-      if (timeA !== timeB) return timeA - timeB
-      return 0
+      const dateA = a.date && a.date !== "—" ? a.date : ""
+      const dateB = b.date && b.date !== "—" ? b.date : ""
+      const dateCmp = dateA.localeCompare(dateB)
+      if (dateCmp !== 0) return dateCmp
+
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0
+      if (timeA !== timeB && timeA > 0 && timeB > 0) return timeA - timeB
+
+      // Tie-breaker: entry receipts appear before processing and outbound dispatches
+      const typePriority: Record<string, number> = { entry: 1, processed: 2, leave: 3, reject: 4 }
+      const prioA = typePriority[a.type] || 5
+      const prioB = typePriority[b.type] || 5
+      if (prioA !== prioB) return prioA - prioB
+
+      return String(a.id || "").localeCompare(String(b.id || ""))
     })
 
     // 3. Compute dynamic sequential running balance (processed does not deduct/add to balance)

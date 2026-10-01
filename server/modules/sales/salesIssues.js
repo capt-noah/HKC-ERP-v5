@@ -756,6 +756,152 @@ export async function updateSalesIssue(input, id) {
     console.warn("Item update warning:", itemErr.message)
   }
 
+  // Synchronize linked Invoices and Journal Entries if already created
+  try {
+    const rawCustomEntries = updateHeader.account_entries || updateHeader.accountEntries || null
+    let customEntries = rawCustomEntries
+    if (typeof customEntries === "string") {
+      try { customEntries = JSON.parse(customEntries) } catch { customEntries = null }
+    }
+
+    let customRevLines = []
+    let customCogsLines = []
+    if (customEntries && typeof customEntries === "object") {
+      if (Array.isArray(customEntries.revenue_lines)) {
+        customRevLines = customEntries.revenue_lines
+      }
+      if (Array.isArray(customEntries.cogs_lines)) {
+        customCogsLines = customEntries.cogs_lines
+      }
+    }
+
+    const saleJeId = `JE-SALE-${cleanId}`
+    const cogsJeId = `JE-COGS-${cleanId}`
+
+    // 1. Update Invoices table in MySQL
+    const [invRows] = await pool.query(
+      "SELECT * FROM `invoices` WHERE sales_issue_id = ? OR id = ? OR fs_no = ?",
+      [cleanId, `INV-SI-${cleanId}`, existing.fs_no || cleanId]
+    )
+    if (invRows.length > 0) {
+      const inv = invRows[0]
+      let existingGl = inv.gl_distribution
+      if (typeof existingGl === "string") {
+        try { existingGl = JSON.parse(existingGl) } catch { existingGl = {} }
+      }
+      const updatedGlDist = {
+        revenue_lines: customRevLines.length > 0 ? customRevLines : (existingGl?.revenue_lines || []),
+        cogs_lines: customCogsLines.length > 0 ? customCogsLines : (existingGl?.cogs_lines || []),
+        notes: customEntries?.notes || "Updated from Sales Issue",
+        updated_at: new Date().toISOString(),
+        updated_by: "Sales Issue System",
+      }
+
+      await pool.query(
+        `UPDATE \`invoices\` SET
+          subtotal = ?,
+          tax_amount = ?,
+          tax_rate = ?,
+          total = ?,
+          total_amount = ?,
+          amount_paid = ?,
+          balance_due = ?,
+          status = ?,
+          settlement_status = ?,
+          gl_distribution = ?,
+          customer_name = ?,
+          warehouse_id = ?,
+          updated_at = NOW(3)
+         WHERE id = ?`,
+        [
+          subtotal,
+          vat_amount,
+          vat_rate,
+          finalTotalAmount,
+          finalTotalAmount,
+          updateHeader.amount_paid,
+          updateHeader.balance_due,
+          updateHeader.payment_status,
+          updateHeader.settlement_status,
+          JSON.stringify(updatedGlDist),
+          updateHeader.customer_name || inv.customer_name,
+          warehouse_id || inv.warehouse_id,
+          inv.id,
+        ]
+      )
+    }
+
+    // 2. Update Journal Entry Lines for JE-SALE
+    if (customRevLines.length > 0) {
+      const [saleJeRows] = await pool.query(
+        "SELECT * FROM `journal_entries` WHERE id = ? OR source_id = ?",
+        [saleJeId, cleanId]
+      )
+      if (saleJeRows.length > 0) {
+        const targetJeId = saleJeRows[0].id
+        await pool.query("DELETE FROM `journal_entry_lines` WHERE journal_entry_id = ?", [targetJeId])
+        for (const [idx, line] of customRevLines.entries()) {
+          const accId = line.accountId || line.account_id || line.accountCode || line.account_code
+          const dAmt = Number(line.debit || line.debit_amount || (line.amount && (line.id?.startsWith("dr-") || line.debit) ? line.amount : 0))
+          const cAmt = Number(line.credit || line.credit_amount || (line.amount && (line.id?.startsWith("cr-") || line.credit) ? line.amount : 0))
+          if (dAmt <= 0 && cAmt <= 0) continue
+
+          await pool.query(
+            `INSERT INTO \`journal_entry_lines\` (
+              id, journal_entry_id, account_id, debit_amount, credit_amount, currency,
+              exchange_rate_at_time, warehouse_id, party_type, party_id, party_name
+            ) VALUES (?, ?, ?, ?, ?, 'ETB', 1.0, ?, 'Customer', ?, ?)`,
+            [
+              `${targetJeId}-LINE-${idx + 1}-${Date.now().toString().slice(-4)}`,
+              targetJeId,
+              accId,
+              dAmt,
+              cAmt,
+              warehouse_id || null,
+              updateHeader.customer_id || null,
+              updateHeader.customer_name || null,
+            ]
+          )
+        }
+      }
+    }
+
+    // 3. Update Journal Entry Lines for JE-COGS
+    if (customCogsLines.length > 0) {
+      const [cogsJeRows] = await pool.query(
+        "SELECT * FROM `journal_entries` WHERE id = ? OR source_id = ?",
+        [cogsJeId, cleanId]
+      )
+      if (cogsJeRows.length > 0) {
+        const targetCogsId = cogsJeRows[0].id
+        await pool.query("DELETE FROM `journal_entry_lines` WHERE journal_entry_id = ?", [targetCogsId])
+        for (const [idx, line] of customCogsLines.entries()) {
+          const accId = line.accountId || line.account_id || line.accountCode || line.account_code
+          const dAmt = Number(line.debit || line.debit_amount || (line.amount && (line.id?.startsWith("dr-") || line.debit) ? line.amount : 0))
+          const cAmt = Number(line.credit || line.credit_amount || (line.amount && (line.id?.startsWith("cr-") || line.credit) ? line.amount : 0))
+          if (dAmt <= 0 && cAmt <= 0) continue
+
+          await pool.query(
+            `INSERT INTO \`journal_entry_lines\` (
+              id, journal_entry_id, account_id, debit_amount, credit_amount, currency,
+              exchange_rate_at_time, warehouse_id
+            ) VALUES (?, ?, ?, ?, ?, 'ETB', 1.0, ?)`,
+            [
+              `${targetCogsId}-LINE-${idx + 1}-${Date.now().toString().slice(-4)}`,
+              targetCogsId,
+              accId,
+              dAmt,
+              cAmt,
+              warehouse_id || null,
+            ]
+          )
+        }
+      }
+    }
+  } catch (syncErr) {
+    console.warn("Invoice / JE synchronization warning during updateSalesIssue:", syncErr.message)
+  }
+
   return { status: 200, body: { ...existing, ...input, total_quantity, total_amount: finalTotalAmount, items, savedToDb: true } }
 }
 

@@ -1,0 +1,44 @@
+[
+  {
+    "id": "WH1",
+    "name": "WH1 - Ethiopia Agricultural Export Hub",
+    "code": "WH1-AGRI-EXP",
+    "location": "KALITIY GEBRIEAL, Ethiopia",
+    "warehouse_type": "EXPORT_WH",
+    "type": "Export Hub",
+    "manager": "sheleme megrsa",
+    "specialization": "Agricultural Commodities",
+    "target_markets": null,
+    "status": "Active",
+    "created_at": "2026-07-25T13:58:16.207Z",
+    "updated_at": "2026-09-12T04:03:06.000Z"
+  },
+  {
+    "id": "WH2",
+    "name": "WH2 - Veterinary Import Hub Alem bank",
+    "code": "WH2-VET-ALEM",
+    "location": "Alem Bank Hub, Addis Ababa, Ethiopia",
+    "warehouse_type": "PHARMA_WH",
+    "type": "Pharmaceutical Hub",
+    "manager": "sewagegnew getachew",
+    "specialization": "Veterinary Drugs & Biologicals",
+    "target_markets": null,
+    "status": "Active",
+    "created_at": "2026-07-25T13:58:16.796Z",
+    "updated_at": "2026-09-13T01:03:06.000Z"
+  },
+  {
+    "id": "WH3",
+    "name": "WH3 - Veterinary Import Hub LEBU",
+    "code": "WH3-VET-LEBU",
+    "location": "Lebu Commercial Center, Addis Ababa, Ethiopia",
+    "warehouse_type": "PHARMA_WH",
+    "type": "Pharmaceutical Hub",
+    "manager": "sewagegnew getachew",
+    "specialization": "Veterinary Supplies & Consumables",
+    "target_markets": null,
+    "status": "Active",
+    "created_at": "2026-07-25T13:58:17.428Z",
+    "updated_at": "2026-09-13T01:03:06.000Z"
+  }
+]

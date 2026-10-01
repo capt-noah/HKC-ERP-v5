@@ -1,0 +1,186 @@
+[
+  {
+    "id": "390993a5-1618-4b15-b8a1-5cd13a0b2bde",
+    "username": "admin",
+    "password_hash": "$2b$10$Roxf5M9hchWaTJUXkn62QeUAAwDzJijeuzcSGRBIlmX9zpUFyu2R2",
+    "roles": [
+      "superadmin"
+    ],
+    "role": "viewer",
+    "status": "active",
+    "fullname": "Habtom",
+    "employee_id": null,
+    "warehouse_ids": [],
+    "warehouse_id": null,
+    "first_name": null,
+    "last_name": null,
+    "is_active": 1,
+    "created_at": "2026-08-13T08:04:59.000Z",
+    "updated_at": "2026-09-01T06:18:59.000Z"
+  },
+  {
+    "id": "USR-0ef480d2",
+    "username": "YADENE",
+    "password_hash": "$2b$10$A5QkglIt5wLBF6lBJJSNmeb3qvH.Xleuhyoi4xAN4MgCk50mirq2S",
+    "roles": [
+      "finance_manager"
+    ],
+    "role": "finance_manager",
+    "status": "active",
+    "fullname": "YADENE TEMSGEN",
+    "employee_id": null,
+    "warehouse_ids": [],
+    "warehouse_id": null,
+    "first_name": "YADENE",
+    "last_name": "TEMSGEN",
+    "is_active": 1,
+    "created_at": "2026-09-21T12:45:33.146Z",
+    "updated_at": "2026-09-21T12:45:33.146Z"
+  },
+  {
+    "id": "USR-204adf5d",
+    "username": "sewa",
+    "password_hash": "$2b$10$qpL58ZuPHwxDg1juz9T9X.LVmccF1s1NeouzPVEA8.E5x7oFfZ7Iu",
+    "roles": [
+      "inventory_admin"
+    ],
+    "role": "inventory_admin",
+    "status": "active",
+    "fullname": "sewagegnew getachew",
+    "employee_id": null,
+    "warehouse_ids": [
+      "WH3-VET-LEBU",
+      "WH2-VET-ALEM"
+    ],
+    "warehouse_id": "WH3-VET-LEBU",
+    "first_name": "sewagegnew",
+    "last_name": "getachew",
+    "is_active": 1,
+    "created_at": "2026-09-16T12:00:10.192Z",
+    "updated_at": "2026-09-16T12:00:10.192Z"
+  },
+  {
+    "id": "USR-40a189d8",
+    "username": "Dejazmach",
+    "password_hash": "$2b$10$DSzlsHyv2778H1HJqPOJ5.g6OMpUIe13ibmn8bKLbII8OlsdO4vKu",
+    "roles": [
+      "finance_manager",
+      "inventory_admin",
+      "hr_manager"
+    ],
+    "role": "finance_manager",
+    "status": "active",
+    "fullname": "DEJAZMACH GEBEYEHU",
+    "employee_id": null,
+    "warehouse_ids": [
+      "WH1-AGRI-EXP"
+    ],
+    "warehouse_id": "WH1-AGRI-EXP",
+    "first_name": "DEJAZMACH",
+    "last_name": "GEBEYEHU",
+    "is_active": 1,
+    "created_at": "2026-09-16T11:56:00.977Z",
+    "updated_at": "2026-09-21T16:03:15.516Z"
+  },
+  {
+    "id": "USR-451607d8",
+    "username": "capt",
+    "password_hash": "$2b$10$ANGmLUmlaiHkgdz8No1EsupL2Z96htTsyJ4km.TSjOXiwOee0tzXC",
+    "roles": [
+      "inventory_admin"
+    ],
+    "role": "inventory_admin",
+    "status": "active",
+    "fullname": "noah tesf",
+    "employee_id": null,
+    "warehouse_ids": [],
+    "warehouse_id": null,
+    "first_name": "noah",
+    "last_name": "tesf",
+    "is_active": 1,
+    "created_at": "2026-09-22T11:09:02.353Z",
+    "updated_at": "2026-09-22T11:09:51.000Z"
+  },
+  {
+    "id": "USR-6b974442",
+    "username": "selam",
+    "password_hash": "$2b$10$CKG9Ca1qqu8X4fmmypSlsOVR./3p18PYkojWU0iBx5jibSRen9UMS",
+    "roles": [
+      "sales_manager"
+    ],
+    "role": "sales_manager",
+    "status": "active",
+    "fullname": "selam shikur",
+    "employee_id": null,
+    "warehouse_ids": [
+      "WH1-AGRI-EXP",
+      "WH2-VET-ALEM",
+      "WH3-VET-LEBU"
+    ],
+    "warehouse_id": "WH1-AGRI-EXP",
+    "first_name": "selam",
+    "last_name": "shikur",
+    "is_active": 1,
+    "created_at": "2026-09-14T04:13:37.000Z",
+    "updated_at": "2026-09-22T11:08:06.685Z"
+  },
+  {
+    "id": "USR-7fb220d5",
+    "username": "sheleme",
+    "password_hash": "$2b$10$P0mP8KKR0lFwdO.PtooxYOljMXNjCiDnXkF46lObbL7zl7iI5OVy2",
+    "roles": [
+      "inventory_admin"
+    ],
+    "role": "inventory_admin",
+    "status": "active",
+    "fullname": "sheleme megrsa",
+    "employee_id": null,
+    "warehouse_ids": [
+      "WH1-AGRI-EXP"
+    ],
+    "warehouse_id": "WH1-AGRI-EXP",
+    "first_name": "sheleme",
+    "last_name": "megrsa",
+    "is_active": 1,
+    "created_at": "2026-09-14T03:51:34.000Z",
+    "updated_at": "2026-09-14T03:56:23.000Z"
+  },
+  {
+    "id": "USR-9f0d365d",
+    "username": "hilena",
+    "password_hash": "$2b$10$X4nsC6z0Z/PQyl.QeGOk4eKOXG3K8ix7fBUY5GlpFfo/XkZ/0a/4S",
+    "roles": [
+      "hkc_docs_manager"
+    ],
+    "role": "hkc_docs_manager",
+    "status": "active",
+    "fullname": "Hilena abera",
+    "employee_id": null,
+    "warehouse_ids": [],
+    "warehouse_id": null,
+    "first_name": "Hilena",
+    "last_name": "abera",
+    "is_active": 1,
+    "created_at": "2026-09-21T10:38:24.342Z",
+    "updated_at": "2026-09-21T10:41:24.000Z"
+  },
+  {
+    "id": "USR-SUPERADMIN-001",
+    "username": "superadmin",
+    "password_hash": "$2b$10$izrXeHIx6wV56uYKzIueYeEojkRCctdIRaDQHXvfl4PygHa5.vBum",
+    "roles": [
+      "superadmin"
+    ],
+    "role": "superadmin",
+    "status": "active",
+    "fullname": "Super Administrator",
+    "employee_id": null,
+    "warehouse_ids": null,
+    "warehouse_id": null,
+    "first_name": "Super",
+    "last_name": "Admin",
+    "is_active": 1,
+    "created_at": "2026-09-21T13:05:13.000Z",
+    "updated_at": "2026-09-21T13:05:13.000Z"
+  }
+]

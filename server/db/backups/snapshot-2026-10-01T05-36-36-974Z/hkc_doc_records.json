@@ -1,0 +1,78 @@
+[
+  {
+    "id": "HKCD-1789976597883",
+    "payload": {
+      "id": "HKCD-1789976597883",
+      "date": "2026-08-12",
+      "type": "Export",
+      "createdAt": "2026-09-21T07:43:17.883Z",
+      "updatedAt": "2026-09-29T06:48:57.852Z",
+      "created_at": "2026-09-21 07:43:09.196",
+      "shipmentId": "HKC-160",
+      "updated_at": "2026-09-21 07:43:09.196",
+      "attachments": [
+        {
+          "fileUrl": "/uploads/hkc_docs/1789976574833-bz50t-Sales_Contract_MOT__2_.pdf",
+          "fileName": "Sales Contract MOT (2).pdf",
+          "uploadedAt": "2026-09-21T07:43:03.846Z",
+          "attachmentId": "ATT-1789976583846-8743"
+        },
+        {
+          "fileUrl": "/uploads/hkc_docs/1789977446714-85vbr-reportLpcoBnkExprPerm.pdf",
+          "fileName": "reportLpcoBnkExprPerm.pdf",
+          "uploadedAt": "2026-09-21T07:57:35.698Z",
+          "attachmentId": "ATT-1789977455698-9371"
+        },
+        {
+          "fileUrl": "/uploads/hkc_docs/1789978821282-uifoc-Copy_Document_of_10fcl_JIB600234300.pdf",
+          "fileName": "Copy_Document_of_10fcl_JIB600234300.pdf",
+          "uploadedAt": "2026-09-21T08:20:21.082Z",
+          "attachmentId": "ATT-1789978821082-9301"
+        }
+      ],
+      "itemsDescription": "GREEN MUNG BEANS"
+    },
+    "created_at": "2026-09-21T10:43:09.196Z",
+    "updated_at": "2026-09-29T03:49:00.114Z"
+  },
+  {
+    "id": "HKCD-1789979196461",
+    "payload": {
+      "id": "HKCD-1789979196461",
+      "date": "2026-08-18",
+      "type": "Export",
+      "createdAt": "2026-09-21T08:26:36.461Z",
+      "updatedAt": "2026-09-21T08:26:36.461Z",
+      "shipmentId": "HKC-0161/19",
+      "attachments": [
+        {
+          "fileUrl": "/uploads/hkc_docs/1789979169449-y2rv8-Copy_Document_of_4fcl_JIB600237400.pdf",
+          "fileName": "Copy Document of 4fcl JIB600237400.pdf",
+          "uploadedAt": "2026-09-21T08:16:48.130Z",
+          "attachmentId": "ATT-1789978608130-8315"
+        },
+        {
+          "fileUrl": "/uploads/hkc_docs/1789979176716-ygesp-reportLpcoBnkExprPerm.pdf",
+          "fileName": "reportLpcoBnkExprPerm.pdf",
+          "uploadedAt": "2026-09-21T08:19:15.036Z",
+          "attachmentId": "ATT-1789978755036-2125"
+        },
+        {
+          "fileUrl": "/uploads/hkc_docs/1789979182458-v6kb9-reportLpcoSlcntrAgrmt.pdf",
+          "fileName": "reportLpcoSlcntrAgrmt.pdf",
+          "uploadedAt": "2026-09-21T08:19:15.036Z",
+          "attachmentId": "ATT-1789978755036-8714"
+        },
+        {
+          "fileUrl": "/uploads/hkc_docs/1789979187519-ckdxr-Sales_Contract_MOT.pdf",
+          "fileName": "Sales Contract MOT.pdf",
+          "uploadedAt": "2026-09-21T08:19:15.036Z",
+          "attachmentId": "ATT-1789978755036-3399"
+        }
+      ],
+      "itemsDescription": "GREEN MUNG BEANS"
+    },
+    "created_at": "2026-09-21T11:26:27.818Z",
+    "updated_at": "2026-09-21T11:26:27.818Z"
+  }
+]

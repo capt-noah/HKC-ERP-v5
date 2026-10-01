@@ -220,11 +220,66 @@ export async function updateMovementDifference(id, body = {}, tableName = "expor
       [diffQty, newReason, cleanId]
     )
 
-    // Adjust export product quantity if difference changed
+    // Adjust export product quantity and underlying GRV inbound batches if difference changed
     if (tableName === "export_warehouse_movements" && row.product_id && deltaDiff !== 0) {
+      if (deltaDiff > 0) {
+        // Deduct extra difference quantity from active GRV entries (FIFO)
+        let remainingToDeduct = deltaDiff
+        const [grvs] = await conn.query(
+          "SELECT * FROM `export_warehouse_movements` WHERE product_id = ? AND (movement_type = 'GRV_ENTRY' OR movement_type = 'entry') AND net_quantity > 0 ORDER BY movement_date ASC, created_at ASC",
+          [row.product_id]
+        )
+        for (const grv of grvs) {
+          if (remainingToDeduct <= 0) break
+          const currentNet = Number(grv.net_quantity || 0)
+          const deduct = Math.min(currentNet, remainingToDeduct)
+          remainingToDeduct -= deduct
+          const newNet = Math.max(0, currentNet - deduct)
+          await conn.query(
+            "UPDATE `export_warehouse_movements` SET net_quantity = ?, updated_at = NOW(3) WHERE id = ?",
+            [newNet, grv.id]
+          )
+        }
+      } else {
+        // Restore difference quantity back to GRV entries (LIFO restore up to gross_quantity)
+        let remainingToRestore = Math.abs(deltaDiff)
+        const [grvs] = await conn.query(
+          "SELECT * FROM `export_warehouse_movements` WHERE product_id = ? AND (movement_type = 'GRV_ENTRY' OR movement_type = 'entry') AND net_quantity < gross_quantity ORDER BY movement_date DESC, created_at DESC",
+          [row.product_id]
+        )
+        for (const grv of grvs) {
+          if (remainingToRestore <= 0) break
+          const currentNet = Number(grv.net_quantity || 0)
+          const gross = Number(grv.gross_quantity || 0)
+          const availableRoom = Math.max(0, gross - currentNet)
+          const restore = Math.min(availableRoom, remainingToRestore)
+          remainingToRestore -= restore
+          const newNet = currentNet + restore
+          await conn.query(
+            "UPDATE `export_warehouse_movements` SET net_quantity = ?, updated_at = NOW(3) WHERE id = ?",
+            [newNet, grv.id]
+          )
+        }
+      }
+
+      // Recompute physical quantity and inventory stock valuation from active GRVs
+      const [activeGrvs] = await conn.query(
+        "SELECT COALESCE(SUM(net_quantity), 0) as total_qty, COALESCE(SUM(net_quantity * unit_price), 0) as total_val FROM `export_warehouse_movements` WHERE product_id = ? AND (movement_type = 'GRV_ENTRY' OR movement_type = 'entry')",
+        [row.product_id]
+      )
+      const activeQty = Number(activeGrvs[0]?.total_qty || 0)
+      const activeVal = Number(activeGrvs[0]?.total_val || 0)
+      const weightedCost = activeQty > 0 ? Math.round((activeVal / activeQty) * 100) / 100 : Number(row.unit_price || 0)
+
       await conn.query(
-        "UPDATE export_products SET quantity = GREATEST(0, quantity - ?), updated_at = NOW(3) WHERE id = ?",
-        [deltaDiff, row.product_id]
+        "UPDATE export_products SET quantity = ?, total_stock_value = ?, unit_cost = ?, status = ?, updated_at = NOW(3) WHERE id = ?",
+        [
+          activeQty,
+          activeVal,
+          weightedCost,
+          activeQty === 0 ? "Out of Stock" : activeQty < 20 ? "Low Stock" : "In Stock",
+          row.product_id,
+        ]
       )
     }
 

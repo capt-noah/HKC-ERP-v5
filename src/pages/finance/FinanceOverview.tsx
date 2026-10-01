@@ -26,7 +26,19 @@ export default function FinanceOverview() {
   const journalLines = store.getJournalEntryLines()
   const journalEntries = store.getJournalEntries()
   const accounts = store.getAccounts()
-  const accountById = new Map(accounts.flatMap((account) => [[account.id, account], [account.code, account]]))
+  const accountById = new Map<string, any>()
+  for (const account of accounts) {
+    if (account.id) {
+      accountById.set(account.id, account)
+      accountById.set(account.id.replace(/^ACC-/, ""), account)
+      accountById.set(`ACC-${account.id}`, account)
+    }
+    if (account.code) {
+      accountById.set(account.code, account)
+      accountById.set(account.code.replace(/^ACC-/, ""), account)
+      accountById.set(`ACC-${account.code}`, account)
+    }
+  }
   const entryById = new Map(journalEntries.map((entry) => [entry.id, entry]))
 
   const {
@@ -74,7 +86,8 @@ export default function FinanceOverview() {
 
   for (const line of journalLines) {
     const entry = entryById.get(line.journal_entry_id)
-    const account = accountById.get(line.account_id)
+    const cleanAccountId = line.account_id ? String(line.account_id).trim() : ""
+    const account = accountById.get(cleanAccountId) || accountById.get(cleanAccountId.replace(/^ACC-/, "")) || accountById.get(`ACC-${cleanAccountId}`)
     if (!entry || !account || !entry.entry_date) continue
     const monthKey = entry.entry_date.slice(0, 7)
     let row = cashFlowByMonth.get(monthKey)

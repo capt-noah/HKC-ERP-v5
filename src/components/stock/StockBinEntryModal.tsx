@@ -118,7 +118,7 @@ export default function StockBinEntryModal({
     try {
       const isRec = movementType === "received"
       const effectiveUnitPrice = unitPrice ? Number(unitPrice) : (product?.unitCost !== undefined ? Number(product.unitCost) : undefined)
-      const effectiveSellingPrice = sellingPrice ? Number(sellingPrice) : (!isRec && product?.sellingPrice !== undefined ? Number(product.sellingPrice) : undefined)
+      const effectiveSellingPrice = sellingPrice ? Number(sellingPrice) : (product?.sellingPrice !== undefined ? Number(product.sellingPrice) : undefined)
 
       const entryPayload: Omit<BinCardMovementEntry, "id" | "balance"> = {
         type: isRec ? "entry" : "leave",
@@ -130,7 +130,7 @@ export default function StockBinEntryModal({
         expiryDate: expiryDate.trim(),
         party: party.trim() || (isRec ? "Stock Receipt" : "Customer Dispatch"),
         unitPrice: effectiveUnitPrice,
-        sellingPrice: !isRec ? effectiveSellingPrice : undefined,
+        sellingPrice: (effectiveSellingPrice !== undefined && effectiveSellingPrice > 0) ? effectiveSellingPrice : undefined,
         remark: remark.trim() || (isRec ? "Stock Inbound" : "Stock Dispatch")
       }
 
@@ -246,7 +246,7 @@ export default function StockBinEntryModal({
             </div>
 
             {/* Quantity & Price Fields */}
-            <div className={`grid ${movementType === "issued" ? "grid-cols-3" : "grid-cols-2"} gap-3`}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
                 <label className="block text-[10px] font-black uppercase text-zinc-500">
                   Quantity ({product.unit}) *
@@ -265,7 +265,7 @@ export default function StockBinEntryModal({
 
               <div className="space-y-1">
                 <label className="block text-[10px] font-black uppercase text-zinc-500">
-                  {movementType === "received" ? "Unit Cost (ETB)" : "Acquisition COGS Unit Cost (ETB)"}
+                  {movementType === "received" ? "Cost Price (ETB)" : "COGS Unit Cost (ETB)"}
                 </label>
                 <input
                   type="number"
@@ -278,22 +278,20 @@ export default function StockBinEntryModal({
                 />
               </div>
 
-              {movementType === "issued" && (
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-black uppercase text-blue-700">
-                    Commercial Selling Price (ETB)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    placeholder="e.g. 350.00"
-                    value={sellingPrice}
-                    onChange={(e) => setSellingPrice(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-blue-50/50 border border-blue-200 rounded-xl focus:bg-white focus:border-blue-900 outline-none font-mono text-blue-950 font-bold"
-                  />
-                </div>
-              )}
+              <div className="space-y-1">
+                <label className="block text-[10px] font-black uppercase text-blue-700">
+                  Selling Price (ETB)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="e.g. 350.00"
+                  value={sellingPrice}
+                  onChange={(e) => setSellingPrice(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-blue-50/50 border border-blue-200 rounded-xl focus:bg-white focus:border-blue-900 outline-none font-mono text-blue-950 font-bold"
+                />
+              </div>
             </div>
 
             {/* Mfg Date & Expiry Date */}

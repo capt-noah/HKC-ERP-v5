@@ -1,0 +1,18 @@
+[
+  {
+    "id": "PER-2185e840-a99e-4800-985d-4f2edacab6d0",
+    "payload": {
+      "id": "PER-2185e840-a99e-4800-985d-4f2edacab6d0",
+      "name": "September 2026",
+      "year": 2026,
+      "month": 9,
+      "status": "Draft",
+      "end_date": "2026-09-29",
+      "created_at": "2026-09-29T14:10:49.869Z",
+      "start_date": "2026-08-31",
+      "updated_at": "2026-09-29T14:10:49.869Z"
+    },
+    "created_at": "2026-09-29T11:10:49.849Z",
+    "updated_at": "2026-09-29T11:10:49.849Z"
+  }
+]

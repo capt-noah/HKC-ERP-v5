@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { deleteResource, loadResource, persistResources } from "./apiPersistence"
+import { deleteResource, loadResource, persistResources, updateResource } from "./apiPersistence"
 import { useAuthStore } from "./authStore"
 import { erpStore, type PurchaseOrder } from "./erpStore"
 import { validateJournalVoucher } from "../core/finance/ledgerEngine"
@@ -36,9 +36,9 @@ export interface FinancialMetrics {
 
 export function isCogsAccount(account?: { code?: string | null; name?: string | null; peachtree_type?: string | null } | null): boolean {
   if (!account) return false
-  if (account.peachtree_type === "Cost of Sales") return true
-  if (account.code === "5001" || account.code?.startsWith("5000") || account.code?.startsWith("5010") || account.code?.startsWith("6")) return true
-  if (/cogs|cost of (goods|sales)/i.test(account.name || "")) return true
+  if (account.code?.startsWith("5")) return true
+  if (/cost of (goods|sales)|cogs/i.test(account.name || "") && !account.code?.startsWith("6") && !account.code?.startsWith("7")) return true
+  if (account.peachtree_type === "Cost of Sales" && !account.code?.startsWith("6") && !account.code?.startsWith("7")) return true
   return false
 }
 
@@ -2433,7 +2433,19 @@ class FinanceStore {
 
   // --- Canonical Executive Financial Metrics Engine ---
   public getFinancialMetrics(): FinancialMetrics {
-    const accountById = new Map(this.accounts.flatMap((account) => [[account.id, account], [account.code, account]]))
+    const accountById = new Map<string, AccountItem>()
+    for (const account of this.accounts) {
+      if (account.id) {
+        accountById.set(account.id, account)
+        accountById.set(account.id.replace(/^ACC-/, ""), account)
+        accountById.set(`ACC-${account.id}`, account)
+      }
+      if (account.code) {
+        accountById.set(account.code, account)
+        accountById.set(account.code.replace(/^ACC-/, ""), account)
+        accountById.set(`ACC-${account.code}`, account)
+      }
+    }
     let totalRevenue = 0
     let totalCogs = 0
     let totalExpenses = 0
@@ -2442,12 +2454,13 @@ class FinanceStore {
     let cashCredits = 0
 
     for (const line of this.lines) {
-      const account = accountById.get(line.account_id)
+      const cleanAccountId = line.account_id ? String(line.account_id).trim() : ""
+      const account = accountById.get(cleanAccountId) || accountById.get(cleanAccountId.replace(/^ACC-/, "")) || accountById.get(`ACC-${cleanAccountId}`)
       if (!account) continue
 
-      if (account.account_type === "Revenue") {
+      if (account.account_type === "Revenue" || account.code?.startsWith("4")) {
         totalRevenue += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
-      } else if (account.account_type === "Expense") {
+      } else if (account.account_type === "Expense" || account.code?.startsWith("5") || account.code?.startsWith("6") || account.code?.startsWith("7")) {
         const amt = Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
         totalExpenses += amt
         if (isCogsAccount(account)) {
@@ -2456,7 +2469,7 @@ class FinanceStore {
           operatingExpenses += amt
         }
       } else if (
-        account.account_type === "Asset" &&
+        (account.account_type === "Asset" || account.code?.startsWith("1")) &&
         (account.peachtree_type === "Cash" ||
           account.code?.startsWith("1000") ||
           /cash|bank|cbe|boa|aib|abay|unb|cbo|ahadu|oib/i.test(account.name || ""))
@@ -3198,31 +3211,47 @@ class FinanceStore {
       }
     }
 
-    // 3. Find or Create Sales Journal Entry
-    const { salesEntry, cogsEntry } = this.getInvoiceJournalEntries(inv)
-
-    let targetSaleJeId = salesEntry?.id
-    if (!targetSaleJeId) {
-      targetSaleJeId = inv.sales_issue_id ? `JE-SALE-${inv.sales_issue_id}` : `JE-SALE-${inv.invoice_number}`
-      const newSaleJe: JournalEntry = {
-        id: targetSaleJeId,
-        entry_date: inv.issue_date,
-        description: `Sales Invoice ${inv.invoice_number} for ${inv.customer_name}`,
-        source_type: "Sales Invoice",
-        source_id: inv.sales_issue_id || inv.invoice_number,
-        created_by: "Finance GL Split Tool",
-        currency: inv.currency || "ETB",
-        exchange_rate: 1.0,
-        is_reversal_of: null,
+    // 3. Identify Canonical & Existing Sales Journal Entries (prevent duplicate JE accumulation)
+    const canonicalSaleJeId = inv.sales_issue_id ? `JE-SALE-${inv.sales_issue_id}` : `JE-SALE-${inv.invoice_number}`
+    const matchingSaleJeIds = new Set<string>()
+    this.entries.forEach((e) => {
+      if (
+        e.id === canonicalSaleJeId ||
+        e.id === `JE-SALE-${inv.id}` ||
+        e.id === `JE-SALE-${inv.invoice_number}` ||
+        (inv.sales_issue_id && (e.id === `JE-SALE-${inv.sales_issue_id}` || e.source_id === inv.sales_issue_id)) ||
+        e.source_id === inv.id ||
+        e.source_id === inv.invoice_number
+      ) {
+        if (!e.id.startsWith("JE-COGS-") && !/inventory cost|cogs/i.test(e.description || "")) {
+          matchingSaleJeIds.add(e.id)
+        }
       }
-      this.entries = [newSaleJe, ...this.entries]
+    })
+
+    // Remove old lines for any matched sale JEs
+    this.lines = this.lines.filter((line) => !matchingSaleJeIds.has(line.journal_entry_id) && line.journal_entry_id !== canonicalSaleJeId)
+
+    // Remove any duplicate sale JEs from entries and add/update canonical
+    this.entries = this.entries.filter((e) => !matchingSaleJeIds.has(e.id) && e.id !== canonicalSaleJeId)
+    const saleJe: JournalEntry = {
+      id: canonicalSaleJeId,
+      entry_date: inv.issue_date || new Date().toISOString().slice(0, 10),
+      description: `Sales Invoice ${inv.invoice_number} for ${inv.customer_name}`,
+      source_type: "Sales Invoice",
+      source_id: inv.sales_issue_id || inv.invoice_number,
+      created_by: "Finance GL Split Tool",
+      currency: inv.currency || "ETB",
+      exchange_rate: 1.0,
+      is_reversal_of: null,
     }
+    this.entries = [saleJe, ...this.entries]
 
     // Format new sales lines
     const newSaleLines: JournalEntryLine[] = distribution.revenueLines.map((l, idx) => ({
-      id: l.id || `JEL-${targetSaleJeId}-${idx + 1}-${Date.now().toString().slice(-4)}`,
-      journal_entry_id: targetSaleJeId!,
-      account_id: l.account_id,
+      id: l.id || `JEL-${canonicalSaleJeId}-${idx + 1}-${Date.now().toString().slice(-4)}`,
+      journal_entry_id: canonicalSaleJeId,
+      account_id: l.account_id || (l as any).accountId || l.account_code || (l as any).accountCode,
       debit_amount: Math.round((Number(l.debit) || 0) * 100) / 100,
       credit_amount: Math.round((Number(l.credit) || 0) * 100) / 100,
       currency: inv.currency || "ETB",
@@ -3232,42 +3261,54 @@ class FinanceStore {
       party_id: l.party_id ?? null,
       party_name: l.party_name ?? inv.customer_name,
     }))
-
-    // Remove old lines for sales JE and append updated lines
-    this.lines = this.lines.filter((line) => line.journal_entry_id !== targetSaleJeId)
     this.lines = [...newSaleLines, ...this.lines]
 
-    // 4. Update or Create COGS Journal Entry if cogsLines are present
-    if (distribution.cogsLines && distribution.cogsLines.length > 0) {
-      let targetCogsJeId = cogsEntry?.id
-      if (!targetCogsJeId) {
-        targetCogsJeId = inv.sales_issue_id ? `JE-COGS-${inv.sales_issue_id}` : `JE-COGS-${inv.invoice_number}`
-        const newCogsJe: JournalEntry = {
-          id: targetCogsJeId,
-          entry_date: inv.issue_date,
-          description: `Inventory cost for sales invoice ${inv.invoice_number}`,
-          source_type: "Sales Issue",
-          source_id: inv.sales_issue_id || inv.invoice_number,
-          created_by: "Finance GL Split Tool",
-          currency: inv.currency || "ETB",
-          exchange_rate: 1.0,
-          is_reversal_of: null,
+    // 4. Identify Canonical & Existing COGS Journal Entries (prevent duplicate COGS accumulation)
+    const canonicalCogsJeId = inv.sales_issue_id ? `JE-COGS-${inv.sales_issue_id}` : `JE-COGS-${inv.invoice_number}`
+    const matchingCogsJeIds = new Set<string>()
+    this.entries.forEach((e) => {
+      if (
+        e.id === canonicalCogsJeId ||
+        e.id === `JE-COGS-${inv.id}` ||
+        e.id === `JE-COGS-${inv.invoice_number}` ||
+        (inv.sales_issue_id && (e.id === `JE-COGS-${inv.sales_issue_id}` || e.source_id === inv.sales_issue_id)) ||
+        e.source_id === inv.id ||
+        e.source_id === inv.invoice_number
+      ) {
+        if (e.id.startsWith("JE-COGS-") || /inventory cost|cogs/i.test(e.description || "")) {
+          matchingCogsJeIds.add(e.id)
         }
-        this.entries = [newCogsJe, ...this.entries]
       }
+    })
+
+    // Remove old lines for any matched COGS JEs
+    this.lines = this.lines.filter((line) => !matchingCogsJeIds.has(line.journal_entry_id) && line.journal_entry_id !== canonicalCogsJeId)
+    this.entries = this.entries.filter((e) => !matchingCogsJeIds.has(e.id) && e.id !== canonicalCogsJeId)
+
+    if (distribution.cogsLines && distribution.cogsLines.length > 0) {
+      const cogsJe: JournalEntry = {
+        id: canonicalCogsJeId,
+        entry_date: inv.issue_date || new Date().toISOString().slice(0, 10),
+        description: `Inventory cost for sales invoice ${inv.invoice_number}`,
+        source_type: "Sales Issue",
+        source_id: inv.sales_issue_id || inv.invoice_number,
+        created_by: "Finance GL Split Tool",
+        currency: inv.currency || "ETB",
+        exchange_rate: 1.0,
+        is_reversal_of: null,
+      }
+      this.entries = [cogsJe, ...this.entries]
 
       const newCogsLines: JournalEntryLine[] = distribution.cogsLines.map((l, idx) => ({
-        id: l.id || `JEL-${targetCogsJeId}-${idx + 1}-${Date.now().toString().slice(-4)}`,
-        journal_entry_id: targetCogsJeId!,
-        account_id: l.account_id,
+        id: l.id || `JEL-${canonicalCogsJeId}-${idx + 1}-${Date.now().toString().slice(-4)}`,
+        journal_entry_id: canonicalCogsJeId,
+        account_id: l.account_id || (l as any).accountId || l.account_code || (l as any).accountCode,
         debit_amount: Math.round((Number(l.debit) || 0) * 100) / 100,
         credit_amount: Math.round((Number(l.credit) || 0) * 100) / 100,
         currency: inv.currency || "ETB",
         exchange_rate_at_time: 1.0,
         warehouse_id: inv.warehouse_id || null,
       }))
-
-      this.lines = this.lines.filter((line) => line.journal_entry_id !== targetCogsJeId)
       this.lines = [...newCogsLines, ...this.lines]
     }
 
@@ -3284,7 +3325,23 @@ class FinanceStore {
     }
     this.invoices[invIndex] = updatedInvoice
 
-    // 6. Persist changes to server
+    // 6. Bidirectional synchronization: Update linked sales_issues table in MySQL
+    if (inv.sales_issue_id) {
+      try {
+        await updateResource<any>("sales_issues", inv.sales_issue_id, {
+          account_entries: {
+            revenue_lines: distribution.revenueLines,
+            cogs_lines: distribution.cogsLines,
+            notes: distribution.notes,
+          },
+        })
+        await erpStore.loadSalesData()
+      } catch (siErr: any) {
+        console.warn("[updateInvoiceGLDistribution] Could not sync back to sales_issues:", siErr)
+      }
+    }
+
+    // 7. Persist changes to server
     try {
       await this.saveToApi()
     } catch (saveErr: any) {

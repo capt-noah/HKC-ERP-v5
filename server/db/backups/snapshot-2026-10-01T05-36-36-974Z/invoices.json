@@ -1,0 +1,526 @@
+[
+  {
+    "id": "INV-SI-00000606",
+    "payload": {
+      "id": "INV-SI-00000606",
+      "fs_no": "00000606",
+      "total": 309000,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-09-18",
+      "subtotal": 309000,
+      "tax_rate": 0,
+      "created_at": "2026-09-28 13:20:57.622",
+      "issue_date": "2026-09-18",
+      "line_items": [
+        {
+          "quantity": 1500,
+          "line_total": 309000,
+          "unit_price": 206,
+          "description": "OXYTONG 20"
+        }
+      ],
+      "tax_amount": 0,
+      "updated_at": "2026-09-28 13:20:57.768",
+      "amount_paid": 309000,
+      "balance_due": 0,
+      "total_amount": 309000,
+      "customer_name": "DR ABDELA ENDRIS/SUPER FAT VETERINARY",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-00000606",
+      "sales_issue_id": "00000606",
+      "sales_order_id": "SO-888519",
+      "discount_amount": 0,
+      "settlement_status": "Fully Settled"
+    },
+    "created_at": "2026-09-28T10:20:57.622Z",
+    "updated_at": "2026-09-29T07:52:50.917Z"
+  },
+  {
+    "id": "INV-SI-00000607",
+    "payload": {
+      "id": "INV-SI-00000607",
+      "fs_no": "00000607",
+      "total": 225600,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-09-16",
+      "subtotal": 225600,
+      "tax_rate": 0,
+      "created_at": "2026-09-28 13:20:57.609",
+      "issue_date": "2026-09-16",
+      "line_items": [
+        {
+          "quantity": 1600,
+          "line_total": 225600,
+          "unit_price": 141,
+          "description": "HIVITA TONG"
+        }
+      ],
+      "tax_amount": 0,
+      "updated_at": "2026-09-28 13:20:57.747",
+      "amount_paid": 225600,
+      "balance_due": 0,
+      "total_amount": 225600,
+      "customer_name": "SELEMUN MEKONEN",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-00000607",
+      "sales_issue_id": "00000607",
+      "sales_order_id": "SO-352247",
+      "discount_amount": 0,
+      "settlement_status": "Fully Settled"
+    },
+    "created_at": "2026-09-28T10:20:57.609Z",
+    "updated_at": "2026-09-29T07:52:50.929Z"
+  },
+  {
+    "id": "INV-SI-00000608",
+    "payload": {
+      "id": "INV-SI-00000608",
+      "fs_no": "00000608",
+      "total": 67840,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-09-17",
+      "subtotal": 67840,
+      "tax_rate": 0,
+      "created_at": "2026-09-28 13:20:57.630",
+      "issue_date": "2026-09-17",
+      "line_items": [
+        {
+          "quantity": 80,
+          "line_total": 67840,
+          "unit_price": 848,
+          "description": "ALBENTONG 2500"
+        }
+      ],
+      "tax_amount": 0,
+      "updated_at": "2026-09-28 13:20:57.790",
+      "amount_paid": 67840,
+      "balance_due": 0,
+      "total_amount": 67840,
+      "customer_name": "yeabsera solomon woldesilase",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-00000608",
+      "sales_issue_id": "00000608",
+      "sales_order_id": "SO-831654",
+      "discount_amount": 0,
+      "settlement_status": "Fully Settled"
+    },
+    "created_at": "2026-09-28T10:20:57.630Z",
+    "updated_at": "2026-09-29T07:52:50.909Z"
+  },
+  {
+    "id": "INV-SI-00000609",
+    "payload": {
+      "id": "INV-SI-00000609",
+      "fs_no": "00000609",
+      "total": 338400,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-17",
+      "subtotal": 338400,
+      "tax_rate": 0,
+      "created_at": "2026-09-28 13:20:57.521",
+      "issue_date": "2026-09-17",
+      "line_items": [
+        {
+          "quantity": 2400,
+          "line_total": 338400,
+          "unit_price": 141,
+          "description": "HIVITA TONG"
+        }
+      ],
+      "tax_amount": 0,
+      "updated_at": "2026-09-28 13:20:57.742",
+      "amount_paid": 0,
+      "balance_due": 338400,
+      "total_amount": 338400,
+      "customer_name": "hana gebremedhin",
+      "payment_terms": "Credit (Net 30)",
+      "invoice_number": "INV-00000609",
+      "sales_issue_id": "00000609",
+      "sales_order_id": "SO-116910",
+      "discount_amount": 0,
+      "settlement_status": "Unpaid"
+    },
+    "created_at": "2026-09-28T10:20:57.521Z",
+    "updated_at": "2026-09-29T07:52:50.937Z"
+  },
+  {
+    "id": "INV-SI-00000610",
+    "payload": {
+      "id": "INV-SI-00000610",
+      "fs_no": "00000610",
+      "total": 1356800,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-18",
+      "subtotal": 1356800,
+      "tax_rate": 0,
+      "created_at": "2026-09-28 13:20:57.619",
+      "issue_date": "2026-09-18",
+      "line_items": [
+        {
+          "quantity": 1600,
+          "line_total": 1356800,
+          "unit_price": 848,
+          "description": "ALBENTONG 2500"
+        }
+      ],
+      "tax_amount": 0,
+      "updated_at": "2026-09-28 13:20:57.759",
+      "amount_paid": 0,
+      "balance_due": 1356800,
+      "total_amount": 1356800,
+      "customer_name": "DEREBE MEKONNEN",
+      "payment_terms": "Credit (Net 30)",
+      "invoice_number": "INV-00000610",
+      "sales_issue_id": "00000610",
+      "sales_order_id": "SO-058002",
+      "discount_amount": 0,
+      "settlement_status": "Unpaid"
+    },
+    "created_at": "2026-09-28T10:20:57.619Z",
+    "updated_at": "2026-09-29T07:52:50.921Z"
+  },
+  {
+    "id": "INV-SI-00000611",
+    "payload": {
+      "id": "INV-SI-00000611",
+      "fs_no": "00000611",
+      "total": 650000,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-16",
+      "subtotal": 650000,
+      "tax_rate": 0,
+      "created_at": "2026-09-28 13:20:57.611",
+      "issue_date": "2026-09-16",
+      "line_items": [
+        {
+          "quantity": 10000,
+          "line_total": 650000,
+          "unit_price": 65,
+          "description": "IVERTONG PLASTIC"
+        }
+      ],
+      "tax_amount": 0,
+      "updated_at": "2026-09-28 13:20:57.748",
+      "amount_paid": 0,
+      "balance_due": 650000,
+      "total_amount": 650000,
+      "customer_name": "ADEN ALI ABDULFETAHI",
+      "payment_terms": "Credit (Net 30)",
+      "invoice_number": "INV-00000611",
+      "sales_issue_id": "00000611",
+      "sales_order_id": "SO-863175",
+      "discount_amount": 0,
+      "settlement_status": "Unpaid"
+    },
+    "created_at": "2026-09-28T10:20:57.611Z",
+    "updated_at": "2026-09-29T07:52:50.925Z"
+  },
+  {
+    "id": "INV-SI-00000612",
+    "payload": {
+      "id": "INV-SI-00000612",
+      "fs_no": "00000612",
+      "total": 510000,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-18",
+      "subtotal": 510000,
+      "tax_rate": 0,
+      "created_at": "2026-09-28 13:20:57.595",
+      "issue_date": "2026-09-18",
+      "line_items": [
+        {
+          "quantity": 3000,
+          "line_total": 510000,
+          "unit_price": 170,
+          "description": "TY-VITAMINS"
+        }
+      ],
+      "tax_amount": 0,
+      "updated_at": "2026-09-28 13:20:57.745",
+      "amount_paid": 0,
+      "balance_due": 510000,
+      "total_amount": 510000,
+      "customer_name": "weldabrh hadg gebiru",
+      "payment_terms": "Credit (Net 30)",
+      "invoice_number": "INV-00000612",
+      "sales_issue_id": "00000612",
+      "sales_order_id": "SO-766711",
+      "discount_amount": 0,
+      "settlement_status": "Unpaid"
+    },
+    "created_at": "2026-09-28T10:20:57.595Z",
+    "updated_at": "2026-09-29T07:52:50.933Z"
+  },
+  {
+    "id": "INV-SI-00000615",
+    "payload": {
+      "id": "INV-SI-00000615",
+      "fs_no": "00000615",
+      "total": 46440,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-09-17",
+      "subtotal": 46440,
+      "tax_rate": 0,
+      "created_at": "2026-09-28 13:20:57.627",
+      "issue_date": "2026-09-17",
+      "line_items": [
+        {
+          "quantity": 24,
+          "line_total": 46440,
+          "unit_price": 1935,
+          "description": "ASHOXY 20% 100GM"
+        }
+      ],
+      "tax_amount": 0,
+      "updated_at": "2026-09-28 13:20:57.777",
+      "amount_paid": 46440,
+      "balance_due": 0,
+      "total_amount": 46440,
+      "customer_name": "yebesera solomon weldeselase",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-00000615",
+      "sales_issue_id": "00000615",
+      "sales_order_id": "SO-744307",
+      "discount_amount": 0,
+      "settlement_status": "Fully Settled"
+    },
+    "created_at": "2026-09-28T10:20:57.627Z",
+    "updated_at": "2026-09-29T07:52:50.914Z"
+  },
+  {
+    "id": "INV-SI-00000616",
+    "payload": {
+      "id": "INV-SI-00000616",
+      "fs_no": "00000616",
+      "total": 135300,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-18",
+      "subtotal": 135300,
+      "tax_rate": 0,
+      "created_at": "2026-09-28 13:20:57.505",
+      "issue_date": "2026-09-18",
+      "line_items": [
+        {
+          "quantity": 330,
+          "line_total": 135300,
+          "unit_price": 410,
+          "description": "FASINASH SHEEP"
+        }
+      ],
+      "tax_amount": 0,
+      "updated_at": "2026-09-28 13:20:57.733",
+      "amount_paid": 0,
+      "balance_due": 135300,
+      "total_amount": 135300,
+      "customer_name": "SELEMUN MEKONEN",
+      "payment_terms": "Credit (Net 30)",
+      "invoice_number": "INV-00000616",
+      "sales_issue_id": "00000616",
+      "sales_order_id": "SO-537077",
+      "discount_amount": 0,
+      "settlement_status": "Unpaid"
+    },
+    "created_at": "2026-09-28T10:20:57.505Z",
+    "updated_at": "2026-09-29T07:52:50.943Z"
+  },
+  {
+    "id": "INV-SI-00000617",
+    "payload": {
+      "id": "INV-SI-00000617",
+      "fs_no": "00000617",
+      "total": 116100,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-09-18",
+      "subtotal": 116100,
+      "tax_rate": 0,
+      "created_at": "2026-09-28 13:20:57.507",
+      "issue_date": "2026-09-18",
+      "line_items": [
+        {
+          "quantity": 60,
+          "line_total": 116100,
+          "unit_price": 1935,
+          "description": "ASHOXY 20% 100GM"
+        }
+      ],
+      "tax_amount": 0,
+      "updated_at": "2026-09-28 13:20:57.735",
+      "amount_paid": 116100,
+      "balance_due": 0,
+      "total_amount": 116100,
+      "customer_name": "beweketu kbretu",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-00000617",
+      "sales_issue_id": "00000617",
+      "sales_order_id": "SO-456552",
+      "discount_amount": 0,
+      "settlement_status": "Fully Settled"
+    },
+    "created_at": "2026-09-28T10:20:57.507Z",
+    "updated_at": "2026-09-29T07:52:50.940Z"
+  },
+  {
+    "id": "INV-SI-00000619",
+    "payload": {
+      "id": "INV-SI-00000619",
+      "fs_no": "00000619",
+      "total": 425000,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-19",
+      "subtotal": 425000,
+      "tax_rate": 0,
+      "created_at": "2026-09-29 10:06:43.027",
+      "issue_date": "2026-09-19",
+      "line_items": [
+        {
+          "quantity": 2500,
+          "line_total": 425000,
+          "unit_price": 170,
+          "description": "TY-VITAMINS"
+        }
+      ],
+      "tax_amount": 0,
+      "updated_at": "2026-09-29 10:06:43.027",
+      "amount_paid": 0,
+      "balance_due": 425000,
+      "total_amount": 425000,
+      "customer_name": "GAWA VET MED/TAYIB MAHAMOUD",
+      "payment_terms": "Credit (Net 30)",
+      "invoice_number": "INV-00000619",
+      "sales_issue_id": "00000619",
+      "sales_order_id": "SO-376925",
+      "discount_amount": 0,
+      "settlement_status": "Unpaid"
+    },
+    "created_at": "2026-09-29T07:06:43.027Z",
+    "updated_at": "2026-09-29T07:52:50.905Z"
+  },
+  {
+    "id": "INV-SI-00000620",
+    "payload": {
+      "id": "INV-SI-00000620",
+      "fs_no": "00000620",
+      "total": 170000,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-09-21",
+      "subtotal": 170000,
+      "tax_rate": 0,
+      "created_at": "2026-09-28 13:20:57.501",
+      "issue_date": "2026-09-21",
+      "line_items": [
+        {
+          "quantity": 1000,
+          "line_total": 170000,
+          "unit_price": 170,
+          "description": "TY-VITAMINS"
+        }
+      ],
+      "tax_amount": 0,
+      "updated_at": "2026-09-28 13:20:57.722",
+      "amount_paid": 170000,
+      "balance_due": 0,
+      "total_amount": 170000,
+      "customer_name": "SILANTE WAGNEW",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-00000620",
+      "sales_issue_id": "00000620",
+      "sales_order_id": "SO-973912",
+      "discount_amount": 0,
+      "settlement_status": "Fully Settled"
+    },
+    "created_at": "2026-09-28T10:20:57.501Z",
+    "updated_at": "2026-09-29T07:52:50.947Z"
+  },
+  {
+    "id": "INV-SI-00000621",
+    "payload": {
+      "id": "INV-SI-00000621",
+      "fs_no": "00000621",
+      "total": 275400,
+      "status": "Sent",
+      "currency": "ETB",
+      "due_date": "2026-09-21",
+      "subtotal": 275400,
+      "tax_rate": 0,
+      "created_at": "2026-09-28 13:20:57.471",
+      "issue_date": "2026-09-21",
+      "line_items": [
+        {
+          "quantity": 1620,
+          "line_total": 275400,
+          "unit_price": 170,
+          "description": "TY-VITAMINS"
+        }
+      ],
+      "tax_amount": 0,
+      "updated_at": "2026-09-28 13:20:57.714",
+      "amount_paid": 0,
+      "balance_due": 275400,
+      "total_amount": 275400,
+      "customer_name": "SELEMUN MEKONEN",
+      "payment_terms": "Credit (Net 30)",
+      "invoice_number": "INV-00000621",
+      "sales_issue_id": "00000621",
+      "sales_order_id": "SO-327688",
+      "discount_amount": 0,
+      "settlement_status": "Unpaid"
+    },
+    "created_at": "2026-09-28T10:20:57.471Z",
+    "updated_at": "2026-09-29T07:52:50.955Z"
+  },
+  {
+    "id": "INV-SI-00000623",
+    "payload": {
+      "id": "INV-SI-00000623",
+      "fs_no": "00000623",
+      "total": 367800,
+      "status": "Paid",
+      "currency": "ETB",
+      "due_date": "2026-09-21",
+      "subtotal": 367800,
+      "tax_rate": 0,
+      "created_at": "2026-09-28 13:20:57.492",
+      "issue_date": "2026-09-21",
+      "line_items": [
+        {
+          "quantity": 800,
+          "line_total": 112800,
+          "unit_price": 141,
+          "description": "HIVITA TONG"
+        },
+        {
+          "quantity": 1500,
+          "line_total": 255000,
+          "unit_price": 170,
+          "description": "TY-VITAMINS"
+        }
+      ],
+      "tax_amount": 0,
+      "updated_at": "2026-09-28 13:20:57.715",
+      "amount_paid": 367800,
+      "balance_due": 0,
+      "total_amount": 367800,
+      "customer_name": "LIDETU AYFERUM",
+      "payment_terms": "Cash",
+      "invoice_number": "INV-00000623",
+      "sales_issue_id": "00000623",
+      "sales_order_id": "SO-189600",
+      "discount_amount": 0,
+      "settlement_status": "Fully Settled"
+    },
+    "created_at": "2026-09-28T10:20:57.492Z",
+    "updated_at": "2026-09-29T07:52:50.952Z"
+  }
+]

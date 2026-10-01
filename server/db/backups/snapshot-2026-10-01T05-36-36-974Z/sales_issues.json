@@ -1,0 +1,1318 @@
+[
+  {
+    "id": "00000606",
+    "fs_no": "00000606",
+    "reference_no": "Crsi0000320",
+    "sales_order_id": "SO-888519",
+    "issue_number": "00000606",
+    "sale_date": "2026-09-17T21:00:00.000Z",
+    "customer_id": "DR ABDELA ENDRIS/SUPER FAT VETERINARY",
+    "customer_name": "DR ABDELA ENDRIS/SUPER FAT VETERINARY",
+    "warehouse_id": "WH3",
+    "payment_type": "Cash",
+    "status": "Posted",
+    "total_quantity": "1500.0000",
+    "total_amount": "309000.00",
+    "subtotal_amount": "309000.00",
+    "tax_amount": "0.00",
+    "payment_status": "Paid",
+    "payment_method": "Cash",
+    "account_entries": {
+      "cogs_lines": [
+        {
+          "id": "dr-cogs-00000606-1",
+          "debit": 272385,
+          "amount": 272385,
+          "credit": 0,
+          "accountId": "5000-01",
+          "accountCode": "5000-01",
+          "accountName": "COST OF VETERINARY DRUG",
+          "description": "Cost of Goods Sold - Pharmaceuticals"
+        },
+        {
+          "id": "cr-cogs-00000606-1",
+          "debit": 0,
+          "amount": 272385,
+          "credit": 272385,
+          "accountId": "1400-01",
+          "accountCode": "1400-01",
+          "accountName": "STOCK OF VETERINARY DRUG",
+          "description": "Inventory Asset Relieved - Pharmaceuticals"
+        }
+      ],
+      "debit_lines": [
+        {
+          "id": "dr-sale-00000606-1",
+          "debit": 309000,
+          "amount": 309000,
+          "credit": 0,
+          "accountId": "1000-02-26",
+          "accountCode": "1000-02-26",
+          "accountName": "CBE_ECB_AC_1000465135224",
+          "description": "Customer Direct Deposit"
+        }
+      ],
+      "credit_lines": [
+        {
+          "id": "cr-sale-00000606-1",
+          "debit": 0,
+          "amount": 309000,
+          "credit": 309000,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ],
+      "revenue_lines": [
+        {
+          "id": "dr-sale-00000606-1",
+          "debit": 309000,
+          "amount": 309000,
+          "credit": 0,
+          "accountId": "1000-02-26",
+          "accountCode": "1000-02-26",
+          "accountName": "CBE_ECB_AC_1000465135224",
+          "description": "Customer Direct Deposit"
+        },
+        {
+          "id": "cr-sale-00000606-1",
+          "debit": 0,
+          "amount": 309000,
+          "credit": 309000,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ]
+    },
+    "created_by": "Sales Officer",
+    "posted_by": "Sales Officer",
+    "created_at": "2026-09-18T10:09:13.496Z",
+    "updated_at": "2026-09-30T14:22:28.487Z",
+    "posted_at": "2026-09-18T10:09:26.000Z"
+  },
+  {
+    "id": "00000607",
+    "fs_no": "00000607",
+    "reference_no": "CRSI01-0000321",
+    "sales_order_id": "SO-352247",
+    "issue_number": "00000607",
+    "sale_date": "2026-09-15T21:00:00.000Z",
+    "customer_id": "SELEMUN MEKONEN",
+    "customer_name": "SELEMUN MEKONEN",
+    "warehouse_id": "WH3",
+    "payment_type": "Cash",
+    "status": "Posted",
+    "total_quantity": "1600.0000",
+    "total_amount": "225600.00",
+    "subtotal_amount": "225600.00",
+    "tax_amount": "0.00",
+    "payment_status": "Paid",
+    "payment_method": "Cash",
+    "account_entries": {
+      "cogs_lines": [
+        {
+          "id": "dr-cogs-00000607-1",
+          "debit": 197632,
+          "amount": 197632,
+          "credit": 0,
+          "accountId": "5000-01",
+          "accountCode": "5000-01",
+          "accountName": "COST OF VETERINARY DRUG",
+          "description": "Cost of Goods Sold - Pharmaceuticals"
+        },
+        {
+          "id": "cr-cogs-00000607-1",
+          "debit": 0,
+          "amount": 197632,
+          "credit": 197632,
+          "accountId": "1400-01",
+          "accountCode": "1400-01",
+          "accountName": "STOCK OF VETERINARY DRUG",
+          "description": "Inventory Asset Relieved - Pharmaceuticals"
+        }
+      ],
+      "debit_lines": [
+        {
+          "id": "dr-sale-00000607-1",
+          "debit": 225600,
+          "amount": 225600,
+          "credit": 0,
+          "accountId": "1000-02-26",
+          "accountCode": "1000-02-26",
+          "accountName": "CBE_ECB_AC_1000465135224",
+          "description": "Customer Direct Deposit"
+        }
+      ],
+      "credit_lines": [
+        {
+          "id": "cr-sale-00000607-1",
+          "debit": 0,
+          "amount": 225600,
+          "credit": 225600,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ],
+      "revenue_lines": [
+        {
+          "id": "dr-sale-00000607-1",
+          "debit": 225600,
+          "amount": 225600,
+          "credit": 0,
+          "accountId": "1000-02-26",
+          "accountCode": "1000-02-26",
+          "accountName": "CBE_ECB_AC_1000465135224",
+          "description": "Customer Direct Deposit"
+        },
+        {
+          "id": "cr-sale-00000607-1",
+          "debit": 0,
+          "amount": 225600,
+          "credit": 225600,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ]
+    },
+    "created_by": "Sales Officer",
+    "posted_by": "Sales Officer",
+    "created_at": "2026-09-18T10:37:49.779Z",
+    "updated_at": "2026-09-30T14:22:28.490Z",
+    "posted_at": "2026-09-18T10:38:21.000Z"
+  },
+  {
+    "id": "00000608",
+    "fs_no": "00000608",
+    "reference_no": "crsi010000322",
+    "sales_order_id": "SO-831654",
+    "issue_number": "00000608",
+    "sale_date": "2026-09-16T21:00:00.000Z",
+    "customer_id": "yeabsera solomon woldesilase",
+    "customer_name": "yeabsera solomon woldesilase",
+    "warehouse_id": "WH3",
+    "payment_type": "Cash",
+    "status": "Posted",
+    "total_quantity": "80.0000",
+    "total_amount": "67840.00",
+    "subtotal_amount": "67840.00",
+    "tax_amount": "0.00",
+    "payment_status": "Paid",
+    "payment_method": "Cash",
+    "account_entries": {
+      "cogs_lines": [
+        {
+          "id": "dr-cogs-00000608-1",
+          "debit": 56633.6,
+          "amount": 56633.6,
+          "credit": 0,
+          "accountId": "5000-01",
+          "accountCode": "5000-01",
+          "accountName": "COST OF VETERINARY DRUG",
+          "description": "Cost of Goods Sold - Pharmaceuticals"
+        },
+        {
+          "id": "cr-cogs-00000608-1",
+          "debit": 0,
+          "amount": 56633.6,
+          "credit": 56633.6,
+          "accountId": "1400-01",
+          "accountCode": "1400-01",
+          "accountName": "STOCK OF VETERINARY DRUG",
+          "description": "Inventory Asset Relieved - Pharmaceuticals"
+        }
+      ],
+      "debit_lines": [
+        {
+          "id": "dr-sale-00000608-1",
+          "debit": 67840,
+          "amount": 67840,
+          "credit": 0,
+          "accountId": "1000-02-26",
+          "accountCode": "1000-02-26",
+          "accountName": "CBE_ECB_AC_1000465135224",
+          "description": "Customer Direct Deposit"
+        }
+      ],
+      "credit_lines": [
+        {
+          "id": "cr-sale-00000608-1",
+          "debit": 0,
+          "amount": 67840,
+          "credit": 67840,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ],
+      "revenue_lines": [
+        {
+          "id": "dr-sale-00000608-1",
+          "debit": 67840,
+          "amount": 67840,
+          "credit": 0,
+          "accountId": "1000-02-26",
+          "accountCode": "1000-02-26",
+          "accountName": "CBE_ECB_AC_1000465135224",
+          "description": "Customer Direct Deposit"
+        },
+        {
+          "id": "cr-sale-00000608-1",
+          "debit": 0,
+          "amount": 67840,
+          "credit": 67840,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ]
+    },
+    "created_by": "Sales Officer",
+    "posted_by": "Sales Officer",
+    "created_at": "2026-09-18T09:14:29.793Z",
+    "updated_at": "2026-09-30T14:22:28.492Z",
+    "posted_at": "2026-09-18T09:14:36.000Z"
+  },
+  {
+    "id": "00000609",
+    "fs_no": "00000609",
+    "reference_no": "CRSI010000323",
+    "sales_order_id": "SO-116910",
+    "issue_number": "00000609",
+    "sale_date": "2026-09-16T21:00:00.000Z",
+    "customer_id": "hana gebremedhin",
+    "customer_name": "hana gebremedhin",
+    "warehouse_id": "WH3",
+    "payment_type": "Credit",
+    "status": "Posted",
+    "total_quantity": "2400.0000",
+    "total_amount": "338400.00",
+    "subtotal_amount": "338400.00",
+    "tax_amount": "0.00",
+    "payment_status": "Unpaid",
+    "payment_method": "Credit",
+    "account_entries": {
+      "cogs_lines": [
+        {
+          "id": "dr-cogs-00000609-1",
+          "debit": 296448,
+          "amount": 296448,
+          "credit": 0,
+          "accountId": "5000-01",
+          "accountCode": "5000-01",
+          "accountName": "COST OF VETERINARY DRUG",
+          "description": "Cost of Goods Sold - Pharmaceuticals"
+        },
+        {
+          "id": "cr-cogs-00000609-1",
+          "debit": 0,
+          "amount": 296448,
+          "credit": 296448,
+          "accountId": "1400-01",
+          "accountCode": "1400-01",
+          "accountName": "STOCK OF VETERINARY DRUG",
+          "description": "Inventory Asset Relieved - Pharmaceuticals"
+        }
+      ],
+      "debit_lines": [
+        {
+          "id": "dr-sale-00000609-1",
+          "debit": 338400,
+          "amount": 338400,
+          "credit": 0,
+          "accountId": "1300-03",
+          "accountCode": "1300-03",
+          "accountName": "VET MEDICEN SALES RECIVABLE",
+          "description": "Receivable - hana gebremedhin"
+        }
+      ],
+      "credit_lines": [
+        {
+          "id": "cr-sale-00000609-1",
+          "debit": 0,
+          "amount": 338400,
+          "credit": 338400,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ],
+      "revenue_lines": [
+        {
+          "id": "dr-sale-00000609-1",
+          "debit": 338400,
+          "amount": 338400,
+          "credit": 0,
+          "accountId": "1300-03",
+          "accountCode": "1300-03",
+          "accountName": "VET MEDICEN SALES RECIVABLE",
+          "description": "Receivable - hana gebremedhin"
+        },
+        {
+          "id": "cr-sale-00000609-1",
+          "debit": 0,
+          "amount": 338400,
+          "credit": 338400,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ]
+    },
+    "created_by": "Sales Officer",
+    "posted_by": "Sales Officer",
+    "created_at": "2026-09-18T11:17:39.777Z",
+    "updated_at": "2026-09-30T14:22:28.493Z",
+    "posted_at": "2026-09-18T11:19:47.000Z"
+  },
+  {
+    "id": "00000610",
+    "fs_no": "00000610",
+    "reference_no": "crsi010000324",
+    "sales_order_id": "SO-058002",
+    "issue_number": "00000610",
+    "sale_date": "2026-09-17T21:00:00.000Z",
+    "customer_id": "DEREBE MEKONNEN",
+    "customer_name": "DEREBE MEKONNEN",
+    "warehouse_id": "WH3",
+    "payment_type": "Credit",
+    "status": "Posted",
+    "total_quantity": "1600.0000",
+    "total_amount": "1356800.00",
+    "subtotal_amount": "1356800.00",
+    "tax_amount": "0.00",
+    "payment_status": "Unpaid",
+    "payment_method": "Credit",
+    "account_entries": {
+      "cogs_lines": [
+        {
+          "id": "dr-cogs-00000610-1",
+          "debit": 1132672,
+          "amount": 1132672,
+          "credit": 0,
+          "accountId": "5000-01",
+          "accountCode": "5000-01",
+          "accountName": "COST OF VETERINARY DRUG",
+          "description": "Cost of Goods Sold - Pharmaceuticals"
+        },
+        {
+          "id": "cr-cogs-00000610-1",
+          "debit": 0,
+          "amount": 1132672,
+          "credit": 1132672,
+          "accountId": "1400-01",
+          "accountCode": "1400-01",
+          "accountName": "STOCK OF VETERINARY DRUG",
+          "description": "Inventory Asset Relieved - Pharmaceuticals"
+        }
+      ],
+      "debit_lines": [
+        {
+          "id": "dr-sale-00000610-1",
+          "debit": 1356800,
+          "amount": 1356800,
+          "credit": 0,
+          "accountId": "1300-03",
+          "accountCode": "1300-03",
+          "accountName": "VET MEDICEN SALES RECIVABLE",
+          "description": "Receivable - DEREBE MEKONNEN"
+        }
+      ],
+      "credit_lines": [
+        {
+          "id": "cr-sale-00000610-1",
+          "debit": 0,
+          "amount": 1356800,
+          "credit": 1356800,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ],
+      "revenue_lines": [
+        {
+          "id": "dr-sale-00000610-1",
+          "debit": 1356800,
+          "amount": 1356800,
+          "credit": 0,
+          "accountId": "1300-03",
+          "accountCode": "1300-03",
+          "accountName": "VET MEDICEN SALES RECIVABLE",
+          "description": "Receivable - DEREBE MEKONNEN"
+        },
+        {
+          "id": "cr-sale-00000610-1",
+          "debit": 0,
+          "amount": 1356800,
+          "credit": 1356800,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ]
+    },
+    "created_by": "Sales Officer",
+    "posted_by": "Sales Officer",
+    "created_at": "2026-09-18T10:29:09.456Z",
+    "updated_at": "2026-09-30T14:22:28.494Z",
+    "posted_at": "2026-09-18T10:36:23.000Z"
+  },
+  {
+    "id": "00000611",
+    "fs_no": "00000611",
+    "reference_no": "CRSI-01-0000325",
+    "sales_order_id": "SO-863175",
+    "issue_number": "00000611",
+    "sale_date": "2026-09-15T21:00:00.000Z",
+    "customer_id": "ADEN ALI ABDULFETAHI",
+    "customer_name": "ADEN ALI ABDULFETAHI",
+    "warehouse_id": "WH3",
+    "payment_type": "Credit",
+    "status": "Posted",
+    "total_quantity": "10000.0000",
+    "total_amount": "650000.00",
+    "subtotal_amount": "650000.00",
+    "tax_amount": "0.00",
+    "payment_status": "Unpaid",
+    "payment_method": "Credit",
+    "account_entries": {
+      "cogs_lines": [
+        {
+          "id": "dr-cogs-00000611-1",
+          "debit": 565300,
+          "amount": 565300,
+          "credit": 0,
+          "accountId": "5000-01",
+          "accountCode": "5000-01",
+          "accountName": "COST OF VETERINARY DRUG",
+          "description": "Cost of Goods Sold - Pharmaceuticals"
+        },
+        {
+          "id": "cr-cogs-00000611-1",
+          "debit": 0,
+          "amount": 565300,
+          "credit": 565300,
+          "accountId": "1400-01",
+          "accountCode": "1400-01",
+          "accountName": "STOCK OF VETERINARY DRUG",
+          "description": "Inventory Asset Relieved - Pharmaceuticals"
+        }
+      ],
+      "debit_lines": [
+        {
+          "id": "dr-sale-00000611-1",
+          "debit": 650000,
+          "amount": 650000,
+          "credit": 0,
+          "accountId": "1300-03",
+          "accountCode": "1300-03",
+          "accountName": "VET MEDICEN SALES RECIVABLE",
+          "description": "Receivable - ADEN ALI ABDULFETAHI"
+        }
+      ],
+      "credit_lines": [
+        {
+          "id": "cr-sale-00000611-1",
+          "debit": 0,
+          "amount": 650000,
+          "credit": 650000,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ],
+      "revenue_lines": [
+        {
+          "id": "dr-sale-00000611-1",
+          "debit": 650000,
+          "amount": 650000,
+          "credit": 0,
+          "accountId": "1300-03",
+          "accountCode": "1300-03",
+          "accountName": "VET MEDICEN SALES RECIVABLE",
+          "description": "Receivable - ADEN ALI ABDULFETAHI"
+        },
+        {
+          "id": "cr-sale-00000611-1",
+          "debit": 0,
+          "amount": 650000,
+          "credit": 650000,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ]
+    },
+    "created_by": "Sales Officer",
+    "posted_by": "Sales Officer",
+    "created_at": "2026-09-18T10:36:14.907Z",
+    "updated_at": "2026-09-30T14:22:28.494Z",
+    "posted_at": "2026-09-18T10:36:20.000Z"
+  },
+  {
+    "id": "00000612",
+    "fs_no": "00000612",
+    "reference_no": "crsi010000326",
+    "sales_order_id": "SO-766711",
+    "issue_number": "00000612",
+    "sale_date": "2026-09-17T21:00:00.000Z",
+    "customer_id": "weldabrh hadg gebiru",
+    "customer_name": "weldabrh hadg gebiru",
+    "warehouse_id": "WH3",
+    "payment_type": "Credit",
+    "status": "Posted",
+    "total_quantity": "3000.0000",
+    "total_amount": "510000.00",
+    "subtotal_amount": "510000.00",
+    "tax_amount": "0.00",
+    "payment_status": "Unpaid",
+    "payment_method": "Credit",
+    "account_entries": {
+      "cogs_lines": [
+        {
+          "id": "dr-cogs-00000612-1",
+          "debit": 384599.99999999994,
+          "amount": 384599.99999999994,
+          "credit": 0,
+          "accountId": "5000-01",
+          "accountCode": "5000-01",
+          "accountName": "COST OF VETERINARY DRUG",
+          "description": "Cost of Goods Sold - Pharmaceuticals"
+        },
+        {
+          "id": "cr-cogs-00000612-1",
+          "debit": 0,
+          "amount": 384599.99999999994,
+          "credit": 384599.99999999994,
+          "accountId": "1400-01",
+          "accountCode": "1400-01",
+          "accountName": "STOCK OF VETERINARY DRUG",
+          "description": "Inventory Asset Relieved - Pharmaceuticals"
+        }
+      ],
+      "debit_lines": [
+        {
+          "id": "dr-sale-00000612-1",
+          "debit": 510000,
+          "amount": 510000,
+          "credit": 0,
+          "accountId": "1300-03",
+          "accountCode": "1300-03",
+          "accountName": "VET MEDICEN SALES RECIVABLE",
+          "description": "Receivable - weldabrh hadg gebiru"
+        }
+      ],
+      "credit_lines": [
+        {
+          "id": "cr-sale-00000612-1",
+          "debit": 0,
+          "amount": 510000,
+          "credit": 510000,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ],
+      "revenue_lines": [
+        {
+          "id": "dr-sale-00000612-1",
+          "debit": 510000,
+          "amount": 510000,
+          "credit": 0,
+          "accountId": "1300-03",
+          "accountCode": "1300-03",
+          "accountName": "VET MEDICEN SALES RECIVABLE",
+          "description": "Receivable - weldabrh hadg gebiru"
+        },
+        {
+          "id": "cr-sale-00000612-1",
+          "debit": 0,
+          "amount": 510000,
+          "credit": 510000,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ]
+    },
+    "created_by": "Sales Officer",
+    "posted_by": "Sales Officer",
+    "created_at": "2026-09-18T10:50:26.073Z",
+    "updated_at": "2026-09-30T14:22:28.496Z",
+    "posted_at": "2026-09-18T10:50:30.000Z"
+  },
+  {
+    "id": "00000615",
+    "fs_no": "00000615",
+    "reference_no": "crsi010000329",
+    "sales_order_id": "SO-744307",
+    "issue_number": "00000615",
+    "sale_date": "2026-09-16T21:00:00.000Z",
+    "customer_id": "yebesera solomon weldeselase",
+    "customer_name": "yebesera solomon weldeselase",
+    "warehouse_id": "WH2",
+    "payment_type": "Cash",
+    "status": "Posted",
+    "total_quantity": "24.0000",
+    "total_amount": "46440.00",
+    "subtotal_amount": "46440.00",
+    "tax_amount": "0.00",
+    "payment_status": "Paid",
+    "payment_method": "Cash",
+    "account_entries": {
+      "cogs_lines": [
+        {
+          "id": "dr-cogs-00000615-1",
+          "debit": 41131.92,
+          "amount": 41131.92,
+          "credit": 0,
+          "accountId": "5000-01",
+          "accountCode": "5000-01",
+          "accountName": "COST OF VETERINARY DRUG",
+          "description": "Cost of Goods Sold - Pharmaceuticals"
+        },
+        {
+          "id": "cr-cogs-00000615-1",
+          "debit": 0,
+          "amount": 41131.92,
+          "credit": 41131.92,
+          "accountId": "1400-01",
+          "accountCode": "1400-01",
+          "accountName": "STOCK OF VETERINARY DRUG",
+          "description": "Inventory Asset Relieved - Pharmaceuticals"
+        }
+      ],
+      "debit_lines": [
+        {
+          "id": "dr-sale-00000615-1",
+          "debit": 46440,
+          "amount": 46440,
+          "credit": 0,
+          "accountId": "1000-02-26",
+          "accountCode": "1000-02-26",
+          "accountName": "CBE_ECB_AC_1000465135224",
+          "description": "Customer Direct Deposit"
+        }
+      ],
+      "credit_lines": [
+        {
+          "id": "cr-sale-00000615-1",
+          "debit": 0,
+          "amount": 46440,
+          "credit": 46440,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ],
+      "revenue_lines": [
+        {
+          "id": "dr-sale-00000615-1",
+          "debit": 46440,
+          "amount": 46440,
+          "credit": 0,
+          "accountId": "1000-02-26",
+          "accountCode": "1000-02-26",
+          "accountName": "CBE_ECB_AC_1000465135224",
+          "description": "Customer Direct Deposit"
+        },
+        {
+          "id": "cr-sale-00000615-1",
+          "debit": 0,
+          "amount": 46440,
+          "credit": 46440,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ]
+    },
+    "created_by": "Sales Officer",
+    "posted_by": "Sales Officer",
+    "created_at": "2026-09-18T09:43:42.360Z",
+    "updated_at": "2026-09-30T14:22:28.498Z",
+    "posted_at": "2026-09-18T09:45:07.000Z"
+  },
+  {
+    "id": "00000616",
+    "fs_no": "00000616",
+    "reference_no": "crsi010000330",
+    "sales_order_id": "SO-537077",
+    "issue_number": "00000616",
+    "sale_date": "2026-09-17T21:00:00.000Z",
+    "customer_id": "SELEMUN MEKONEN",
+    "customer_name": "SELEMUN MEKONEN",
+    "warehouse_id": "WH2",
+    "payment_type": "Credit",
+    "status": "Posted",
+    "total_quantity": "330.0000",
+    "total_amount": "135300.00",
+    "subtotal_amount": "135300.00",
+    "tax_amount": "0.00",
+    "payment_status": "Unpaid",
+    "payment_method": "Credit",
+    "account_entries": {
+      "cogs_lines": [
+        {
+          "id": "dr-cogs-00000616-1",
+          "debit": 119766.9,
+          "amount": 119766.9,
+          "credit": 0,
+          "accountId": "5000-01",
+          "accountCode": "5000-01",
+          "accountName": "COST OF VETERINARY DRUG",
+          "description": "Cost of Goods Sold - Pharmaceuticals"
+        },
+        {
+          "id": "cr-cogs-00000616-1",
+          "debit": 0,
+          "amount": 119766.9,
+          "credit": 119766.9,
+          "accountId": "1400-01",
+          "accountCode": "1400-01",
+          "accountName": "STOCK OF VETERINARY DRUG",
+          "description": "Inventory Asset Relieved - Pharmaceuticals"
+        }
+      ],
+      "debit_lines": [
+        {
+          "id": "dr-sale-00000616-1",
+          "debit": 135300,
+          "amount": 135300,
+          "credit": 0,
+          "accountId": "1300-03",
+          "accountCode": "1300-03",
+          "accountName": "VET MEDICEN SALES RECIVABLE",
+          "description": "Receivable - SELEMUN MEKONEN"
+        }
+      ],
+      "credit_lines": [
+        {
+          "id": "cr-sale-00000616-1",
+          "debit": 0,
+          "amount": 135300,
+          "credit": 135300,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ],
+      "revenue_lines": [
+        {
+          "id": "dr-sale-00000616-1",
+          "debit": 135300,
+          "amount": 135300,
+          "credit": 0,
+          "accountId": "1300-03",
+          "accountCode": "1300-03",
+          "accountName": "VET MEDICEN SALES RECIVABLE",
+          "description": "Receivable - SELEMUN MEKONEN"
+        },
+        {
+          "id": "cr-sale-00000616-1",
+          "debit": 0,
+          "amount": 135300,
+          "credit": 135300,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ]
+    },
+    "created_by": "Sales Officer",
+    "posted_by": "Sales Officer",
+    "created_at": "2026-09-18T11:19:37.946Z",
+    "updated_at": "2026-09-30T14:22:28.499Z",
+    "posted_at": "2026-09-18T11:19:41.000Z"
+  },
+  {
+    "id": "00000617",
+    "fs_no": "00000617",
+    "reference_no": "crsi010000331",
+    "sales_order_id": "SO-456552",
+    "issue_number": "00000617",
+    "sale_date": "2026-09-17T21:00:00.000Z",
+    "customer_id": "beweketu kbretu",
+    "customer_name": "beweketu kbretu",
+    "warehouse_id": "WH2",
+    "payment_type": "Cash",
+    "status": "Posted",
+    "total_quantity": "60.0000",
+    "total_amount": "116100.00",
+    "subtotal_amount": "116100.00",
+    "tax_amount": "0.00",
+    "payment_status": "Paid",
+    "payment_method": "Cash",
+    "account_entries": {
+      "cogs_lines": [
+        {
+          "id": "dr-cogs-00000617-1",
+          "debit": 102829.8,
+          "amount": 102829.8,
+          "credit": 0,
+          "accountId": "5000-01",
+          "accountCode": "5000-01",
+          "accountName": "COST OF VETERINARY DRUG",
+          "description": "Cost of Goods Sold - Pharmaceuticals"
+        },
+        {
+          "id": "cr-cogs-00000617-1",
+          "debit": 0,
+          "amount": 102829.8,
+          "credit": 102829.8,
+          "accountId": "1400-01",
+          "accountCode": "1400-01",
+          "accountName": "STOCK OF VETERINARY DRUG",
+          "description": "Inventory Asset Relieved - Pharmaceuticals"
+        }
+      ],
+      "debit_lines": [
+        {
+          "id": "dr-sale-00000617-1",
+          "debit": 116100,
+          "amount": 116100,
+          "credit": 0,
+          "accountId": "1000-02-26",
+          "accountCode": "1000-02-26",
+          "accountName": "CBE_ECB_AC_1000465135224",
+          "description": "Customer Direct Deposit"
+        }
+      ],
+      "credit_lines": [
+        {
+          "id": "cr-sale-00000617-1",
+          "debit": 0,
+          "amount": 116100,
+          "credit": 116100,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ],
+      "revenue_lines": [
+        {
+          "id": "dr-sale-00000617-1",
+          "debit": 116100,
+          "amount": 116100,
+          "credit": 0,
+          "accountId": "1000-02-26",
+          "accountCode": "1000-02-26",
+          "accountName": "CBE_ECB_AC_1000465135224",
+          "description": "Customer Direct Deposit"
+        },
+        {
+          "id": "cr-sale-00000617-1",
+          "debit": 0,
+          "amount": 116100,
+          "credit": 116100,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ]
+    },
+    "created_by": "Sales Officer",
+    "posted_by": "Sales Officer",
+    "created_at": "2026-09-18T11:18:48.443Z",
+    "updated_at": "2026-09-30T14:22:28.499Z",
+    "posted_at": "2026-09-18T11:19:44.000Z"
+  },
+  {
+    "id": "00000619",
+    "fs_no": "00000619",
+    "reference_no": "CRSI010000332",
+    "sales_order_id": "SO-376925",
+    "issue_number": "00000619",
+    "sale_date": "2026-09-18T21:00:00.000Z",
+    "customer_id": "GAWA VET MED/TAYIB MAHAMOUD",
+    "customer_name": "GAWA VET MED/TAYIB MAHAMOUD",
+    "warehouse_id": "WH3",
+    "payment_type": "Credit",
+    "status": "Posted",
+    "total_quantity": "2500.0000",
+    "total_amount": "425000.00",
+    "subtotal_amount": "425000.00",
+    "tax_amount": "0.00",
+    "payment_status": "Unpaid",
+    "payment_method": "Credit",
+    "account_entries": {
+      "cogs_lines": [
+        {
+          "id": "dr-cogs-00000619-1",
+          "debit": 320500,
+          "amount": 320500,
+          "credit": 0,
+          "accountId": "5000-01",
+          "accountCode": "5000-01",
+          "accountName": "COST OF VETERINARY DRUG",
+          "description": "Cost of Goods Sold - Pharmaceuticals"
+        },
+        {
+          "id": "cr-cogs-00000619-1",
+          "debit": 0,
+          "amount": 320500,
+          "credit": 320500,
+          "accountId": "1400-01",
+          "accountCode": "1400-01",
+          "accountName": "STOCK OF VETERINARY DRUG",
+          "description": "Inventory Asset Relieved - Pharmaceuticals"
+        }
+      ],
+      "debit_lines": [
+        {
+          "id": "dr-sale-00000619-1",
+          "debit": 425000,
+          "amount": 425000,
+          "credit": 0,
+          "accountId": "1300-03",
+          "accountCode": "1300-03",
+          "accountName": "VET MEDICEN SALES RECIVABLE",
+          "description": "Receivable - GAWA VET MED/TAYIB MAHAMOUD"
+        }
+      ],
+      "credit_lines": [
+        {
+          "id": "cr-sale-00000619-1",
+          "debit": 0,
+          "amount": 425000,
+          "credit": 425000,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ],
+      "revenue_lines": [
+        {
+          "id": "dr-sale-00000619-1",
+          "debit": 425000,
+          "amount": 425000,
+          "credit": 0,
+          "accountId": "1300-03",
+          "accountCode": "1300-03",
+          "accountName": "VET MEDICEN SALES RECIVABLE",
+          "description": "Receivable - GAWA VET MED/TAYIB MAHAMOUD"
+        },
+        {
+          "id": "cr-sale-00000619-1",
+          "debit": 0,
+          "amount": 425000,
+          "credit": 425000,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ]
+    },
+    "created_by": "Sales Officer",
+    "posted_by": "Sales Officer",
+    "created_at": "2026-09-29T04:04:08.608Z",
+    "updated_at": "2026-09-30T14:22:28.500Z",
+    "posted_at": "2026-09-29T04:04:08.000Z"
+  },
+  {
+    "id": "00000620",
+    "fs_no": "00000620",
+    "reference_no": "CRSI010000333",
+    "sales_order_id": "SO-973912",
+    "issue_number": "00000620",
+    "sale_date": "2026-09-20T21:00:00.000Z",
+    "customer_id": "SILANTE WAGNEW",
+    "customer_name": "SILANTE WAGNEW",
+    "warehouse_id": "WH3",
+    "payment_type": "Cash",
+    "status": "Posted",
+    "total_quantity": "1000.0000",
+    "total_amount": "170000.00",
+    "subtotal_amount": "170000.00",
+    "tax_amount": "0.00",
+    "payment_status": "Paid",
+    "payment_method": "Cash",
+    "account_entries": {
+      "cogs_lines": [
+        {
+          "id": "dr-cogs-00000620-1",
+          "debit": 128200,
+          "amount": 128200,
+          "credit": 0,
+          "accountId": "5000-01",
+          "accountCode": "5000-01",
+          "accountName": "COST OF VETERINARY DRUG",
+          "description": "Cost of Goods Sold - Pharmaceuticals"
+        },
+        {
+          "id": "cr-cogs-00000620-1",
+          "debit": 0,
+          "amount": 128200,
+          "credit": 128200,
+          "accountId": "1400-01",
+          "accountCode": "1400-01",
+          "accountName": "STOCK OF VETERINARY DRUG",
+          "description": "Inventory Asset Relieved - Pharmaceuticals"
+        }
+      ],
+      "debit_lines": [
+        {
+          "id": "dr-sale-00000620-1",
+          "debit": 170000,
+          "amount": 170000,
+          "credit": 0,
+          "accountId": "1000-02-26",
+          "accountCode": "1000-02-26",
+          "accountName": "CBE_ECB_AC_1000465135224",
+          "description": "Customer Direct Deposit"
+        }
+      ],
+      "credit_lines": [
+        {
+          "id": "cr-sale-00000620-1",
+          "debit": 0,
+          "amount": 170000,
+          "credit": 170000,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ],
+      "revenue_lines": [
+        {
+          "id": "dr-sale-00000620-1",
+          "debit": 170000,
+          "amount": 170000,
+          "credit": 0,
+          "accountId": "1000-02-26",
+          "accountCode": "1000-02-26",
+          "accountName": "CBE_ECB_AC_1000465135224",
+          "description": "Customer Direct Deposit"
+        },
+        {
+          "id": "cr-sale-00000620-1",
+          "debit": 0,
+          "amount": 170000,
+          "credit": 170000,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ]
+    },
+    "created_by": "Sales Officer",
+    "posted_by": "Sales Officer",
+    "created_at": "2026-09-21T10:52:33.681Z",
+    "updated_at": "2026-09-30T14:22:28.501Z",
+    "posted_at": "2026-09-21T11:37:32.000Z"
+  },
+  {
+    "id": "00000621",
+    "fs_no": "00000621",
+    "reference_no": "CRSI010000334",
+    "sales_order_id": "SO-327688",
+    "issue_number": "00000621",
+    "sale_date": "2026-09-20T21:00:00.000Z",
+    "customer_id": "SELEMUN MEKONEN",
+    "customer_name": "SELEMUN MEKONEN",
+    "warehouse_id": "WH3",
+    "payment_type": "Credit",
+    "status": "Posted",
+    "total_quantity": "1620.0000",
+    "total_amount": "275400.00",
+    "subtotal_amount": "275400.00",
+    "tax_amount": "0.00",
+    "payment_status": "Unpaid",
+    "payment_method": "Credit",
+    "account_entries": {
+      "cogs_lines": [
+        {
+          "id": "dr-cogs-00000621-1",
+          "debit": 207683.99999999997,
+          "amount": 207683.99999999997,
+          "credit": 0,
+          "accountId": "5000-01",
+          "accountCode": "5000-01",
+          "accountName": "COST OF VETERINARY DRUG",
+          "description": "Cost of Goods Sold - Pharmaceuticals"
+        },
+        {
+          "id": "cr-cogs-00000621-1",
+          "debit": 0,
+          "amount": 207683.99999999997,
+          "credit": 207683.99999999997,
+          "accountId": "1400-01",
+          "accountCode": "1400-01",
+          "accountName": "STOCK OF VETERINARY DRUG",
+          "description": "Inventory Asset Relieved - Pharmaceuticals"
+        }
+      ],
+      "debit_lines": [
+        {
+          "id": "dr-sale-00000621-1",
+          "debit": 275400,
+          "amount": 275400,
+          "credit": 0,
+          "accountId": "1300-03",
+          "accountCode": "1300-03",
+          "accountName": "VET MEDICEN SALES RECIVABLE",
+          "description": "Receivable - SELEMUN MEKONEN"
+        }
+      ],
+      "credit_lines": [
+        {
+          "id": "cr-sale-00000621-1",
+          "debit": 0,
+          "amount": 275400,
+          "credit": 275400,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ],
+      "revenue_lines": [
+        {
+          "id": "dr-sale-00000621-1",
+          "debit": 275400,
+          "amount": 275400,
+          "credit": 0,
+          "accountId": "1300-03",
+          "accountCode": "1300-03",
+          "accountName": "VET MEDICEN SALES RECIVABLE",
+          "description": "Receivable - SELEMUN MEKONEN"
+        },
+        {
+          "id": "cr-sale-00000621-1",
+          "debit": 0,
+          "amount": 275400,
+          "credit": 275400,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ]
+    },
+    "created_by": "Sales Officer",
+    "posted_by": "Sales Officer",
+    "created_at": "2026-09-21T10:54:36.098Z",
+    "updated_at": "2026-09-30T14:22:28.501Z",
+    "posted_at": "2026-09-21T11:37:44.000Z"
+  },
+  {
+    "id": "00000623",
+    "fs_no": "00000623",
+    "reference_no": "CRSI010000291",
+    "sales_order_id": "SO-189600",
+    "issue_number": "00000623",
+    "sale_date": "2026-09-20T21:00:00.000Z",
+    "customer_id": "LIDETU AYFERUM",
+    "customer_name": "LIDETU AYFERUM",
+    "warehouse_id": "WH3",
+    "payment_type": "Cash",
+    "status": "Posted",
+    "total_quantity": "2300.0000",
+    "total_amount": "367800.00",
+    "subtotal_amount": "367800.00",
+    "tax_amount": "0.00",
+    "payment_status": "Paid",
+    "payment_method": "Cash",
+    "account_entries": {
+      "cogs_lines": [
+        {
+          "id": "dr-cogs-00000623-1",
+          "debit": 291116,
+          "amount": 291116,
+          "credit": 0,
+          "accountId": "5000-01",
+          "accountCode": "5000-01",
+          "accountName": "COST OF VETERINARY DRUG",
+          "description": "Cost of Goods Sold - Pharmaceuticals"
+        },
+        {
+          "id": "cr-cogs-00000623-1",
+          "debit": 0,
+          "amount": 291116,
+          "credit": 291116,
+          "accountId": "1400-01",
+          "accountCode": "1400-01",
+          "accountName": "STOCK OF VETERINARY DRUG",
+          "description": "Inventory Asset Relieved - Pharmaceuticals"
+        }
+      ],
+      "debit_lines": [
+        {
+          "id": "dr-sale-00000623-1",
+          "debit": 367800,
+          "amount": 367800,
+          "credit": 0,
+          "accountId": "1000-02-26",
+          "accountCode": "1000-02-26",
+          "accountName": "CBE_ECB_AC_1000465135224",
+          "description": "Customer Direct Deposit"
+        }
+      ],
+      "credit_lines": [
+        {
+          "id": "cr-sale-00000623-1",
+          "debit": 0,
+          "amount": 367800,
+          "credit": 367800,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ],
+      "revenue_lines": [
+        {
+          "id": "dr-sale-00000623-1",
+          "debit": 367800,
+          "amount": 367800,
+          "credit": 0,
+          "accountId": "1000-02-26",
+          "accountCode": "1000-02-26",
+          "accountName": "CBE_ECB_AC_1000465135224",
+          "description": "Customer Direct Deposit"
+        },
+        {
+          "id": "cr-sale-00000623-1",
+          "debit": 0,
+          "amount": 367800,
+          "credit": 367800,
+          "accountId": "4000-01-01",
+          "accountCode": "4000-01-01",
+          "accountName": "SALES OF VETERINARY DRUG",
+          "description": "Sales Revenue Recognition"
+        }
+      ]
+    },
+    "created_by": "Sales Officer",
+    "posted_by": "Sales Officer",
+    "created_at": "2026-09-21T10:53:34.959Z",
+    "updated_at": "2026-09-30T14:22:28.502Z",
+    "posted_at": "2026-09-21T11:37:38.000Z"
+  }
+]

@@ -183,13 +183,13 @@ export default function StockProducts() {
   const [addWarehouse, setAddWarehouse] = useState("")
   const [addBatchNumber, setAddBatchNumber] = useState("")
   const [addUnitPrice, setAddUnitPrice] = useState("")
+  const [addSellingPrice, setAddSellingPrice] = useState("")
   const [addMfgDate, setAddMfgDate] = useState("")
   const [addExpDate, setAddExpDate] = useState("")
   const [addQtyPerPack, setAddQtyPerPack] = useState("")
   const [addNumCartons, setAddNumCartons] = useState("")
   const [addEntryDate, setAddEntryDate] = useState("")
   const [addQuantity, setAddQuantity] = useState("")
-  const [addProcessedQuantity, setAddProcessedQuantity] = useState("")
   const [addNotes, setAddNotes] = useState("")
   const [isSavingAdd, setIsSavingAdd] = useState(false)
 
@@ -327,13 +327,13 @@ export default function StockProducts() {
     setAddWarehouse("")
     setAddBatchNumber("")
     setAddUnitPrice("")
+    setAddSellingPrice("")
     setAddMfgDate("")
     setAddExpDate("")
     setAddQtyPerPack("")
     setAddNumCartons("")
     setAddEntryDate("")
     setAddQuantity("")
-    setAddProcessedQuantity("")
     setAddNotes("")
     setSelectedExistingProduct(null)
   }
@@ -523,22 +523,16 @@ export default function StockProducts() {
           quantityReceived: addTotalQuantity,
           quantityRemaining: addTotalQuantity,
           unitPrice: Number(addUnitPrice || 0),
+          sellingPrice: Number(addSellingPrice || 0) > 0 ? Number(addSellingPrice) : undefined,
           notes: addNotes.trim() || undefined,
         }
         await erp.addWH1Entry(selectedExistingProduct.id, newEntryPayload)
-        if (Number(addProcessedQuantity) > 0) {
-          await erp.addWH1ProcessedMovement(selectedExistingProduct.id, {
-            date: addEntryDate || now.slice(0, 10),
-            voucherNo: addVoucherNo.trim() ? `PROCESSED-${addVoucherNo.trim()}` : "PROCESSED-ADD",
-            quantity: Number(addProcessedQuantity),
-            notes: "Processed lot recorded during arrival",
-            plateNumber: addPlateNumber.trim() || undefined,
-          })
-        }
         showToast("Stock entry added", "success", `Entry added to existing item ${selectedExistingProduct.name}.`)
       } else {
         // Option B: Add new item entirely
         const productId = `P-${Date.now()}`
+        const parsedSellingPrice = Number(addSellingPrice || 0)
+        const parsedUnitCost = Number(addUnitPrice || 0)
         const initialWH1Entries: WH1Entry[] = isWH1Form ? [{
           entryId: `WH1E-${Date.now()}`,
           voucherNo: addVoucherNo.trim() || undefined,
@@ -548,7 +542,8 @@ export default function StockProducts() {
           leaveDate: undefined,
           quantityReceived: addTotalQuantity,
           quantityRemaining: addTotalQuantity,
-          unitPrice: Number(addUnitPrice || 0),
+          unitPrice: parsedUnitCost,
+          sellingPrice: parsedSellingPrice > 0 ? parsedSellingPrice : undefined,
           notes: addNotes.trim() || undefined,
         }] : []
 
@@ -573,8 +568,8 @@ export default function StockProducts() {
           quantitySold: 0,
           openingBalance: addTotalQuantity,
           unit: targetUOM,
-          unitCost: Number(addUnitPrice || 0),
-          sellingPrice: 0,
+          unitCost: parsedUnitCost,
+          sellingPrice: parsedSellingPrice,
           totalStockValue: addTotalStockValue,
           batch: isWH1Form ? "" : addBatchNumber,
           manufacturingDate: isWH1Form ? undefined : addMfgDate,
@@ -584,7 +579,16 @@ export default function StockProducts() {
           leaveDate: undefined,
           status: addTotalQuantity > 0 ? "In Stock" : "Out of Stock",
           stockBreakdown: [{ warehouse: addWarehouse, qty: addTotalQuantity }],
-          batches: isWH1Form ? [] : [{ batchNo: addBatchNumber, qty: addTotalQuantity, expiry: addExpDate, status: "Released" }],
+          batches: isWH1Form ? [] : [{
+            batchNo: addBatchNumber,
+            qty: addTotalQuantity,
+            expiry: addExpDate,
+            mfgDate: addMfgDate || undefined,
+            unitPrice: parsedUnitCost,
+            costPrice: parsedUnitCost,
+            sellingPrice: parsedSellingPrice > 0 ? parsedSellingPrice : undefined,
+            status: "Released",
+          }],
           wh1Entries: isWH1Form ? initialWH1Entries : undefined,
           binCardEntries: (!isWH1Form && addTotalQuantity > 0) ? [{
             id: `BCE-${Date.now()}-init`,
@@ -597,8 +601,8 @@ export default function StockProducts() {
             mfgDate: isWH1Form ? undefined : (addMfgDate || undefined),
             expiryDate: addExpDate,
             party: "Initial Stock Deposit",
-            unitPrice: Number(addUnitPrice || 0),
-            sellingPrice: undefined,
+            unitPrice: parsedUnitCost,
+            sellingPrice: parsedSellingPrice > 0 ? parsedSellingPrice : undefined,
             remark: addNotes.trim() || "Initial Stock Registration",
             createdAt: now,
           }] : [],
@@ -612,15 +616,6 @@ export default function StockProducts() {
         }
 
         await erp.addProduct(product)
-        if (isWH1Form && Number(addProcessedQuantity) > 0) {
-          await erp.addWH1ProcessedMovement(productId, {
-            date: addEntryDate || now.slice(0, 10),
-            voucherNo: addVoucherNo.trim() ? `PROCESSED-${addVoucherNo.trim()}` : "PROCESSED-INIT",
-            quantity: Number(addProcessedQuantity),
-            notes: "Initial processed lot recorded during commodity registration",
-            plateNumber: addPlateNumber.trim() || undefined,
-          })
-        }
         showToast("Stock item saved", "success", `${addDescription} was saved to inventory.`)
       }
 
@@ -2054,12 +2049,23 @@ export default function StockProducts() {
                   )}
 
                   <label className="space-y-1">
-                    <span className="text-[11px] font-black uppercase text-zinc-700">Price per unit (ETB)</span>
+                    <span className="text-[11px] font-black uppercase text-zinc-700">Cost Price per unit (ETB)</span>
                     <input
                       type="number"
                       placeholder="0.00"
                       value={addUnitPrice}
                       onChange={(e) => setAddUnitPrice(e.target.value)}
+                      className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                    />
+                  </label>
+
+                  <label className="space-y-1">
+                    <span className="text-[11px] font-black uppercase text-zinc-700">Selling Price per unit (ETB)</span>
+                    <input
+                      type="number"
+                      placeholder="0.00"
+                      value={addSellingPrice}
+                      onChange={(e) => setAddSellingPrice(e.target.value)}
                       className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
                     />
                   </label>
@@ -2178,20 +2184,6 @@ export default function StockProducts() {
                           value={addQuantity}
                           onChange={(e) => setAddQuantity(e.target.value)}
                           className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
-                        />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase text-sky-900">
-                          Processed <span className="text-[10px] text-zinc-400 lowercase font-normal">(optional ready lot)</span>
-                        </span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="any"
-                          placeholder="0.00"
-                          value={addProcessedQuantity}
-                          onChange={(e) => setAddProcessedQuantity(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-sky-200 bg-sky-50/30 px-3 text-xs font-mono font-bold text-sky-950"
                         />
                       </label>
                       <label className="space-y-1">

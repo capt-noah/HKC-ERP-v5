@@ -1,0 +1,24 @@
+[
+  {
+    "id": "SUP-1789991938544",
+    "payload": {
+      "id": "SUP-1789991938544",
+      "name": "GIRMA",
+      "status": "Active",
+      "country": "Ethiopia"
+    },
+    "created_at": "2026-09-21T14:59:00.303Z",
+    "updated_at": "2026-09-21T14:59:00.303Z"
+  },
+  {
+    "id": "SUP-1789992720520",
+    "payload": {
+      "id": "SUP-1789992720520",
+      "name": "SAMUEL",
+      "status": "Active",
+      "country": "Ethiopia"
+    },
+    "created_at": "2026-09-21T15:12:02.398Z",
+    "updated_at": "2026-09-21T15:12:02.398Z"
+  }
+]

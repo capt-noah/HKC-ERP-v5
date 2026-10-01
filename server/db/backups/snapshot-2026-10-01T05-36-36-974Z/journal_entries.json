@@ -1,0 +1,560 @@
+[
+  {
+    "id": "JE-COGS-00000606",
+    "payload": {
+      "id": "JE-COGS-00000606",
+      "currency": "ETB",
+      "source_id": "00000606",
+      "created_at": "2026-09-18 13:09:26.621",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-18",
+      "updated_at": "2026-09-28 13:20:57.737",
+      "description": "COGS â€” Sales Issue 00000606",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-COGS-00000606",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T10:09:26.621Z",
+    "updated_at": "2026-09-29T07:52:50.829Z"
+  },
+  {
+    "id": "JE-COGS-00000607",
+    "payload": {
+      "id": "JE-COGS-00000607",
+      "currency": "ETB",
+      "source_id": "00000607",
+      "created_at": "2026-09-18 13:38:21.621",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-16",
+      "updated_at": "2026-09-28 13:20:57.712",
+      "description": "COGS â€” Sales Issue 00000607",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-COGS-00000607",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T10:38:21.621Z",
+    "updated_at": "2026-09-29T07:52:50.808Z"
+  },
+  {
+    "id": "JE-COGS-00000608",
+    "payload": {
+      "id": "JE-COGS-00000608",
+      "currency": "ETB",
+      "source_id": "00000608",
+      "created_at": "2026-09-18 12:14:36.862",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-17",
+      "updated_at": "2026-09-28 13:20:57.747",
+      "description": "COGS â€” Sales Issue 00000608",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-COGS-00000608",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T09:14:36.862Z",
+    "updated_at": "2026-09-29T07:52:50.844Z"
+  },
+  {
+    "id": "JE-COGS-00000609",
+    "payload": {
+      "id": "JE-COGS-00000609",
+      "currency": "ETB",
+      "source_id": "00000609",
+      "created_at": "2026-09-18 14:19:47.210",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-17",
+      "updated_at": "2026-09-28 13:20:57.697",
+      "description": "COGS â€” Sales Issue 00000609",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-COGS-00000609",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T11:19:47.210Z",
+    "updated_at": "2026-09-29T07:52:50.779Z"
+  },
+  {
+    "id": "JE-COGS-00000610",
+    "payload": {
+      "id": "JE-COGS-00000610",
+      "currency": "ETB",
+      "source_id": "00000610",
+      "created_at": "2026-09-18 13:36:23.864",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-18",
+      "updated_at": "2026-09-28 13:20:57.735",
+      "description": "COGS â€” Sales Issue 00000610",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-COGS-00000610",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T10:36:23.864Z",
+    "updated_at": "2026-09-29T07:52:50.815Z"
+  },
+  {
+    "id": "JE-COGS-00000611",
+    "payload": {
+      "id": "JE-COGS-00000611",
+      "currency": "ETB",
+      "source_id": "00000611",
+      "created_at": "2026-09-18 13:36:20.129",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-16",
+      "updated_at": "2026-09-28 13:20:57.720",
+      "description": "COGS â€” Sales Issue 00000611",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-COGS-00000611",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T10:36:20.129Z",
+    "updated_at": "2026-09-29T07:52:50.822Z"
+  },
+  {
+    "id": "JE-COGS-00000612",
+    "payload": {
+      "id": "JE-COGS-00000612",
+      "currency": "ETB",
+      "source_id": "00000612",
+      "created_at": "2026-09-18 13:50:30.207",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-18",
+      "updated_at": "2026-09-28 13:20:57.704",
+      "description": "COGS â€” Sales Issue 00000612",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-COGS-00000612",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T10:50:30.207Z",
+    "updated_at": "2026-09-29T07:52:50.801Z"
+  },
+  {
+    "id": "JE-COGS-00000615",
+    "payload": {
+      "id": "JE-COGS-00000615",
+      "currency": "ETB",
+      "source_id": "00000615",
+      "created_at": "2026-09-18 12:45:07.785",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-17",
+      "updated_at": "2026-09-28 13:20:57.745",
+      "description": "COGS â€” Sales Issue 00000615",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-COGS-00000615",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T09:45:07.785Z",
+    "updated_at": "2026-09-29T07:52:50.837Z"
+  },
+  {
+    "id": "JE-COGS-00000616",
+    "payload": {
+      "id": "JE-COGS-00000616",
+      "currency": "ETB",
+      "source_id": "00000616",
+      "created_at": "2026-09-18 14:19:41.503",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-18",
+      "updated_at": "2026-09-28 13:20:57.691",
+      "description": "COGS â€” Sales Issue 00000616",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-COGS-00000616",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T11:19:41.503Z",
+    "updated_at": "2026-09-29T07:52:50.794Z"
+  },
+  {
+    "id": "JE-COGS-00000617",
+    "payload": {
+      "id": "JE-COGS-00000617",
+      "currency": "ETB",
+      "source_id": "00000617",
+      "created_at": "2026-09-18 14:19:44.426",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-18",
+      "updated_at": "2026-09-28 13:20:57.695",
+      "description": "COGS â€” Sales Issue 00000617",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-COGS-00000617",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T11:19:44.426Z",
+    "updated_at": "2026-09-29T07:52:50.785Z"
+  },
+  {
+    "id": "JE-COGS-00000619",
+    "payload": {
+      "id": "JE-COGS-00000619",
+      "currency": "ETB",
+      "source_id": "00000619",
+      "created_at": "2026-09-29 07:04:08.716",
+      "created_by": "Sales Officer",
+      "entry_date": "2026-09-29",
+      "updated_at": "2026-09-29 07:04:08.716",
+      "description": "Inventory cost for sales issue 00000619",
+      "source_type": "Sales Issue",
+      "entry_number": "JE-COGS-00000619",
+      "exchange_rate": 1,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-29T04:04:08.716Z",
+    "updated_at": "2026-09-29T07:52:50.749Z"
+  },
+  {
+    "id": "JE-COGS-00000620",
+    "payload": {
+      "id": "JE-COGS-00000620",
+      "currency": "ETB",
+      "source_id": "00000620",
+      "created_at": "2026-09-21 14:37:32.644",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-21",
+      "updated_at": "2026-09-28 13:20:57.681",
+      "description": "COGS â€” Sales Issue 00000620",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-COGS-00000620",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-21T11:37:32.644Z",
+    "updated_at": "2026-09-29T07:52:50.771Z"
+  },
+  {
+    "id": "JE-COGS-00000621",
+    "payload": {
+      "id": "JE-COGS-00000621",
+      "currency": "ETB",
+      "source_id": "00000621",
+      "created_at": "2026-09-21 14:37:44.696",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-21",
+      "updated_at": "2026-09-28 13:20:57.671",
+      "description": "COGS â€” Sales Issue 00000621",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-COGS-00000621",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-21T11:37:44.696Z",
+    "updated_at": "2026-09-29T07:52:50.757Z"
+  },
+  {
+    "id": "JE-COGS-00000623",
+    "payload": {
+      "id": "JE-COGS-00000623",
+      "currency": "ETB",
+      "source_id": "00000623",
+      "created_at": "2026-09-21 14:37:38.913",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-21",
+      "updated_at": "2026-09-28 13:20:57.678",
+      "description": "COGS â€” Sales Issue 00000623",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-COGS-00000623",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-21T11:37:38.913Z",
+    "updated_at": "2026-09-29T07:52:50.763Z"
+  },
+  {
+    "id": "JE-SALE-00000606",
+    "payload": {
+      "id": "JE-SALE-00000606",
+      "currency": "ETB",
+      "source_id": "00000606",
+      "created_at": "2026-09-18 13:09:26.611",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-18",
+      "updated_at": "2026-09-28 13:20:57.736",
+      "description": "Sales Issue 00000606 â€” DR ABDELA ENDRIS/SUPER FAT VETERINARY",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-SALE-00000606",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T10:09:26.611Z",
+    "updated_at": "2026-09-29T07:52:50.834Z"
+  },
+  {
+    "id": "JE-SALE-00000607",
+    "payload": {
+      "id": "JE-SALE-00000607",
+      "currency": "ETB",
+      "source_id": "00000607",
+      "created_at": "2026-09-18 13:38:21.610",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-16",
+      "updated_at": "2026-09-28 13:20:57.710",
+      "description": "Sales Issue 00000607 â€” SELEMUN MEKONEN",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-SALE-00000607",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T10:38:21.610Z",
+    "updated_at": "2026-09-29T07:52:50.812Z"
+  },
+  {
+    "id": "JE-SALE-00000608",
+    "payload": {
+      "id": "JE-SALE-00000608",
+      "currency": "ETB",
+      "source_id": "00000608",
+      "created_at": "2026-09-18 12:14:36.851",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-17",
+      "updated_at": "2026-09-28 13:20:57.746",
+      "description": "Sales Issue 00000608 â€” yeabsera solomon woldesilase",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-SALE-00000608",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T09:14:36.851Z",
+    "updated_at": "2026-09-29T07:52:50.848Z"
+  },
+  {
+    "id": "JE-SALE-00000609",
+    "payload": {
+      "id": "JE-SALE-00000609",
+      "currency": "ETB",
+      "source_id": "00000609",
+      "created_at": "2026-09-18 14:19:47.201",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-17",
+      "updated_at": "2026-09-28 13:20:57.696",
+      "description": "Sales Issue 00000609 â€” hana gebremedhin",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-SALE-00000609",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T11:19:47.201Z",
+    "updated_at": "2026-09-29T07:52:50.782Z"
+  },
+  {
+    "id": "JE-SALE-00000610",
+    "payload": {
+      "id": "JE-SALE-00000610",
+      "currency": "ETB",
+      "source_id": "00000610",
+      "created_at": "2026-09-18 13:36:23.854",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-18",
+      "updated_at": "2026-09-28 13:20:57.732",
+      "description": "Sales Issue 00000610 â€” DEREBE MEKONNEN",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-SALE-00000610",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T10:36:23.854Z",
+    "updated_at": "2026-09-29T07:52:50.818Z"
+  },
+  {
+    "id": "JE-SALE-00000611",
+    "payload": {
+      "id": "JE-SALE-00000611",
+      "currency": "ETB",
+      "source_id": "00000611",
+      "created_at": "2026-09-18 13:36:20.119",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-16",
+      "updated_at": "2026-09-28 13:20:57.714",
+      "description": "Sales Issue 00000611 â€” ADEN ALI ABDULFETAHI",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-SALE-00000611",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T10:36:20.119Z",
+    "updated_at": "2026-09-29T07:52:50.826Z"
+  },
+  {
+    "id": "JE-SALE-00000612",
+    "payload": {
+      "id": "JE-SALE-00000612",
+      "currency": "ETB",
+      "source_id": "00000612",
+      "created_at": "2026-09-18 13:50:30.197",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-18",
+      "updated_at": "2026-09-28 13:20:57.701",
+      "description": "Sales Issue 00000612 â€” weldabrh hadg gebiru",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-SALE-00000612",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T10:50:30.197Z",
+    "updated_at": "2026-09-29T07:52:50.805Z"
+  },
+  {
+    "id": "JE-SALE-00000615",
+    "payload": {
+      "id": "JE-SALE-00000615",
+      "currency": "ETB",
+      "source_id": "00000615",
+      "created_at": "2026-09-18 12:45:07.775",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-17",
+      "updated_at": "2026-09-28 13:20:57.742",
+      "description": "Sales Issue 00000615 â€” yebesera solomon weldeselase",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-SALE-00000615",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T09:45:07.775Z",
+    "updated_at": "2026-09-29T07:52:50.840Z"
+  },
+  {
+    "id": "JE-SALE-00000616",
+    "payload": {
+      "id": "JE-SALE-00000616",
+      "currency": "ETB",
+      "source_id": "00000616",
+      "created_at": "2026-09-18 14:19:41.493",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-18",
+      "updated_at": "2026-09-28 13:20:57.688",
+      "description": "Sales Issue 00000616 â€” SELEMUN MEKONEN",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-SALE-00000616",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T11:19:41.493Z",
+    "updated_at": "2026-09-29T07:52:50.798Z"
+  },
+  {
+    "id": "JE-SALE-00000617",
+    "payload": {
+      "id": "JE-SALE-00000617",
+      "currency": "ETB",
+      "source_id": "00000617",
+      "created_at": "2026-09-18 14:19:44.412",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-18",
+      "updated_at": "2026-09-28 13:20:57.694",
+      "description": "Sales Issue 00000617 â€” beweketu kbretu",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-SALE-00000617",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-18T11:19:44.412Z",
+    "updated_at": "2026-09-29T07:52:50.790Z"
+  },
+  {
+    "id": "JE-SALE-00000619",
+    "payload": {
+      "id": "JE-SALE-00000619",
+      "currency": "ETB",
+      "source_id": "00000619",
+      "created_at": "2026-09-29 07:04:08.703",
+      "created_by": "Sales Officer",
+      "entry_date": "2026-09-29",
+      "updated_at": "2026-09-29 07:04:08.703",
+      "description": "Sales issue 00000619",
+      "source_type": "Sales Issue",
+      "entry_number": "JE-SALE-00000619",
+      "exchange_rate": 1,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-29T04:04:08.703Z",
+    "updated_at": "2026-09-29T07:52:50.753Z"
+  },
+  {
+    "id": "JE-SALE-00000620",
+    "payload": {
+      "id": "JE-SALE-00000620",
+      "currency": "ETB",
+      "source_id": "00000620",
+      "created_at": "2026-09-21 14:37:32.635",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-21",
+      "updated_at": "2026-09-28 13:20:57.680",
+      "description": "Sales Issue 00000620 â€” SILANTE WAGNEW",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-SALE-00000620",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-21T11:37:32.635Z",
+    "updated_at": "2026-09-29T07:52:50.775Z"
+  },
+  {
+    "id": "JE-SALE-00000621",
+    "payload": {
+      "id": "JE-SALE-00000621",
+      "currency": "ETB",
+      "source_id": "00000621",
+      "created_at": "2026-09-21 14:37:44.685",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-21",
+      "updated_at": "2026-09-28 13:20:57.669",
+      "description": "Sales Issue 00000621 â€” SELEMUN MEKONEN",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-SALE-00000621",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-21T11:37:44.685Z",
+    "updated_at": "2026-09-29T07:52:50.759Z"
+  },
+  {
+    "id": "JE-SALE-00000623",
+    "payload": {
+      "id": "JE-SALE-00000623",
+      "currency": "ETB",
+      "source_id": "00000623",
+      "created_at": "2026-09-21 14:37:38.902",
+      "created_by": "System Synced",
+      "entry_date": "2026-09-21",
+      "updated_at": "2026-09-28 13:20:57.673",
+      "description": "Sales Issue 00000623 â€” LIDETU AYFERUM",
+      "source_type": "Sales Invoice",
+      "entry_number": "JE-SALE-00000623",
+      "exchange_rate": 1,
+      "is_reversal_of": null,
+      "posting_status": "POSTED"
+    },
+    "created_at": "2026-09-21T11:37:38.902Z",
+    "updated_at": "2026-09-29T07:52:50.767Z"
+  }
+]

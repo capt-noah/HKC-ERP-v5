@@ -428,6 +428,33 @@ export default function SalesIssued() {
     )
   }
 
+  const resolveItemUnitCost = (itm: any, allProducts: any[]): number => {
+    if (itm.unit_cost !== undefined && itm.unit_cost !== null && Number(itm.unit_cost) > 0) return Number(itm.unit_cost)
+    if (itm.cost_price !== undefined && itm.cost_price !== null && Number(itm.cost_price) > 0) return Number(itm.cost_price)
+    
+    const prod = allProducts.find((p) => p.id === itm.item_id || p.id === itm.product_id || p.name === itm.item_name || p.sku === itm.sku)
+    if (prod) {
+      if (itm.batch_no && itm.batch_no !== "N/A" && itm.batch_no !== "BATCH-MAIN") {
+        const batch = prod.batches?.find((b: any) => b.batchNo === itm.batch_no || b.id === itm.batch_no)
+        if (batch?.costPrice && Number(batch.costPrice) > 0) return Number(batch.costPrice)
+        if (batch?.unitPrice && Number(batch.unitPrice) > 0) return Number(batch.unitPrice)
+        const wh1Entry = prod.wh1Entries?.find((w: any) => w.entryId === itm.batch_no || w.voucherNo === itm.batch_no || w.id === itm.batch_no)
+        if (wh1Entry?.unitPrice && Number(wh1Entry.unitPrice) > 0) return Number(wh1Entry.unitPrice)
+      }
+      if (prod.unitCost !== undefined && prod.unitCost !== null && Number(prod.unitCost) > 0) return Number(prod.unitCost)
+      if (prod.valuationRate !== undefined && prod.valuationRate !== null && Number(prod.valuationRate) > 0) return Number(prod.valuationRate)
+    }
+    return 0
+  }
+
+  const calculateTotalCost = (itemList: any[], allProducts: any[]): number => {
+    return itemList.reduce((sum, itm) => {
+      const qty = Number(itm.quantity || itm.qty || 0)
+      const cost = resolveItemUnitCost(itm, allProducts)
+      return sum + (qty * cost)
+    }, 0)
+  }
+
   const buildDefaultSalesCOALines = (
     pType: "Cash" | "Credit",
     whId: string,
@@ -481,7 +508,7 @@ export default function SalesIssued() {
     }
 
     // 3. Section B: COGS & Inventory Stock Lines
-    const cogsVal = Math.round(Number(costTot > 0 ? costTot : subTot) * 100) / 100
+    const cogsVal = Math.round(Number(costTot) * 100) / 100
     const cogsDrCode = isWh1Sale ? "5000-02" : "5000-01"
     const cogsDrAcc = resolveAcc(cogsDrCode)
     const cogsDebitLines: SplitLineItem[] = [
@@ -601,13 +628,15 @@ export default function SalesIssued() {
       setItems([blankItem()])
     }
 
+    const allProducts = erp.getProducts()
+    const initCost = calculateTotalCost(preselectedSo?.items || [], allProducts)
     const initDef = buildDefaultSalesCOALines(
       preselectedSo ? ((preselectedSo.paymentType || "Cash") as any) : "Cash",
       preselectedSo ? canonicalWarehouseId(preselectedSo.warehouse) : "",
       0,
       0,
       preselectedSo?.customer || "",
-      0
+      initCost
     )
     setSiDebitLines(initDef.debitLines)
     setSiCreditLines(initDef.creditLines)
@@ -673,9 +702,10 @@ export default function SalesIssued() {
         }
       }
 
+      const allProds = erp.getProducts()
       const itemSubtotal = mappedItems.reduce((s: number, itm: any) => s + Number(itm.amount || 0), 0)
       const itemVat = Math.round(itemSubtotal * (loadedTaxRate / 100))
-      const itemCostTotal = mappedItems.reduce((s: number, itm: any) => s + (Number(itm.quantity || 0) * Number(itm.unit_cost || itm.cost_price || itm.unit_price || 0)), 0)
+      const itemCostTotal = calculateTotalCost(mappedItems, allProds)
       const def = buildDefaultSalesCOALines(
         (full.payment_type || "Cash") as "Cash" | "Credit",
         canonicalWh,
@@ -685,13 +715,13 @@ export default function SalesIssued() {
         itemCostTotal
       )
 
-      if (loadedEntries && (loadedEntries.revenue_lines || loadedEntries.cogs_lines || loadedEntries.debit_lines)) {
+      if (loadedEntries && (loadedEntries.revenue_lines || loadedEntries.cogs_lines || loadedEntries.debit_lines || loadedEntries.cogs_debit_lines)) {
         const revDrRaw = (loadedEntries.debit_lines && loadedEntries.debit_lines.length > 0)
           ? loadedEntries.debit_lines
-          : (loadedEntries.revenue_lines || []).filter((l: any) => Number(l.debit || 0) > 0 || l.id?.startsWith("dr-"))
+          : (loadedEntries.revenue_lines || []).filter((l: any) => Number(l.debit || l.debit_amount || 0) > 0 || (Number(l.amount || 0) > 0 && String(l.id || "").startsWith("dr-")))
         const revCrRaw = (loadedEntries.credit_lines && loadedEntries.credit_lines.length > 0)
           ? loadedEntries.credit_lines
-          : (loadedEntries.revenue_lines || []).filter((l: any) => Number(l.credit || 0) > 0 || l.id?.startsWith("cr-"))
+          : (loadedEntries.revenue_lines || []).filter((l: any) => Number(l.credit || l.credit_amount || 0) > 0 || (Number(l.amount || 0) > 0 && String(l.id || "").startsWith("cr-")))
 
         const rDr = revDrRaw.map((l: any, idx: number) => {
           const acc = resolveAcc(l.accountCode || l.account_code || l.accountId || l.account_id || l.code || l.id)
@@ -701,7 +731,7 @@ export default function SalesIssued() {
             accountCode: acc?.code || l.accountCode || l.account_code || l.accountId || l.account_id || l.code || "",
             accountName: acc?.name || l.accountName || l.account_name || l.name || (acc?.code ? `Account ${acc.code}` : "Settlement Account"),
             description: l.description || "",
-            amount: Number(l.amount || l.debit || 0),
+            amount: Number(l.amount || l.debit || l.debit_amount || 0),
           }
         })
 
@@ -713,14 +743,18 @@ export default function SalesIssued() {
             accountCode: acc?.code || l.accountCode || l.account_code || l.accountId || l.account_id || l.code || "",
             accountName: acc?.name || l.accountName || l.account_name || l.name || (acc?.code ? `Account ${acc.code}` : "Revenue Account"),
             description: l.description || "",
-            amount: Number(l.amount || l.credit || 0),
+            amount: Number(l.amount || l.credit || l.credit_amount || 0),
           }
         })
 
-        const cogsDebitsRaw = (loadedEntries.cogs_lines || []).filter((l: any) => Number(l.debit || 0) > 0 || l.id?.startsWith("dr-"))
-        const cogsCreditsRaw = (loadedEntries.cogs_lines || []).filter((l: any) => Number(l.credit || 0) > 0 || l.id?.startsWith("cr-"))
+        const cogsDrRaw = (loadedEntries.cogs_debit_lines && loadedEntries.cogs_debit_lines.length > 0)
+          ? loadedEntries.cogs_debit_lines
+          : (loadedEntries.cogs_lines || []).filter((l: any) => Number(l.debit || l.debit_amount || 0) > 0 || (Number(l.amount || 0) > 0 && String(l.id || "").startsWith("dr-")))
+        const cogsCrRaw = (loadedEntries.cogs_credit_lines && loadedEntries.cogs_credit_lines.length > 0)
+          ? loadedEntries.cogs_credit_lines
+          : (loadedEntries.cogs_lines || []).filter((l: any) => Number(l.credit || l.credit_amount || 0) > 0 || (Number(l.amount || 0) > 0 && String(l.id || "").startsWith("cr-")))
 
-        const cogsDebits = cogsDebitsRaw.map((l: any, idx: number) => {
+        const cogsDebits = cogsDrRaw.map((l: any, idx: number) => {
           const acc = resolveAcc(l.accountCode || l.account_code || l.accountId || l.account_id || l.code || l.id)
           return {
             id: l.id || `dr-cogs-${idx}-${Date.now()}`,
@@ -728,11 +762,11 @@ export default function SalesIssued() {
             accountCode: acc?.code || l.accountCode || l.account_code || l.accountId || l.account_id || l.code || "",
             accountName: acc?.name || l.accountName || l.account_name || l.name || (acc?.code ? `Account ${acc.code}` : "COGS Expense"),
             description: l.description || "",
-            amount: Number(l.amount || l.debit || 0),
+            amount: Number(l.amount || l.debit || l.debit_amount || 0),
           }
         })
 
-        const cogsCredits = cogsCreditsRaw.map((l: any, idx: number) => {
+        const cogsCredits = cogsCrRaw.map((l: any, idx: number) => {
           const acc = resolveAcc(l.accountCode || l.account_code || l.accountId || l.account_id || l.code || l.id)
           return {
             id: l.id || `cr-cogs-${idx}-${Date.now()}`,
@@ -740,7 +774,7 @@ export default function SalesIssued() {
             accountCode: acc?.code || l.accountCode || l.account_code || l.accountId || l.account_id || l.code || "",
             accountName: acc?.name || l.accountName || l.account_name || l.name || (acc?.code ? `Account ${acc.code}` : "Inventory Asset"),
             description: l.description || "",
-            amount: Number(l.amount || l.credit || 0),
+            amount: Number(l.amount || l.credit || l.credit_amount || 0),
           }
         })
 
@@ -1019,19 +1053,19 @@ export default function SalesIssued() {
 
 
 
-  // Synchronize COA split lines when form is open and user has not created custom multi-splits
+  // Synchronize COA split lines when form is open in create mode
   useEffect(() => {
     if (!formOpen) return
-    if (editing && (editing.account_entries || (editing as any).accountEntries)) return
+    if (editing) return
 
-    const itemCostTotal = items.reduce((s: number, itm: any) => s + (Number(itm.quantity || 0) * Number(itm.unit_cost || itm.cost_price || itm.unit_price || 0)), 0)
+    const itemCostTotal = calculateTotalCost(items, products)
     const def = buildDefaultSalesCOALines(paymentType, warehouseId, subtotal, vatAmount, customerName, itemCostTotal)
     
     setSiDebitLines((prev) => (prev.length <= 1 ? def.debitLines : prev))
     setSiCreditLines((prev) => (prev.length <= 2 ? def.creditLines : prev))
     setSiCogsDebitLines((prev) => (prev.length <= 1 ? def.cogsDebitLines : prev))
     setSiCogsCreditLines((prev) => (prev.length <= 1 ? def.cogsCreditLines : prev))
-  }, [formOpen, subtotal, vatAmount, grandTotal, warehouseId, paymentType, customerName, items])
+  }, [formOpen, subtotal, vatAmount, grandTotal, warehouseId, paymentType, customerName, items, products, editing])
 
   const selectableProducts = useMemo(() => {
     if (!warehouseId) return []
@@ -1254,6 +1288,12 @@ export default function SalesIssued() {
         } else {
           if (resolvedSoId) {
             erp.updateSalesOrderStage(resolvedSoId, "Shipped")
+          }
+          try {
+            await erp.reloadFromApi()
+            await financeStore.reloadFromApi()
+          } catch (reloadErr) {
+            console.warn("Background sync warning after edit save:", reloadErr)
           }
           showToast(
             "Sales Issue Saved",
@@ -2327,7 +2367,7 @@ export default function SalesIssued() {
               <div className="mt-4">
                 <SalesIssueCOASplitSection
                   totalAmount={grandTotal}
-                  totalCost={items.reduce((s, itm) => s + (Number(itm.quantity || 0) * Number((itm as any).unit_cost || (itm as any).cost_price || (itm as any).unit_price || 0)), 0)}
+                  totalCost={calculateTotalCost(items, products)}
                   warehouseId={warehouseId}
                   paymentType={paymentType}
                   customerName={customerName}

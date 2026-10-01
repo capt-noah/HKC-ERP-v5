@@ -14,10 +14,21 @@ export default function StockBinCardLedger({
   const entries = useMemo(() => {
     const raw = [...(product.binCardEntries || [])]
     raw.sort((a, b) => {
-      const timeA = new Date(a.createdAt || (a.date && a.date !== "—" ? a.date : 0)).getTime()
-      const timeB = new Date(b.createdAt || (b.date && b.date !== "—" ? b.date : 0)).getTime()
-      if (timeA !== timeB) return timeA - timeB
-      return 0
+      const dateA = a.date && a.date !== "—" ? a.date : ""
+      const dateB = b.date && b.date !== "—" ? b.date : ""
+      const dateCmp = dateA.localeCompare(dateB)
+      if (dateCmp !== 0) return dateCmp
+
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0
+      if (timeA !== timeB && timeA > 0 && timeB > 0) return timeA - timeB
+
+      const typePriority: Record<string, number> = { entry: 1, processed: 2, leave: 3, quarantine: 4, reject: 5 }
+      const prioA = (a.type && typePriority[a.type]) || 6
+      const prioB = (b.type && typePriority[b.type]) || 6
+      if (prioA !== prioB) return prioA - prioB
+
+      return String(a.id || "").localeCompare(String(b.id || ""))
     })
 
     let runningBal = 0
@@ -134,6 +145,24 @@ export default function StockBinCardLedger({
                           </div>
                           <div className="text-[9px] text-blue-600/80 font-sans font-semibold">
                             Invoiced: ETB {(Number(rec.qtyIssued || 0) * Number(rec.sellingPrice)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                      ) : rec.sellingPrice != null && Number(rec.sellingPrice) > 0 ? (
+                        <div>
+                          <div className="font-bold text-zinc-900">
+                            ETB {Number(rec.sellingPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div className="text-[9px] text-zinc-400 font-sans font-semibold">
+                            Selling Price
+                          </div>
+                        </div>
+                      ) : product.sellingPrice != null && Number(product.sellingPrice) > 0 ? (
+                        <div>
+                          <div className="font-normal text-zinc-700">
+                            ETB {Number(product.sellingPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div className="text-[9px] text-zinc-400 font-sans font-semibold">
+                            Default Price
                           </div>
                         </div>
                       ) : (

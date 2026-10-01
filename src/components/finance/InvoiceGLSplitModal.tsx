@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react"
 import { X, Plus, Trash2, CheckCircle2, AlertTriangle, ArrowRightLeft, Sparkles, Layers, Box } from "lucide-react"
 import { useFinanceStore, type Invoice, type InvoiceGLDistributionLine } from "@/lib/financeStore"
+import { erpStore } from "@/lib/erpStore"
 import { useFeedback } from "@/context/FeedbackContext"
 import COAAccountSelector from "@/components/finance/COAAccountSelector"
 import { LoadingDots } from "@/components/ui/LoadingDots"
@@ -358,6 +359,27 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
         const defaultCogsAcc = accounts.find((a) => a.code === defaultCogsCode) || accounts.find((a) => a.code === "5000-01")
         const defaultStockAcc = accounts.find((a) => a.code === defaultStockCode) || accounts.find((a) => a.code === "1400-01")
 
+        let defaultCogsTotal = 0
+        if (Array.isArray(invoice.line_items) && invoice.line_items.length > 0) {
+          const prods = erpStore.getProducts()
+          for (const item of invoice.line_items) {
+            const qty = Number(item.quantity || 1)
+            const prod = prods.find((p) => p.id === (item as any).item_id || p.id === (item as any).product_id || p.name === item.description || p.sku === item.description)
+            let unitCost = 0
+            if ((item as any).unit_cost && Number((item as any).unit_cost) > 0) {
+              unitCost = Number((item as any).unit_cost)
+            } else if ((item as any).cost_price && Number((item as any).cost_price) > 0) {
+              unitCost = Number((item as any).cost_price)
+            } else if (prod?.unitCost && Number(prod.unitCost) > 0) {
+              unitCost = Number(prod.unitCost)
+            } else if (prod?.valuationRate && Number(prod.valuationRate) > 0) {
+              unitCost = Number(prod.valuationRate)
+            }
+            defaultCogsTotal += qty * unitCost
+          }
+        }
+        defaultCogsTotal = Math.round(defaultCogsTotal * 100) / 100
+
         setCogsDebitLines([
           {
             id: `dr-cogs-init-${Date.now()}`,
@@ -365,7 +387,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
             accountCode: defaultCogsAcc?.code || defaultCogsCode,
             accountName: defaultCogsAcc?.name || "Cost of Goods Sold",
             description: "Inventory Cost of Goods Sold",
-            amount: 0,
+            amount: defaultCogsTotal,
           },
         ])
         setCogsCreditLines([
@@ -375,7 +397,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
             accountCode: defaultStockAcc?.code || defaultStockCode,
             accountName: defaultStockAcc?.name || "Inventory Stock",
             description: "Inventory Stock In Hand Derecognition",
-            amount: 0,
+            amount: defaultCogsTotal,
           },
         ])
       }
