@@ -134,7 +134,7 @@ export const PeachtreeBeginningBalancesModal: React.FC<PeachtreeBeginningBalance
       )
     }
 
-    return [...filtered].sort((a, b) => a.code.localeCompare(b.code))
+    return [...filtered].sort((a, b) => String(a.code || a.id || "").localeCompare(String(b.code || b.id || "")))
   }, [postableAccounts, activeTab, searchQuery])
 
   // Real-time Sum Calculations

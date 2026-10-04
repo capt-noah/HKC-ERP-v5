@@ -71,7 +71,7 @@ export const PeachtreeBankReconciliationModal: React.FC<PeachtreeBankReconciliat
       (a) =>
         a.account_type === "Asset" &&
         (a.peachtree_type === "Cash" ||
-          a.code.startsWith("10") ||
+          (a?.code || "").startsWith("10") ||
           /cash|bank|cbe|boa|aib|abay|unb|cbo|ahadu|oib/i.test(a.name))
     )
   }, [accounts])

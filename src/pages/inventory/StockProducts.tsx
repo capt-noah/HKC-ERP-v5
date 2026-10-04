@@ -10,6 +10,7 @@ import {
   Download,
   AlertTriangle,
   AlertOctagon,
+  FileSpreadsheet,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -43,6 +44,7 @@ import { LoadingDots } from "@/components/ui/LoadingDots"
 import StockBinCardPrintModal from "@/components/stock/StockBinCardPrintModal"
 import WH1ReceivingVoucherPrintModal from "@/components/stock/WH1ReceivingVoucherPrintModal"
 import WH1ChildMovementLedger from "@/components/stock/WH1ChildMovementLedger"
+import VeterinaryExportModal from "@/components/sales/VeterinaryExportModal"
 import WH1AddMovementModal from "@/components/stock/WH1AddMovementModal"
 import { getExpiryStatus, getExpiringItemsSummary } from "@/lib/expiryUtils"
 
@@ -208,6 +210,7 @@ export default function StockProducts() {
   const [editSubEntryPlateNumber, setEditSubEntryPlateNumber] = useState("")
   const [editSubEntryQty, setEditSubEntryQty] = useState("")
   const [editSubEntryPrice, setEditSubEntryPrice] = useState("")
+  const [editSubEntrySellingPrice, setEditSubEntrySellingPrice] = useState("")
   const [editSubEntryDate, setEditSubEntryDate] = useState("")
   const [editSubEntryLeave, setEditSubEntryLeave] = useState("")
   const [editSubEntryNotes, setEditSubEntryNotes] = useState("")
@@ -236,6 +239,9 @@ export default function StockProducts() {
     isOpen: false,
     product: null,
   })
+
+  // Regulatory Veterinary Export Modal State
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false)
 
   // Edit/Delete Product state
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
@@ -268,7 +274,7 @@ export default function StockProducts() {
   // Quantities & Stock values
   const addTotalQuantity = isWH1Form
     ? (addPackagingUnit === "Ton" ? Number(addQuantity || 0) * TON_TO_QUINTAL : Number(addQuantity || 0))
-    : Number(addQtyPerPack || 0) * Number(addNumCartons || 0)
+    : (Number(addQtyPerPack || 0) * Number(addNumCartons || 0))
   
   const addTotalStockValue = addTotalQuantity * Number(addUnitPrice || 0)
 
@@ -390,11 +396,14 @@ export default function StockProducts() {
     })
   }, [products, searchQuery, selectedWarehouse, expiryFilter])
 
-  // Suggested matching existing items list for WH1 auto-complete lookup
-  const wh1ItemSuggestions = useMemo(() => {
+  // Suggested matching existing items list for WH1 & Import Warehouses auto-complete lookup
+  const stockItemSuggestions = useMemo(() => {
     if (!addDescription || addDescription.length < 2) return []
-    return products.filter(p => isWH1(p.warehouse) && p.name.toLowerCase().includes(addDescription.toLowerCase()))
-  }, [products, addDescription])
+    if (isWH1Form) {
+      return products.filter((p) => isWH1(p.warehouse) && p.name.toLowerCase().includes(addDescription.toLowerCase()))
+    }
+    return products.filter((p) => !isWH1(p.warehouse) && matchesWarehouse(p.warehouse, addWarehouse) && p.name.toLowerCase().includes(addDescription.toLowerCase()))
+  }, [products, addDescription, isWH1Form, addWarehouse])
 
   // Table Column Definitions
   const currentProductColumns = useMemo(() => {
@@ -513,21 +522,44 @@ export default function StockProducts() {
       const targetUOM = isWH1Form ? "Quintal" : addPackagingUnit
 
       if (selectedExistingProduct) {
-        // Option A: Add sub-entry to existing item
-        const newEntryPayload: Omit<WH1Entry, "entryId"> = {
-          voucherNo: addVoucherNo.trim() || undefined,
-          customer: addCustomer.trim() || undefined,
-          plateNumber: addPlateNumber.trim() || undefined,
-          entryDate: addEntryDate,
-          leaveDate: undefined,
-          quantityReceived: addTotalQuantity,
-          quantityRemaining: addTotalQuantity,
-          unitPrice: Number(addUnitPrice || 0),
-          sellingPrice: Number(addSellingPrice || 0) > 0 ? Number(addSellingPrice) : undefined,
-          notes: addNotes.trim() || undefined,
+        if (isWH1Form) {
+          // Option A1: Add sub-entry to existing WH1 export item
+          const newEntryPayload: Omit<WH1Entry, "entryId"> = {
+            voucherNo: addVoucherNo.trim() || undefined,
+            customer: addCustomer.trim() || undefined,
+            plateNumber: addPlateNumber.trim() || undefined,
+            entryDate: addEntryDate,
+            leaveDate: undefined,
+            quantityReceived: addTotalQuantity,
+            quantityRemaining: addTotalQuantity,
+            unitPrice: Number(addUnitPrice || 0),
+            sellingPrice: Number(addSellingPrice || 0) > 0 ? Number(addSellingPrice) : undefined,
+            notes: addNotes.trim() || undefined,
+          }
+          await erp.addWH1Entry(selectedExistingProduct.id, newEntryPayload)
+          showToast("Stock entry added", "success", `Entry added to existing export item ${selectedExistingProduct.name}.`)
+        } else {
+          // Option A2: Add incoming batch to existing import warehouse medicine
+          const entryBatch = addBatchNumber.trim()
+          const packSize = Number(selectedExistingProduct.quantityPerPack || addQtyPerPack || 1)
+          const addedCartons = Number(addNumCartons) || (packSize > 0 ? Math.round((addTotalQuantity / packSize) * 100) / 100 : 0)
+
+          const binEntryPayload: Omit<BinCardMovementEntry, "id"> = {
+            date: addMfgDate || new Date().toISOString().slice(0, 10),
+            batchNo: entryBatch || `BATCH-${Date.now().toString().slice(-4)}`,
+            voucherNo: entryBatch ? `BATCH-${entryBatch}` : `RCV-${Date.now().toString().slice(-6)}`,
+            type: "entry",
+            party: addCustomer.trim() || selectedExistingProduct.customer || selectedExistingProduct.supplierName || "HKC Intake",
+            expiryDate: addExpDate || "",
+            qtyReceived: addTotalQuantity,
+            qtyIssued: 0,
+            balance: (Number(selectedExistingProduct.quantity || 0) + addTotalQuantity),
+            unitPrice: Number(addUnitPrice || selectedExistingProduct.unitCost || 0),
+            remark: `Intake: +${addTotalQuantity} units (${addedCartons} ctns @ ${packSize}/pk)${addNotes.trim() ? ` - ${addNotes.trim()}` : ""}`,
+          }
+          await erp.addBinCardEntry(selectedExistingProduct.id, binEntryPayload)
+          showToast("Batch added to medicine", "success", `Added ${addTotalQuantity} units (${addedCartons} ctns) to ${selectedExistingProduct.name}.`)
         }
-        await erp.addWH1Entry(selectedExistingProduct.id, newEntryPayload)
-        showToast("Stock entry added", "success", `Entry added to existing item ${selectedExistingProduct.name}.`)
       } else {
         // Option B: Add new item entirely
         const productId = `P-${Date.now()}`
@@ -690,6 +722,10 @@ export default function StockProducts() {
     setEditSubEntryPlateNumber(entry.plateNumber || "")
     setEditSubEntryQty(String(entry.quantityReceived))
     setEditSubEntryPrice(String(entry.unitPrice))
+    const initialSellingPrice = (entry.sellingPrice && Number(entry.sellingPrice) > 0)
+      ? String(entry.sellingPrice)
+      : (product.sellingPrice && Number(product.sellingPrice) > 0 ? String(product.sellingPrice) : "")
+    setEditSubEntrySellingPrice(initialSellingPrice)
     setEditSubEntryDate(entry.entryDate)
     setEditSubEntryLeave(entry.leaveDate || "")
     setEditSubEntryNotes(entry.notes || "")
@@ -714,6 +750,7 @@ export default function StockProducts() {
         quantityReceived: nextQty,
         quantityRemaining: nextRemaining,
         unitPrice: Number(editSubEntryPrice || 0),
+        sellingPrice: Number(editSubEntrySellingPrice || 0) > 0 ? Number(editSubEntrySellingPrice) : undefined,
         notes: editSubEntryNotes.trim() || undefined,
       })
       showToast("Entry updated", "success", "Sub-entry values saved.")
@@ -1064,6 +1101,12 @@ export default function StockProducts() {
                     ]}
                     actions={[
                       {
+                        label: "Regulatory Export",
+                        onClick: () => setIsExportModalOpen(true),
+                        icon: <FileSpreadsheet className="size-4" />,
+                        variant: "emerald",
+                      },
+                      {
                         label: "Add Item",
                         onClick: () => setIsAddModalOpen(true),
                         icon: <Plus className="size-4" />,
@@ -1123,16 +1166,23 @@ export default function StockProducts() {
                               : Number(prod.quantity ?? 0)
                           const packSize = Number(prod.quantityPerPack || (prod as any).quantity_per_pack || 0)
                           const explicitCartons = Number(prod.numberOfCartons || (prod as any).number_of_cartons || 0)
-                          const computedCartons = explicitCartons > 0 ? explicitCartons : (packSize > 0 ? Math.floor(pharmaBalance / packSize) : 0)
+                          const computedCartons = packSize > 0
+                            ? Math.round((pharmaBalance / packSize) * 100) / 100
+                            : explicitCartons
 
                           const displayQuantity = isWH1Item ? Number(prod.quantity || 0) : pharmaBalance
-                          const computedStockValue = Number(prod.totalStockValue || 0) > 0
-                            ? Number(prod.totalStockValue)
-                            : (isWH1Item
-                                ? displayQuantity * Number(prod.unitCost || 0)
-                                : (Array.isArray(prod.batches) && prod.batches.length > 0)
-                                  ? prod.batches.reduce((sum, b) => sum + (Number(b.qty ?? (b as any).quantity ?? 0) * Number((b as any).unitPrice ?? (prod as any).unitPrice ?? (prod as any).unit_price ?? 0)), 0)
-                                  : (displayQuantity * Number((prod as any).unitPrice ?? (prod as any).unit_price ?? prod.unitCost ?? 0)))
+
+                          // Parent row Stock Value: FROZEN ON INTAKE (Cumulative total of all receipts @ cost)
+                          // Deductions (sales issues, quarantines, rejects) do NOT decrease this value.
+                          const computedStockValue = isWH1Item
+                            ? (wh1TotalReceived > 0
+                                ? wh1Entries.reduce((sum, e) => sum + (Number(e.quantityReceived || 0) * Number(e.unitPrice ?? prod.unitCost ?? 0)), 0)
+                                : Number(prod.totalStockValue || (Number(prod.quantity || 0) * Number(prod.unitCost || 0))))
+                            : (pharmaTotalReceived > 0
+                                ? binEntries
+                                    .filter((e) => e.type === "entry" || Number(e.qtyReceived || 0) > 0)
+                                    .reduce((sum, e) => sum + (Number(e.qtyReceived || 0) * Number(e.unitPrice ?? prod.unitCost ?? 0)), 0)
+                                : Number(prod.totalStockValue || (Number(prod.quantity || 0) * Number(prod.unitCost || 0))))
 
                           // 1. ALL Warehouses View
                           if (selectedWarehouse === "ALL") {
@@ -1916,320 +1966,404 @@ export default function StockProducts() {
 
               <div className="space-y-4 text-xs">
                 <div className="grid gap-4 md:grid-cols-2 font-semibold">
-                  <div className="space-y-1 md:col-span-2 relative">
-                    <span className="text-[11px] font-black uppercase text-zinc-700">
-                      Item Name / Description of Goods <span className="text-rose-600">*</span>
-                    </span>
-                    <input
-                      type="text"
-                      placeholder="e.g. Sesame Seed (White)"
-                      value={addDescription}
-                      disabled={!!selectedExistingProduct}
-                      onChange={(e) => {
-                        setAddDescription(e.target.value)
-                        setShowItemSuggestions(true)
-                      }}
-                      className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs outline-none focus:border-emerald-500"
-                    />
-
-                    {/* Auto-complete Suggestions Dropdown */}
-                    {showItemSuggestions && isWH1Form && wh1ItemSuggestions.length > 0 && (
-                      <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-xl border border-zinc-150 bg-white p-2 shadow-xl">
-                        {wh1ItemSuggestions.map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedExistingProduct(p)
-                              setAddDescription(p.name)
-                              setAddPackagingUnit(p.unit)
-                              const parentSupp = p.customer || p.supplierName || ""
-                              if (parentSupp) {
-                                setAddCustomer(parentSupp)
-                              }
-                              setShowItemSuggestions(false)
-                            }}
-                            className="w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-50 flex items-center justify-between text-xs font-bold"
-                          >
-                            <span className="text-zinc-900">{p.name}</span>
-                            <span className="text-[10px] text-zinc-400">{p.quantity} Q left</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {warehouseRecords.length > 1 ? (
-                    <label className="space-y-1">
-                      <span className="text-[11px] font-black uppercase text-zinc-700">Primary Warehouse <span className="text-rose-600">*</span></span>
-                      <select
-                        value={addWarehouse}
+                    {/* Item Name / Description of Goods */}
+                    <div className="space-y-1 relative">
+                      <span className="text-[11px] font-black uppercase text-zinc-700">
+                        Item Name / Description of Goods <span className="text-rose-600">*</span>
+                      </span>
+                      <input
+                        type="text"
+                        placeholder={isWH1Form ? "e.g. Sesame Seed (White)" : "e.g. Amoxicillin 500mg Capsules"}
+                        value={addDescription}
                         disabled={!!selectedExistingProduct}
                         onChange={(e) => {
-                          setAddWarehouse(e.target.value)
-                          setAddPackagingUnit("")
-                          setAddQuantity("")
+                          setAddDescription(e.target.value)
+                          setShowItemSuggestions(true)
                         }}
+                        className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs outline-none focus:border-emerald-500"
+                      />
+
+                      {/* Auto-complete Suggestions Dropdown */}
+                      {showItemSuggestions && stockItemSuggestions.length > 0 && (
+                        <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-xl border border-zinc-150 bg-white p-2 shadow-xl">
+                          {stockItemSuggestions.map((p) => {
+                            const pPackSize = Number(p.quantityPerPack || (p as any).quantity_per_pack || 0)
+                            return (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedExistingProduct(p)
+                                  setAddDescription(p.name)
+                                  setAddPackagingUnit(p.unit)
+                                  if (p.warehouse) setAddWarehouse(p.warehouse)
+                                  if (pPackSize > 0) setAddQtyPerPack(String(pPackSize))
+                                  if (p.dosage) setAddDosage(p.dosage)
+                                  if (p.shelfNo) setAddShelfNo(p.shelfNo)
+                                  const parentSupp = p.customer || p.supplierName || ""
+                                  if (parentSupp) {
+                                    setAddCustomer(parentSupp)
+                                  }
+                                  setShowItemSuggestions(false)
+                                }}
+                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-50 flex items-center justify-between text-xs font-bold"
+                              >
+                                <div>
+                                  <span className="text-zinc-900">{p.name}</span>
+                                  {pPackSize > 0 && (
+                                    <span className="ml-2 text-[10px] text-zinc-400 font-mono">({pPackSize}/pk)</span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] text-zinc-400">{p.quantity} {p.unit || "units"} left</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Warehouse */}
+                    {warehouseRecords.length > 1 ? (
+                      <label className="space-y-1">
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Primary Warehouse <span className="text-rose-600">*</span></span>
+                        <select
+                          value={addWarehouse}
+                          disabled={!!selectedExistingProduct}
+                          onChange={(e) => {
+                            setAddWarehouse(e.target.value)
+                            setAddPackagingUnit("")
+                            setAddQuantity("")
+                          }}
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs outline-none focus:border-emerald-500 cursor-pointer"
+                        >
+                          <option value="">Select Warehouse...</option>
+                          {warehouseRecords.map((item) => (
+                            <option key={item.id} value={item.code || item.id}>
+                              {item.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : (
+                      <div className="space-y-1">
+                        <span className="text-[11px] font-black uppercase text-zinc-700">Assigned Facility</span>
+                        <div className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 flex items-center text-xs font-bold text-zinc-800 font-mono">
+                          {warehouseRecords[0]?.name || warehouseRecords[0]?.code}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Packaging Unit / UOM */}
+                    <label className="space-y-1">
+                      <span className="text-[11px] font-black uppercase text-zinc-700">
+                        {isWH1Form ? "UOM" : "Packaging Unit"} <span className="text-rose-600">*</span>
+                      </span>
+                      <select
+                        value={addPackagingUnit}
+                        disabled={!!selectedExistingProduct}
+                        onChange={(e) => setAddPackagingUnit(e.target.value)}
                         className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs outline-none focus:border-emerald-500 cursor-pointer"
                       >
-                        <option value="">Select Warehouse...</option>
-                        {warehouseRecords.map((item) => (
-                          <option key={item.id} value={item.code || item.id}>
-                            {item.name}
-                          </option>
-                        ))}
+                        <option value="">{isWH1Form ? "Select UOM" : "Select packaging unit"}</option>
+                        {isWH1Form ? (
+                          <>
+                            <option value="Quintal">Quintal</option>
+                            <option value="Ton">Ton</option>
+                          </>
+                        ) : (
+                          packagingUnits.map((unit) => (
+                            <option key={unit} value={unit}>{unit}</option>
+                          ))
+                        )}
                       </select>
                     </label>
-                  ) : (
-                    <div className="space-y-1">
-                      <span className="text-[11px] font-black uppercase text-zinc-700">Assigned Facility</span>
-                      <div className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 flex items-center text-xs font-bold text-zinc-800 font-mono">
-                        {warehouseRecords[0]?.name || warehouseRecords[0]?.code}
-                      </div>
-                    </div>
-                  )}
 
-                  <label className="space-y-1">
-                    <span className="text-[11px] font-black uppercase text-zinc-700">
-                      {isWH1Form ? "UOM" : "Packaging Unit"} <span className="text-rose-600">*</span>
-                    </span>
-                    <select
-                      value={addPackagingUnit}
-                      disabled={!!selectedExistingProduct}
-                      onChange={(e) => setAddPackagingUnit(e.target.value)}
-                      className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs outline-none focus:border-emerald-500 cursor-pointer"
-                    >
-                      <option value="">{isWH1Form ? "Select UOM" : "Select packaging unit"}</option>
-                      {isWH1Form ? (
-                        <>
-                          <option value="Quintal">Quintal</option>
-                          <option value="Ton">Ton</option>
-                        </>
-                      ) : (
-                        packagingUnits.map((unit) => (
-                          <option key={unit} value={unit}>{unit}</option>
-                        ))
-                      )}
-                    </select>
-                  </label>
-
-                  {!isWH1Form && (
-                    <>
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase text-zinc-700">Strength / Dosage <span className="text-[10px] text-zinc-400 font-semibold lowercase">(optional)</span></span>
-                        <input
-                          type="text"
-                          placeholder="e.g. 100ml Vial / 500mg"
-                          value={addDosage}
-                          onChange={(e) => setAddDosage(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs"
-                        />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase text-zinc-700">Shelf Number <span className="text-[10px] text-zinc-400 font-semibold lowercase">(optional)</span></span>
-                        <input
-                          type="text"
-                          placeholder="e.g. Shelf A-04 / Bin 12"
-                          value={addShelfNo}
-                          onChange={(e) => setAddShelfNo(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
-                        />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase text-zinc-700">Batch Number <span className="text-rose-600">*</span></span>
-                        <input
-                          type="text"
-                          placeholder="BATCH-001"
-                          value={addBatchNumber}
-                          onChange={(e) => setAddBatchNumber(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
-                        />
-                      </label>
-                    </>
-                  )}
-
-                  <label className="space-y-1">
-                    <span className="text-[11px] font-black uppercase text-zinc-700">Cost Price per unit (ETB)</span>
-                    <input
-                      type="number"
-                      placeholder="0.00"
-                      value={addUnitPrice}
-                      onChange={(e) => setAddUnitPrice(e.target.value)}
-                      className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
-                    />
-                  </label>
-
-                  <label className="space-y-1">
-                    <span className="text-[11px] font-black uppercase text-zinc-700">Selling Price per unit (ETB)</span>
-                    <input
-                      type="number"
-                      placeholder="0.00"
-                      value={addSellingPrice}
-                      onChange={(e) => setAddSellingPrice(e.target.value)}
-                      className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
-                    />
-                  </label>
-
-                    {isWH1Form ? (
-                    <>
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase text-zinc-700">Voucher No / ID <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
-                        <input
-                          type="text"
-                          placeholder="e.g. 1251"
-                          value={addVoucherNo}
-                          onChange={(e) => setAddVoucherNo(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
-                        />
-                      </label>
-                      <div className="space-y-1 relative">
-                        <span className="text-[11px] font-black uppercase text-zinc-700">
-                          Supplier / Source <span className="text-[10px] text-zinc-400 lowercase">(optional)</span>
-                        </span>
-                        <div className="relative flex items-center">
+                    {/* Import Fields: Strength & Shelf */}
+                    {!isWH1Form && (
+                      <>
+                        <label className="space-y-1">
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Strength / Dosage <span className="text-[10px] text-zinc-400 font-semibold lowercase">(optional)</span></span>
                           <input
                             type="text"
-                            placeholder="Search or select supplier..."
-                            value={addCustomer}
-                            onFocus={() => setShowSupplierDropdown(true)}
-                            onChange={(e) => {
-                              setAddCustomer(e.target.value)
-                              setShowSupplierDropdown(true)
-                            }}
-                            className="h-11 w-full rounded-xl border border-zinc-200 pl-3 pr-9 text-xs"
+                            placeholder="e.g. 100ml Vial / 500mg"
+                            value={addDosage}
+                            onChange={(e) => setAddDosage(e.target.value)}
+                            className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs"
                           />
-                          <button
-                            type="button"
-                            onClick={() => setShowSupplierDropdown((prev) => !prev)}
-                            className="absolute right-2 p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
-                            title="Choose supplier from registry"
-                          >
-                            <ChevronDown className={`size-4 transition-transform ${showSupplierDropdown ? "rotate-180" : ""}`} />
-                          </button>
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Shelf Number <span className="text-[10px] text-zinc-400 font-semibold lowercase">(optional)</span></span>
+                          <input
+                            type="text"
+                            placeholder="e.g. Shelf A-04 / Bin 12"
+                            value={addShelfNo}
+                            onChange={(e) => setAddShelfNo(e.target.value)}
+                            className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Batch Number <span className="text-rose-600">*</span></span>
+                          <input
+                            type="text"
+                            placeholder="BATCH-001"
+                            value={addBatchNumber}
+                            onChange={(e) => setAddBatchNumber(e.target.value)}
+                            className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                          />
+                        </label>
+                      </>
+                    )}
+
+                    {isWH1Form ? (
+                      <>
+                        {/* Row 2 (WH1): Voucher No & Supplier */}
+                        <label className="space-y-1">
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Voucher No / ID <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
+                          <input
+                            type="text"
+                            placeholder="e.g. 1251"
+                            value={addVoucherNo}
+                            onChange={(e) => setAddVoucherNo(e.target.value)}
+                            className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                          />
+                        </label>
+                        <div className="space-y-1 relative">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-black uppercase text-zinc-700">
+                              Supplier / Source <span className="text-[10px] text-zinc-400 lowercase">(optional)</span>
+                            </span>
+                            {!erp.getSuppliers().some((s) => s.name.toLowerCase() === addCustomer.trim().toLowerCase()) && addCustomer.trim() !== "" && (
+                              <label className="inline-flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-200 transition-colors">
+                                <input
+                                  type="checkbox"
+                                  id="saveSupplierCheckStock"
+                                  checked={saveSupplierToRegistry}
+                                  onChange={(e) => setSaveSupplierToRegistry(e.target.checked)}
+                                  className="size-3.5 rounded text-emerald-700 focus:ring-emerald-600 cursor-pointer"
+                                />
+                                Save to registry
+                              </label>
+                            )}
+                          </div>
+                          <div className="relative flex items-center">
+                            <input
+                              type="text"
+                              placeholder="Search or select supplier..."
+                              value={addCustomer}
+                              onFocus={() => setShowSupplierDropdown(true)}
+                              onChange={(e) => {
+                                setAddCustomer(e.target.value)
+                                setShowSupplierDropdown(true)
+                              }}
+                              className="h-11 w-full rounded-xl border border-zinc-200 pl-3 pr-9 text-xs"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowSupplierDropdown((prev) => !prev)}
+                              className="absolute right-2 p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+                              title="Choose supplier from registry"
+                            >
+                              <ChevronDown className={`size-4 transition-transform ${showSupplierDropdown ? "rotate-180" : ""}`} />
+                            </button>
+                          </div>
+                          {showSupplierDropdown && (
+                            <div className="absolute top-full left-0 right-0 z-30 mt-1 max-h-52 overflow-y-auto rounded-xl bg-white border border-zinc-200 shadow-xl py-1 divide-y divide-zinc-50">
+                              {(() => {
+                                const list = erp.getSuppliers()
+                                const filtered = addCustomer.trim()
+                                  ? list.filter((s) => s.name.toLowerCase().includes(addCustomer.toLowerCase()))
+                                  : list
+                                if (filtered.length === 0) {
+                                  return (
+                                    <div className="px-3 py-2.5 text-xs text-zinc-400 font-medium text-center">
+                                      {list.length === 0 ? "No suppliers registered yet" : `No matches for "${addCustomer}"`}
+                                    </div>
+                                  )
+                                }
+                                return filtered.map((s) => (
+                                  <button
+                                    key={s.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setAddCustomer(s.name)
+                                      setShowSupplierDropdown(false)
+                                    }}
+                                    className="w-full text-left px-3 py-2 hover:bg-emerald-50 text-xs flex items-center justify-between transition-colors cursor-pointer"
+                                  >
+                                    <div>
+                                      <span className="font-bold text-zinc-900 block">{s.name}</span>
+                                      <span className="text-[10px] text-zinc-500 font-medium">
+                                        {s.phone ? `📞 ${s.phone} • ` : ""}{s.city || "Ethiopia"}
+                                      </span>
+                                    </div>
+                                  </button>
+                                ))
+                              })()}
+                            </div>
+                          )}
                         </div>
-                        {showSupplierDropdown && (
-                          <div className="absolute top-full left-0 right-0 z-30 mt-1 max-h-52 overflow-y-auto rounded-xl bg-white border border-zinc-200 shadow-xl py-1 divide-y divide-zinc-50">
-                            {(() => {
-                              const list = erp.getSuppliers()
-                              const filtered = addCustomer.trim()
-                                ? list.filter((s) => s.name.toLowerCase().includes(addCustomer.toLowerCase()))
-                                : list
-                              if (filtered.length === 0) {
+
+                        {/* Row 3 (WH1): Plate Number & Entry Date */}
+                        <label className="space-y-1">
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Plate Number <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
+                          <input
+                            type="text"
+                            placeholder="e.g. A52735"
+                            value={addPlateNumber}
+                            onChange={(e) => setAddPlateNumber(e.target.value)}
+                            className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                          />
+                        </label>
+                        {/* Row 4 (WH1): Entry Date & Quantity */}
+                        <label className="space-y-1">
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Entry Date <span className="text-rose-600">*</span></span>
+                          <input
+                            type="date"
+                            value={addEntryDate}
+                            onChange={(e) => setAddEntryDate(e.target.value)}
+                            className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Quantity <span className="text-rose-600">*</span></span>
+                          <input
+                            type="number"
+                            placeholder="e.g. 50"
+                            value={addQuantity}
+                            onChange={(e) => setAddQuantity(e.target.value)}
+                            className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                          />
+                        </label>
+
+                        {/* Row 5 (WH1): Cost Price on left & Selling Price on right */}
+                        <label className="space-y-1">
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Cost Price per unit (ETB)</span>
+                          <input
+                            type="number"
+                            placeholder="0.00"
+                            value={addUnitPrice}
+                            onChange={(e) => setAddUnitPrice(e.target.value)}
+                            className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Selling Price per unit (ETB)</span>
+                          <input
+                            type="number"
+                            placeholder="0.00"
+                            value={addSellingPrice}
+                            onChange={(e) => setAddSellingPrice(e.target.value)}
+                            className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                          />
+                        </label>
+
+                        {/* Row 6 (WH1): Notes alone on row 6 */}
+                        <label className="space-y-1 md:col-span-2">
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Notes <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
+                          <input
+                            type="text"
+                            placeholder="e.g. Received from exporter"
+                            value={addNotes}
+                            onChange={(e) => setAddNotes(e.target.value)}
+                            className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs"
+                          />
+                        </label>
+                      </>
+                    ) : (
+                      <>
+                        {/* Import Pricing: Cost Price (left) & Selling Price (right) */}
+                        <label className="space-y-1">
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Cost Price per unit (ETB)</span>
+                          <input
+                            type="number"
+                            placeholder="0.00"
+                            value={addUnitPrice}
+                            onChange={(e) => setAddUnitPrice(e.target.value)}
+                            className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Selling Price per unit (ETB)</span>
+                          <input
+                            type="number"
+                            placeholder="0.00"
+                            value={addSellingPrice}
+                            onChange={(e) => setAddSellingPrice(e.target.value)}
+                            className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                          />
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Manufacturing Date <span className="text-rose-600">*</span></span>
+                          <input type="date" value={addMfgDate} onChange={(e) => setAddMfgDate(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
+                        </label>
+                        <label className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-black uppercase text-zinc-700">Expiry Date <span className="text-rose-600">*</span></span>
+                            {addExpDate && (() => {
+                              const s = getExpiryStatus(addExpDate)
+                              if (s.tier !== "UNKNOWN") {
                                 return (
-                                  <div className="px-3 py-2.5 text-xs text-zinc-400 font-medium text-center">
-                                    {list.length === 0 ? "No suppliers registered yet" : `No matches for "${addCustomer}"`}
-                                  </div>
+                                  <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border ${s.badgeClass}`}>
+                                    {s.label}
+                                  </span>
                                 )
                               }
-                              return filtered.map((s) => (
-                                <button
-                                  key={s.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setAddCustomer(s.name)
-                                    setShowSupplierDropdown(false)
-                                  }}
-                                  className="w-full text-left px-3 py-2 hover:bg-emerald-50 text-xs flex items-center justify-between transition-colors cursor-pointer"
-                                >
-                                  <div>
-                                    <span className="font-bold text-zinc-900 block">{s.name}</span>
-                                    <span className="text-[10px] text-zinc-500 font-medium">
-                                      {s.phone ? `📞 ${s.phone} • ` : ""}{s.city || "Ethiopia"}
-                                    </span>
-                                  </div>
-                                </button>
-                              ))
+                              return null
                             })()}
                           </div>
-                        )}
-                      </div>
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase text-zinc-700">Plate Number <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
-                        <input
-                          type="text"
-                          placeholder="e.g. A52735"
-                          value={addPlateNumber}
-                          onChange={(e) => setAddPlateNumber(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
-                        />
-                      </label>
-                      {!erp.getSuppliers().some((s) => s.name.toLowerCase() === addCustomer.trim().toLowerCase()) && addCustomer.trim() !== "" && (
-                        <div className="p-2.5 bg-emerald-50/80 border border-emerald-200/80 rounded-xl flex items-center gap-2 md:col-span-2">
+                          <input type="date" value={addExpDate} onChange={(e) => setAddExpDate(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
+                        </label>
+                        <label className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-black uppercase text-zinc-700">Quantity Per Pack <span className="text-rose-600">*</span></span>
+                            {selectedExistingProduct && (
+                              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                Locked (Std Pack)
+                              </span>
+                            )}
+                          </div>
                           <input
-                            type="checkbox"
-                            id="saveSupplierCheckStock"
-                            checked={saveSupplierToRegistry}
-                            onChange={(e) => setSaveSupplierToRegistry(e.target.checked)}
-                            className="size-4 rounded text-emerald-700 focus:ring-emerald-600 cursor-pointer"
+                            type="number"
+                            placeholder="e.g. 100"
+                            value={addQtyPerPack}
+                            disabled={!!selectedExistingProduct && Number(selectedExistingProduct.quantityPerPack || (selectedExistingProduct as any).quantity_per_pack || 0) > 0}
+                            onChange={(e) => setAddQtyPerPack(e.target.value)}
+                            className={`h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono ${
+                              selectedExistingProduct && Number(selectedExistingProduct.quantityPerPack || (selectedExistingProduct as any).quantity_per_pack || 0) > 0
+                                ? "bg-zinc-100 text-zinc-500 cursor-not-allowed"
+                                : ""
+                            }`}
                           />
-                          <label htmlFor="saveSupplierCheckStock" className="text-xs font-bold text-emerald-950 cursor-pointer">
-                            Save new supplier details to registry for future arrivals
-                          </label>
-                        </div>
-                      )}
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase text-zinc-700">Entry Date <span className="text-rose-600">*</span></span>
-                        <input
-                          type="date"
-                          value={addEntryDate}
-                          onChange={(e) => setAddEntryDate(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
-                        />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase text-zinc-700">Quantity <span className="text-rose-600">*</span></span>
-                        <input
-                          type="number"
-                          placeholder="e.g. 50"
-                          value={addQuantity}
-                          onChange={(e) => setAddQuantity(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
-                        />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase text-zinc-700">Notes <span className="text-[10px] text-zinc-400 lowercase">(optional)</span></span>
-                        <input
-                          type="text"
-                          placeholder="e.g. Received from exporter"
-                          value={addNotes}
-                          onChange={(e) => setAddNotes(e.target.value)}
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs"
-                        />
-                      </label>
-                    </>
-                  ) : (
-                    <>
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase text-zinc-700">Manufacturing Date <span className="text-rose-600">*</span></span>
-                        <input type="date" value={addMfgDate} onChange={(e) => setAddMfgDate(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
-                      </label>
-                      <label className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-black uppercase text-zinc-700">Expiry Date <span className="text-rose-600">*</span></span>
-                          {addExpDate && (() => {
-                            const s = getExpiryStatus(addExpDate)
-                            if (s.tier !== "UNKNOWN") {
-                              return (
-                                <span className={`text-[9px] font-black px-1.5 py-0.2 rounded border ${s.badgeClass}`}>
-                                  {s.label}
-                                </span>
-                              )
-                            }
-                            return null
-                          })()}
-                        </div>
-                        <input type="date" value={addExpDate} onChange={(e) => setAddExpDate(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase text-zinc-700">Quantity Per Pack <span className="text-rose-600">*</span></span>
-                        <input type="number" placeholder="100" value={addQtyPerPack} onChange={(e) => setAddQtyPerPack(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-[11px] font-black uppercase text-zinc-700">Number of Cartons <span className="text-rose-600">*</span></span>
-                        <input type="number" placeholder="50" value={addNumCartons} onChange={(e) => setAddNumCartons(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
-                      </label>
-                    </>
-                  )}
+                        </label>
+
+                        <label className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-black uppercase text-zinc-700">Number of Cartons <span className="text-rose-600">*</span></span>
+                            {(() => {
+                              const pack = Number(addQtyPerPack || selectedExistingProduct?.quantityPerPack || 0)
+                              const ctns = Number(addNumCartons || 0)
+                              if (pack > 0 && ctns > 0) {
+                                const totalUnits = Math.round(ctns * pack)
+                                return (
+                                  <span className="text-[10px] font-mono text-emerald-700 font-bold">
+                                    Total: {totalUnits.toLocaleString()} units
+                                  </span>
+                                )
+                              }
+                              return null
+                            })()}
+                          </div>
+                          <input
+                            type="number"
+                            step="any"
+                            placeholder="e.g. 50"
+                            value={addNumCartons}
+                            onChange={(e) => setAddNumCartons(e.target.value)}
+                            className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
+                          />
+                        </label>
+                      </>
+                    )}
                 </div>
 
                 {isWH1Form && addPackagingUnit === "Ton" && (
@@ -2427,12 +2561,26 @@ export default function StockProducts() {
                   </label>
 
                   <label className="space-y-1 block">
-                    <span className="text-zinc-500 uppercase text-[10px] font-black">Unit Price (ETB)</span>
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Cost / Unit Price (ETB)</span>
                     <input 
                       type="number" 
+                      step="any"
+                      placeholder="0.00"
                       value={editSubEntryPrice} 
                       onChange={(e) => setEditSubEntryPrice(e.target.value)} 
                       className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                    />
+                  </label>
+
+                  <label className="space-y-1 block">
+                    <span className="text-blue-900 uppercase text-[10px] font-black">Selling Price (ETB)</span>
+                    <input 
+                      type="number" 
+                      step="any"
+                      placeholder="0.00"
+                      value={editSubEntrySellingPrice} 
+                      onChange={(e) => setEditSubEntrySellingPrice(e.target.value)} 
+                      className="h-10 w-full border border-blue-200 bg-blue-50/20 rounded-xl px-3 font-mono font-bold text-blue-950"
                     />
                   </label>
 
@@ -2529,6 +2677,15 @@ export default function StockProducts() {
         isOpen={wh1VoucherModal.isOpen}
         product={wh1VoucherModal.product}
         onClose={() => setWh1VoucherModal({ isOpen: false, product: null })}
+      />
+
+      {/* MODAL: REGULATORY VETERINARY EXCEL EXPORT */}
+      <VeterinaryExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        products={products}
+        salesIssues={[]}
+        customers={erp.getCustomers()}
       />
 
       {/* MODAL: DELETE PRODUCT */}

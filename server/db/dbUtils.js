@@ -625,6 +625,8 @@ export function unwrapRow(row, storage) {
   }
   if (out.updated_by !== undefined && out.updatedBy === undefined) out.updatedBy = out.updated_by
   if (out.updatedBy !== undefined && out.updated_by === undefined) out.updated_by = out.updatedBy
+  if (out.multi_accounts !== undefined && out.multiAccounts === undefined) out.multiAccounts = out.multi_accounts
+  if (out.multiAccounts !== undefined && out.multi_accounts === undefined) out.multi_accounts = out.multiAccounts
 
   // Normalization for quarantine_records
   if (out.quarantine_date !== undefined && out.quarantineDate === undefined) out.quarantineDate = out.quarantine_date

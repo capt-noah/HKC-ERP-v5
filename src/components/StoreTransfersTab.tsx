@@ -1020,9 +1020,9 @@ export default function StoreTransfersTab() {
                 </div>
 
                 {/* 3. Live Total Quantity Banner */}
-                <div className="flex items-center justify-between p-4 rounded-2xl bg-zinc-900 text-white shadow-md">
-                  <span className="text-xs font-black uppercase tracking-wider text-zinc-300">Total Dispatch Volume:</span>
-                  <span className="font-mono text-sm font-black text-white">
+                <div className="flex items-center justify-between p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-emerald-950 font-black shadow-xs">
+                  <span className="text-xs font-black uppercase tracking-wider text-emerald-900">Total Dispatch Volume:</span>
+                  <span className="font-mono text-sm font-black text-emerald-950">
                     {formTotalQuantity.toLocaleString()} Units
                   </span>
                 </div>
@@ -1131,6 +1131,7 @@ export default function StoreTransfersTab() {
                       <tr className="bg-zinc-50 border-b border-zinc-200 text-[10px] font-black uppercase text-zinc-400">
                         <th className="py-2.5 px-4">No.</th>
                         <th className="py-2.5 px-4">Item Description</th>
+                        <th className="py-2.5 px-4 font-mono text-center">Batch No.</th>
                         <th className="py-2.5 px-4 text-center">UOM</th>
                         <th className="py-2.5 px-4 text-right">Transfer Qty</th>
                         <th className="py-2.5 px-4">Remarks</th>
@@ -1141,9 +1142,10 @@ export default function StoreTransfersTab() {
                         <tr key={i}>
                           <td className="py-2.5 px-4 font-mono text-zinc-400">{line.line_no}</td>
                           <td className="py-2.5 px-4 text-zinc-900">{line.item}</td>
+                          <td className="py-2.5 px-4 font-mono text-xs font-bold text-zinc-700 text-center">{line.batch_no || "Standard Lot"}</td>
                           <td className="py-2.5 px-4 text-center text-zinc-500">{line.UOM}</td>
                           <td className="py-2.5 px-4 text-right font-mono font-black text-zinc-900">{line.quantity.toLocaleString()}</td>
-                          <td className="py-2.5 px-4 text-zinc-400 font-medium text-[11px]">{line.remark || "—"}</td>
+                          <td className="py-2.5 px-4 text-zinc-400 font-medium text-[11px]">{line.remark || (line.expiry ? `Exp: ${line.expiry}` : "—")}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1151,9 +1153,9 @@ export default function StoreTransfersTab() {
                 </div>
 
                 {/* Total */}
-                <div className="flex justify-between items-center p-3.5 rounded-xl bg-zinc-900 text-white font-black">
-                  <span className="uppercase text-xs text-zinc-300">Total Validated Quantity:</span>
-                  <span className="font-mono text-sm">{selectedTransfer.total_quantity.toLocaleString()} Units</span>
+                <div className="flex justify-between items-center p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-emerald-950 font-black shadow-xs">
+                  <span className="uppercase text-xs text-emerald-900 tracking-wider">Total Validated Quantity:</span>
+                  <span className="font-mono text-sm font-black text-emerald-950">{selectedTransfer.total_quantity.toLocaleString()} Units</span>
                 </div>
 
                 {/* Two-Party Sign-off Cards */}
@@ -1161,12 +1163,12 @@ export default function StoreTransfersTab() {
                   {/* Issuance Sign-off */}
                   <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-2">
                     <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">1. Origin Issuance Sign-off</span>
-                    <div className="text-xs space-y-1 font-semibold">
+                    <div className="text-xs space-y-1.5 font-semibold">
                       <p><span className="text-zinc-400">Date:</span> {selectedTransfer.issued_at || selectedTransfer.date}</p>
-                      <p><span className="text-zinc-400">Dispatcher:</span> <strong className="text-zinc-900">{selectedTransfer.issued_by || "Store Manager"}</strong></p>
+                      <p><span className="text-zinc-400">Dispatcher:</span> <strong className="text-zinc-900">{selectedTransfer.issued_by || currentUserName || "Authorized Store Dispatcher"}</strong></p>
                       <div className="pt-1">
-                        <span className="font-serif italic text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-200">
-                          {selectedTransfer.issued_signature || selectedTransfer.issued_by || "Authorized"}
+                        <span className="font-serif italic text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-md border border-emerald-200 inline-block">
+                          {selectedTransfer.issued_signature || selectedTransfer.issued_by || currentUserName || "Authorized"}
                         </span>
                       </div>
                     </div>
@@ -1176,12 +1178,12 @@ export default function StoreTransfersTab() {
                   <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-2">
                     <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">2. Receiver Verification Sign-off</span>
                     {selectedTransfer.status === "Received" ? (
-                      <div className="text-xs space-y-1 font-semibold">
+                      <div className="text-xs space-y-1.5 font-semibold">
                         <p><span className="text-zinc-400">Date:</span> {selectedTransfer.received_at || selectedTransfer.date}</p>
-                        <p><span className="text-zinc-400">Verified By:</span> <strong className="text-zinc-900">{selectedTransfer.received_by}</strong></p>
+                        <p><span className="text-zinc-400">Verified By:</span> <strong className="text-zinc-900">{selectedTransfer.received_by || "Authorized Receiver"}</strong></p>
                         <div className="pt-1">
-                          <span className="font-serif italic text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-200">
-                            {selectedTransfer.received_signature}
+                          <span className="font-serif italic text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-md border border-emerald-200 inline-block">
+                            {selectedTransfer.received_signature || selectedTransfer.received_by || "Verified & Received"}
                           </span>
                         </div>
                       </div>

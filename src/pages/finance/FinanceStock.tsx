@@ -463,7 +463,23 @@ export default function FinanceStock() {
                     const qty = Number(prod.quantity || 0)
                     const unitCost = Number(prod.unitCost ?? (prod as any).unit_cost ?? 0)
                     const sellingPrice = Number(prod.sellingPrice ?? (prod as any).selling_price ?? 0)
-                    const stockValueAtCost = Number(prod.totalStockValue ?? qty * unitCost)
+
+                    // Cumulative intake valuation (frozen on deductions)
+                    const wh1Entries = prod.wh1Entries || []
+                    const wh1TotalReceived = wh1Entries.reduce((sum, e) => sum + Number(e.quantityReceived || 0), 0)
+                    const binEntries = prod.binCardEntries || []
+                    const pharmaTotalReceived = binEntries.reduce((sum, e) => sum + Number(e.qtyReceived || 0), 0)
+
+                    const stockValueAtCost = isWh1
+                      ? (wh1TotalReceived > 0
+                          ? wh1Entries.reduce((sum, e) => sum + (Number(e.quantityReceived || 0) * Number(e.unitPrice ?? prod.unitCost ?? 0)), 0)
+                          : Number(prod.totalStockValue || (qty * unitCost)))
+                      : (pharmaTotalReceived > 0
+                          ? binEntries
+                              .filter((e) => e.type === "entry" || Number(e.qtyReceived || 0) > 0)
+                              .reduce((sum, e) => sum + (Number(e.qtyReceived || 0) * Number(e.unitPrice ?? prod.unitCost ?? 0)), 0)
+                          : Number(prod.totalStockValue || (qty * unitCost)))
+
                     const potentialSales = qty * sellingPrice
                     const unrealizedMargin = potentialSales > 0 ? potentialSales - stockValueAtCost : 0
                     const marginPct = potentialSales > 0 ? Math.round((unrealizedMargin / potentialSales) * 1000) / 10 : 0

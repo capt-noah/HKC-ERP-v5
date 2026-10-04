@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { X, ArrowDownLeft, MinusCircle, ChevronDown, CheckCircle2, Info } from "lucide-react"
+import { X, ArrowDownLeft, MinusCircle, ChevronDown, CheckCircle2 } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useErpStore, type Product, type WH1Entry } from "@/lib/erpStore"
 
@@ -354,7 +354,21 @@ export default function WH1AddMovementModal({
                 </label>
 
                 <div className="space-y-1 block relative">
-                  <span className="text-zinc-500 uppercase text-[10px] font-black">Supplier / Source</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-zinc-500 uppercase text-[10px] font-black">Supplier / Source</span>
+                    {!erp.getSuppliers().some((s) => s.name.toLowerCase() === customer.trim().toLowerCase()) && customer.trim() !== "" && (
+                      <label className="inline-flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-200 transition-colors">
+                        <input
+                          type="checkbox"
+                          id="saveSupplierCheckModal"
+                          checked={saveSupplierToRegistry}
+                          onChange={(e) => setSaveSupplierToRegistry(e.target.checked)}
+                          className="size-3.5 rounded text-emerald-700 focus:ring-emerald-600 cursor-pointer"
+                        />
+                        Save to registry
+                      </label>
+                    )}
+                  </div>
                   <div className="relative flex items-center">
                     <input
                       type="text"
@@ -435,21 +449,6 @@ export default function WH1AddMovementModal({
                     className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
                   />
                 </label>
-
-                {!erp.getSuppliers().some((s) => s.name.toLowerCase() === customer.trim().toLowerCase()) && customer.trim() !== "" && (
-                  <div className="p-2.5 bg-emerald-50/80 border border-emerald-200/80 rounded-xl flex items-center gap-2 md:col-span-2">
-                    <input
-                      type="checkbox"
-                      id="saveSupplierCheckModal"
-                      checked={saveSupplierToRegistry}
-                      onChange={(e) => setSaveSupplierToRegistry(e.target.checked)}
-                      className="size-4 rounded text-emerald-700 focus:ring-emerald-600 cursor-pointer"
-                    />
-                    <label htmlFor="saveSupplierCheckModal" className="text-xs font-bold text-emerald-950 cursor-pointer">
-                      Save new supplier details to registry for future arrivals
-                    </label>
-                  </div>
-                )}
 
                 <label className="space-y-1 block">
                   <span className="text-zinc-500 uppercase text-[10px] font-black">UOM</span>
@@ -572,16 +571,6 @@ export default function WH1AddMovementModal({
           {/* TAB 2: PROCESSED GOODS CATEGORIZATION */}
           {activeTab === "processed" && (
             <form onSubmit={handleSaveProcessedSubmit} className="space-y-4 text-xs font-semibold">
-              <div className="p-3.5 bg-sky-50 border border-sky-200 rounded-2xl text-sky-950 text-xs flex items-start gap-2.5">
-                <Info className="size-4 text-sky-600 mt-0.5 shrink-0" />
-                <div>
-                  <p className="font-bold text-sky-950">Informational Categorization</p>
-                  <p className="text-[11px] text-sky-800 mt-0.5 leading-relaxed">
-                    Recording processed goods documents cleaned, sorted commodity surplus remaining in the warehouse. It does not alter your physical inventory total or financial stock valuation.
-                  </p>
-                </div>
-              </div>
-
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="space-y-1 block">
                   <span className="text-zinc-500 uppercase text-[10px] font-black">Date Processed</span>

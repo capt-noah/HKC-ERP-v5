@@ -769,22 +769,40 @@ export async function updateSalesIssue(input, id) {
     if (customEntries && typeof customEntries === "object") {
       if (Array.isArray(customEntries.revenue_lines)) {
         customRevLines = customEntries.revenue_lines
+      } else if (Array.isArray(customEntries.debit_lines) || Array.isArray(customEntries.credit_lines)) {
+        customRevLines = [
+          ...(customEntries.debit_lines || []).map((l) => ({ ...l, debit: Number(l.amount || l.debit || 0), credit: 0 })),
+          ...(customEntries.credit_lines || []).map((l) => ({ ...l, debit: 0, credit: Number(l.amount || l.credit || 0) })),
+        ]
       }
       if (Array.isArray(customEntries.cogs_lines)) {
         customCogsLines = customEntries.cogs_lines
+      } else if (Array.isArray(customEntries.cogs_debit_lines) || Array.isArray(customEntries.cogs_credit_lines)) {
+        customCogsLines = [
+          ...(customEntries.cogs_debit_lines || []).map((l) => ({ ...l, debit: Number(l.amount || l.debit || 0), credit: 0 })),
+          ...(customEntries.cogs_credit_lines || []).map((l) => ({ ...l, debit: 0, credit: Number(l.amount || l.credit || 0) })),
+        ]
       }
     }
 
     const saleJeId = `JE-SALE-${cleanId}`
     const cogsJeId = `JE-COGS-${cleanId}`
 
-    // 1. Update Invoices table in MySQL
-    const [invRows] = await pool.query(
-      "SELECT * FROM `invoices` WHERE sales_issue_id = ? OR id = ? OR fs_no = ?",
-      [cleanId, `INV-SI-${cleanId}`, existing.fs_no || cleanId]
-    )
-    if (invRows.length > 0) {
-      const inv = invRows[0]
+    // 1. Update Invoices table via Drizzle
+    const invRes = await drizzleListRows({
+      resource: getResource("invoices"),
+      query: { sales_issue_id: cleanId }
+    })
+    let matchedInv = (Array.isArray(invRes.body) && invRes.body.length > 0) ? invRes.body[0] : null
+    if (!matchedInv) {
+      const directInv = await drizzleGetRow({ resource: getResource("invoices"), id: `INV-SI-${cleanId}` })
+      if (directInv.status === 200 && directInv.body) {
+        matchedInv = directInv.body
+      }
+    }
+
+    if (matchedInv) {
+      const inv = unwrapRow(matchedInv)
       let existingGl = inv.gl_distribution
       if (typeof existingGl === "string") {
         try { existingGl = JSON.parse(existingGl) } catch { existingGl = {} }
@@ -797,105 +815,101 @@ export async function updateSalesIssue(input, id) {
         updated_by: "Sales Issue System",
       }
 
-      await pool.query(
-        `UPDATE \`invoices\` SET
-          subtotal = ?,
-          tax_amount = ?,
-          tax_rate = ?,
-          total = ?,
-          total_amount = ?,
-          amount_paid = ?,
-          balance_due = ?,
-          status = ?,
-          settlement_status = ?,
-          gl_distribution = ?,
-          customer_name = ?,
-          warehouse_id = ?,
-          updated_at = NOW(3)
-         WHERE id = ?`,
-        [
-          subtotal,
-          vat_amount,
-          vat_rate,
-          finalTotalAmount,
-          finalTotalAmount,
-          updateHeader.amount_paid,
-          updateHeader.balance_due,
-          updateHeader.payment_status,
-          updateHeader.settlement_status,
-          JSON.stringify(updatedGlDist),
-          updateHeader.customer_name || inv.customer_name,
-          warehouse_id || inv.warehouse_id,
-          inv.id,
-        ]
-      )
+      const updatedInvoiceBody = {
+        ...inv,
+        subtotal,
+        tax_amount: vat_amount,
+        tax_rate: vat_rate,
+        total: finalTotalAmount,
+        total_amount: finalTotalAmount,
+        amount_paid: updateHeader.amount_paid !== undefined ? updateHeader.amount_paid : inv.amount_paid,
+        balance_due: updateHeader.balance_due !== undefined ? updateHeader.balance_due : inv.balance_due,
+        status: updateHeader.payment_status || inv.status,
+        settlement_status: updateHeader.settlement_status || inv.settlement_status,
+        gl_distribution: updatedGlDist,
+        customer_name: updateHeader.customer_name || inv.customer_name,
+        warehouse_id: warehouse_id || inv.warehouse_id,
+      }
+
+      await drizzleUpdateRow({
+        resource: getResource("invoices"),
+        id: inv.id,
+        body: updatedInvoiceBody,
+      })
     }
 
     // 2. Update Journal Entry Lines for JE-SALE
     if (customRevLines.length > 0) {
-      const [saleJeRows] = await pool.query(
-        "SELECT * FROM `journal_entries` WHERE id = ? OR source_id = ?",
-        [saleJeId, cleanId]
-      )
-      if (saleJeRows.length > 0) {
-        const targetJeId = saleJeRows[0].id
-        await pool.query("DELETE FROM `journal_entry_lines` WHERE journal_entry_id = ?", [targetJeId])
-        for (const [idx, line] of customRevLines.entries()) {
-          const accId = line.accountId || line.account_id || line.accountCode || line.account_code
-          const dAmt = Number(line.debit || line.debit_amount || (line.amount && (line.id?.startsWith("dr-") || line.debit) ? line.amount : 0))
-          const cAmt = Number(line.credit || line.credit_amount || (line.amount && (line.id?.startsWith("cr-") || line.credit) ? line.amount : 0))
-          if (dAmt <= 0 && cAmt <= 0) continue
-
-          await pool.query(
-            `INSERT INTO \`journal_entry_lines\` (
-              id, journal_entry_id, account_id, debit_amount, credit_amount, currency,
-              exchange_rate_at_time, warehouse_id, party_type, party_id, party_name
-            ) VALUES (?, ?, ?, ?, ?, 'ETB', 1.0, ?, 'Customer', ?, ?)`,
-            [
-              `${targetJeId}-LINE-${idx + 1}-${Date.now().toString().slice(-4)}`,
-              targetJeId,
-              accId,
-              dAmt,
-              cAmt,
-              warehouse_id || null,
-              updateHeader.customer_id || null,
-              updateHeader.customer_name || null,
-            ]
-          )
+      const jelRes = await drizzleListRows({
+        resource: getResource("journal_entry_lines"),
+        query: { journal_entry_id: saleJeId }
+      })
+      const existingSaleLines = Array.isArray(jelRes.body) ? jelRes.body : []
+      for (const line of existingSaleLines) {
+        const unwrappedLine = unwrapRow(line)
+        if (unwrappedLine?.id) {
+          await drizzleDeleteRow({ resource: getResource("journal_entry_lines"), id: unwrappedLine.id })
         }
+      }
+
+      for (const [idx, line] of customRevLines.entries()) {
+        const accId = line.accountId || line.account_id || line.accountCode || line.account_code
+        const dAmt = Number(line.debit || line.debit_amount || (line.amount && (line.id?.startsWith("dr-") || line.debit) ? line.amount : 0))
+        const cAmt = Number(line.credit || line.credit_amount || (line.amount && (line.id?.startsWith("cr-") || line.credit) ? line.amount : 0))
+        if (dAmt <= 0 && cAmt <= 0) continue
+
+        await drizzleCreateRow({
+          resource: getResource("journal_entry_lines"),
+          body: {
+            id: `${saleJeId}-LINE-${idx + 1}-${Date.now().toString().slice(-4)}`,
+            journal_entry_id: saleJeId,
+            account_id: accId,
+            debit_amount: dAmt,
+            credit_amount: cAmt,
+            currency: "ETB",
+            exchange_rate_at_time: 1.0,
+            warehouse_id: warehouse_id || null,
+            party_type: "Customer",
+            party_id: updateHeader.customer_id || null,
+            party_name: updateHeader.customer_name || null,
+          },
+        })
       }
     }
 
     // 3. Update Journal Entry Lines for JE-COGS
     if (customCogsLines.length > 0) {
-      const [cogsJeRows] = await pool.query(
-        "SELECT * FROM `journal_entries` WHERE id = ? OR source_id = ?",
-        [cogsJeId, cleanId]
-      )
-      if (cogsJeRows.length > 0) {
-        const targetCogsId = cogsJeRows[0].id
-        await pool.query("DELETE FROM `journal_entry_lines` WHERE journal_entry_id = ?", [targetCogsId])
-        for (const [idx, line] of customCogsLines.entries()) {
-          const accId = line.accountId || line.account_id || line.accountCode || line.account_code
-          const dAmt = Number(line.debit || line.debit_amount || (line.amount && (line.id?.startsWith("dr-") || line.debit) ? line.amount : 0))
-          const cAmt = Number(line.credit || line.credit_amount || (line.amount && (line.id?.startsWith("cr-") || line.credit) ? line.amount : 0))
-          if (dAmt <= 0 && cAmt <= 0) continue
-
-          await pool.query(
-            `INSERT INTO \`journal_entry_lines\` (
-              id, journal_entry_id, account_id, debit_amount, credit_amount, currency,
-              exchange_rate_at_time, warehouse_id
-            ) VALUES (?, ?, ?, ?, ?, 'ETB', 1.0, ?)`,
-            [
-              `${targetCogsId}-LINE-${idx + 1}-${Date.now().toString().slice(-4)}`,
-              targetCogsId,
-              accId,
-              dAmt,
-              cAmt,
-              warehouse_id || null,
-            ]
-          )
+      const cogsJelRes = await drizzleListRows({
+        resource: getResource("journal_entry_lines"),
+        query: { journal_entry_id: cogsJeId }
+      })
+      const existingCogsLines = Array.isArray(cogsJelRes.body) ? cogsJelRes.body : []
+      for (const line of existingCogsLines) {
+        const unwrappedLine = unwrapRow(line)
+        if (unwrappedLine?.id) {
+          await drizzleDeleteRow({ resource: getResource("journal_entry_lines"), id: unwrappedLine.id })
         }
+      }
+
+      for (const [idx, line] of customCogsLines.entries()) {
+        const accId = line.accountId || line.account_id || line.accountCode || line.account_code
+        const dAmt = Number(line.debit || line.debit_amount || (line.amount && (line.id?.startsWith("dr-") || line.debit) ? line.amount : 0))
+        const cAmt = Number(line.credit || line.credit_amount || (line.amount && (line.id?.startsWith("cr-") || line.credit) ? line.amount : 0))
+        if (dAmt <= 0 && cAmt <= 0) continue
+
+        await drizzleCreateRow({
+          resource: getResource("journal_entry_lines"),
+          body: {
+            id: `${cogsJeId}-LINE-${idx + 1}-${Date.now().toString().slice(-4)}`,
+            journal_entry_id: cogsJeId,
+            account_id: accId,
+            debit_amount: dAmt,
+            credit_amount: cAmt,
+            currency: "ETB",
+            exchange_rate_at_time: 1.0,
+            warehouse_id: warehouse_id || null,
+          },
+        })
       }
     }
   } catch (syncErr) {
@@ -1069,8 +1083,9 @@ export async function postSalesIssue(arg1, arg2) {
             [realProdId]
           )
           const newQty = allGrvs.reduce((sum, g) => sum + Number(g.net_quantity || 0), 0)
-          const finalStockValue = allGrvs.reduce((sum, g) => sum + (Number(g.net_quantity || 0) * Number(g.unit_price || 0)), 0)
-          const weightedCost = newQty > 0 ? Math.round((finalStockValue / newQty) * 100) / 100 : unitCost
+          const remainingVal = allGrvs.reduce((sum, g) => sum + (Number(g.net_quantity || 0) * Number(g.unit_price || 0)), 0)
+          const cumulativeIntakeVal = Number(prod.total_stock_value || prod.totalStockValue || 0) || allGrvs.reduce((sum, g) => sum + (Number(g.gross_quantity || g.quantity || g.net_quantity || 0) * Number(g.unit_price || 0)), 0)
+          const weightedCost = newQty > 0 ? Math.round((remainingVal / newQty) * 100) / 100 : unitCost
 
           // 4. Update export_products in MySQL
           await pool.query(
@@ -1088,7 +1103,7 @@ export async function postSalesIssue(arg1, arg2) {
               issueQty,
               newQty + (Number(prod.quantitySold || prod.quantity_sold || 0) + issueQty),
               weightedCost,
-              finalStockValue,
+              cumulativeIntakeVal,
               newQty === 0 ? "Out of Stock" : newQty < 20 ? "Low Stock" : "In Stock",
               realProdId,
             ]
@@ -1217,12 +1232,16 @@ export async function postSalesIssue(arg1, arg2) {
           )
 
           // 6. Update parent pharma_products in MySQL
+          const packSize = Number(prod.quantity_per_pack || prod.quantityPerPack || 1)
+          const updatedCartons = packSize > 0 ? Math.round((newQty / packSize) * 100) / 100 : Number(prod.number_of_cartons || 0)
+          const cumulativeIntakeVal = Number(prod.total_stock_value || prod.totalStockValue || 0) || totalStockVal
           await pool.query(
             `UPDATE pharma_products SET
               quantity = ?,
               total_quantity = ?,
               quantity_sold = quantity_sold + ?,
               unit_cost = ?,
+              number_of_cartons = ?,
               total_stock_value = ?,
               status = ?,
               updated_at = NOW(3)
@@ -1232,7 +1251,8 @@ export async function postSalesIssue(arg1, arg2) {
               newQty + (Number(prod.quantity_sold || prod.quantitySold || 0) + issueQty),
               issueQty,
               newWeightedCost,
-              totalStockVal,
+              updatedCartons,
+              cumulativeIntakeVal,
               newQty === 0 ? "Out of Stock" : newQty < 20 ? "Low Stock" : "In Stock",
               realProdId,
             ]

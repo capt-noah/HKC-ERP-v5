@@ -35,7 +35,6 @@ function loadEnvFileSafe(filePath) {
           }
         }
       }
-      console.log(`[CONFIG] Loaded environment variables from: ${filePath}`)
     }
   } catch (err) {
     console.warn("[CONFIG] Notice reading env file:", err.message)

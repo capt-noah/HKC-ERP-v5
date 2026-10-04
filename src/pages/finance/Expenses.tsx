@@ -76,7 +76,7 @@ export default function Expenses() {
 
   const cashBankAccounts = useMemo(() => {
     const list = accounts.filter(
-      (a) => a.account_type === "Asset" && (a.peachtree_type === "Cash" || a.code.startsWith("1000")) && !a.is_group
+      (a) => a.account_type === "Asset" && (a.peachtree_type === "Cash" || (a?.code || "").startsWith("1000")) && !a.is_group
     )
     if (list.length > 0) return list
     return [

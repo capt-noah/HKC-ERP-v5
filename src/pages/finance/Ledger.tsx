@@ -429,8 +429,10 @@ export default function Ledger() {
         if (valA !== valB) {
           return jeSortDir === "asc" ? valA - valB : valB - valA
         }
-      } else if (typeof valA === "string" && typeof valB === "string") {
-        const comp = valA.localeCompare(valB)
+      } else {
+        const strA = String(valA ?? "")
+        const strB = String(valB ?? "")
+        const comp = strA.localeCompare(strB)
         if (comp !== 0) {
           return jeSortDir === "asc" ? comp : -comp
         }
@@ -512,8 +514,8 @@ export default function Ledger() {
     { key: "Liability", title: "Liabilities (2000s)", code: "2", color: "amber", filter: (a: any) => a.account_type === "Liability" },
     { key: "Equity", title: "Equity & Capital (3000s)", code: "3", color: "purple", filter: (a: any) => a.account_type === "Equity" },
     { key: "Revenue", title: "Income & Revenue (4000s)", code: "4", color: "teal", filter: (a: any) => a.account_type === "Revenue" },
-    { key: "COGS", title: "Cost of Sales / Selling & Distribution (6000s)", code: "6", color: "orange", filter: (a: any) => a.account_type === "Expense" && (a.code.startsWith("6") || a.id.startsWith("6") || a.peachtree_type === "Cost of Sales") },
-    { key: "AdminExpense", title: "Administrative & General Expenses (8000s)", code: "8", color: "rose", filter: (a: any) => a.account_type === "Expense" && !(a.code.startsWith("6") || a.id.startsWith("6") || a.peachtree_type === "Cost of Sales") },
+    { key: "COGS", title: "Cost of Sales / Selling & Distribution (6000s)", code: "6", color: "orange", filter: (a: any) => a.account_type === "Expense" && ((a?.code || "").startsWith("6") || (a?.id || "").startsWith("6") || a.peachtree_type === "Cost of Sales") },
+    { key: "AdminExpense", title: "Administrative & General Expenses (8000s)", code: "8", color: "rose", filter: (a: any) => a.account_type === "Expense" && !((a?.code || "").startsWith("6") || (a?.id || "").startsWith("6") || a.peachtree_type === "Cost of Sales") },
   ]
 
   const getTopLevelAccountsForCategory = (catKey: string) => {
@@ -546,19 +548,19 @@ export default function Ledger() {
     // AR / AP Filter Mode Check
     if (coaFilterMode === "AR") {
       const isArMatch =
-        acc.code.startsWith("11") ||
-        acc.code.startsWith("12") ||
-        acc.code.startsWith("13") ||
-        acc.code.startsWith("4") ||
+        (acc.code || "").startsWith("11") ||
+        (acc.code || "").startsWith("12") ||
+        (acc.code || "").startsWith("13") ||
+        (acc.code || "").startsWith("4") ||
         acc.peachtree_type === "Accounts Receivable" ||
         acc.peachtree_type === "Income" ||
         acc.name.toLowerCase().includes("receivable") ||
         acc.name.toLowerCase().includes("sales")
       const childHasAr = children.some((c: any) =>
-        c.code.startsWith("11") ||
-        c.code.startsWith("12") ||
-        c.code.startsWith("13") ||
-        c.code.startsWith("4") ||
+        (c.code || "").startsWith("11") ||
+        (c.code || "").startsWith("12") ||
+        (c.code || "").startsWith("13") ||
+        (c.code || "").startsWith("4") ||
         c.peachtree_type === "Accounts Receivable" ||
         c.peachtree_type === "Income" ||
         c.name.toLowerCase().includes("receivable") ||
@@ -569,10 +571,10 @@ export default function Ledger() {
 
     if (coaFilterMode === "AP") {
       const isApMatch =
-        acc.code.startsWith("20") ||
-        acc.code.startsWith("21") ||
-        acc.code.startsWith("60") ||
-        acc.code.startsWith("80") ||
+        (acc.code || "").startsWith("20") ||
+        (acc.code || "").startsWith("21") ||
+        (acc.code || "").startsWith("60") ||
+        (acc.code || "").startsWith("80") ||
         acc.peachtree_type === "Other Current Liabilities" ||
         acc.peachtree_type === "Cost of Sales" ||
         acc.peachtree_type === "Expenses" ||
@@ -581,10 +583,10 @@ export default function Ledger() {
         acc.name.toLowerCase().includes("expense") ||
         acc.name.toLowerCase().includes("cost")
       const childHasAp = children.some((c: any) =>
-        c.code.startsWith("20") ||
-        c.code.startsWith("21") ||
-        c.code.startsWith("60") ||
-        c.code.startsWith("80") ||
+        (c.code || "").startsWith("20") ||
+        (c.code || "").startsWith("21") ||
+        (c.code || "").startsWith("60") ||
+        (c.code || "").startsWith("80") ||
         c.peachtree_type === "Other Current Liabilities" ||
         c.peachtree_type === "Cost of Sales" ||
         c.peachtree_type === "Expenses" ||
@@ -599,8 +601,8 @@ export default function Ledger() {
     // Search check
     const searchTerm = coaSearch.toLowerCase().trim()
     if (searchTerm) {
-      const selfMatches = acc.code.toLowerCase().includes(searchTerm) || acc.name.toLowerCase().includes(searchTerm)
-      const childMatches = children.some((c) => c.code.toLowerCase().includes(searchTerm) || c.name.toLowerCase().includes(searchTerm))
+      const selfMatches = (acc.code || "").toLowerCase().includes(searchTerm) || (acc.name || "").toLowerCase().includes(searchTerm)
+      const childMatches = children.some((c) => (c.code || "").toLowerCase().includes(searchTerm) || (c.name || "").toLowerCase().includes(searchTerm))
       if (!selfMatches && !childMatches) return null
     }
 

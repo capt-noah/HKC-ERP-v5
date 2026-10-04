@@ -122,15 +122,20 @@ export async function createQuarantineRecord(body = {}) {
     )
     let newQty = 0
     let newStockVal = 0
+    const cumulativeIntakeVal = Number(prod.total_stock_value || 0) || (Number(prod.quantity || 0) * unitCost)
+    const packSize = Number(prod.quantity_per_pack || 1)
+
     if (remainingBatches.length > 0) {
       newQty = remainingBatches.reduce((s, b) => s + Number(b.quantity || 0), 0)
       newStockVal = remainingBatches.reduce((s, b) => s + (Number(b.quantity || 0) * Number(b.unit_cost || 0)), 0)
       const newWeightedCost = newQty > 0 ? Math.round((newStockVal / newQty) * 100) / 100 : unitCost
+      const updatedCartons = packSize > 0 ? Math.round((newQty / packSize) * 100) / 100 : Number(prod.number_of_cartons || 0)
       await conn.query(
-        "UPDATE pharma_products SET quantity = ?, total_stock_value = ?, unit_cost = ?, status = ?, updated_at = NOW(3) WHERE id = ?",
+        "UPDATE pharma_products SET quantity = ?, number_of_cartons = ?, total_stock_value = ?, unit_cost = ?, status = ?, updated_at = NOW(3) WHERE id = ?",
         [
           newQty,
-          newStockVal,
+          updatedCartons,
+          cumulativeIntakeVal,
           newWeightedCost,
           newQty === 0 ? "Out of Stock" : newQty < 20 ? "Low Stock" : "In Stock",
           productId,
@@ -138,12 +143,13 @@ export async function createQuarantineRecord(body = {}) {
       )
     } else if (prod) {
       newQty = Math.max(0, Number(prod.quantity || 0) - quantity)
-      newStockVal = Math.max(0, Number(prod.total_stock_value || 0) - (quantity * unitCost))
+      const updatedCartons = packSize > 0 ? Math.round((newQty / packSize) * 100) / 100 : Number(prod.number_of_cartons || 0)
       await conn.query(
-        "UPDATE pharma_products SET quantity = ?, total_stock_value = ?, status = ?, updated_at = NOW(3) WHERE id = ?",
+        "UPDATE pharma_products SET quantity = ?, number_of_cartons = ?, total_stock_value = ?, status = ?, updated_at = NOW(3) WHERE id = ?",
         [
           newQty,
-          newStockVal,
+          updatedCartons,
+          cumulativeIntakeVal,
           newQty === 0 ? "Out of Stock" : newQty < 20 ? "Low Stock" : "In Stock",
           productId,
         ]

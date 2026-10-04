@@ -16,8 +16,10 @@ import {
   resolveAutoTaxScheduleId,
 } from "./taxEngine"
 
+import { resolveCommodityAccounts } from "./commodityAccounts"
+
 export type { TaxRule, TaxSchedule, TaxLineDetail, TaxCalculationResult, GlAccountMapping }
-export { calculateMultiTax, resolveAutoTaxScheduleId, DEFAULT_GL_ACCOUNT_MAPPINGS }
+export { calculateMultiTax, resolveAutoTaxScheduleId, DEFAULT_GL_ACCOUNT_MAPPINGS, resolveCommodityAccounts }
 
 export interface FinancialMetrics {
   totalRevenue: number
@@ -735,7 +737,9 @@ class FinanceStore {
       const { id: _settingsId, ...companySettings } = companySettingsRows[0] || { id: "default", ...emptyCompanySettings }
       this.companySettings = companySettings as CompanySettings
       if (Array.isArray(taxRules) && taxRules.length > 0) {
-        this.taxRules = sortNewestFirst(taxRules.map((t: any) => ({
+        // Filter out any legacy obsolete tax IDs (TAX-001, TAX-002, TAX-003)
+        const validTaxRules = taxRules.filter((t: any) => !["TAX-001", "TAX-002", "TAX-003"].includes(t.id))
+        this.taxRules = sortNewestFirst(validTaxRules.map((t: any) => ({
           ...t,
           id: t.id,
           name: t.name || "Tax Rule",
@@ -765,6 +769,11 @@ class FinanceStore {
           normal_posting: (m.normal_posting || m.normalPosting || "Debit") as "Debit" | "Credit",
           is_system_default: Boolean(m.is_system_default ?? m.isSystemDefault),
           description: m.description || "",
+          multi_accounts: Array.isArray(m.multi_accounts || m.multiAccounts)
+            ? (m.multi_accounts || m.multiAccounts)
+            : typeof (m.multi_accounts || m.multiAccounts) === "string"
+            ? JSON.parse(m.multi_accounts || m.multiAccounts || "[]")
+            : undefined,
           updated_by: m.updated_by || m.updatedBy || "System Initializer",
           created_at: m.created_at || m.createdAt,
           updated_at: m.updated_at || m.updatedAt,
@@ -856,58 +865,98 @@ class FinanceStore {
               const saleJeId = `JE-SALE-${si.id}`
               const cogsJeId = `JE-COGS-${si.id}`
 
+              let rawAccEntries = si.account_entries || si.accountEntries
+              if (typeof rawAccEntries === "string") {
+                try { rawAccEntries = JSON.parse(rawAccEntries) } catch { rawAccEntries = null }
+              }
+
+              const customRevList: any[] = Array.isArray(rawAccEntries?.revenue_lines) && rawAccEntries.revenue_lines.length > 0
+                ? rawAccEntries.revenue_lines
+                : (Array.isArray(rawAccEntries?.debit_lines) || Array.isArray(rawAccEntries?.credit_lines))
+                  ? [
+                      ...(rawAccEntries?.debit_lines || []).map((l: any) => ({ ...l, debit: Number(l.amount || l.debit || 0), credit: 0 })),
+                      ...(rawAccEntries?.credit_lines || []).map((l: any) => ({ ...l, debit: 0, credit: Number(l.amount || l.credit || 0) })),
+                    ]
+                  : []
+
+              const customCogsList: any[] = Array.isArray(rawAccEntries?.cogs_lines) && rawAccEntries.cogs_lines.length > 0
+                ? rawAccEntries.cogs_lines
+                : (Array.isArray(rawAccEntries?.cogs_debit_lines) || Array.isArray(rawAccEntries?.cogs_credit_lines))
+                  ? [
+                      ...(rawAccEntries?.cogs_debit_lines || []).map((l: any) => ({ ...l, debit: Number(l.amount || l.debit || 0), credit: 0 })),
+                      ...(rawAccEntries?.cogs_credit_lines || []).map((l: any) => ({ ...l, debit: 0, credit: Number(l.amount || l.credit || 0) })),
+                    ]
+                  : []
+
+              const hasCustomRev = customRevList.length > 0
+              const hasCustomCogs = customCogsList.length > 0
+
               // Sale Revenue entry
               const hasSaleEntry = this.entries.some((e) => e.id === saleJeId)
               const hasSaleLines = this.lines.some((l) => l.journal_entry_id === saleJeId)
 
-              if (!hasSaleEntry || !hasSaleLines) {
+              if (!hasSaleEntry || !hasSaleLines || hasCustomRev) {
                 this.entries = this.entries.filter((e) => e.id !== saleJeId)
                 this.lines = this.lines.filter((l) => l.journal_entry_id !== saleJeId)
-                const debitAcc = isCredit
-                  ? this.getMappedAccount("sales_credit_ar", "1300-03")
-                  : this.getMappedAccount("sales_cash_clearing", "1000-02-26")
-                const revenueAcc = this.getMappedAccount("sales_revenue_domestic", "4000-01-01")
-                const vatAcc = this.getMappedAccount("sales_vat_output", "2000-05")
-                const whtAssetAcc = this.getMappedAccount("sales_wht_withheld", "1320-06-01")
 
-                if (debitAcc && revenueAcc) {
-                  this.entries.push({
-                    id: saleJeId,
-                    entry_date: si.sale_date || new Date().toISOString().split("T")[0],
-                    source_type: "Sales Invoice",
-                    source_id: si.id,
-                    created_by: "System Synced",
-                    currency: "ETB",
-                    exchange_rate: 1.0,
-                    description: `Sales Issue ${si.fs_no || si.id} — ${si.customer_name || "Customer"}${whtAmount > 0 ? " (WHT applied)" : ""}`,
-                    is_reversal_of: null,
-                  })
+                this.entries.push({
+                  id: saleJeId,
+                  entry_date: si.sale_date || new Date().toISOString().split("T")[0],
+                  source_type: "Sales Invoice",
+                  source_id: si.id,
+                  created_by: "System Synced",
+                  currency: "ETB",
+                  exchange_rate: 1.0,
+                  description: `Sales Issue ${si.fs_no || si.id} — ${si.customer_name || "Customer"}${whtAmount > 0 ? " (WHT applied)" : ""}`,
+                  is_reversal_of: null,
+                })
 
-                  const newSaleLines: JournalEntryLine[] = []
-                  let lineIdx = 1
+                const newSaleLines: JournalEntryLine[] = []
+                let lineIdx = 1
 
-                  // 1. Debit Net Receivable or Cash
-                  newSaleLines.push({
-                    id: `${saleJeId}-${lineIdx++}`,
-                    journal_entry_id: saleJeId,
-                    account_id: debitAcc.id,
-                    debit_amount: netReceivableDue,
-                    credit_amount: 0,
-                    currency: "ETB",
-                    exchange_rate_at_time: 1.0,
-                    warehouse_id: si.warehouse_id || null,
-                    party_type: "Customer",
-                    party_id: si.customer_id || null,
-                    party_name: si.customer_name || null,
-                  })
-
-                  // 2. Debit Withholding Tax Asset (if client withheld tax)
-                  if (whtAmount > 0 && whtAssetAcc) {
+                if (hasCustomRev) {
+                  for (const cl of customRevList) {
+                    const acc = this.accounts.find((a) => a.id === cl.accountId || a.id === cl.account_id || a.code === cl.accountCode || a.code === cl.account_code)
+                    const d = Number(cl.debit || cl.debit_amount || (cl.amount && cl.id?.startsWith("dr-") ? cl.amount : 0))
+                    const c = Number(cl.credit || cl.credit_amount || (cl.amount && cl.id?.startsWith("cr-") ? cl.amount : 0))
+                    if (d <= 0 && c <= 0) continue
                     newSaleLines.push({
                       id: `${saleJeId}-${lineIdx++}`,
                       journal_entry_id: saleJeId,
-                      account_id: whtAssetAcc.id,
-                      debit_amount: whtAmount,
+                      account_id: acc?.id || cl.accountId || cl.account_id || cl.accountCode || cl.account_code,
+                      debit_amount: d,
+                      credit_amount: c,
+                      currency: "ETB",
+                      exchange_rate_at_time: 1.0,
+                      warehouse_id: si.warehouse_id || null,
+                      party_type: "Customer",
+                      party_id: si.customer_id || null,
+                      party_name: si.customer_name || null,
+                    })
+                  }
+                } else {
+                  const isExport =
+                    String(si.warehouse_id || "").toUpperCase().startsWith("WH1") ||
+                    String(si.warehouse_id || "").toUpperCase().includes("EXP") ||
+                    String(si.warehouse_id || "").toUpperCase().includes("PROCESSING")
+
+                  const debitAcc = isCredit
+                    ? this.getMappedAccount(isExport ? "sales_credit_ar_export" : "sales_credit_ar", isExport ? "1300-01" : "1300-03", { warehouseId: si.warehouse_id })
+                    : this.getMappedAccount("sales_cash_clearing", "1000-02-26", { warehouseId: si.warehouse_id })
+                  const revenueAcc = this.getMappedAccount(
+                    isExport ? "sales_revenue_export" : "sales_revenue_domestic",
+                    isExport ? "4000-02-01" : "4000-01-01"
+                  )
+                  const vatAcc = this.getMappedAccount("sales_vat_output", "2000-05")
+                  const whtAssetAcc = this.getMappedAccount("sales_wht_withheld", "1320-06-01")
+
+                  if (debitAcc && revenueAcc) {
+                    // 1. Debit Net Receivable or Cash
+                    newSaleLines.push({
+                      id: `${saleJeId}-${lineIdx++}`,
+                      journal_entry_id: saleJeId,
+                      account_id: debitAcc.id,
+                      debit_amount: netReceivableDue,
                       credit_amount: 0,
                       currency: "ETB",
                       exchange_rate_at_time: 1.0,
@@ -916,32 +965,32 @@ class FinanceStore {
                       party_id: si.customer_id || null,
                       party_name: si.customer_name || null,
                     })
-                  }
 
-                  // 3. Credit Base Sales Revenue (Subtotal net of discount)
-                  const baseRevenue = Math.max(0, subtotal - discountAmount)
-                  newSaleLines.push({
-                    id: `${saleJeId}-${lineIdx++}`,
-                    journal_entry_id: saleJeId,
-                    account_id: revenueAcc.id,
-                    debit_amount: 0,
-                    credit_amount: baseRevenue,
-                    currency: "ETB",
-                    exchange_rate_at_time: 1.0,
-                    warehouse_id: si.warehouse_id || null,
-                    party_type: "Customer",
-                    party_id: si.customer_id || null,
-                    party_name: si.customer_name || null,
-                  })
+                    // 2. Debit Withholding Tax Asset (if client withheld tax)
+                    if (whtAmount > 0 && whtAssetAcc) {
+                      newSaleLines.push({
+                        id: `${saleJeId}-${lineIdx++}`,
+                        journal_entry_id: saleJeId,
+                        account_id: whtAssetAcc.id,
+                        debit_amount: whtAmount,
+                        credit_amount: 0,
+                        currency: "ETB",
+                        exchange_rate_at_time: 1.0,
+                        warehouse_id: si.warehouse_id || null,
+                        party_type: "Customer",
+                        party_id: si.customer_id || null,
+                        party_name: si.customer_name || null,
+                      })
+                    }
 
-                  // 4. Credit Output VAT Payable (if VAT charged)
-                  if (vatAmount > 0 && vatAcc) {
+                    // 3. Credit Base Sales Revenue (Subtotal net of discount)
+                    const baseRevenue = Math.max(0, subtotal - discountAmount)
                     newSaleLines.push({
                       id: `${saleJeId}-${lineIdx++}`,
                       journal_entry_id: saleJeId,
-                      account_id: vatAcc.id,
+                      account_id: revenueAcc.id,
                       debit_amount: 0,
-                      credit_amount: vatAmount,
+                      credit_amount: baseRevenue,
                       currency: "ETB",
                       exchange_rate_at_time: 1.0,
                       warehouse_id: si.warehouse_id || null,
@@ -949,8 +998,27 @@ class FinanceStore {
                       party_id: si.customer_id || null,
                       party_name: si.customer_name || null,
                     })
-                  }
 
+                    // 4. Credit Output VAT Payable (if VAT charged)
+                    if (vatAmount > 0 && vatAcc) {
+                      newSaleLines.push({
+                        id: `${saleJeId}-${lineIdx++}`,
+                        journal_entry_id: saleJeId,
+                        account_id: vatAcc.id,
+                        debit_amount: 0,
+                        credit_amount: vatAmount,
+                        currency: "ETB",
+                        exchange_rate_at_time: 1.0,
+                        warehouse_id: si.warehouse_id || null,
+                        party_type: "Customer",
+                        party_id: si.customer_id || null,
+                        party_name: si.customer_name || null,
+                      })
+                    }
+                  }
+                }
+
+                if (newSaleLines.length > 0) {
                   this.lines.push(...newSaleLines)
                   hasNewSync = true
                 }
@@ -960,30 +1028,57 @@ class FinanceStore {
               const hasCogsEntry = this.entries.some((e) => e.id === cogsJeId)
               const hasCogsLines = this.lines.some((l) => l.journal_entry_id === cogsJeId)
 
-              if (!hasCogsEntry || !hasCogsLines) {
+              if (!hasCogsEntry || !hasCogsLines || hasCustomCogs) {
                 this.entries = this.entries.filter((e) => e.id !== cogsJeId)
                 this.lines = this.lines.filter((l) => l.journal_entry_id !== cogsJeId)
 
-                const debitAcc = this.getMappedAccount("cogs_stock_fulfillment", "6000-04")
-                const creditAcc = this.getMappedAccount("inventory_stock_in_hand", "1410-01")
-                const estimatedCost = Math.round(subtotal * 0.7)
+                this.entries.push({
+                  id: cogsJeId,
+                  entry_date: si.sale_date || new Date().toISOString().split("T")[0],
+                  source_type: "Sales Invoice",
+                  source_id: si.id,
+                  created_by: "System Synced",
+                  currency: "ETB",
+                  exchange_rate: 1.0,
+                  description: `COGS — Sales Issue ${si.fs_no || si.id}`,
+                  is_reversal_of: null,
+                })
 
-                if (debitAcc && creditAcc) {
-                  this.entries.push({
-                    id: cogsJeId,
-                    entry_date: si.sale_date || new Date().toISOString().split("T")[0],
-                    source_type: "Sales Invoice",
-                    source_id: si.id,
-                    created_by: "System Synced",
-                    currency: "ETB",
-                    exchange_rate: 1.0,
-                    description: `COGS — Sales Issue ${si.fs_no || si.id}`,
-                    is_reversal_of: null,
-                  })
-                  this.lines.push(
-                    { id: `${cogsJeId}-1`, journal_entry_id: cogsJeId, account_id: debitAcc.id, debit_amount: estimatedCost, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: si.warehouse_id || null },
-                    { id: `${cogsJeId}-2`, journal_entry_id: cogsJeId, account_id: creditAcc.id, debit_amount: 0, credit_amount: estimatedCost, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: si.warehouse_id || null }
-                  )
+                const newCogsLines: JournalEntryLine[] = []
+                let cogsLineIdx = 1
+
+                if (hasCustomCogs) {
+                  for (const cl of customCogsList) {
+                    const acc = this.accounts.find((a) => a.id === cl.accountId || a.id === cl.account_id || a.code === cl.accountCode || a.code === cl.account_code)
+                    const d = Number(cl.debit || cl.debit_amount || (cl.amount && cl.id?.startsWith("dr-") ? cl.amount : 0))
+                    const c = Number(cl.credit || cl.credit_amount || (cl.amount && cl.id?.startsWith("cr-") ? cl.amount : 0))
+                    if (d <= 0 && c <= 0) continue
+                    newCogsLines.push({
+                      id: `${cogsJeId}-${cogsLineIdx++}`,
+                      journal_entry_id: cogsJeId,
+                      account_id: acc?.id || cl.accountId || cl.account_id || cl.accountCode || cl.account_code,
+                      debit_amount: d,
+                      credit_amount: c,
+                      currency: "ETB",
+                      exchange_rate_at_time: 1.0,
+                      warehouse_id: si.warehouse_id || null,
+                    })
+                  }
+                } else {
+                  const debitAcc = this.getMappedAccount("cogs_stock_fulfillment", "6000-04")
+                  const creditAcc = this.getMappedAccount("inventory_stock_in_hand", "1410-01")
+                  const estimatedCost = Math.round(subtotal * 0.7)
+
+                  if (debitAcc && creditAcc) {
+                    newCogsLines.push(
+                      { id: `${cogsJeId}-1`, journal_entry_id: cogsJeId, account_id: debitAcc.id, debit_amount: estimatedCost, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: si.warehouse_id || null },
+                      { id: `${cogsJeId}-2`, journal_entry_id: cogsJeId, account_id: creditAcc.id, debit_amount: 0, credit_amount: estimatedCost, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: si.warehouse_id || null }
+                    )
+                  }
+                }
+
+                if (newCogsLines.length > 0) {
+                  this.lines.push(...newCogsLines)
                   hasNewSync = true
                 }
               }
@@ -1080,7 +1175,7 @@ class FinanceStore {
                 payment_terms: mappedInvoice.payment_terms,
                 sales_issue_id: si.id,
                 fs_no: si.fs_no,
-                gl_distribution: current.gl_distribution || siGlDist,
+                gl_distribution: siGlDist || current.gl_distribution,
               }
               // Update in place and remove any remaining stale duplicates for this issue
               this.invoices = this.invoices.filter((inv, idx) => idx === existingInvIdx || !isMatchingInvoice(inv))
@@ -1104,8 +1199,9 @@ class FinanceStore {
 
             const hasPoEntry = this.entries.some((e) => e.id === jeId || e.source_id === po.id)
             const hasPoLines = this.lines.some((l) => l.journal_entry_id === jeId)
+            const hasCustomPoEntries = Array.isArray(po.accountEntries) && po.accountEntries.length > 0
 
-            if (!hasPoEntry || !hasPoLines) {
+            if (!hasPoEntry || !hasPoLines || hasCustomPoEntries) {
               this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== po.id)
               this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
 
@@ -1114,30 +1210,36 @@ class FinanceStore {
               const isCash = (po.paymentType || po.payment_type || po.paymentTerms || "").toString().toLowerCase().includes("cash")
 
               // 1. If accountEntries is defined, use its distribution
-              if (Array.isArray(po.accountEntries) && po.accountEntries.length > 0) {
+              const rawPoAccEntries = po.accountEntries || po.account_entries
+              let poAccountEntriesList = Array.isArray(rawPoAccEntries)
+                ? rawPoAccEntries
+                : typeof rawPoAccEntries === "string"
+                ? (() => { try { return JSON.parse(rawPoAccEntries) } catch { return [] } })()
+                : []
+
+              if (Array.isArray(poAccountEntriesList) && poAccountEntriesList.length > 0) {
                 const poLines: any[] = []
-                po.accountEntries.forEach((entry: any, eIdx: number) => {
+                poAccountEntriesList.forEach((entry: any, eIdx: number) => {
                   const debit = Number(entry.debit || 0)
                   const credit = Number(entry.credit || 0)
                   if (debit <= 0 && credit <= 0) return
 
-                  const acc = this.accounts.find((a) => a.id === entry.accountId || a.code === entry.accountCode || a.code === entry.code) ||
+                  const acc = this.accounts.find((a) => a.id === entry.accountId || a.id === entry.account_id || a.code === entry.accountCode || a.code === entry.account_code || a.code === entry.code) ||
                               (debit > 0 ? stockAcc : apAcc)
-                  if (!acc) return
-
-                  const isPartyReq = acc.code.startsWith("2100") || acc.code.startsWith("1300") || acc.name.toLowerCase().includes("payable")
+                  const accCode = acc?.code || ""
+                  const isPartyReq = accCode.startsWith("2100") || accCode.startsWith("1300") || (acc?.name || "").toLowerCase().includes("payable")
                   poLines.push({
                     id: `${jeId}-${eIdx + 1}`,
                     journal_entry_id: jeId,
-                    account_id: acc.id,
+                    account_id: acc?.id || entry.accountId || entry.account_id || entry.accountCode || entry.account_code,
                     debit_amount: debit,
                     credit_amount: credit,
                     currency: "ETB",
                     exchange_rate_at_time: 1.0,
                     warehouse_id: null,
                     party_type: isPartyReq ? "Supplier" : null,
-                    party_id: isPartyReq ? (po.supplierId || null) : null,
-                    party_name: isPartyReq ? (po.supplier || po.paidTo || null) : null,
+                    party_id: isPartyReq ? (po.supplierId || po.supplier_id || null) : null,
+                    party_name: isPartyReq ? (po.supplier || po.paidTo || po.paid_to || null) : null,
                   })
                 })
 
@@ -1147,61 +1249,58 @@ class FinanceStore {
                     entry_date: po.date || new Date().toISOString().split("T")[0],
                     source_type: isCash ? "Payment Voucher" : "Purchase Invoice",
                     source_id: po.id,
-                    created_by: po.preparedBy || "System Synced",
+                    created_by: po.preparedBy || po.prepared_by || "System Synced",
                     currency: po.currency || "ETB",
                     exchange_rate: 1.0,
-                    description: `Purchase Order ${po.voucherNo || po.poNumber || po.id} — ${po.paidTo || po.supplier || "Supplier"}: ${po.reasonForPayment || "Procurement"}`,
+                    description: `Purchase Order ${po.voucherNo || po.voucher_no || po.poNumber || po.po_number || po.id} — ${po.paidTo || po.paid_to || po.supplier || "Supplier"}: ${po.reasonForPayment || po.reason_for_payment || "Procurement"}`,
                     is_reversal_of: null,
                   })
                   this.lines.push(...poLines)
                   hasNewSync = true
-                  return
                 }
-              }
-
-              // 2. Default two-legged double entry with dynamic accounts
-              const isPharma = String(po.warehouse_id || po.warehouseId || po.warehouse || "").toUpperCase().includes("WH2") ||
-                               String(po.warehouse_id || po.warehouseId || po.warehouse || "").toUpperCase().includes("WH3") ||
-                               String(po.category || "").toUpperCase().includes("PHARMA") ||
-                               String(po.category || "").toUpperCase().includes("VET")
-
-              const debitRule = isPharma ? "purchase_pharma_stock" : "purchase_export_commodity"
-              const debitFallback = isPharma ? "1400-01" : "1410-01"
-
-              const debitAcc = (po.targetAccountId && this.accounts.find((a) => a.id === po.targetAccountId))
-                || (po.targetAccountCode && this.accounts.find((a) => a.code === po.targetAccountCode))
-                || this.getMappedAccount(debitRule, debitFallback)
-                || (isPharma ? this.getMappedAccount("inventory_pharma_stock", "1400-01") : this.getMappedAccount("po_grni_inventory", "1410-01"))
-
-              const creditRule = isCash ? "purchase_cash_bank" : "purchase_ap_credit"
-              const creditFallback = isCash ? "1000-02-26" : "2100-06"
-
-              const creditAcc = (po.creditAccountId && this.accounts.find((a) => a.id === po.creditAccountId))
-                || (po.creditAccountCode && this.accounts.find((a) => a.code === po.creditAccountCode))
-                || this.getMappedAccount(creditRule, creditFallback)
-                || (isCash
-                  ? this.getMappedAccount("supplier_payment_bank", "1000-02-26")
-                  : this.getMappedAccount("po_grni_clearing", "2100-06"))
-
-              if (!debitAcc || !creditAcc) {
-                console.warn(`[FinanceSync] Missing accounts for PO ${po.id} — skipping.`)
               } else {
-                this.entries.push({
-                  id: jeId,
-                  entry_date: po.date || new Date().toISOString().split("T")[0],
-                  source_type: "Purchase Invoice",
-                  source_id: po.id,
-                  created_by: "System Synced",
-                  currency: "ETB",
-                  exchange_rate: 1.0,
-                  description: `Purchase Order ${po.id} — ${po.supplier || "Supplier"}`,
-                  is_reversal_of: null,
-                })
-                this.lines.push(
-                  { id: `${jeId}-1`, journal_entry_id: jeId, account_id: stockAcc.id, debit_amount: poAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
-                  { id: `${jeId}-2`, journal_entry_id: jeId, account_id: apAcc.id, debit_amount: 0, credit_amount: poAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Supplier", party_id: po.supplierId || null, party_name: po.supplier || null }
-                )
-                hasNewSync = true
+                // 2. Default two-legged double entry with dynamic accounts
+                const isPharma = String(po.warehouse_id || po.warehouseId || po.warehouse || "").toUpperCase().includes("WH2") ||
+                                 String(po.warehouse_id || po.warehouseId || po.warehouse || "").toUpperCase().includes("WH3") ||
+                                 String(po.category || "").toUpperCase().includes("PHARMA") ||
+                                 String(po.category || "").toUpperCase().includes("VET")
+
+                const debitRule = isPharma ? "purchase_pharma_stock" : "purchase_export_commodity"
+                const debitFallback = isPharma ? "1400-01" : "1410-01"
+
+                const debitAcc = (po.targetAccountId && this.accounts.find((a) => a.id === po.targetAccountId))
+                  || (po.targetAccountCode && this.accounts.find((a) => a.code === po.targetAccountCode))
+                  || this.getMappedAccount(debitRule, debitFallback)
+                  || (isPharma ? this.getMappedAccount("inventory_pharma_stock", "1400-01") : this.getMappedAccount("po_grni_inventory", "1410-01"))
+
+                const creditRule = isCash ? "purchase_cash_bank" : "purchase_ap_credit"
+                const creditFallback = isCash ? "1000-02-26" : "2100-06"
+
+                const creditAcc = (po.creditAccountId && this.accounts.find((a) => a.id === po.creditAccountId))
+                  || (po.creditAccountCode && this.accounts.find((a) => a.code === po.creditAccountCode))
+                  || this.getMappedAccount(creditRule, creditFallback)
+                  || (isCash
+                    ? this.getMappedAccount("supplier_payment_bank", "1000-02-26")
+                    : this.getMappedAccount("po_grni_clearing", "2100-06"))
+
+                if (debitAcc && creditAcc) {
+                  this.entries.push({
+                    id: jeId,
+                    entry_date: po.date || new Date().toISOString().split("T")[0],
+                    source_type: isCash ? "Payment Voucher" : "Purchase Invoice",
+                    source_id: po.id,
+                    created_by: "System Synced",
+                    currency: "ETB",
+                    exchange_rate: 1.0,
+                    description: `Purchase Order ${po.id} — ${po.supplier || po.paidTo || po.paid_to || "Supplier"}`,
+                    is_reversal_of: null,
+                  })
+                  this.lines.push(
+                    { id: `${jeId}-1`, journal_entry_id: jeId, account_id: debitAcc.id, debit_amount: poAmt, credit_amount: 0, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null },
+                    { id: `${jeId}-2`, journal_entry_id: jeId, account_id: creditAcc.id, debit_amount: 0, credit_amount: poAmt, currency: "ETB", exchange_rate_at_time: 1.0, warehouse_id: null, party_type: "Supplier", party_id: po.supplierId || po.supplier_id || null, party_name: po.supplier || po.paidTo || po.paid_to || null }
+                  )
+                  hasNewSync = true
+                }
               }
             }
 
@@ -1210,10 +1309,40 @@ class FinanceStore {
             const totalAmt = Number(po.amount || po.total_amount || 0)
             if (totalAmt > 0) {
               const poInvId = `INV-PO-${po.id}`
-              const existingPoInvIdx = this.invoices.findIndex((i) => i.id === poInvId || i.purchase_order_id === po.id || (po.voucherNo && i.voucher_no === po.voucherNo))
+              const vNumber = po.voucherNo || po.voucher_no || po.poNumber || po.po_number
+              const existingPoInvIdx = this.invoices.findIndex((i) => i.id === poInvId || i.purchase_order_id === po.id || (vNumber && (i.voucher_no === vNumber || i.invoice_number === vNumber)))
               const paidAmt = isCredit ? Number(po.amountPaid ?? po.amount_paid ?? 0) : totalAmt
-              const dueAmt = isCredit ? (typeof po.balanceDue === "number" ? po.balanceDue : Math.max(0, totalAmt - paidAmt)) : 0
-              const isPaid = !isCredit || dueAmt <= 0.01 || po.settlementStatus === "Fully Settled"
+              const dueAmt = isCredit ? (typeof po.balanceDue === "number" ? po.balanceDue : (typeof po.balance_due === "number" ? po.balance_due : Math.max(0, totalAmt - paidAmt))) : 0
+              const isPaid = !isCredit || dueAmt <= 0.01 || po.settlementStatus === "Fully Settled" || po.settlement_status === "Fully Settled"
+
+              let poGlDist: any = undefined
+              const rawEntries = po.accountEntries || po.account_entries
+              let entriesList = Array.isArray(rawEntries)
+                ? rawEntries
+                : typeof rawEntries === "string"
+                ? (() => { try { return JSON.parse(rawEntries) } catch { return [] } })()
+                : []
+
+              if (Array.isArray(entriesList) && entriesList.length > 0) {
+                poGlDist = {
+                  revenue_lines: entriesList.map((e: any, idx: number) => ({
+                    id: e.id || `po-dist-${idx}`,
+                    account_id: e.accountId || e.account_id || e.accountCode || e.account_code,
+                    account_code: e.accountCode || e.account_code || e.accountId || e.account_id,
+                    account_name: e.accountName || e.account_name,
+                    description: e.description || (Number(e.debit) > 0 ? "Procurement Stock / Expense" : "Supplier Settlement / AP"),
+                    debit: Number(e.debit) || 0,
+                    credit: Number(e.credit) || 0,
+                    party_type: "Supplier" as const,
+                    party_id: po.supplierId || po.supplier_id || null,
+                    party_name: po.supplier || po.paidTo || po.paid_to || null,
+                  })),
+                  notes: po.notes || po.reasonForPayment || po.reason_for_payment || "",
+                  updated_at: new Date().toISOString(),
+                  updated_by: "PO Sync",
+                }
+              }
+
               const invObj: Invoice = {
                 id: poInvId,
                 invoice_number: po.voucherNo || po.poNumber || `BILL-${po.id.slice(-6)}`,
@@ -1244,9 +1373,15 @@ class FinanceStore {
                 status: isPaid ? "Paid" : paidAmt > 0 ? "Partially Paid" : "Sent",
                 notes: po.notes || po.reasonForPayment || "",
                 attachments: po.attachments || [],
+                gl_distribution: poGlDist,
               }
               if (existingPoInvIdx >= 0) {
-                this.invoices[existingPoInvIdx] = { ...this.invoices[existingPoInvIdx], ...invObj }
+                const current = this.invoices[existingPoInvIdx]
+                this.invoices[existingPoInvIdx] = {
+                  ...current,
+                  ...invObj,
+                  gl_distribution: poGlDist || current.gl_distribution,
+                }
               } else {
                 this.invoices.push(invObj)
                 hasNewSync = true
@@ -1312,7 +1447,7 @@ class FinanceStore {
               if (!cashAcc) {
                 cashAcc = this.accounts.find((a) => a.code === "1000-01-01") ||
                   this.accounts.find((a) => a.code === "1000-02-26") ||
-                  this.accounts.find((a) => a.account_type === "Asset" && (a.peachtree_type === "Cash" || a.code.startsWith("1000")) && !a.is_group) ||
+                  this.accounts.find((a) => a.account_type === "Asset" && (a.peachtree_type === "Cash" || (a?.code || "").startsWith("1000")) && !a.is_group) ||
                   this.accounts[0]
               }
 
@@ -1575,9 +1710,131 @@ class FinanceStore {
     return [...this.glMappings]
   }
 
-  public getMappedAccount(ruleKey: string, fallbackCode?: string): AccountItem {
-    // 1. Check if an active rule mapping exists in this.glMappings
-    const mapping = this.glMappings.find((m) => m.id === ruleKey)
+  public getMappedAccount(
+    ruleKey: string,
+    fallbackCode?: string,
+    options?: { warehouseId?: string; itemName?: string; paymentType?: string }
+  ): AccountItem {
+    const hasExplicitWarehouse = Boolean(options?.warehouseId)
+    const cleanWh = String(options?.warehouseId || "").trim().toUpperCase()
+    const isExport = hasExplicitWarehouse
+      ? (cleanWh.startsWith("WH1") || cleanWh.includes("EXP") || cleanWh.includes("AGRI") || cleanWh.includes("PROCESSING"))
+      : (ruleKey.includes("export") || ruleKey === "inventory_stock_in_hand")
+
+    const itemName = (options?.itemName || "").toLowerCase()
+    const commoditySet = isExport ? resolveCommodityAccounts(options?.itemName || "") : null
+
+    // Dynamic rule key override based on warehouse / commodity
+    let targetRuleKey = ruleKey
+
+    if (ruleKey === "sales_credit_ar") {
+      if (isExport) {
+        targetRuleKey = "sales_credit_ar_export"
+      }
+    } else if (ruleKey === "sales_credit_ar_export") {
+      if (hasExplicitWarehouse && !isExport) {
+        targetRuleKey = "sales_credit_ar"
+      }
+    } else if (ruleKey === "sales_revenue_domestic") {
+      if (isExport) {
+        // First check custom mapping matching item name
+        const customMatch = itemName ? this.glMappings.find(
+          (m) => m.category === "Sales & Revenue" && m.label.toLowerCase().includes(itemName)
+        ) : null
+        if (customMatch) {
+          targetRuleKey = customMatch.id
+        } else if (commoditySet) {
+          fallbackCode = commoditySet.revenueCode
+          targetRuleKey = "sales_revenue_export"
+        }
+      }
+    } else if (ruleKey === "sales_revenue_export") {
+      if (hasExplicitWarehouse && !isExport) {
+        targetRuleKey = "sales_revenue_domestic"
+      } else {
+        const customMatch = itemName ? this.glMappings.find(
+          (m) => m.category === "Sales & Revenue" && m.label.toLowerCase().includes(itemName)
+        ) : null
+        if (customMatch) {
+          targetRuleKey = customMatch.id
+        } else if (commoditySet) {
+          fallbackCode = commoditySet.revenueCode
+        }
+      }
+    } else if (ruleKey === "inventory_stock_pharma") {
+      if (isExport) {
+        const customMatch = itemName ? this.glMappings.find(
+          (m) => m.category === "Inventory & COGS" && m.label.toLowerCase().includes(itemName)
+        ) : null
+        if (customMatch) {
+          targetRuleKey = customMatch.id
+        } else if (commoditySet) {
+          fallbackCode = commoditySet.inventoryCode
+          targetRuleKey = "inventory_stock_in_hand"
+        }
+      }
+    } else if (ruleKey === "inventory_stock_in_hand") {
+      if (hasExplicitWarehouse && !isExport) {
+        targetRuleKey = "inventory_pharma_stock"
+      } else {
+        const customMatch = itemName ? this.glMappings.find(
+          (m) => m.category === "Inventory & COGS" && m.label.toLowerCase().includes(itemName)
+        ) : null
+        if (customMatch) {
+          targetRuleKey = customMatch.id
+        } else if (commoditySet) {
+          fallbackCode = commoditySet.inventoryCode
+        }
+      }
+    } else if (ruleKey === "cogs_stock_fulfillment") {
+      if (isExport) {
+        const customMatch = itemName ? this.glMappings.find(
+          (m) => m.category === "Inventory & COGS" && m.label.toLowerCase().includes("cost") && m.label.toLowerCase().includes(itemName)
+        ) : null
+        if (customMatch) {
+          targetRuleKey = customMatch.id
+        } else if (commoditySet) {
+          fallbackCode = commoditySet.cogsCode
+          targetRuleKey = "cogs_export_fulfillment"
+        }
+      }
+    } else if (ruleKey === "cogs_export_fulfillment") {
+      if (hasExplicitWarehouse && !isExport) {
+        targetRuleKey = "cogs_stock_fulfillment"
+      } else {
+        const customMatch = itemName ? this.glMappings.find(
+          (m) => m.category === "Inventory & COGS" && m.label.toLowerCase().includes("cost") && m.label.toLowerCase().includes(itemName)
+        ) : null
+        if (customMatch) {
+          targetRuleKey = customMatch.id
+        } else if (commoditySet) {
+          fallbackCode = commoditySet.cogsCode
+        }
+      }
+    }
+
+    // 0. If an export commodity was resolved (commoditySet), and a specific fallbackCode exists,
+    // and no custom rule mapping specifically overridden this rule:
+    // Directly prioritize the commodity's specific account over the generic Green Mung rule mapping!
+    if (
+      commoditySet &&
+      fallbackCode &&
+      (targetRuleKey === ruleKey ||
+        targetRuleKey === "inventory_stock_in_hand" ||
+        targetRuleKey === "cogs_export_fulfillment" ||
+        targetRuleKey === "sales_revenue_export")
+    ) {
+      const commAcc =
+        this.accounts.find((a) => (a.code === fallbackCode || a.id === fallbackCode) && a.is_active) ||
+        COMPANY_CHART_OF_ACCOUNTS.find((a) => (a.code === fallbackCode || a.id === fallbackCode) && a.is_active !== false)
+      if (commAcc) return commAcc as AccountItem
+    }
+
+    // 1. Check if an active rule mapping exists in this.glMappings (with fallback to Green Mung if unmapped)
+    let mapping = this.glMappings.find((m) => m.id === targetRuleKey)
+    if (!mapping && targetRuleKey !== ruleKey) {
+      mapping = this.glMappings.find((m) => m.id === ruleKey)
+    }
     if (mapping) {
       const acc = this.accounts.find(
         (a) => (a.id === mapping.account_id || a.code === mapping.account_code || a.id === mapping.account_code) && a.is_active
@@ -1594,7 +1851,10 @@ class FinanceStore {
     }
 
     // 3. Check DEFAULT_GL_ACCOUNT_MAPPINGS for built-in rule default
-    const defaultRule = DEFAULT_GL_ACCOUNT_MAPPINGS.find((r) => r.id === ruleKey)
+    const defaultRule =
+      DEFAULT_GL_ACCOUNT_MAPPINGS.find((r) => r.id === targetRuleKey) ||
+      DEFAULT_GL_ACCOUNT_MAPPINGS.find((r) => r.id === ruleKey)
+
     if (defaultRule) {
       const defaultAcc = this.accounts.find(
         (a) => (a.code === defaultRule.account_code || a.id === defaultRule.account_id) && a.is_active
@@ -1602,7 +1862,7 @@ class FinanceStore {
       if (defaultAcc) return defaultAcc
     }
 
-    // 4. Ultimate graceful type-based fallback (active, non-group)
+    // 4. Graceful type-based fallback (active, non-group)
     const normalSide = mapping?.normal_posting || defaultRule?.normal_posting || "Debit"
     const cat = mapping?.category || defaultRule?.category || ""
 
@@ -1618,7 +1878,7 @@ class FinanceStore {
     const typeMatch = this.accounts.find((a) => a.account_type === preferredType && !a.is_group && a.is_active)
     if (typeMatch) return typeMatch
 
-    // 5. Final fallback to first active non-group account or first account
+    // 5. Final fallback
     return (
       this.accounts.find((a) => !a.is_group && a.is_active) ||
       this.accounts[0] || {
@@ -1633,17 +1893,55 @@ class FinanceStore {
     )
   }
 
+  public getMappedAccounts(ruleKey: string): AccountItem[] {
+    const mapping =
+      this.glMappings.find((m) => m.id === ruleKey) ||
+      DEFAULT_GL_ACCOUNT_MAPPINGS.find((r) => r.id === ruleKey)
+
+    if (!mapping) return [this.getMappedAccount(ruleKey)]
+
+    if (mapping.multi_accounts && mapping.multi_accounts.length > 0) {
+      const resolved: AccountItem[] = []
+      mapping.multi_accounts.forEach((ma) => {
+        const acc = this.accounts.find(
+          (a) => (a.id === ma.account_id || a.code === ma.account_code || a.id === ma.account_code) && a.is_active
+        )
+        if (acc && !resolved.some((r) => r.id === acc.id)) {
+          resolved.push(acc)
+        }
+      })
+      if (resolved.length > 0) return resolved
+    }
+
+    return [this.getMappedAccount(ruleKey)]
+  }
+
   public async updateGlMapping(
     ruleId: string,
     accountId: string,
-    optionsOrUpdatedBy: string | { label?: string; description?: string; updatedBy?: string } = "Finance Officer"
+    optionsOrUpdatedBy:
+      | string
+      | {
+          label?: string
+          description?: string
+          updatedBy?: string
+          warehouse_scope?: "ALL" | "IMPORT" | "EXPORT"
+          item_type?: "GREEN_MUNG" | "SESAME" | "SOYA" | "VET_PHARMA" | "ALL"
+          multi_accounts?: GlAccountMapping["multi_accounts"]
+        } = "Finance Officer"
   ): Promise<boolean> {
     const acc = this.accounts.find((a) => a.id === accountId || a.code === accountId)
     if (!acc) return false
 
-    const updatedBy = typeof optionsOrUpdatedBy === "string" ? optionsOrUpdatedBy : optionsOrUpdatedBy?.updatedBy || "Finance Officer"
+    const updatedBy =
+      typeof optionsOrUpdatedBy === "string"
+        ? optionsOrUpdatedBy
+        : optionsOrUpdatedBy?.updatedBy || "Finance Officer"
     const label = typeof optionsOrUpdatedBy === "object" ? optionsOrUpdatedBy.label : undefined
     const description = typeof optionsOrUpdatedBy === "object" ? optionsOrUpdatedBy.description : undefined
+    const warehouse_scope = typeof optionsOrUpdatedBy === "object" ? optionsOrUpdatedBy.warehouse_scope : undefined
+    const item_type = typeof optionsOrUpdatedBy === "object" ? optionsOrUpdatedBy.item_type : undefined
+    const multi_accounts = typeof optionsOrUpdatedBy === "object" ? optionsOrUpdatedBy.multi_accounts : undefined
 
     const existingIdx = this.glMappings.findIndex((m) => m.id === ruleId)
     if (existingIdx >= 0) {
@@ -1652,6 +1950,9 @@ class FinanceStore {
         ...current,
         label: label !== undefined ? label : current.label,
         description: description !== undefined ? description : current.description,
+        warehouse_scope: warehouse_scope !== undefined ? warehouse_scope : current.warehouse_scope,
+        item_type: item_type !== undefined ? item_type : current.item_type,
+        multi_accounts: multi_accounts !== undefined ? multi_accounts : current.multi_accounts,
         account_id: acc.id,
         account_code: acc.code,
         account_name: acc.name,
@@ -1665,6 +1966,10 @@ class FinanceStore {
         id: ruleId,
         label: label !== undefined ? label : (defaultRule?.label || ruleId),
         category: defaultRule?.category || "Custom",
+        transaction_type: defaultRule?.transaction_type || ruleId,
+        warehouse_scope: warehouse_scope !== undefined ? warehouse_scope : defaultRule?.warehouse_scope,
+        item_type: item_type !== undefined ? item_type : defaultRule?.item_type,
+        multi_accounts: multi_accounts !== undefined ? multi_accounts : defaultRule?.multi_accounts,
         account_id: acc.id,
         account_code: acc.code,
         account_name: acc.name,
@@ -1676,6 +1981,35 @@ class FinanceStore {
         updated_at: new Date().toISOString(),
       }
       this.glMappings.push(newMapping)
+    }
+
+    // Bidirectional sync: If this GL rule corresponds to a Tax Rule, sync accountCode in taxRules
+    const taxRuleMap: Record<string, string[]> = {
+      sales_vat_output: ["TAX-VAT-15"],
+      expense_vat_input: ["TAX-VAT-15"],
+      sales_wht_withheld: ["TAX-WHT-2", "TAX-WHT-3"],
+      expense_wht_payable: ["TAX-WHT-2", "TAX-WHT-3"],
+      tax_tot_payable: ["TAX-TOT-2"],
+    }
+    const matchingTaxRuleIds = taxRuleMap[ruleId]
+    if (matchingTaxRuleIds) {
+      let taxModified = false
+      this.taxRules = this.taxRules.map((tr) => {
+        if (matchingTaxRuleIds.includes(tr.id)) {
+          taxModified = true
+          return {
+            ...tr,
+            accountCode: acc.code,
+            gl_account_code: acc.code,
+          } as any
+        }
+        return tr
+      })
+      if (taxModified) {
+        void persistResources([{ resource: "tax_rules", items: this.taxRules }]).catch((err) =>
+          console.error("[FinanceStore] Failed to sync tax rules from GL mapping:", err)
+        )
+      }
     }
 
     this.notify()
@@ -1692,6 +2026,9 @@ class FinanceStore {
       category: string
       account_id: string
       normal_posting?: "Debit" | "Credit"
+      warehouse_scope?: "ALL" | "IMPORT" | "EXPORT"
+      item_type?: "GREEN_MUNG" | "SESAME" | "SOYA" | "VET_PHARMA" | "ALL"
+      multi_accounts?: GlAccountMapping["multi_accounts"]
       description?: string
     },
     createdBy = "Finance Officer"
@@ -1707,6 +2044,14 @@ class FinanceStore {
       id: ruleId,
       label: ruleData.label.trim(),
       category: ruleData.category || "Custom",
+      warehouse_scope: ruleData.warehouse_scope || "ALL",
+      item_type: ruleData.item_type || "ALL",
+      multi_accounts: ruleData.multi_accounts || [{
+        account_id: acc.id,
+        account_code: acc.code,
+        account_name: acc.name,
+        is_default: true,
+      }],
       account_id: acc.id,
       account_code: acc.code,
       account_name: acc.name,
@@ -1919,9 +2264,9 @@ class FinanceStore {
 
     const type = accountType || "Asset"
     if (type === "COGS" || type === "Cost of Sales") {
-      const existing = this.accounts.filter((a) => a.code.startsWith("6000-") || a.code.startsWith("6"))
+      const existing = this.accounts.filter((a) => (a?.code || "").startsWith("6000-") || (a?.code || "").startsWith("6"))
       if (existing.length > 0) {
-        const lastPartNums = existing.map((a) => parseInt(a.code.split("-").pop() || "0", 10)).filter((n) => !isNaN(n))
+        const lastPartNums = existing.map((a) => parseInt((a?.code || "").split("-").pop() || "0", 10)).filter((n) => !isNaN(n))
         const maxNum = lastPartNums.length > 0 ? Math.max(...lastPartNums) : 0
         return `6000-${String(maxNum + 1).padStart(2, "0")}`
       }
@@ -1929,9 +2274,9 @@ class FinanceStore {
     }
 
     if (type === "AdminExpense" || type === "Expenses") {
-      const existing = this.accounts.filter((a) => a.code.startsWith("8000-") || a.code.startsWith("8"))
+      const existing = this.accounts.filter((a) => (a?.code || "").startsWith("8000-") || (a?.code || "").startsWith("8"))
       if (existing.length > 0) {
-        const lastPartNums = existing.map((a) => parseInt(a.code.split("-").pop() || "0", 10)).filter((n) => !isNaN(n))
+        const lastPartNums = existing.map((a) => parseInt((a?.code || "").split("-").pop() || "0", 10)).filter((n) => !isNaN(n))
         const maxNum = lastPartNums.length > 0 ? Math.max(...lastPartNums) : 0
         return `8000-${String(maxNum + 1).padStart(2, "0")}`
       }
@@ -2655,8 +3000,8 @@ class FinanceStore {
     const matchingAccounts = this.accounts.filter(
       (a) =>
         a.code === accountCodePrefix ||
-        a.code.startsWith(`${accountCodePrefix}-`) ||
-        a.code.startsWith(accountCodePrefix)
+        (a?.code || "").startsWith(`${accountCodePrefix}-`) ||
+        (a?.code || "").startsWith(accountCodePrefix)
     )
     const matchingIds = new Set(
       matchingAccounts.map((a) => a.id).concat(matchingAccounts.map((a) => a.code))
@@ -3211,57 +3556,66 @@ class FinanceStore {
       }
     }
 
-    // 3. Identify Canonical & Existing Sales Journal Entries (prevent duplicate JE accumulation)
-    const canonicalSaleJeId = inv.sales_issue_id ? `JE-SALE-${inv.sales_issue_id}` : `JE-SALE-${inv.invoice_number}`
-    const matchingSaleJeIds = new Set<string>()
+    // 3. Identify Canonical & Existing Primary Journal Entries (Sales or Purchase)
+    const isPurchase = inv.invoice_type === "Purchase" || Boolean(inv.purchase_order_id)
+    const canonicalPrimaryJeId = isPurchase
+      ? (inv.purchase_order_id ? `JE-PO-${inv.purchase_order_id}` : `JE-PO-${inv.invoice_number}`)
+      : (inv.sales_issue_id ? `JE-SALE-${inv.sales_issue_id}` : `JE-SALE-${inv.invoice_number}`)
+
+    const matchingPrimaryJeIds = new Set<string>()
     this.entries.forEach((e) => {
       if (
-        e.id === canonicalSaleJeId ||
+        e.id === canonicalPrimaryJeId ||
         e.id === `JE-SALE-${inv.id}` ||
         e.id === `JE-SALE-${inv.invoice_number}` ||
+        e.id === `JE-PO-${inv.id}` ||
+        e.id === `JE-PO-${inv.invoice_number}` ||
+        (inv.purchase_order_id && (e.id === `JE-PO-${inv.purchase_order_id}` || e.source_id === inv.purchase_order_id)) ||
         (inv.sales_issue_id && (e.id === `JE-SALE-${inv.sales_issue_id}` || e.source_id === inv.sales_issue_id)) ||
         e.source_id === inv.id ||
         e.source_id === inv.invoice_number
       ) {
         if (!e.id.startsWith("JE-COGS-") && !/inventory cost|cogs/i.test(e.description || "")) {
-          matchingSaleJeIds.add(e.id)
+          matchingPrimaryJeIds.add(e.id)
         }
       }
     })
 
-    // Remove old lines for any matched sale JEs
-    this.lines = this.lines.filter((line) => !matchingSaleJeIds.has(line.journal_entry_id) && line.journal_entry_id !== canonicalSaleJeId)
+    // Remove old lines for any matched primary JEs
+    this.lines = this.lines.filter((line) => !matchingPrimaryJeIds.has(line.journal_entry_id) && line.journal_entry_id !== canonicalPrimaryJeId)
 
-    // Remove any duplicate sale JEs from entries and add/update canonical
-    this.entries = this.entries.filter((e) => !matchingSaleJeIds.has(e.id) && e.id !== canonicalSaleJeId)
-    const saleJe: JournalEntry = {
-      id: canonicalSaleJeId,
+    // Remove any duplicate primary JEs from entries and add/update canonical
+    this.entries = this.entries.filter((e) => !matchingPrimaryJeIds.has(e.id) && e.id !== canonicalPrimaryJeId)
+    const primaryJe: JournalEntry = {
+      id: canonicalPrimaryJeId,
       entry_date: inv.issue_date || new Date().toISOString().slice(0, 10),
-      description: `Sales Invoice ${inv.invoice_number} for ${inv.customer_name}`,
-      source_type: "Sales Invoice",
-      source_id: inv.sales_issue_id || inv.invoice_number,
+      description: isPurchase
+        ? `Purchase Invoice ${inv.invoice_number} for ${inv.customer_name || "Supplier"}`
+        : `Sales Invoice ${inv.invoice_number} for ${inv.customer_name}`,
+      source_type: isPurchase ? "Purchase Invoice" : "Sales Invoice",
+      source_id: isPurchase ? (inv.purchase_order_id || inv.invoice_number) : (inv.sales_issue_id || inv.invoice_number),
       created_by: "Finance GL Split Tool",
       currency: inv.currency || "ETB",
       exchange_rate: 1.0,
       is_reversal_of: null,
     }
-    this.entries = [saleJe, ...this.entries]
+    this.entries = [primaryJe, ...this.entries]
 
-    // Format new sales lines
-    const newSaleLines: JournalEntryLine[] = distribution.revenueLines.map((l, idx) => ({
-      id: l.id || `JEL-${canonicalSaleJeId}-${idx + 1}-${Date.now().toString().slice(-4)}`,
-      journal_entry_id: canonicalSaleJeId,
+    // Format new primary lines
+    const newPrimaryLines: JournalEntryLine[] = distribution.revenueLines.map((l, idx) => ({
+      id: l.id || `JEL-${canonicalPrimaryJeId}-${idx + 1}-${Date.now().toString().slice(-4)}`,
+      journal_entry_id: canonicalPrimaryJeId,
       account_id: l.account_id || (l as any).accountId || l.account_code || (l as any).accountCode,
       debit_amount: Math.round((Number(l.debit) || 0) * 100) / 100,
       credit_amount: Math.round((Number(l.credit) || 0) * 100) / 100,
       currency: inv.currency || "ETB",
       exchange_rate_at_time: 1.0,
       warehouse_id: inv.warehouse_id || null,
-      party_type: l.party_type ?? "Customer",
+      party_type: l.party_type ?? (isPurchase ? "Supplier" : "Customer"),
       party_id: l.party_id ?? null,
       party_name: l.party_name ?? inv.customer_name,
     }))
-    this.lines = [...newSaleLines, ...this.lines]
+    this.lines = [...newPrimaryLines, ...this.lines]
 
     // 4. Identify Canonical & Existing COGS Journal Entries (prevent duplicate COGS accumulation)
     const canonicalCogsJeId = inv.sales_issue_id ? `JE-COGS-${inv.sales_issue_id}` : `JE-COGS-${inv.invoice_number}`
@@ -3325,19 +3679,87 @@ class FinanceStore {
     }
     this.invoices[invIndex] = updatedInvoice
 
-    // 6. Bidirectional synchronization: Update linked sales_issues table in MySQL
+    // 6. Bidirectional synchronization: Update linked sales_issues or purchase_orders
     if (inv.sales_issue_id) {
       try {
+        const revDebits = distribution.revenueLines.filter((l) => Number(l.debit) > 0)
+        const revCredits = distribution.revenueLines.filter((l) => Number(l.credit) > 0)
+        const cogsDebits = (distribution.cogsLines || []).filter((l) => Number(l.debit) > 0)
+        const cogsCredits = (distribution.cogsLines || []).filter((l) => Number(l.credit) > 0)
+
+        const normalizedAccountEntries = {
+          revenue_lines: distribution.revenueLines,
+          cogs_lines: distribution.cogsLines || [],
+          debit_lines: revDebits.map((l) => ({
+            id: l.id,
+            accountId: l.account_id || (l as any).accountId || l.account_code || (l as any).accountCode,
+            accountCode: l.account_code || (l as any).accountCode || l.account_id || (l as any).accountId,
+            accountName: l.account_name || (l as any).accountName,
+            description: l.description,
+            amount: Number(l.debit) || 0,
+            debit: Number(l.debit) || 0,
+            credit: 0,
+          })),
+          credit_lines: revCredits.map((l) => ({
+            id: l.id,
+            accountId: l.account_id || (l as any).accountId || l.account_code || (l as any).accountCode,
+            accountCode: l.account_code || (l as any).accountCode || l.account_id || (l as any).accountId,
+            accountName: l.account_name || (l as any).accountName,
+            description: l.description,
+            amount: Number(l.credit) || 0,
+            debit: 0,
+            credit: Number(l.credit) || 0,
+          })),
+          cogs_debit_lines: cogsDebits.map((l) => ({
+            id: l.id,
+            accountId: l.account_id || (l as any).accountId || l.account_code || (l as any).accountCode,
+            accountCode: l.account_code || (l as any).accountCode || l.account_id || (l as any).accountId,
+            accountName: l.account_name || (l as any).accountName,
+            description: l.description,
+            amount: Number(l.debit) || 0,
+            debit: Number(l.debit) || 0,
+            credit: 0,
+          })),
+          cogs_credit_lines: cogsCredits.map((l) => ({
+            id: l.id,
+            accountId: l.account_id || (l as any).accountId || l.account_code || (l as any).accountCode,
+            accountCode: l.account_code || (l as any).accountCode || l.account_id || (l as any).accountId,
+            accountName: l.account_name || (l as any).accountName,
+            description: l.description,
+            amount: Number(l.credit) || 0,
+            debit: 0,
+            credit: Number(l.credit) || 0,
+          })),
+          notes: distribution.notes,
+        }
+
         await updateResource<any>("sales_issues", inv.sales_issue_id, {
-          account_entries: {
-            revenue_lines: distribution.revenueLines,
-            cogs_lines: distribution.cogsLines,
-            notes: distribution.notes,
-          },
+          account_entries: normalizedAccountEntries,
         })
         await erpStore.loadSalesData()
       } catch (siErr: any) {
         console.warn("[updateInvoiceGLDistribution] Could not sync back to sales_issues:", siErr)
+      }
+    } else if (inv.purchase_order_id || isPurchase) {
+      try {
+        const poId = inv.purchase_order_id || (inv.invoice_number.startsWith("PO-") ? inv.invoice_number.replace(/^PO-/, "") : null)
+        if (poId) {
+          const poAccountEntries = distribution.revenueLines.map((l) => ({
+            id: l.id || `entry-${Date.now()}`,
+            accountId: l.account_id || (l as any).accountId || l.account_code || (l as any).accountCode || "",
+            accountCode: l.account_code || (l as any).accountCode || l.account_id || (l as any).accountId || "",
+            accountName: l.account_name || (l as any).accountName || "",
+            description: l.description || "Purchase Split Allocation",
+            debit: Number(l.debit) || 0,
+            credit: Number(l.credit) || 0,
+          }))
+
+          erpStore.updatePurchaseOrder(poId, {
+            accountEntries: poAccountEntries,
+          })
+        }
+      } catch (poErr: any) {
+        console.warn("[updateInvoiceGLDistribution] Could not sync back to purchase_orders:", poErr)
       }
     }
 
@@ -3504,6 +3926,7 @@ class FinanceStore {
     settlementStatus?: "Unpaid" | "Ongoing" | "Fully Settled"
     notes?: string
     attachments?: any[]
+    accountEntries?: any[]
   }): Invoice {
     const invId = `INV-PO-${po.id}`
     const invNo = po.voucherNo || po.poNumber || `BILL-${po.id.slice(-6)}`
@@ -3514,6 +3937,31 @@ class FinanceStore {
     const isPaid = due <= 0.01 || po.settlementStatus === "Fully Settled"
 
     const existingIdx = this.invoices.findIndex((i) => i.id === invId || i.purchase_order_id === po.id || (po.voucherNo && i.voucher_no === po.voucherNo))
+
+    let poGlDist = existingIdx >= 0 ? this.invoices[existingIdx].gl_distribution : undefined
+    if (Array.isArray(po.accountEntries) && po.accountEntries.length > 0) {
+      const revLines: InvoiceGLDistributionLine[] = po.accountEntries.map((e: any, idx: number) => {
+        const d = Number(e.debit || 0)
+        const c = Number(e.credit || 0)
+        return {
+          id: e.id || `po-dist-${idx}-${Date.now()}`,
+          account_id: e.accountId || e.account_id || e.accountCode || e.account_code,
+          account_code: e.accountCode || e.account_code || e.accountId || e.account_id,
+          account_name: e.accountName || e.account_name,
+          description: e.description || (d > 0 ? "Procurement Goods / Stock Allocation" : "Supplier Settlement / AP"),
+          debit: d,
+          credit: c,
+          party_type: "Supplier" as const,
+          party_name: suppName,
+        }
+      })
+      poGlDist = {
+        revenue_lines: revLines,
+        notes: po.notes || "",
+        updated_at: new Date().toISOString(),
+        updated_by: "PO Sync",
+      }
+    }
 
     const invObj: Invoice = {
       id: invId,
@@ -3545,10 +3993,15 @@ class FinanceStore {
       status: isPaid ? "Paid" : paid > 0 ? "Partially Paid" : "Sent",
       notes: po.notes || "",
       attachments: po.attachments || [],
+      gl_distribution: poGlDist,
     }
 
     if (existingIdx >= 0) {
-      this.invoices[existingIdx] = { ...this.invoices[existingIdx], ...invObj }
+      this.invoices[existingIdx] = {
+        ...this.invoices[existingIdx],
+        ...invObj,
+        gl_distribution: poGlDist || this.invoices[existingIdx].gl_distribution,
+      }
     } else {
       this.invoices.unshift(invObj)
     }
@@ -3685,8 +4138,23 @@ class FinanceStore {
           ]
         )
       } else {
-        // Accounts Receivable collection: Debit Bank (1000), Credit AR (1300-03)
-        const arAcc = this.getMappedAccount("sales_credit_ar", "1300-03")
+        // Accounts Receivable collection: Debit Bank (1000), Credit AR (1300-01 for Export/Processing, 1300-03 for Pharma)
+        const isExportInv =
+          (updatedInv?.warehouse_id && (
+            String(updatedInv.warehouse_id).toUpperCase().startsWith("WH1") ||
+            String(updatedInv.warehouse_id).toUpperCase().includes("EXP") ||
+            String(updatedInv.warehouse_id).toUpperCase().includes("PROCESSING")
+          )) ||
+          (paymentData.sales_issue_id && (
+            String(paymentData.sales_issue_id).toUpperCase().includes("EXP") ||
+            String(paymentData.sales_issue_id).toUpperCase().includes("PROCESSING")
+          ))
+
+        const arAcc = this.getMappedAccount(
+          isExportInv ? "sales_credit_ar_export" : "sales_credit_ar",
+          isExportInv ? "1300-01" : "1300-03",
+          { warehouseId: updatedInv?.warehouse_id }
+        )
         const arAccId = arAcc.id
 
         this.postJournalEntry(
@@ -4591,6 +5059,40 @@ class FinanceStore {
       } as any
     })
     persistResources([{ resource: "tax_rules", items: this.taxRules }])
+
+    // Bidirectional sync: If updated accountCode, reflect in matching gl_account_mappings
+    if (updated.accountCode) {
+      const code = updated.accountCode
+      const matchedAccount = this.accounts.find((a) => a.code === code || a.id === code)
+      if (matchedAccount) {
+        const glMappingKeys: string[] = []
+        if (id === "TAX-VAT-15") glMappingKeys.push("sales_vat_output", "expense_vat_input")
+        else if (id === "TAX-WHT-2" || id === "TAX-WHT-3") glMappingKeys.push("sales_wht_withheld", "expense_wht_payable")
+        else if (id === "TAX-TOT-2") glMappingKeys.push("tax_tot_payable")
+
+        let glModified = false
+        this.glMappings = this.glMappings.map((m) => {
+          if (glMappingKeys.includes(m.id)) {
+            glModified = true
+            return {
+              ...m,
+              account_id: matchedAccount.id,
+              account_code: matchedAccount.code,
+              account_name: matchedAccount.name,
+              updated_at: new Date().toISOString(),
+            }
+          }
+          return m
+        })
+
+        if (glModified) {
+          void persistResources([{ resource: "gl_account_mappings", items: this.glMappings }]).catch((err) =>
+            console.error("[FinanceStore] Failed to sync GL mappings from tax rule:", err)
+          )
+        }
+      }
+    }
+
     this.notify()
   }
 

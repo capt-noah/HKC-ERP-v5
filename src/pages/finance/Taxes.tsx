@@ -7,7 +7,6 @@ import {
   Layers,
   ArrowUpRight,
   ArrowDownRight,
-  CheckCircle2,
   Plus,
   Scale,
   Coins,
@@ -17,7 +16,6 @@ import {
   Check,
   Pencil,
   Calculator,
-  Percent,
   SlidersHorizontal,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
@@ -32,6 +30,7 @@ import { useResizableTable, ResizableTh, type TableColumn } from "@/components/R
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { Skeleton } from "@/components/ui/skeleton"
+import COAAccountSelector from "@/components/finance/COAAccountSelector"
 import {
   DEFAULT_ETHIOPIAN_TAX_BRACKETS,
   DEFAULT_ETHIOPIAN_PENSION_CONFIG,
@@ -1244,17 +1243,14 @@ export default function Taxes() {
                 </div>
               </div>
 
-              <div>
-                <label className="font-bold text-zinc-700 mb-1 block">Linked GL Account (From Company COA)</label>
-                <select
+              <div className="space-y-1">
+                <label className="font-bold text-zinc-700 block">Linked GL Account (From Company COA)</label>
+                <COAAccountSelector
                   value={addRuleAccount}
-                  onChange={(e) => setAddRuleAccount(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold cursor-pointer"
-                >
-                  {accounts.filter((a) => !a.is_group).map((a) => (
-                    <option key={a.id} value={a.code}>{a.code} - {a.name}</option>
-                  ))}
-                </select>
+                  onChange={(acc) => setAddRuleAccount(acc.code)}
+                  placeholder="Select COA account..."
+                  required
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-2 pt-1">
@@ -1373,17 +1369,14 @@ export default function Taxes() {
                 </div>
               </div>
 
-              <div>
-                <label className="font-bold text-zinc-700 mb-1 block">Linked GL Account</label>
-                <select
+              <div className="space-y-1">
+                <label className="font-bold text-zinc-700 block">Linked GL Account</label>
+                <COAAccountSelector
                   value={editRuleAccount}
-                  onChange={(e) => setEditRuleAccount(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold cursor-pointer"
-                >
-                  {accounts.filter((a) => !a.is_group).map((a) => (
-                    <option key={a.id} value={a.code}>{a.code} - {a.name}</option>
-                  ))}
-                </select>
+                  onChange={(acc) => setEditRuleAccount(acc.code)}
+                  placeholder="Select COA account..."
+                  required
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-2 pt-1">

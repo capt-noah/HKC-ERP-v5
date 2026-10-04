@@ -261,6 +261,17 @@ export default function StockBinEntryModal({
                   onChange={(e) => setQuantity(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-zinc-900 outline-none font-mono"
                 />
+                {Number(product.quantityPerPack || 0) > 0 && Number(quantity || 0) > 0 && (
+                  <div className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md mt-0.5">
+                    {movementType === "received" ? "+" : "-"}
+                    {Math.round((Number(quantity) / Number(product.quantityPerPack)) * 100) / 100} ctns
+                    {Number(quantity) % Number(product.quantityPerPack) !== 0 && (
+                      <span className="text-zinc-500 text-[9px] font-normal block">
+                        ({Math.floor(Number(quantity) / Number(product.quantityPerPack))} full ctns + {Number(quantity) % Number(product.quantityPerPack)} loose units)
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1">

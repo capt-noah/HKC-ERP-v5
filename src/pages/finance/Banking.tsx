@@ -108,7 +108,7 @@ export default function Banking() {
   const bankLines: BankStatementLine[] = lines.flatMap((line) => {
     const account = accountById.get(line.account_id)
     const entry = entryById.get(line.journal_entry_id)
-    if (!account || !entry || account.account_type !== "Asset" || !(account.peachtree_type === "Cash" || account.code.startsWith("1000") || /cash|bank|cbe|boa|aib|abay|unb|cbo|ahadu|oib/i.test(account.name))) return []
+    if (!account || !entry || account.account_type !== "Asset" || !(account.peachtree_type === "Cash" || (account.code || "").startsWith("1000") || /cash|bank|cbe|boa|aib|abay|unb|cbo|ahadu|oib/i.test(account.name))) return []
     const amount = line.debit_amount || line.credit_amount
     if (!amount) return []
     const isCleared = Boolean(line.is_cleared || clearedLineIds.has(line.id))

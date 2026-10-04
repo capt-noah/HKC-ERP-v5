@@ -18,7 +18,7 @@ import {
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
-import { useErpStore, getTradeLicenseStatus, type SalesOrder, type Quotation, type SalesOrderItem, type Customer } from "@/lib/erpStore"
+import { useErpStore, getTradeLicenseStatus, type SalesOrder, type Quotation, type SalesOrderItem, type Customer, type Product } from "@/lib/erpStore"
 import { useFinanceStore, calculateMultiTax, resolveAutoTaxScheduleId } from "@/lib/financeStore"
 import { useAuthStore } from "@/lib/authStore"
 import { withOperatingWarehouses, isWH1, matchesWarehouse, getUserPermittedWarehouses, resolveWarehouseFullName } from "@/lib/warehouses"
@@ -84,6 +84,30 @@ function resolveSalesOrderDocs(
     tradeLicense,
     paymentAdvice,
   }
+}
+
+function resolveItemSellingPrice(prod: Product | undefined): number {
+  if (!prod) return 0
+  if (prod.sellingPrice != null && Number(prod.sellingPrice) > 0) return Number(prod.sellingPrice)
+  if ((prod as any).selling_price != null && Number((prod as any).selling_price) > 0) return Number((prod as any).selling_price)
+  if (prod.wh1Entries && prod.wh1Entries.length > 0) {
+    for (const e of prod.wh1Entries) {
+      if (e.sellingPrice != null && Number(e.sellingPrice) > 0) return Number(e.sellingPrice)
+    }
+  }
+  if (prod.binCardEntries && prod.binCardEntries.length > 0) {
+    for (const b of prod.binCardEntries) {
+      if (b.sellingPrice != null && Number(b.sellingPrice) > 0) return Number(b.sellingPrice)
+    }
+  }
+  if (prod.batches && prod.batches.length > 0) {
+    for (const b of prod.batches) {
+      if (b.sellingPrice != null && Number(b.sellingPrice) > 0) return Number(b.sellingPrice)
+    }
+  }
+  if (prod.unitCost != null && Number(prod.unitCost) > 0) return Number(prod.unitCost)
+  if (prod.valuationRate != null && Number(prod.valuationRate) > 0) return Number(prod.valuationRate)
+  return 0
 }
 
 export default function SalesOrders() {
@@ -337,7 +361,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       ? { id: "PRD-001", name: "Sesame Seed", sku: "SES-001", valuationRate: 1500, unit: "Quintal", sellingPrice: 1500, warehouse: "WH1" }
       : { id: "PRD-002", name: "Oxytetracycline 20%", sku: "OXY-002", valuationRate: 850, unit: "Box", sellingPrice: 850, warehouse: "WH2" }
     )
-    const loadedPrice = defaultProduct.sellingPrice || defaultProduct.unitCost || defaultProduct.valuationRate || 1500
+    const loadedPrice = resolveItemSellingPrice(defaultProduct) || 1500
     const defaultUnit = isWh1Target ? (defaultProduct.unit === "Ton" ? "Ton" : "Quintal") : (defaultProduct.unit || "Box")
 
     setNewWarehouse(targetWh)
@@ -386,7 +410,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           ? { id: "PRD-001", name: "Sesame Seed", unit: "Quintal", sellingPrice: 1500, valuationRate: 1500 }
           : { id: "PRD-002", name: "Oxytetracycline 20%", unit: "Box", sellingPrice: 850, valuationRate: 850 }
         )
-        const loadedPrice = nextProd.sellingPrice || nextProd.unitCost || nextProd.valuationRate || 1500
+        const loadedPrice = resolveItemSellingPrice(nextProd) || 1500
         const prodUnit = isWh1Row ? (nextProd.unit === "Ton" ? "Ton" : "Quintal") : (nextProd.unit || "Box")
 
         current.productId = nextProd.id
@@ -399,7 +423,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         const availableForWh = getProductsForWarehouse(currentWh)
         const prod = availableForWh.find((p) => p.id === value) || products.find((p) => p.id === value)
         if (prod) {
-          const loadedPrice = prod.sellingPrice || prod.unitCost || prod.valuationRate || 1500
+          const loadedPrice = resolveItemSellingPrice(prod) || 1500
           const targetWh = current.warehouse || resolveWarehouseCode(prod.warehouse, warehouses)
           const targetIsWh1 = isWH1(targetWh)
           const prodUnit = targetIsWh1 ? (prod.unit === "Ton" ? "Ton" : "Quintal") : (prod.unit || "Box")
@@ -460,7 +484,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           ? { id: "PRD-001", name: "Sesame Seed", unit: "Quintal", valuationRate: 1500, sellingPrice: 1500 }
           : { id: "PRD-002", name: "Oxytetracycline 20%", unit: "Box", valuationRate: 850, sellingPrice: 850 }
         )
-        const loadedPrice = p.sellingPrice || p.unitCost || p.valuationRate || 1500
+        const loadedPrice = resolveItemSellingPrice(p) || 1500
         const defaultUnit = isWh1 ? (p.unit === "Ton" ? "Ton" : "Quintal") : (p.unit || "Box")
         lastItem.warehouse = whCode
         lastItem.productId = p.id
@@ -489,7 +513,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           ? { id: "PRD-001", name: "Sesame Seed", unit: "Quintal", valuationRate: 1500, sellingPrice: 1500 }
           : { id: "PRD-002", name: "Oxytetracycline 20%", unit: "Box", valuationRate: 850, sellingPrice: 850 }
         )
-        const loadedPrice = p.sellingPrice || p.unitCost || p.valuationRate || 1500
+        const loadedPrice = resolveItemSellingPrice(p) || 1500
         const defaultUnit = isWh1 ? (p.unit === "Ton" ? "Ton" : "Quintal") : (p.unit || "Box")
         lastItem.warehouse = whCode
         lastItem.productId = p.id
@@ -511,7 +535,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       ? { id: "PRD-001", name: "Sesame Seed", unit: "Quintal", valuationRate: 1500, sellingPrice: 1500 }
       : { id: "PRD-002", name: "Oxytetracycline 20%", unit: "Box", valuationRate: 850, sellingPrice: 850 }
     )
-    const loadedPrice = p.sellingPrice || p.unitCost || p.valuationRate || 1500
+    const loadedPrice = resolveItemSellingPrice(p) || 1500
     const defaultUnit = targetIsWh1 ? (p.unit === "Ton" ? "Ton" : "Quintal") : (p.unit || "Box")
     const setter = isEditing ? setEditingOrderItems : setOrderItems
 
@@ -753,6 +777,10 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     const errors: Record<string, string> = {}
     if (!finalCustName) {
       errors.customer = "Customer selection or customer name is required."
+    }
+
+    if (!isWh1Order && !custTin.trim()) {
+      errors.tin = "Customer TIN number is required for import warehouse orders."
     }
 
     if (!isWh1Order && !custPhone.trim()) {
@@ -1557,15 +1585,29 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         {!isWh1Order && (
                           <div className="md:col-span-2">
                             <label className="block text-xs font-bold text-zinc-700 mb-1">
-                              Customer TIN <span className="text-[10px] text-zinc-400 font-normal">(optional)</span>
+                              Customer TIN *
                             </label>
                             <input
                               type="text"
                               placeholder="e.g. 0012345678"
                               value={custTin}
-                              onChange={(e) => setCustTin(e.target.value)}
-                              className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold font-mono outline-none"
+                              onChange={(e) => {
+                                setCustTin(e.target.value)
+                                setCreateFormErrors((prev) => {
+                                  const next = { ...prev }
+                                  delete next.tin
+                                  return next
+                                })
+                              }}
+                              className={`w-full px-3 py-2 rounded-xl bg-zinc-50 border text-xs font-bold font-mono outline-none ${
+                                createFormErrors.tin ? "border-rose-400 bg-rose-50 text-rose-900" : "border-zinc-200"
+                              }`}
                             />
+                            {createFormErrors.tin && (
+                              <span className="text-[10px] font-bold text-rose-600 mt-1 block">
+                                ⚠️ {createFormErrors.tin}
+                              </span>
+                            )}
                           </div>
                         )}
 
@@ -1573,7 +1615,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                           <label className="block text-xs font-bold text-zinc-700 mb-1">Payment Method *</label>
                           <select
                             value={newPaymentType}
-                            onChange={(e) => setNewPaymentType(e.target.value as "Cash" | "Credit")}
+                            onChange={(e) => setNewPaymentType(e.target.value as "Credit" | "Cash")}
                             className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
                           >
                             <option value="Credit">Credit</option>

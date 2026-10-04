@@ -71,6 +71,7 @@ function hydrateExportProduct(productRow, movements = []) {
       rejectQuantity: Number(r.rejectQuantity ?? r.reject_quantity ?? 0),
       quantityRemaining: Number(r.netQuantity ?? r.net_quantity ?? 0),
       unitPrice: Number(r.unitPrice ?? r.unit_price ?? 0),
+      sellingPrice: (r.sellingPrice != null || r.selling_price != null) ? Number(r.sellingPrice ?? r.selling_price) : (unwrapped.sellingPrice != null ? Number(unwrapped.sellingPrice) : undefined),
       notes: r.reason || undefined,
     }
   })
@@ -98,7 +99,7 @@ function hydrateExportProduct(productRow, movements = []) {
       expiryDate: "",
       party: r.partyName || (isReject ? "Cleaning Loss Deduction" : isEntry ? "Supplier Arrival" : "Customer Dispatch"),
       unitPrice: Number(r.unit_price ?? r.unitPrice ?? r.unit_cost ?? r.unitCost ?? 0),
-      sellingPrice: !isReject && !isEntry && (r.sellingPrice != null || r.selling_price != null) ? Number(r.sellingPrice ?? r.selling_price) : undefined,
+      sellingPrice: !isReject && (r.sellingPrice != null || r.selling_price != null) ? Number(r.sellingPrice ?? r.selling_price) : (unwrapped.sellingPrice != null ? Number(unwrapped.sellingPrice) : undefined),
       remark: r.reason || (isReject ? "Reject / Cleaning Loss" : isEntry ? "Goods Receipt Voucher" : "Customer Dispatch"),
       reason: r.reason || undefined,
       createdAt: r.createdAt,

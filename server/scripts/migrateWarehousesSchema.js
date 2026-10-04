@@ -42,8 +42,6 @@ export async function migrateWarehousesSchema() {
       }
       console.log("[DB Migration] Seeded initial operating warehouses into `warehouses` table.")
     }
-
-    console.log("[DB Migration] `warehouses` table columns verified successfully.")
   } catch (err) {
     console.warn("[DB Migration] Warehouses schema check notice:", err.message)
   }

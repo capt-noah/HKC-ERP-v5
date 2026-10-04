@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { X, Plus, Trash2, CheckCircle2, AlertTriangle, ArrowRightLeft, Sparkles, Layers, Box } from "lucide-react"
 import { useFinanceStore, type Invoice, type InvoiceGLDistributionLine } from "@/lib/financeStore"
 import { erpStore } from "@/lib/erpStore"
@@ -49,10 +49,19 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
   const [auditNote, setAuditNote] = useState("")
   const [isSaving, setIsSaving] = useState(false)
   const isPurchase = invoice ? (invoice.invoice_type === "Purchase" || Boolean(invoice.purchase_order_id)) : false
+  const loadedInvoiceIdRef = useRef<string | null>(null)
 
   // Initialize state on invoice change
   useEffect(() => {
-    if (!invoice) return
+    if (!isOpen || !invoice) {
+      loadedInvoiceIdRef.current = null
+      return
+    }
+
+    if (loadedInvoiceIdRef.current === invoice.id) {
+      return
+    }
+    loadedInvoiceIdRef.current = invoice.id
 
     const invTotal = Number(invoice.total || 0)
     const invSubtotal = Number(invoice.subtotal || invTotal)
@@ -62,7 +71,8 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
     const isCredit = (invoice.payment_terms || "").toLowerCase().includes("credit") || Number(invoice.balance_due || 0) > 0
     const isExportWh =
       String(invoice.warehouse_id || "").toUpperCase().startsWith("WH1") ||
-      String(invoice.warehouse_id || "").toUpperCase().includes("EXP")
+      String(invoice.warehouse_id || "").toUpperCase().includes("EXP") ||
+      String(invoice.warehouse_id || "").toUpperCase().includes("PROCESSING")
     const firstItem = invoice.line_items?.[0]?.description?.toUpperCase() || ""
     const isExportCrop =
       firstItem.includes("MUNG") ||
@@ -71,12 +81,14 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
       firstItem.includes("BEAN")
     const isExport = isExportWh || isExportCrop
 
+    const liveAccounts = financeStore.getAccounts()
+
     const resolveAcc = (idOrCode?: string) => {
       if (!idOrCode) return null
       const clean = String(idOrCode).trim()
       const unPrefixed = clean.replace(/^ACC-/, "")
       return (
-        accounts.find(
+        liveAccounts.find(
           (a) =>
             a.id === clean ||
             a.code === clean ||
@@ -137,36 +149,43 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
       )
     } else {
       if (isPurchase) {
-        const defaultDrCode = "1410-01"
-        const defaultDrAcc = resolveAcc(defaultDrCode) || accounts[0]
+        const defaultDrAcc = financeStore.getMappedAccount(
+          isExport ? "inventory_stock_in_hand" : "inventory_pharma_stock",
+          isExport ? "1410-01" : "1400-01",
+          { warehouseId: invoice.warehouse_id, itemName: firstItem }
+        )
         setRevDebitLines([
           {
             id: `dr-rev-init-${Date.now()}`,
-            accountId: defaultDrAcc?.id || defaultDrCode,
-            accountCode: defaultDrAcc?.code || defaultDrCode,
-            accountName: defaultDrAcc?.name || "STOCK OF GREEN MUNG",
-            description: invoice.notes || `Procurement Allocation (${invoice.supplier_name || invoice.customer_name})`,
+            accountId: defaultDrAcc?.id || (isExport ? "1410-01" : "1400-01"),
+            accountCode: defaultDrAcc?.code || (isExport ? "1410-01" : "1400-01"),
+            accountName: defaultDrAcc?.name || (isExport ? "STOCK OF GREEN MUNG" : "STOCK OF VETERINARY DRUG"),
+            description: invoice.notes || `Procurement Allocation (${invoice.supplier_name || invoice.customer_name || "Supplier"})`,
             amount: invTotal,
             partyType: "Supplier",
             partyId: invoice.supplier_name ? `SUPP-${invoice.supplier_name.replace(/\s+/g, "").toUpperCase()}` : null,
-            partyName: invoice.supplier_name || invoice.customer_name,
+            partyName: invoice.supplier_name || invoice.customer_name || "Supplier",
           },
         ])
       } else {
         // Default: AR account for total invoice amount
-        const defaultArCode = isExport ? "1300-01" : "1300-03"
-        const defaultArAcc = resolveAcc(defaultArCode) || resolveAcc("1300-03")
+        const defaultArAcc = financeStore.getMappedAccount(
+          isExport ? "sales_credit_ar_export" : "sales_credit_ar",
+          isExport ? "1300-01" : "1300-03",
+          { warehouseId: invoice.warehouse_id }
+        )
+        const custName = invoice.customer_name || "Customer"
         setRevDebitLines([
           {
             id: `dr-rev-init-${Date.now()}`,
-            accountId: defaultArAcc?.id || defaultArCode,
-            accountCode: defaultArAcc?.code || defaultArCode,
+            accountId: defaultArAcc?.id || (isExport ? "1300-01" : "1300-03"),
+            accountCode: defaultArAcc?.code || (isExport ? "1300-01" : "1300-03"),
             accountName: defaultArAcc?.name || (isExport ? "EXPORT SALES RECIVEABLE" : "VET MEDICEN SALES RECIVABLE"),
-            description: `Customer Invoice Due (${invoice.customer_name})`,
+            description: `Customer Invoice Due (${custName})`,
             amount: invTotal,
             partyType: "Customer",
-            partyId: `CUST-${invoice.customer_name.replace(/\s+/g, "").toUpperCase()}`,
-            partyName: invoice.customer_name,
+            partyId: `CUST-${custName.replace(/\s+/g, "").toUpperCase()}`,
+            partyName: custName,
           },
         ])
       }
@@ -207,13 +226,14 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
       )
     } else {
       if (isPurchase) {
-        const defaultCrCode = isCredit ? "2100-06" : "1000-02-26"
-        const defaultCrAcc = resolveAcc(defaultCrCode) || resolveAcc("1000-02-26") || accounts[0]
+        const defaultCrAcc = isCredit
+          ? financeStore.getMappedAccount("ap_trade_payable", "2100-06")
+          : financeStore.getMappedAccount("supplier_payment_bank", "1000-02-26")
         setRevCreditLines([
           {
             id: `cr-rev-init-${Date.now()}`,
-            accountId: defaultCrAcc?.id || defaultCrCode,
-            accountCode: defaultCrAcc?.code || defaultCrCode,
+            accountId: defaultCrAcc?.id || (isCredit ? "2100-06" : "1000-02-26"),
+            accountCode: defaultCrAcc?.code || (isCredit ? "2100-06" : "1000-02-26"),
             accountName: defaultCrAcc?.name || (isCredit ? "Other Accruals & Payables" : "CBE Bank Operating"),
             description: isCredit ? "Supplier Credit Settlement" : "Bank Disbursement",
             amount: invTotal,
@@ -221,21 +241,19 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
         ])
       } else {
         // Default: Sales Revenue for Subtotal, and VAT for Tax (if applicable)
-        let defaultRevCode = isExport ? "4000-02-01" : "4000-01-01"
-        if (isExport) {
-          if (firstItem.includes("SOYA") || firstItem.includes("SOY")) defaultRevCode = "4000-02-02"
-          else if (firstItem.includes("REDISH") || firstItem.includes("REDDISH") || firstItem.includes("RED")) defaultRevCode = "4000-02-03"
-          else if (firstItem.includes("SESAME")) defaultRevCode = "4000-02-04"
-        }
-        const defaultRevAcc = resolveAcc(defaultRevCode) || resolveAcc("4000-01-01")
-        const vatAcc = resolveAcc("2000-05")
+        const defaultRevAcc = financeStore.getMappedAccount(
+          isExport ? "sales_revenue_export" : "sales_revenue_domestic",
+          isExport ? "4000-02-01" : "4000-01-01",
+          { warehouseId: invoice.warehouse_id, itemName: firstItem }
+        )
+        const vatAcc = financeStore.getMappedAccount("sales_vat_output", "2000-05")
 
         const initialCredits: SplitLineItem[] = [
           {
             id: `cr-rev-init-1-${Date.now()}`,
-            accountId: defaultRevAcc?.id || defaultRevCode,
-            accountCode: defaultRevAcc?.code || defaultRevCode,
-            accountName: defaultRevAcc?.name || "Sales Revenue",
+            accountId: defaultRevAcc?.id || (isExport ? "4000-02-01" : "4000-01-01"),
+            accountCode: defaultRevAcc?.code || (isExport ? "4000-02-01" : "4000-01-01"),
+            accountName: defaultRevAcc?.name || (isExport ? "Revenue - Export Commodities" : "Sales Revenue"),
             description: "Operating Sales Revenue",
             amount: invSubtotal,
           },
@@ -256,108 +274,82 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
       }
     }
 
-    // 3. COGS & INVENTORY SECTION
-    const hasExistingCogs =
-      (distCogs.length > 0) ||
-      rawCogsLines.length > 0
-
-    setHasCogsSection(hasExistingCogs)
-
-    if (distCogs.length > 0) {
-      setCogsDebitLines(
-        distCogs
-          .filter((l: any) => Number(l.debit || (l.amount && l.id?.startsWith("dr-"))) > 0)
-          .map((l: any, idx: number) => {
-            const acc = resolveAcc(l.account_code || l.accountId || l.account_id || l.accountCode || l.code)
-            return {
-              id: l.id || `dr-cogs-${idx}-${Date.now()}`,
-              accountId: acc?.id || l.accountId || l.account_id || "5000-01",
-              accountCode: acc?.code || l.accountCode || l.account_code || "5000-01",
-              accountName: acc?.name || l.accountName || l.account_name || "Account " + (acc?.code || l.accountCode || l.account_code || l.account_id),
-              description: l.description || "Cost of Goods Sold",
-              amount: Number(l.debit || l.debit_amount || l.amount) || 0,
-            }
-          })
-      )
-      setCogsCreditLines(
-        distCogs
-          .filter((l: any) => Number(l.credit || (l.amount && l.id?.startsWith("cr-"))) > 0)
-          .map((l: any, idx: number) => {
-            const acc = resolveAcc(l.account_code || l.accountId || l.account_id || l.accountCode || l.code)
-            return {
-              id: l.id || `cr-cogs-${idx}-${Date.now()}`,
-              accountId: acc?.id || l.accountId || l.account_id || "1400-01",
-              accountCode: acc?.code || l.accountCode || l.account_code || "1400-01",
-              accountName: acc?.name || l.accountName || l.account_name || "Account " + (acc?.code || l.accountCode || l.account_code || l.account_id),
-              description: l.description || "Inventory Asset Derecognition",
-              amount: Number(l.credit || l.credit_amount || l.amount) || 0,
-            }
-          })
-      )
-    } else if (rawCogsLines.length > 0) {
-      setCogsDebitLines(
-        rawCogsLines
-          .filter((l: any) => Number(l.debit_amount || (l.amount && (l.id?.startsWith("dr-") || l.debit))) > 0)
-          .map((l: any, idx: number) => {
-            const acc = resolveAcc(l.account_id || l.accountId || l.accountCode || l.account_code)
-            return {
-              id: l.id || `dr-cogs-${idx}-${Date.now()}`,
-              accountId: acc?.id || l.account_id || "5000-01",
-              accountCode: acc?.code || l.account_id || "5000-01",
-              accountName: acc?.name || "Account " + (acc?.code || l.account_id),
-              description: "Cost of Goods Sold Expense",
-              amount: Number(l.debit_amount || l.amount || l.debit) || 0,
-            }
-          })
-      )
-      setCogsCreditLines(
-        rawCogsLines
-          .filter((l: any) => Number(l.credit_amount || (l.amount && (l.id?.startsWith("cr-") || l.credit))) > 0)
-          .map((l: any, idx: number) => {
-            const acc = resolveAcc(l.account_id || l.accountId || l.accountCode || l.account_code)
-            return {
-              id: l.id || `cr-cogs-${idx}-${Date.now()}`,
-              accountId: acc?.id || l.account_id || "1400-01",
-              accountCode: acc?.code || l.account_id || "1400-01",
-              accountName: acc?.name || "Account " + (acc?.code || l.account_id),
-              description: "Inventory Asset Derecognition",
-              amount: Number(l.credit_amount || l.amount || l.credit) || 0,
-            }
-          })
-      )
+    // 3. COGS & INVENTORY SECTION (Only for Sales, NOT for Purchases)
+    if (isPurchase) {
+      setHasCogsSection(false)
+      setCogsDebitLines([])
+      setCogsCreditLines([])
     } else {
-      // Default placeholder if user enables Section B
-      if (isPurchase) {
-        const defaultStockCode = isExport ? "1410-01" : "1400-01"
-        const defaultStockAcc = accounts.find((a) => a.code === defaultStockCode) || accounts.find((a) => a.code === "1410-01")
-        const defaultClearingCode = "1410-99"
-        const defaultClearingAcc = accounts.find((a) => a.code === defaultClearingCode) || accounts.find((a) => a.code === "1400-01")
+      const hasExistingCogs = (distCogs.length > 0) || rawCogsLines.length > 0
+      setHasCogsSection(hasExistingCogs)
 
-        setCogsDebitLines([
-          {
-            id: `dr-cogs-init-${Date.now()}`,
-            accountId: defaultStockAcc?.id || defaultStockCode,
-            accountCode: defaultStockAcc?.code || defaultStockCode,
-            accountName: defaultStockAcc?.name || "STOCK OF GREEN MUNG",
-            description: "Inventory Stock In Hand",
-            amount: 0,
-          },
-        ])
-        setCogsCreditLines([
-          {
-            id: `cr-cogs-init-${Date.now()}`,
-            accountId: defaultClearingAcc?.id || defaultClearingCode,
-            accountCode: defaultClearingAcc?.code || defaultClearingCode,
-            accountName: defaultClearingAcc?.name || "Inventory Clearing / In-Transit Allocation",
-            description: "Inventory Clearing / In-Transit Allocation",
-            amount: 0,
-          },
-        ])
+      if (distCogs.length > 0) {
+        setCogsDebitLines(
+          distCogs
+            .filter((l: any) => Number(l.debit || (l.amount && l.id?.startsWith("dr-"))) > 0)
+            .map((l: any, idx: number) => {
+              const acc = resolveAcc(l.account_code || l.accountId || l.account_id || l.accountCode || l.code)
+              return {
+                id: l.id || `dr-cogs-${idx}-${Date.now()}`,
+                accountId: acc?.id || l.accountId || l.account_id || "5000-01",
+                accountCode: acc?.code || l.accountCode || l.account_code || "5000-01",
+                accountName: acc?.name || l.accountName || l.account_name || "Account " + (acc?.code || l.accountCode || l.account_code || l.account_id),
+                description: l.description || "Cost of Goods Sold",
+                amount: Number(l.debit || l.debit_amount || l.amount) || 0,
+              }
+            })
+        )
+        setCogsCreditLines(
+          distCogs
+            .filter((l: any) => Number(l.credit || (l.amount && l.id?.startsWith("cr-"))) > 0)
+            .map((l: any, idx: number) => {
+              const acc = resolveAcc(l.account_code || l.accountId || l.account_id || l.accountCode || l.code)
+              return {
+                id: l.id || `cr-cogs-${idx}-${Date.now()}`,
+                accountId: acc?.id || l.accountId || l.account_id || "1400-01",
+                accountCode: acc?.code || l.accountCode || l.account_code || "1400-01",
+                accountName: acc?.name || l.accountName || l.account_name || "Account " + (acc?.code || l.accountCode || l.account_code || l.account_id),
+                description: l.description || "Inventory Asset Derecognition",
+                amount: Number(l.credit || l.credit_amount || l.amount) || 0,
+              }
+            })
+        )
+      } else if (rawCogsLines.length > 0) {
+        setCogsDebitLines(
+          rawCogsLines
+            .filter((l: any) => Number(l.debit_amount || (l.amount && (l.id?.startsWith("dr-") || l.debit))) > 0)
+            .map((l: any, idx: number) => {
+              const acc = resolveAcc(l.account_id || l.accountId || l.accountCode || l.account_code)
+              return {
+                id: l.id || `dr-cogs-${idx}-${Date.now()}`,
+                accountId: acc?.id || l.account_id || "5000-01",
+                accountCode: acc?.code || l.account_id || "5000-01",
+                accountName: acc?.name || "Account " + (acc?.code || l.account_id),
+                description: "Cost of Goods Sold Expense",
+                amount: Number(l.debit_amount || l.amount || l.debit) || 0,
+              }
+            })
+        )
+        setCogsCreditLines(
+          rawCogsLines
+            .filter((l: any) => Number(l.credit_amount || (l.amount && (l.id?.startsWith("cr-") || l.credit))) > 0)
+            .map((l: any, idx: number) => {
+              const acc = resolveAcc(l.account_id || l.accountId || l.accountCode || l.account_code)
+              return {
+                id: l.id || `cr-cogs-${idx}-${Date.now()}`,
+                accountId: acc?.id || l.account_id || "1400-01",
+                accountCode: acc?.code || l.account_id || "1400-01",
+                accountName: acc?.name || "Account " + (acc?.code || l.account_id),
+                description: "Inventory Asset Derecognition",
+                amount: Number(l.credit_amount || l.amount || l.credit) || 0,
+              }
+            })
+        )
       } else {
         const defaultCogsCode = isExport ? "5010-01" : "5000-01"
         const defaultStockCode = isExport ? "1410-01" : "1400-01"
-        const defaultCogsAcc = accounts.find((a) => a.code === defaultCogsCode) || accounts.find((a) => a.code === "5000-01")
-        const defaultStockAcc = accounts.find((a) => a.code === defaultStockCode) || accounts.find((a) => a.code === "1400-01")
+        const defaultCogsAcc = liveAccounts.find((a) => a.code === defaultCogsCode) || liveAccounts.find((a) => a.code === "5000-01")
+        const defaultStockAcc = liveAccounts.find((a) => a.code === defaultStockCode) || liveAccounts.find((a) => a.code === "1400-01")
 
         let defaultCogsTotal = 0
         if (Array.isArray(invoice.line_items) && invoice.line_items.length > 0) {
@@ -404,7 +396,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
     }
 
     setAuditNote(existingDist?.notes || "")
-  }, [invoice, accounts])
+  }, [isOpen, invoice?.id])
 
   if (!isOpen || !invoice) return null
 
@@ -421,26 +413,33 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
   const cogsTotalDebits = Math.round(cogsDebitLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0) * 100) / 100
   const cogsTotalCredits = Math.round(cogsCreditLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0) * 100) / 100
   const cogsDiff = Math.round(Math.abs(cogsTotalDebits - cogsTotalCredits) * 100) / 100
-  const isCogsBalanced = !hasCogsSection || (cogsDiff < 0.01 && cogsTotalDebits >= 0)
+  const isCogsBalanced = isPurchase || !hasCogsSection || (cogsDiff < 0.01 && cogsTotalDebits >= 0)
 
   // Overall validation
   const canSave = isRevBalanced && isCogsBalanced
 
   // --- Handlers for Revenue Section ---
   const handleAddRevDebit = () => {
-    const defaultAcc = accounts.find((a) => a.code === "1000-02-26") || accounts[0]
+    const defaultAcc = isPurchase
+      ? accounts.find((a) => a.code === "1410-01") || accounts.find((a) => a.code === "1400-01") || accounts[0]
+      : accounts.find((a) => a.code === "1000-02-26") || accounts[0]
+    const pName = isPurchase ? (invoice.supplier_name || invoice.customer_name || "Supplier") : (invoice.customer_name || "Customer")
+    const pId = isPurchase
+      ? (invoice.supplier_name ? `SUPP-${invoice.supplier_name.replace(/\s+/g, "").toUpperCase()}` : null)
+      : (invoice.customer_name ? `CUST-${invoice.customer_name.replace(/\s+/g, "").toUpperCase()}` : null)
+
     setRevDebitLines((prev) => [
       ...prev,
       {
         id: `dr-rev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        accountId: defaultAcc?.id || "1000-02-26",
-        accountCode: defaultAcc?.code || "1000-02-26",
-        accountName: defaultAcc?.name || "CBE Bank Operating",
-        description: "Direct Settlement / Bank Receipt",
+        accountId: defaultAcc?.id || (isPurchase ? "1410-01" : "1000-02-26"),
+        accountCode: defaultAcc?.code || (isPurchase ? "1410-01" : "1000-02-26"),
+        accountName: defaultAcc?.name || (isPurchase ? "STOCK OF GREEN MUNG" : "CBE Bank Operating"),
+        description: isPurchase ? "Procurement Stock / Expense" : "Direct Settlement / Bank Receipt",
         amount: Math.max(0, Math.round((revTotalCredits - revTotalDebits) * 100) / 100),
-        partyType: "Customer",
-        partyId: `CUST-${invoice.customer_name.replace(/\s+/g, "").toUpperCase()}`,
-        partyName: invoice.customer_name,
+        partyType: isPurchase ? "Supplier" : "Customer",
+        partyId: pId,
+        partyName: pName,
       },
     ])
   }
@@ -465,16 +464,26 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
   }
 
   const handleAddRevCredit = () => {
-    const defaultAcc = accounts.find((a) => a.code === "4000-03-02") || accounts.find((a) => a.code === "4000-01-01") || accounts[0]
+    const defaultAcc = isPurchase
+      ? accounts.find((a) => a.code === "2100-06") || accounts.find((a) => a.code === "1000-02-26") || accounts[0]
+      : accounts.find((a) => a.code === "4000-03-02") || accounts.find((a) => a.code === "4000-01-01") || accounts[0]
+    const pName = isPurchase ? (invoice.supplier_name || invoice.customer_name || "Supplier") : (invoice.customer_name || "Customer")
+    const pId = isPurchase
+      ? (invoice.supplier_name ? `SUPP-${invoice.supplier_name.replace(/\s+/g, "").toUpperCase()}` : null)
+      : (invoice.customer_name ? `CUST-${invoice.customer_name.replace(/\s+/g, "").toUpperCase()}` : null)
+
     setRevCreditLines((prev) => [
       ...prev,
       {
         id: `cr-rev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        accountId: defaultAcc?.id || "4000-03-02",
-        accountCode: defaultAcc?.code || "4000-03-02",
-        accountName: defaultAcc?.name || "Service / Additional Revenue",
-        description: "Additional Revenue Line",
+        accountId: defaultAcc?.id || (isPurchase ? "2100-06" : "4000-03-02"),
+        accountCode: defaultAcc?.code || (isPurchase ? "2100-06" : "4000-03-02"),
+        accountName: defaultAcc?.name || (isPurchase ? "Other Accruals & Payables" : "Service / Additional Revenue"),
+        description: isPurchase ? "Supplier Credit Settlement" : "Additional Revenue Line",
         amount: Math.max(0, Math.round((revTotalDebits - revTotalCredits) * 100) / 100),
+        partyType: isPurchase ? "Supplier" : "Customer",
+        partyId: pId,
+        partyName: pName,
       },
     ])
   }
@@ -561,7 +570,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
       return
     }
 
-    if (hasCogsSection && !isCogsBalanced) {
+    if (!isPurchase && hasCogsSection && !isCogsBalanced) {
       showToast(
         "COGS Split Unbalanced",
         "warning",
@@ -572,6 +581,11 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
 
     setIsSaving(true)
     try {
+      const partyDisplayName = isPurchase ? (invoice.supplier_name || invoice.customer_name || "Supplier") : (invoice.customer_name || "Customer")
+      const partyDefId = isPurchase
+        ? (invoice.supplier_name ? `SUPP-${invoice.supplier_name.replace(/\s+/g, "").toUpperCase()}` : `SUPP-DEFAULT`)
+        : (invoice.customer_name ? `CUST-${invoice.customer_name.replace(/\s+/g, "").toUpperCase()}` : `CUST-DEFAULT`)
+
       const revenueLines: InvoiceGLDistributionLine[] = [
         ...revDebitLines.map((l) => ({
           id: l.id,
@@ -580,10 +594,10 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
           account_name: l.accountName,
           debit: Number(l.amount),
           credit: 0,
-          description: l.description.trim() || "Customer Settlement",
-          party_type: (l.partyType ?? "Customer") as "Customer" | "Supplier" | "Employee",
-          party_id: l.partyId ?? null,
-          party_name: l.partyName ?? invoice.customer_name,
+          description: l.description.trim() || (isPurchase ? "Procurement Goods / Stock Allocation" : "Customer Settlement"),
+          party_type: (l.partyType ?? (isPurchase ? "Supplier" : "Customer")) as "Customer" | "Supplier" | "Employee",
+          party_id: l.partyId ?? partyDefId,
+          party_name: l.partyName ?? partyDisplayName,
         })),
         ...revCreditLines.map((l) => ({
           id: l.id,
@@ -592,15 +606,15 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
           account_name: l.accountName,
           debit: 0,
           credit: Number(l.amount),
-          description: l.description.trim() || "Sales Revenue Recognition",
-          party_type: "Customer" as const,
-          party_id: `CUST-${invoice.customer_name.replace(/\s+/g, "").toUpperCase()}`,
-          party_name: invoice.customer_name,
+          description: l.description.trim() || (isPurchase ? "Supplier Credit Settlement / Bank" : "Sales Revenue Recognition"),
+          party_type: (l.partyType ?? (isPurchase ? "Supplier" : "Customer")) as "Customer" | "Supplier" | "Employee",
+          party_id: l.partyId ?? partyDefId,
+          party_name: l.partyName ?? partyDisplayName,
         })),
       ]
 
       let cogsLines: InvoiceGLDistributionLine[] | undefined = undefined
-      if (hasCogsSection && (cogsTotalDebits > 0 || cogsTotalCredits > 0)) {
+      if (!isPurchase && hasCogsSection && (cogsTotalDebits > 0 || cogsTotalCredits > 0)) {
         cogsLines = [
           ...cogsDebitLines.map((l) => ({
             id: l.id,
@@ -721,28 +735,30 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
               )}
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setHasCogsSection(true)
-                setActiveTab("cogs")
-              }}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                activeTab === "cogs"
-                  ? "bg-zinc-900 text-white shadow-xs"
-                  : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-              }`}
-            >
-              <Box className="size-3.5" />
-              {isPurchase ? "Section B: Inventory Movement & Stock Allocation" : "Section B: Inventory & COGS Cost Split"}
-              {hasCogsSection && (
-                isCogsBalanced ? (
-                  <span className="size-2 rounded-full bg-emerald-400" />
-                ) : (
-                  <span className="size-2 rounded-full bg-rose-400 animate-pulse" />
-                )
-              )}
-            </button>
+            {!isPurchase && (
+              <button
+                type="button"
+                onClick={() => {
+                  setHasCogsSection(true)
+                  setActiveTab("cogs")
+                }}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === "cogs"
+                    ? "bg-zinc-900 text-white shadow-xs"
+                    : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                }`}
+              >
+                <Box className="size-3.5" />
+                Section B: Inventory & COGS Cost Split
+                {hasCogsSection && (
+                  isCogsBalanced ? (
+                    <span className="size-2 rounded-full bg-emerald-400" />
+                  ) : (
+                    <span className="size-2 rounded-full bg-rose-400 animate-pulse" />
+                  )
+                )}
+              </button>
+            )}
           </div>
 
           <form onSubmit={handleSave} className="space-y-5 pt-3">
@@ -1024,7 +1040,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
             )}
 
             {/* ═════════ TAB 2: INVENTORY & COGS COST SPLIT ═════════ */}
-            {activeTab === "cogs" && (
+            {!isPurchase && activeTab === "cogs" && (
               <div className="space-y-4">
                 <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs text-amber-900 font-medium">
                   {isPurchase ? (

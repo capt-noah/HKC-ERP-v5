@@ -20,7 +20,6 @@ export async function migrateUserSessions() {
         INDEX \`idx_user_sessions_lookup\` (\`id\`, \`is_revoked\`, \`expires_at\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `)
-    console.log("[DB Migration] `user_sessions` table verified/created successfully.")
   } catch (err) {
     console.warn("[DB Migration] Notice initializing `user_sessions` table:", err.message)
   }

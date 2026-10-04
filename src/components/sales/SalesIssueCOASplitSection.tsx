@@ -1,7 +1,6 @@
-import React, { useState, useMemo } from "react"
+import React, { useState } from "react"
 import { Plus, Trash2, CheckCircle2, AlertTriangle, ArrowRightLeft, DollarSign, Package } from "lucide-react"
 import { useFinanceStore } from "@/lib/financeStore"
-import { COMPANY_CHART_OF_ACCOUNTS } from "@/lib/companyCOA"
 import COAAccountSelector from "@/components/finance/COAAccountSelector"
 
 export interface SplitLineItem {
@@ -38,6 +37,7 @@ interface SalesIssueCOASplitSectionProps {
   cogsCreditLines?: SplitLineItem[]
   onCogsDebitLinesChange?: (lines: SplitLineItem[]) => void
   onCogsCreditLinesChange?: (lines: SplitLineItem[]) => void
+  hideSectionB?: boolean
 }
 
 export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps> = ({
@@ -59,45 +59,16 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
   cogsCreditLines = [],
   onCogsDebitLinesChange,
   onCogsCreditLinesChange,
+  hideSectionB = false,
 }) => {
   const financeStore = useFinanceStore()
-  const rawAccounts = financeStore.getAccounts()
-  const accounts = useMemo(() => {
-    if (rawAccounts && rawAccounts.length > 0) return rawAccounts
-    return COMPANY_CHART_OF_ACCOUNTS
-  }, [rawAccounts])
-
-  const resolveAcc = (idOrCode?: string) => {
-    if (!idOrCode) return null
-    const clean = String(idOrCode).trim()
-    const unPrefixed = clean.replace(/^ACC-/, "")
-    return (
-      accounts.find(
-        (a) =>
-          a.code === clean ||
-          a.id === clean ||
-          a.code === unPrefixed ||
-          a.id === `ACC-${clean}` ||
-          a.id === unPrefixed
-      ) ||
-      COMPANY_CHART_OF_ACCOUNTS.find(
-        (a) =>
-          a.code === clean ||
-          a.id === clean ||
-          a.code === unPrefixed ||
-          a.id === `ACC-${clean}` ||
-          a.id === unPrefixed
-      ) ||
-      null
-    )
-  }
-
   const [activeTab, setActiveTab] = useState<"revenue" | "cogs">("revenue")
 
   const isCredit = paymentType === "Credit"
   const isWh1 =
     String(warehouseId || "").toUpperCase().startsWith("WH1") ||
-    String(warehouseId || "").toUpperCase().includes("EXP")
+    String(warehouseId || "").toUpperCase().includes("EXP") ||
+    String(warehouseId || "").toUpperCase().includes("PROCESSING")
 
   // ── Section A: Revenue & Settlement Lines ──────────────────────────────────────
   const effectiveRevDebitLines = debitLines || revDebitLines || []
@@ -114,18 +85,20 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
   const matchesRevTotal = Math.abs(revTotalDebits - targetRevTotal) < 0.01
 
   // Section A Debit line handlers
-  const handleAddRevDebitLine = () => {
+  const handleAddRevDebitLine = (presetAcc?: { id: string; code: string; name: string }) => {
     const currentSum = effectiveRevDebitLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
     const remainder = Math.max(0, Math.round((targetRevTotal - currentSum) * 100) / 100)
-    const defaultCode = isCredit ? (isWh1 ? "1300-01" : "1300-03") : "1000-02-26"
-    const defaultAcc = resolveAcc(defaultCode) || accounts[0]
+    const defaultAcc = presetAcc || (isCredit
+      ? financeStore.getMappedAccount(isWh1 ? "sales_credit_ar_export" : "sales_credit_ar", isWh1 ? "1300-01" : "1300-03", { warehouseId })
+      : financeStore.getMappedAccount("sales_cash_clearing", "1000-02-26", { warehouseId }))
+
     setRevDebits([
       ...effectiveRevDebitLines,
       {
         id: `dr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        accountId: defaultAcc?.id || defaultCode,
-        accountCode: defaultAcc?.code || defaultCode,
-        accountName: defaultAcc?.name || (isCredit ? "Trade Accounts Receivable" : "CBE Bank Operating"),
+        accountId: defaultAcc?.id || (isCredit ? (isWh1 ? "1300-01" : "1300-03") : "1000-02-26"),
+        accountCode: defaultAcc?.code || (isCredit ? (isWh1 ? "1300-01" : "1300-03") : "1000-02-26"),
+        accountName: defaultAcc?.name || (isCredit ? (isWh1 ? "EXPORT SALES RECIVEABLE" : "VET MEDICEN SALES RECIVABLE") : "CBE Bank Operating"),
         description: isCredit ? `Receivable - ${customerName || "Customer"}` : "Customer Direct Deposit",
         amount: remainder,
       },
@@ -151,14 +124,17 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
   const handleAddRevCreditLine = () => {
     const currentSum = effectiveRevCreditLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
     const remainder = Math.max(0, Math.round((targetRevTotal - currentSum) * 100) / 100)
-    const defaultCode = isWh1 ? "4000-02-01" : "4000-01-01"
-    const defaultAcc = resolveAcc(defaultCode) || accounts[0]
+    const defaultAcc = financeStore.getMappedAccount(
+      isWh1 ? "sales_revenue_export" : "sales_revenue_domestic",
+      isWh1 ? "4000-02-01" : "4000-01-01",
+      { warehouseId }
+    )
     setRevCredits([
       ...effectiveRevCreditLines,
       {
         id: `cr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        accountId: defaultAcc?.id || defaultCode,
-        accountCode: defaultAcc?.code || defaultCode,
+        accountId: defaultAcc?.id || (isWh1 ? "4000-02-01" : "4000-01-01"),
+        accountCode: defaultAcc?.code || (isWh1 ? "4000-02-01" : "4000-01-01"),
         accountName: defaultAcc?.name || (isWh1 ? "Revenue - Export Commodities" : "Sales Revenue - Pharmaceuticals"),
         description: "Sales Revenue Recognition",
         amount: remainder,
@@ -197,14 +173,17 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
   const handleAddCogsDebitLine = () => {
     const currentSum = effectiveCogsDebitLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
     const remainder = Math.max(0, Math.round((targetCogsTotal - currentSum) * 100) / 100)
-    const defaultCode = isWh1 ? "5000-02" : "5000-01"
-    const defaultAcc = resolveAcc(defaultCode) || accounts[0]
+    const defaultAcc = financeStore.getMappedAccount(
+      isWh1 ? "cogs_export_fulfillment" : "cogs_stock_fulfillment",
+      isWh1 ? "5010-01" : "5000-01",
+      { warehouseId }
+    )
     setCogsDebits([
       ...effectiveCogsDebitLines,
       {
         id: `dr-cogs-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        accountId: defaultAcc?.id || defaultCode,
-        accountCode: defaultAcc?.code || defaultCode,
+        accountId: defaultAcc?.id || (isWh1 ? "5010-01" : "5000-01"),
+        accountCode: defaultAcc?.code || (isWh1 ? "5010-01" : "5000-01"),
         accountName: defaultAcc?.name || (isWh1 ? "Cost of Goods Export" : "COST OF VETERINARY DRUG"),
         description: "Cost of Goods Sold - Stock Issued",
         amount: remainder,
@@ -230,14 +209,17 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
   const handleAddCogsCreditLine = () => {
     const currentSum = effectiveCogsCreditLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0)
     const remainder = Math.max(0, Math.round((targetCogsTotal - currentSum) * 100) / 100)
-    const defaultCode = isWh1 ? "1410-01" : "1400-01"
-    const defaultAcc = resolveAcc(defaultCode) || accounts[0]
+    const defaultAcc = financeStore.getMappedAccount(
+      isWh1 ? "inventory_stock_in_hand" : "inventory_pharma_stock",
+      isWh1 ? "1410-01" : "1400-01",
+      { warehouseId }
+    )
     setCogsCredits([
       ...effectiveCogsCreditLines,
       {
         id: `cr-cogs-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        accountId: defaultAcc?.id || defaultCode,
-        accountCode: defaultAcc?.code || defaultCode,
+        accountId: defaultAcc?.id || (isWh1 ? "1410-01" : "1400-01"),
+        accountCode: defaultAcc?.code || (isWh1 ? "1410-01" : "1400-01"),
         accountName: defaultAcc?.name || (isWh1 ? "STOCK OF GREEN MUNG" : "STOCK OF VETERINARY DRUG"),
         description: "Inventory Asset Relieved - Stock Issued",
         amount: remainder,
@@ -272,43 +254,51 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
         </div>
 
         {/* Tab Toggle: Section A (Revenue) vs Section B (COGS) */}
-        <div className="flex items-center p-0.5 rounded-xl bg-zinc-200/80 border border-zinc-300">
-          <button
-            type="button"
-            onClick={() => setActiveTab("revenue")}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-              activeTab === "revenue"
-                ? "bg-white text-zinc-950 shadow-xs"
-                : "text-zinc-600 hover:text-zinc-950"
-            }`}
-          >
-            <DollarSign className="size-3.5 text-emerald-600" />
-            Section A: Revenue & Receivables
-            {isRevBalanced && matchesRevTotal ? (
-              <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
-            ) : (
-              <span className="size-2 rounded-full bg-amber-500 shrink-0" />
-            )}
-          </button>
+        {!hideSectionB ? (
+          <div className="flex items-center p-0.5 rounded-xl bg-zinc-200/80 border border-zinc-300">
+            <button
+              type="button"
+              onClick={() => setActiveTab("revenue")}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                activeTab === "revenue"
+                  ? "bg-white text-zinc-950 shadow-xs"
+                  : "text-zinc-600 hover:text-zinc-950"
+              }`}
+            >
+              <DollarSign className="size-3.5 text-emerald-600" />
+              Section A: Revenue & Receivables
+              {isRevBalanced && matchesRevTotal ? (
+                <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
+              ) : (
+                <span className="size-2 rounded-full bg-amber-500 shrink-0" />
+              )}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("cogs")}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
-              activeTab === "cogs"
-                ? "bg-white text-zinc-950 shadow-xs"
-                : "text-zinc-600 hover:text-zinc-950"
-            }`}
-          >
-            <Package className="size-3.5 text-amber-600" />
-            Section B: Inventory & COGS
-            {isCogsBalanced ? (
-              <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
-            ) : (
-              <span className="size-2 rounded-full bg-amber-500 shrink-0" />
-            )}
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab("cogs")}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                activeTab === "cogs"
+                  ? "bg-white text-zinc-950 shadow-xs"
+                  : "text-zinc-600 hover:text-zinc-950"
+              }`}
+            >
+              <Package className="size-3.5 text-amber-600" />
+              Section B: Inventory & COGS
+              {isCogsBalanced ? (
+                <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
+              ) : (
+                <span className="size-2 rounded-full bg-amber-500 shrink-0" />
+              )}
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+              Toll Processing Service (Client Commodity — 0 ETB COGS)
+            </span>
+          </div>
+        )}
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════════════
@@ -337,14 +327,14 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
             {/* Debit Section (Cash / Bank / AR) */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <span className="text-xs font-black text-zinc-800 uppercase tracking-wide flex items-center gap-1.5">
                   <span className="size-2 rounded-full bg-emerald-500" />
                   Debit Accounts (Settlement / Cash / AR)
                 </span>
                 <button
                   type="button"
-                  onClick={handleAddRevDebitLine}
+                  onClick={() => handleAddRevDebitLine()}
                   className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline inline-flex items-center gap-0.5 cursor-pointer"
                 >
                   <Plus className="size-3" /> Add Debit
@@ -411,16 +401,14 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
                         onChange={(e) => handleUpdateRevDebitLine(line.id, { description: e.target.value })}
                         className="flex-1 px-2.5 py-1 text-[11px] rounded-lg bg-zinc-50 border border-transparent hover:border-zinc-200 focus:border-zinc-300 focus:bg-white text-zinc-700 outline-none"
                       />
-                      {effectiveRevDebitLines.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleAutoFillRevDebit(idx)}
-                          className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 shrink-0 px-1 py-0.5 cursor-pointer"
-                          title="Fill remaining balance into this line"
-                        >
-                          Auto-fill
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleAutoFillRevDebit(idx)}
+                        className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 shrink-0 px-1 py-0.5 cursor-pointer"
+                        title="Fill remaining balance into this line"
+                      >
+                        Auto-fill
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -510,16 +498,14 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
                         onChange={(e) => handleUpdateRevCreditLine(line.id, { description: e.target.value })}
                         className="flex-1 px-2.5 py-1 text-[11px] rounded-lg bg-zinc-50 border border-transparent hover:border-zinc-200 focus:border-zinc-300 focus:bg-white text-zinc-700 outline-none"
                       />
-                      {effectiveRevCreditLines.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleAutoFillRevCredit(idx)}
-                          className="text-[10px] font-bold text-blue-700 hover:text-blue-900 shrink-0 px-1 py-0.5 cursor-pointer"
-                          title="Fill remaining balance into this line"
-                        >
-                          Auto-fill
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleAutoFillRevCredit(idx)}
+                        className="text-[10px] font-bold text-blue-700 hover:text-blue-900 shrink-0 px-1 py-0.5 cursor-pointer"
+                        title="Fill remaining balance into this line"
+                      >
+                        Auto-fill
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -539,7 +525,7 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
       {/* ══════════════════════════════════════════════════════════════════════════════
           TAB 2: SECTION B (INVENTORY & COGS ALLOCATION)
          ══════════════════════════════════════════════════════════════════════════════ */}
-      {activeTab === "cogs" && (
+      {!hideSectionB && activeTab === "cogs" && (
         <div className="space-y-3.5 animate-in fade-in-50 duration-150">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold text-zinc-500">
@@ -634,16 +620,14 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
                         onChange={(e) => handleUpdateCogsDebitLine(line.id, { description: e.target.value })}
                         className="flex-1 px-2.5 py-1 text-[11px] rounded-lg bg-zinc-50 border border-transparent hover:border-zinc-200 focus:border-zinc-300 focus:bg-white text-zinc-700 outline-none"
                       />
-                      {effectiveCogsDebitLines.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleAutoFillCogsDebit(idx)}
-                          className="text-[10px] font-bold text-amber-700 hover:text-amber-900 shrink-0 px-1 py-0.5 cursor-pointer"
-                          title="Fill remaining balance into this line"
-                        >
-                          Auto-fill
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleAutoFillCogsDebit(idx)}
+                        className="text-[10px] font-bold text-amber-700 hover:text-amber-900 shrink-0 px-1 py-0.5 cursor-pointer"
+                        title="Fill remaining balance into this line"
+                      >
+                        Auto-fill
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -733,16 +717,14 @@ export const SalesIssueCOASplitSection: React.FC<SalesIssueCOASplitSectionProps>
                         onChange={(e) => handleUpdateCogsCreditLine(line.id, { description: e.target.value })}
                         className="flex-1 px-2.5 py-1 text-[11px] rounded-lg bg-zinc-50 border border-transparent hover:border-zinc-200 focus:border-zinc-300 focus:bg-white text-zinc-700 outline-none"
                       />
-                      {effectiveCogsCreditLines.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleAutoFillCogsCredit(idx)}
-                          className="text-[10px] font-bold text-zinc-700 hover:text-zinc-950 shrink-0 px-1 py-0.5 cursor-pointer"
-                          title="Fill remaining balance into this line"
-                        >
-                          Auto-fill
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleAutoFillCogsCredit(idx)}
+                        className="text-[10px] font-bold text-zinc-700 hover:text-zinc-950 shrink-0 px-1 py-0.5 cursor-pointer"
+                        title="Fill remaining balance into this line"
+                      >
+                        Auto-fill
+                      </button>
                     </div>
                   </div>
                 ))}

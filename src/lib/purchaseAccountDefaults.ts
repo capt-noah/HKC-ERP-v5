@@ -11,10 +11,17 @@ export interface PurchaseOperationalCategory {
 export const PURCHASE_OPERATIONAL_CATEGORIES: PurchaseOperationalCategory[] = [
   {
     id: "export_commodities",
-    label: "Export Commodities (Green Mung, Oilseeds, Pulses)",
+    label: "Export Commodities - Green Mung Bean",
     ruleKey: "purchase_export_commodity",
     defaultCode: "1410-01",
-    description: "WH1 export inventory crops & pulses",
+    description: "WH1 export inventory Green Mung crop intake",
+  },
+  {
+    id: "export_sesame",
+    label: "Export Commodities - Reddish Sesame Seed",
+    ruleKey: "purchase_export_sesame",
+    defaultCode: "1410-03",
+    description: "WH1 export inventory Reddish Sesame crop intake",
   },
   {
     id: "pharma_stock",

@@ -69,6 +69,7 @@ export const COAAccountSelector: React.FC<COAAccountSelectorProps> = ({
   const selectedAccount = useMemo(() => {
     if (!value) return null
     const clean = String(value).trim()
+    const cleanLower = clean.toLowerCase()
     const unPrefixed = clean.replace(/^ACC-/, "")
     return (
       accounts.find(
@@ -78,7 +79,7 @@ export const COAAccountSelector: React.FC<COAAccountSelectorProps> = ({
           a.code === unPrefixed ||
           a.id === `ACC-${clean}` ||
           a.id === unPrefixed ||
-          a.name.toLowerCase() === clean.toLowerCase()
+          (a.name && typeof a.name === "string" && a.name.toLowerCase() === cleanLower)
       ) ||
       COMPANY_CHART_OF_ACCOUNTS.find(
         (a) =>
@@ -87,7 +88,7 @@ export const COAAccountSelector: React.FC<COAAccountSelectorProps> = ({
           a.code === unPrefixed ||
           a.id === `ACC-${clean}` ||
           a.id === unPrefixed ||
-          a.name.toLowerCase() === clean.toLowerCase()
+          (a.name && typeof a.name === "string" && a.name.toLowerCase() === cleanLower)
       ) ||
       null
     )
@@ -101,9 +102,9 @@ export const COAAccountSelector: React.FC<COAAccountSelectorProps> = ({
         return false
       }
       if (!q) return true
-      const matchCode = acc.code.toLowerCase().includes(q)
-      const matchName = acc.name.toLowerCase().includes(q)
-      const matchType = acc.account_type.toLowerCase().includes(q)
+      const matchCode = (acc.code || "").toLowerCase().includes(q)
+      const matchName = (acc.name || "").toLowerCase().includes(q)
+      const matchType = (acc.account_type || "").toLowerCase().includes(q)
       const matchPeachtree = (acc.peachtree_type || "").toLowerCase().includes(q)
       return matchCode || matchName || matchType || matchPeachtree
     })

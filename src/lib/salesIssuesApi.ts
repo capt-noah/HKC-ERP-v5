@@ -21,6 +21,8 @@ export interface SalesIssue {
   id: string
   fs_no: string
   sales_order_id?: string
+  service_order_id?: string
+  issue_type?: "GOODS" | "PROCESSING_SERVICE"
   reference_no: string
   sale_date: string
   customer_id: string

@@ -273,10 +273,6 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
       showToast("Validation Error", "warning", "Please specify the quarantine date.")
       return
     }
-    if (!addProposedReleaseDate) {
-      showToast("Validation Error", "warning", "Please specify the proposed release date.")
-      return
-    }
 
     setIsSubmittingAdd(true)
     try {
@@ -434,7 +430,7 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
         onRowClick={(item) => setEditingRecord(item)}
         actions={[
           {
-            label: "Log Broken / Damaged Medicine",
+            label: "Add Quarantine",
             onClick: openAddModal,
             icon: <Plus className="size-4 stroke-[2.5]" />,
             variant: "primary",
@@ -583,7 +579,7 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
               <div className="flex items-center justify-between pb-4 mb-6 border-b border-zinc-200">
                 <div>
                   <h3 className="text-xl font-black text-zinc-900">
-                    Log Medicine for Quarantine
+                    Add Medicine Quarantine
                   </h3>
                   <p className="text-xs text-zinc-500">Record broken or compromised medicine isolation and deduct from warehouse inventory.</p>
                 </div>
@@ -752,13 +748,12 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
                   {/* PROPOSED RELEASE DATE */}
                   <label className="space-y-1 md:col-span-2">
                     <span className="text-[11px] font-black uppercase text-zinc-700 block">
-                      PROPOSED RELEASE DATE <span className="text-rose-600">*</span>
+                      PROPOSED RELEASE DATE <span className="text-zinc-400 font-normal normal-case">(Optional)</span>
                     </span>
                     <input
                       type="date"
                       value={addProposedReleaseDate}
                       onChange={(e) => setAddProposedReleaseDate(e.target.value)}
-                      required
                       className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono outline-none focus:border-emerald-500"
                     />
                   </label>
@@ -908,13 +903,12 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
                   {/* PROPOSED RELEASE DATE */}
                   <label className="space-y-1">
                     <span className="text-[11px] font-black uppercase text-zinc-700 block">
-                      PROPOSED RELEASE DATE <span className="text-rose-600">*</span>
+                      PROPOSED RELEASE DATE <span className="text-zinc-400 font-normal normal-case">(Optional)</span>
                     </span>
                     <input
                       type="date"
                       value={editProposedReleaseDate}
                       onChange={(e) => setEditProposedReleaseDate(e.target.value)}
-                      required
                       className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono outline-none focus:border-emerald-500"
                     />
                   </label>

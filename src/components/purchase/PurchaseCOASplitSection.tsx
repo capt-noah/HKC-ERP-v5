@@ -138,15 +138,15 @@ export const PurchaseCOASplitSection: React.FC<PurchaseCOASplitSectionProps> = (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         {/* ═══ DEBIT SECTION ═══ */}
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-black text-zinc-800 uppercase tracking-wide flex items-center gap-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-black text-zinc-800 uppercase tracking-wide flex items-center gap-1.5 shrink-0">
               <span className="size-2 rounded-full bg-emerald-500" />
               Debit Accounts (Asset / Expense)
             </span>
             <button
               type="button"
               onClick={handleAddDebitLine}
-              className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline inline-flex items-center gap-0.5 cursor-pointer"
+              className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline inline-flex items-center gap-0.5 cursor-pointer whitespace-nowrap shrink-0"
             >
               <Plus className="size-3" /> Add Debit
             </button>
@@ -212,16 +212,14 @@ export const PurchaseCOASplitSection: React.FC<PurchaseCOASplitSectionProps> = (
                     onChange={(e) => handleUpdateDebitLine(line.id, { description: e.target.value })}
                     className="flex-1 px-2.5 py-1 text-[11px] rounded-lg bg-zinc-50 border border-transparent hover:border-zinc-200 focus:border-zinc-300 focus:bg-white text-zinc-700 outline-none"
                   />
-                  {debitLines.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleAutoFillDebit(idx)}
-                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 shrink-0 px-1 py-0.5 cursor-pointer"
-                      title="Fill remaining balance into this line"
-                    >
-                      Auto-fill
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleAutoFillDebit(idx)}
+                    className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 shrink-0 px-1 py-0.5 cursor-pointer"
+                    title="Fill remaining balance into this line"
+                  >
+                    Auto-fill
+                  </button>
                 </div>
               </div>
             ))}
@@ -237,15 +235,15 @@ export const PurchaseCOASplitSection: React.FC<PurchaseCOASplitSectionProps> = (
 
         {/* ═══ CREDIT SECTION ═══ */}
         <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-black text-zinc-800 uppercase tracking-wide flex items-center gap-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-black text-zinc-800 uppercase tracking-wide flex items-center gap-1.5 shrink-0">
               <span className="size-2 rounded-full bg-blue-500" />
-              {isCredit ? "Credit Accounts (Accounts Payable)" : "Credit Accounts (Bank / Cash Source)"}
+              {isCredit ? "Credit Accounts (Accounts Payable)" : "Credit Accounts (Bank / Cash)"}
             </span>
             <button
               type="button"
               onClick={handleAddCreditLine}
-              className="text-[11px] font-bold text-blue-700 hover:text-blue-900 hover:underline inline-flex items-center gap-0.5 cursor-pointer"
+              className="text-[11px] font-bold text-blue-700 hover:text-blue-900 hover:underline inline-flex items-center gap-0.5 cursor-pointer whitespace-nowrap shrink-0"
             >
               <Plus className="size-3" /> Add Credit
             </button>
@@ -311,16 +309,14 @@ export const PurchaseCOASplitSection: React.FC<PurchaseCOASplitSectionProps> = (
                     onChange={(e) => handleUpdateCreditLine(line.id, { description: e.target.value })}
                     className="flex-1 px-2.5 py-1 text-[11px] rounded-lg bg-zinc-50 border border-transparent hover:border-zinc-200 focus:border-zinc-300 focus:bg-white text-zinc-700 outline-none"
                   />
-                  {creditLines.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleAutoFillCredit(idx)}
-                      className="text-[10px] font-bold text-blue-700 hover:text-blue-900 shrink-0 px-1 py-0.5 cursor-pointer"
-                      title="Fill remaining balance into this line"
-                    >
-                      Auto-fill
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleAutoFillCredit(idx)}
+                    className="text-[10px] font-bold text-blue-700 hover:text-blue-900 shrink-0 px-1 py-0.5 cursor-pointer"
+                    title="Fill remaining balance into this line"
+                  >
+                    Auto-fill
+                  </button>
                 </div>
               </div>
             ))}

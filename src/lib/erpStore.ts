@@ -61,7 +61,7 @@ export interface WH1Entry {
 
 export interface BinCardMovementEntry {
   id: string
-  type?: "entry" | "leave" | "quarantine" | "reject" | "processed"
+  type?: "entry" | "leave" | "quarantine" | "reject" | "processed" | "transfer_out"
   date: string
   batchNo: string
   voucherNo?: string
@@ -664,12 +664,16 @@ class ErpStore {
           : Number(p.unitCost || 0)
 
         const targetWh = p.warehouse || p.warehouse_id || "WH1"
+        const pSellingPrice = (finalWh1Entries[0]?.sellingPrice != null && Number(finalWh1Entries[0].sellingPrice) > 0)
+          ? Number(finalWh1Entries[0].sellingPrice)
+          : Number(p.sellingPrice ?? p.selling_price ?? 0)
 
         return {
           ...p,
           warehouse: targetWh,
           totalStockValue: stockVal,
           unitCost: weightedCost,
+          sellingPrice: pSellingPrice,
           wh1Entries: finalWh1Entries,
           binCardEntries: mappedBinEntries.length > 0 ? mappedBinEntries : p.binCardEntries || [],
           stockBreakdown: Array.isArray(p.stockBreakdown) && p.stockBreakdown.length > 0
@@ -703,7 +707,7 @@ class ErpStore {
           const qty = Number(sm.quantity ?? sm.qty ?? sm.qtyReceived ?? sm.qtyIssued ?? 0)
           const qtyReceived = sm.qtyReceived !== undefined ? Number(sm.qtyReceived) : (isReceipt ? qty : 0)
           const qtyIssued = sm.qtyIssued !== undefined ? Number(sm.qtyIssued) : ((isIssue || isQuarantine || isTransfer) ? qty : 0)
-          const mType = isQuarantine ? "quarantine" : isReceipt ? "entry" : "leave"
+          const mType = isQuarantine ? "quarantine" : isTransfer ? "transfer_out" : isReceipt ? "entry" : "leave"
 
           const batchMatch = matchingBatches.find((b: any) => (b.batch_no || b.batchNo) === (sm.batch_no || sm.batchNo))
           const mfgDate = sm.mfg_date || sm.mfgDate || batchMatch?.mfgDate || batchMatch?.mfg_date || p.mfg_date || p.manufacturingDate || ""
@@ -804,10 +808,13 @@ class ErpStore {
             status: t.status || "Draft",
             date: t.request_date || t.requestDate || t.date || new Date().toISOString().slice(0, 10),
             total_quantity: totalQty || Number(t.total_quantity || t.totalQuantity || 0),
-            issued_by: t.requested_by || t.requestedBy || t.issued_by || "",
-            received_by: t.approved_by || t.approvedBy || t.received_by || "",
-            issued_at: t.request_date || t.issued_at || "",
-            received_at: t.completed_date || t.completedDate || t.received_at || "",
+            issued_by: t.issued_by || t.requested_by || t.requestedBy || "",
+            received_by: t.received_by || t.approved_by || t.approvedBy || "",
+            issued_signature: t.issued_signature || t.issued_by || t.requested_by || t.requestedBy || "",
+            received_signature: t.received_signature || t.received_by || t.approved_by || t.approvedBy || "",
+            issued_at: t.issued_at || t.request_date || "",
+            received_at: t.received_at || t.completed_date || t.completedDate || "",
+            discrepancy_remark: t.discrepancy_remark || t.notes || "",
             line_items,
           } as Transfer
         })
@@ -826,6 +833,32 @@ class ErpStore {
         this.purchaseOrders = sortNewestFirst(
           purchaseOrders.map((po: any) => ({
             ...po,
+            poNumber: po.poNumber || po.po_number || po.id,
+            voucherNo: po.voucherNo || po.voucher_no || po.poNumber || po.po_number,
+            paidTo: po.paidTo || po.paid_to || po.supplier,
+            supplier: po.supplier || po.paidTo || po.paid_to || "Supplier",
+            supplierId: po.supplierId || po.supplier_id,
+            reasonForPayment: po.reasonForPayment || po.reason_for_payment,
+            bankName: po.bankName || po.bank_name,
+            paymentMethod: po.paymentMethod || po.payment_method,
+            chequeNo: po.chequeNo || po.cheque_no,
+            paymentType: po.paymentType || po.payment_type || "Cash",
+            payment_type: po.paymentType || po.payment_type || "Cash",
+            paymentTerms: po.paymentTerms || po.payment_terms,
+            dueDate: po.dueDate || po.due_date,
+            due_date: po.dueDate || po.due_date,
+            settlementStatus: po.settlementStatus || po.settlement_status || "Fully Settled",
+            settlement_status: po.settlementStatus || po.settlement_status || "Fully Settled",
+            amountInWords: po.amountInWords || po.amount_in_words,
+            accountEntries: Array.isArray(po.accountEntries)
+              ? po.accountEntries
+              : Array.isArray(po.account_entries)
+              ? po.account_entries
+              : typeof po.account_entries === "string"
+              ? JSON.parse(po.account_entries || "[]")
+              : typeof po.accountEntries === "string"
+              ? JSON.parse(po.accountEntries || "[]")
+              : [],
             status: po.status || "DRAFT",
             statusColor: po.statusColor || poStatusColorMap[po.status] || "bg-zinc-600 text-white",
             amount: Number(po.amount || 0),
@@ -1726,7 +1759,7 @@ class ErpStore {
           const currentBinEntries = originProd.binCardEntries || []
           const leaveEntry: BinCardMovementEntry = {
             id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            type: "leave",
+            type: "transfer_out",
             date: transfer.date || new Date().toISOString().slice(0, 10),
             voucherNo: transfer.reference_number,
             batchNo: item.batch_no || originProd.batch || originProd.batches?.[0]?.batchNo || "BATCH-WH",
@@ -1853,7 +1886,7 @@ class ErpStore {
           })
           const leaveEntry: BinCardMovementEntry = {
             id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            type: "leave",
+            type: "transfer_out",
             date: currentTransfer.date || new Date().toISOString().slice(0, 10),
             voucherNo: currentTransfer.reference_number,
             batchNo: item.batch_no || originProd.batch || originProd.batches?.[0]?.batchNo || "BATCH-WH",
@@ -1891,17 +1924,32 @@ class ErpStore {
 
           if (originProd) {
             const issueQty = Number(item.quantity) || 0
+            let remainingToDeduct = issueQty
+            const updatedBatches = (originProd.batches || []).map((b) => {
+              if (remainingToDeduct > 0 && (!item.batch_no || b.batchNo === item.batch_no)) {
+                const deduct = Math.min(Number(b.qty || 0), remainingToDeduct)
+                remainingToDeduct -= deduct
+                return { ...b, qty: Math.max(0, Number(b.qty || 0) - deduct) }
+              }
+              return b
+            })
             const newBalance = Math.max(0, Number(originProd.quantity || 0) - issueQty)
+            const updatedBreakdown = (originProd.stockBreakdown || []).map((sb) => {
+              if (matchesWarehouse(sb.warehouse, currentTransfer.from_warehouse)) {
+                return { ...sb, qty: Math.max(0, Number(sb.qty || 0) - issueQty) }
+              }
+              return sb
+            })
             const leaveEntry: BinCardMovementEntry = {
               id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-              type: "leave",
+              type: "transfer_out",
               date: currentTransfer.date || new Date().toISOString().slice(0, 10),
               voucherNo: currentTransfer.reference_number,
-              batchNo: item.batch_no || originProd.batch || "BATCH-WH",
+              batchNo: item.batch_no || originProd.batch || originProd.batches?.[0]?.batchNo || "BATCH-WH",
               qtyReceived: 0,
               qtyIssued: issueQty,
               balance: newBalance,
-              expiryDate: item.expiry || originProd.expiry || "",
+              expiryDate: item.expiry || originProd.batches?.[0]?.expiry || originProd.expiry || "",
               party: `Transfer to ${currentTransfer.to_warehouse}`,
               unitPrice: item.unit_price || originProd.unitCost,
               remark: item.remark || `Stock Transfer Dispatch (${currentTransfer.reference_number})`,
@@ -1909,6 +1957,8 @@ class ErpStore {
             }
             await this.updateProductDetails(originProd.id, {
               quantity: newBalance,
+              batches: updatedBatches,
+              stockBreakdown: updatedBreakdown,
               binCardEntries: [...(originProd.binCardEntries || []), leaveEntry],
             })
           }
@@ -2306,8 +2356,9 @@ class ErpStore {
     const updatedEntries = [...currentEntries, newEntry]
 
     const nextQty = updatedEntries.reduce((sum, e) => sum + Number(e.quantityRemaining || 0), 0)
-    const nextVal = updatedEntries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || 0)), 0)
-    const weightedCost = nextQty > 0 ? Math.round((nextVal / nextQty) * 100) / 100 : Number(prod.unitCost || 0)
+    const nextVal = updatedEntries.reduce((sum, e) => sum + (Number(e.quantityReceived || 0) * Number(e.unitPrice || 0)), 0)
+    const remainingVal = updatedEntries.reduce((sum, e) => sum + (Number(e.quantityRemaining || 0) * Number(e.unitPrice || 0)), 0)
+    const weightedCost = nextQty > 0 ? Math.round((remainingVal / nextQty) * 100) / 100 : Number(prod.unitCost || 0)
 
     const updatedBreakdown = [{ warehouse: prod.warehouse, qty: nextQty }]
     const updatedBatches = [{ batchNo: prod.batch || "BATCH-WH1", qty: nextQty, expiry: "", status: "Released" as const }]
@@ -2499,13 +2550,14 @@ class ErpStore {
     }
 
     // 3. Update parent product in MySQL & client state
+    const cumulativeIntakeVal = prod.totalStockValue || updatedWH1Entries.reduce((sum, e) => sum + (Number(e.quantityReceived || 0) * Number(e.unitPrice || 0)), 0)
     await this.updateProductDetails(productId, {
       quantity: nextQty,
       quantitySold: (prod.quantitySold || 0) + issueQty,
       totalQuantity: nextQty + (prod.quantitySold || 0) + issueQty,
       unitCost: weightedCost,
       sellingPrice: prod.sellingPrice || weightedCost,
-      totalStockValue: nextVal,
+      totalStockValue: cumulativeIntakeVal,
       stockBreakdown: updatedBreakdown,
       batches: updatedBatches,
       wh1Entries: updatedWH1Entries,
@@ -2737,9 +2789,10 @@ class ErpStore {
     }
 
     // 5. Update product in MySQL & client state
+    const cumulativeIntakeVal = prod.totalStockValue || updatedWH1Entries.reduce((sum, e) => sum + (Number(e.quantityReceived || 0) * Number(e.unitPrice || 0)), 0)
     await this.updateProductDetails(productId, {
       quantity: nextQty,
-      totalStockValue: nextVal,
+      totalStockValue: cumulativeIntakeVal,
       unitCost: weightedCost,
       sellingPrice: prod.sellingPrice || weightedCost,
       stockBreakdown: updatedBreakdown,
@@ -2949,13 +3002,14 @@ class ErpStore {
       }
     }
 
-    const nextVal = updatedBatches.length > 0
-      ? updatedBatches.reduce((s, b) => s + (Number(b.qty || 0) * Number(b.unitPrice ?? (b as any).unit_cost ?? unitCost)), 0)
-      : totalQuantity * unitCost
+    const currentIntakeVal = Number(prod.totalStockValue || (Number(prod.quantity || 0) * unitCost))
+    const nextVal = isRec
+      ? currentIntakeVal + (Number(entry.qtyReceived || 0) * unitCost)
+      : currentIntakeVal
 
     const updatedBreakdown = [{ warehouse: prod.warehouse, qty: totalQuantity }]
     const packSize = Number(prod.quantityPerPack || 1)
-    const nextCartons = packSize > 0 ? Math.floor(totalQuantity / packSize) : (prod.numberOfCartons || 0)
+    const nextCartons = packSize > 0 ? Math.round((totalQuantity / packSize) * 100) / 100 : (prod.numberOfCartons || 0)
 
     const isExport = isExportWarehouse(prod.warehouse, this.warehouses)
 
@@ -3767,9 +3821,8 @@ class ErpStore {
     if (enriched.status === "PAID" || enriched.status === "COMPLETED") {
       this.syncPurchaseVoucherToFinance(enriched)
     }
-    if (isCredit) {
-      financeStore.syncPurchaseInvoice(enriched)
-    }
+    // Always sync purchase orders (Cash and Credit) into Invoices
+    financeStore.syncPurchaseInvoice(enriched)
     this.notify()
   }
 
@@ -3779,22 +3832,19 @@ class ErpStore {
       if (p.id !== id) return p
       const merged = { ...p, ...updates }
       const isCredit = (merged.paymentType || merged.payment_type) === "Credit"
-      if (isCredit) {
-        const totalAmt = Number(merged.amount || 0)
-        const paidAmt = Number(merged.amountPaid ?? merged.amount_paid ?? 0)
-        const dueAmt = typeof merged.balanceDue === "number" ? merged.balanceDue : Math.max(0, totalAmt - paidAmt)
-        merged.amountPaid = paidAmt
-        merged.amount_paid = paidAmt
-        merged.balanceDue = dueAmt
-        merged.balance_due = dueAmt
-        merged.settlementStatus = dueAmt <= 0.01 ? "Fully Settled" : (paidAmt > 0 ? "Ongoing" : "Unpaid")
-        merged.settlement_status = merged.settlementStatus
-        financeStore.syncPurchaseInvoice(merged)
-      }
+      const totalAmt = Number(merged.amount || 0)
+      const paidAmt = isCredit ? Number(merged.amountPaid ?? merged.amount_paid ?? 0) : totalAmt
+      const dueAmt = isCredit ? (typeof merged.balanceDue === "number" ? merged.balanceDue : Math.max(0, totalAmt - paidAmt)) : 0
+      merged.amountPaid = paidAmt
+      merged.amount_paid = paidAmt
+      merged.balanceDue = dueAmt
+      merged.balance_due = dueAmt
+      merged.settlementStatus = dueAmt <= 0.01 ? "Fully Settled" : (paidAmt > 0 ? "Ongoing" : "Unpaid")
+      merged.settlement_status = merged.settlementStatus
+      financeStore.syncPurchaseInvoice(merged)
       if (merged.status === "PAID" || merged.status === "COMPLETED") {
         this.syncPurchaseVoucherToFinance(merged)
       } else if (!isCredit) {
-        // Clean up GL journal entry if moved back to draft or cancelled
         financeStore.deleteJournalEntriesBySource("Payment Voucher", merged.id)
         merged.journalEntryId = undefined
       }
@@ -4063,9 +4113,17 @@ class ErpStore {
       const recQty = receivedItems?.find((i) => i.productId === item.productId)?.qty ?? item.qty
       const pIndex = this.products.findIndex((prod) => prod.id === item.productId || prod.sku === item.sku)
       if (pIndex !== -1) {
+        const curProd = this.products[pIndex]
+        const newQty = curProd.quantity + recQty
+        const packSize = Number(curProd.quantityPerPack || 0)
+        const newCartons = packSize > 0 ? Math.round((newQty / packSize) * 100) / 100 : curProd.numberOfCartons
+        const addedVal = recQty * Number(item.unitPrice || curProd.unitCost || 0)
+        const newStockVal = Number(curProd.totalStockValue || (curProd.quantity * curProd.unitCost)) + addedVal
         this.products[pIndex] = {
-          ...this.products[pIndex],
-          quantity: this.products[pIndex].quantity + recQty,
+          ...curProd,
+          quantity: newQty,
+          numberOfCartons: newCartons,
+          totalStockValue: newStockVal,
           status: "In Stock",
         }
       }

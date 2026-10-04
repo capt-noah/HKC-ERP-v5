@@ -32,6 +32,7 @@ export const glAccountMappings = mysqlTable("gl_account_mappings", {
   normalPosting: varchar("normal_posting", { length: 10 }).notNull().default("Debit"),
   isSystemDefault: boolean("is_system_default").default(false).notNull(),
   description: varchar("description", { length: 255 }),
+  multiAccounts: json("multi_accounts"),
   updatedBy: varchar("updated_by", { length: 191 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

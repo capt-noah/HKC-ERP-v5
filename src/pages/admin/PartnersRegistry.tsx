@@ -31,7 +31,6 @@ import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { saveTradeLicense } from "@/lib/tradeDocumentService"
-import { PeachtreePartnerBalancesModal } from "@/components/finance/PeachtreePartnerBalancesModal"
 
 export default function PartnersRegistry() {
   const erp = useErpStore()
@@ -46,7 +45,6 @@ export default function PartnersRegistry() {
   const [search, setSearch] = useState("")
 
   // Modals & Deleting states
-  const [showBeginningBalancesModal, setShowBeginningBalancesModal] = useState(false)
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [deletingCustomer, setDeletingCustomer] = useState<Customer | null>(null)
@@ -433,15 +431,6 @@ export default function PartnersRegistry() {
                   className="w-full pl-9 pr-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-semibold outline-none focus:border-zinc-400"
                 />
               </div>
-
-              <button
-                type="button"
-                onClick={() => setShowBeginningBalancesModal(true)}
-                className="px-3.5 sm:px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-transform"
-                title="Maintain Partner Beginning Balances for Cutover"
-              >
-                <Users className="size-3.5" /> Maintain Beginning Balances
-              </button>
 
               {activeTab === "customers" ? (
                 <button
@@ -1195,13 +1184,6 @@ export default function PartnersRegistry() {
           setShowAddSupplierModal(false)
           setEditingSupplier(null)
         }}
-      />
-
-      {/* Peachtree / Sage 50 Partner Beginning Balances Cutover Modal */}
-      <PeachtreePartnerBalancesModal
-        isOpen={showBeginningBalancesModal}
-        onClose={() => setShowBeginningBalancesModal(false)}
-        initialType={activeTab === "customers" ? "Customer" : "Supplier"}
       />
 
       {/* Document Preview Modal */}

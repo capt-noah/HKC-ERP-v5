@@ -62,12 +62,6 @@ function ProcessingServicesSkeletonRows() {
   )
 }
 
-const STAGE_STEPS: { stage: ProcessingServiceStage; label: string; desc: string }[] = [
-  { stage: "Received", label: "Received", desc: "Raw commodity received at WH1" },
-  { stage: "Processed", label: "Processed", desc: "Milling, washing & sorting complete" },
-  { stage: "Delivered", label: "Delivered", desc: "Finished goods dispatched / picked up" },
-]
-
 const STAGE_COLOR_MAP: Record<ProcessingServiceStage, { bg: string; text: string; border: string }> = {
   Received: { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-200" },
   Processed: { bg: "bg-emerald-100", text: "text-emerald-800", border: "border-emerald-200" },
@@ -1162,66 +1156,85 @@ export default function ProcessingServices() {
                     )
                   })()}
 
-                  {/* 2. Status Progression Checkboxes */}
+                  {/* 2. Status Progression Checkboxes (Inventory Scope: Received -> Processed) */}
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-black uppercase text-zinc-500 tracking-wider">Service Stage Checkbox Progression</span>
+                      <span className="text-xs font-black uppercase text-zinc-500 tracking-wider">Inventory Processing Stages</span>
+                      {editStatus === "Processed" && (
+                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                          Ready for Sales Issue Delivery
+                        </span>
+                      )}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
-                      {STAGE_STEPS.map((step, idx) => {
-                        const isChecked = getStageIndex(editStatus) >= idx
-                        const isCurrentSelected = editStatus === step.stage
-                        const timestampEntry = editingOrder.status_history?.find((h) => h.stage === step.stage)
+                    {editingOrder.status === "Delivered" ? (
+                      <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-black text-purple-900 block">Delivered & Invoiced via Sales Issue</span>
+                          <span className="text-[10px] text-purple-700 font-semibold block">
+                            Delivered on {editingOrder.delivered_at ? new Date(editingOrder.delivered_at).toLocaleDateString() : "Record file"}. Delivery and revenue billing finalized.
+                          </span>
+                        </div>
+                        <span className="px-2.5 py-1 text-[10px] font-black uppercase rounded-full bg-purple-200 text-purple-900">
+                          Delivered
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        {[
+                          { stage: "Received" as const, label: "Received", desc: "Raw commodity received at WH1" },
+                          { stage: "Processed" as const, label: "Processed", desc: "Milling, washing & sorting complete" },
+                        ].map((step, idx) => {
+                          const isChecked = getStageIndex(editStatus) >= idx
+                          const isCurrentSelected = editStatus === step.stage
+                          const timestampEntry = editingOrder.status_history?.find((h) => h.stage === step.stage)
 
-                        return (
-                          <div
-                            key={step.stage}
-                            onClick={() => {
-                              const targetStage = isCurrentSelected 
-                                ? (idx > 0 ? STAGE_STEPS[idx - 1].stage : "Received") 
-                                : step.stage
-                              setEditStatus(targetStage)
-                              if (targetStage === "Delivered") {
-                                setPreviewCalcDate(new Date().toISOString().split("T")[0])
-                              }
-                            }}
-                            className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between cursor-pointer hover:shadow-md ${
-                              isChecked
-                                ? "bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800"
-                                : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400"
-                            }`}
-                          >
-                            <div className="flex items-start gap-3">
-                              <div
-                                className={`size-5 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
-                                  isChecked
-                                    ? "bg-emerald-600 border-emerald-600 text-white"
-                                    : "bg-white border-zinc-300 text-transparent hover:border-emerald-500"
-                                }`}
-                              >
-                                <Check className="size-3.5 stroke-[3]" />
+                          return (
+                            <div
+                              key={step.stage}
+                              onClick={() => {
+                                const targetStage = isCurrentSelected 
+                                  ? (idx > 0 ? "Received" : "Received") 
+                                  : step.stage
+                                setEditStatus(targetStage)
+                              }}
+                              className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between cursor-pointer hover:shadow-md ${
+                                isChecked
+                                  ? "bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800"
+                                  : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400"
+                              }`}
+                            >
+                              <div className="flex items-start gap-3">
+                                <div
+                                  className={`size-5 rounded-lg border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
+                                    isChecked
+                                      ? "bg-emerald-600 border-emerald-600 text-white"
+                                      : "bg-white border-zinc-300 text-transparent hover:border-emerald-500"
+                                  }`}
+                                >
+                                  <Check className="size-3.5 stroke-[3]" />
+                                </div>
+                                <div>
+                                  <span className={`text-xs font-black block ${isChecked ? "text-emerald-900 dark:text-emerald-300" : "text-zinc-700 dark:text-zinc-300"}`}>
+                                    {step.label}
+                                  </span>
+                                  <span className="text-[10px] text-zinc-500 leading-tight block mt-0.5">{step.desc}</span>
+                                </div>
                               </div>
-                              <div>
-                                <span className={`text-xs font-black block ${isChecked ? "text-emerald-900 dark:text-emerald-300" : "text-zinc-700 dark:text-zinc-300"}`}>
-                                  {step.label}
+
+                              {timestampEntry && (
+                                <span className="text-[9px] font-mono text-emerald-700 dark:text-emerald-400 mt-2 block font-semibold">
+                                  ✓ {new Date(timestampEntry.timestamp).toLocaleDateString()} {new Date(timestampEntry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </span>
-                                <span className="text-[10px] text-zinc-500 leading-tight block mt-0.5">{step.desc}</span>
-                              </div>
-                            </div>
-
-                            {timestampEntry && (
-                              <span className="text-[9px] font-mono text-emerald-700 dark:text-emerald-400 mt-2 block font-semibold">
-                                ✓ {new Date(timestampEntry.timestamp).toLocaleDateString()} {new Date(timestampEntry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              )}
+                              <span className="text-[9px] font-bold text-zinc-400 mt-2 block">
+                                {isChecked ? "Click to toggle" : "Click to select"}
                               </span>
-                            )}
-                            <span className="text-[9px] font-bold text-zinc-400 mt-2 block">
-                              {isChecked ? "Click to uncheck/revert" : "Click to select"}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   {/* 2b. Processing Rejects & Quality Loss Section (Revealed when Processed checkbox is checked) */}

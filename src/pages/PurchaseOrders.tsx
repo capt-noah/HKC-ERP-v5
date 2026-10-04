@@ -673,7 +673,7 @@ export default function PurchaseOrders() {
   }
 
   // Save Edit Voucher
-  const handleSaveEditVoucher = (e: React.FormEvent) => {
+  const handleSaveEditVoucher = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingPo || isSavingEditVoucher) return
 
@@ -774,6 +774,37 @@ export default function PurchaseOrders() {
         paymentAdviceAttachment: paymentAdvice,
         attachments,
       })
+
+      // Bidirectional sync: sync JE-PO and linked Purchase Invoice GL distribution
+      try {
+        const poInvId = `INV-PO-${editingPo.id}`
+        const matchingPoInv = financeStore.getInvoices().find(
+          (i) => i.id === poInvId || i.purchase_order_id === editingPo.id || (editingPo.voucherNo && i.voucher_no === editingPo.voucherNo)
+        )
+        const poRevLines = accountEntries.map((e, idx) => ({
+          id: e.id || `po-line-${idx}-${Date.now()}`,
+          account_id: e.accountId || e.accountCode,
+          account_code: e.accountCode || e.accountId,
+          account_name: e.accountName,
+          description: e.description || (Number(e.debit) > 0 ? "Procurement Goods / Stock Allocation" : "Supplier Settlement / AP"),
+          debit: Number(e.debit) || 0,
+          credit: Number(e.credit) || 0,
+          party_type: "Supplier" as const,
+          party_name: paidTo.trim(),
+        }))
+
+        if (matchingPoInv) {
+          await financeStore.updateInvoiceGLDistribution(matchingPoInv.id, {
+            revenueLines: poRevLines as any,
+            notes: `Updated from Purchase Voucher Edit (${voucherNo.trim()})`,
+          })
+        } else {
+          await financeStore.syncCrossModule()
+        }
+      } catch (syncErr) {
+        console.warn("Live finance sync warning for PO:", syncErr)
+      }
+
       showToast(
         "Voucher Updated",
         "success",

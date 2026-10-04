@@ -30,6 +30,7 @@ import {
   Download,
   Receipt,
   ArrowRight,
+  Tag,
 } from "lucide-react"
 import {
   ResponsiveContainer,
@@ -52,6 +53,7 @@ import { useResizableTable, ResizableTh, type TableColumn } from "@/components/R
 import { Skeleton } from "@/components/ui/skeleton"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, type SalesOrder } from "@/lib/erpStore"
+import { isWH1 } from "@/lib/warehouses"
 import { useFinanceStore, isCogsAccount } from "@/lib/financeStore"
 import { useAuthStore } from "@/lib/authStore"
 import { useFeedback } from "@/context/FeedbackContext"
@@ -721,13 +723,64 @@ export default function ControlCenter() {
   }, [])
 
   // Key ERP Metrics
+  // Total Inventory Value: FROZEN ON INTAKE (Cumulative receipts @ cost, does not fluctuate downwards on deduction)
   const inventoryValue = erp
     .getProducts()
-    .reduce(
-      (sum, product) =>
-        sum + Number(product.totalStockValue ?? (Number(product.quantity || 0) * Number(product.unitCost || 0))),
-      0
-    )
+    .reduce((sum, prod) => {
+      const isWH1Item = isWH1(prod.warehouse)
+      const wh1Entries = prod.wh1Entries || []
+      const wh1TotalReceived = wh1Entries.reduce((s, e) => s + Number(e.quantityReceived || 0), 0)
+      const binEntries = prod.binCardEntries || []
+      const pharmaTotalReceived = binEntries.reduce((s, e) => s + Number(e.qtyReceived || 0), 0)
+
+      const stockValAtCost = isWH1Item
+        ? (wh1TotalReceived > 0
+            ? wh1Entries.reduce((s, e) => s + (Number(e.quantityReceived || 0) * Number(e.unitPrice ?? prod.unitCost ?? 0)), 0)
+            : Number(prod.totalStockValue || (Number(prod.quantity || 0) * Number(prod.unitCost || 0))))
+        : (pharmaTotalReceived > 0
+            ? binEntries
+                .filter((e) => e.type === "entry" || Number(e.qtyReceived || 0) > 0)
+                .reduce((s, e) => s + (Number(e.qtyReceived || 0) * Number(e.unitPrice ?? prod.unitCost ?? 0)), 0)
+            : Number(prod.totalStockValue || (Number(prod.quantity || 0) * Number(prod.unitCost || 0))))
+
+      return sum + stockValAtCost
+    }, 0)
+
+  // Total Inventory Sale Value: FLUCTUATES with deductions, valued at active stock selling prices
+  const inventorySaleValue = erp
+    .getProducts()
+    .reduce((sum, prod) => {
+      const isWH1Item = isWH1(prod.warehouse)
+      const defaultSellingPrice = Number(
+        prod.sellingPrice ??
+        (prod as any).selling_price ??
+        (prod.unitCost ? Number(prod.unitCost) * 1.25 : 0)
+      )
+
+      if (isWH1Item) {
+        const wh1Entries = prod.wh1Entries || []
+        if (wh1Entries.length > 0) {
+          const wh1SaleVal = wh1Entries.reduce((s, e) => {
+            const remQty = Number(e.quantityRemaining != null ? e.quantityRemaining : (e.quantityReceived || 0))
+            const price = Number(e.sellingPrice ?? defaultSellingPrice)
+            return s + (remQty * price)
+          }, 0)
+          return sum + wh1SaleVal
+        }
+        return sum + (Number(prod.quantity || 0) * defaultSellingPrice)
+      } else {
+        const binEntries = prod.binCardEntries || []
+        const pharmaTotalReceived = binEntries.reduce((s, e) => s + Number(e.qtyReceived || 0), 0)
+        const pharmaTotalIssued = binEntries.reduce((s, e) => s + Number(e.qtyIssued || 0), 0)
+        const currentQty = binEntries.length > 0
+          ? Math.max(0, pharmaTotalReceived - pharmaTotalIssued)
+          : (Array.isArray(prod.batches) && prod.batches.length > 0)
+            ? prod.batches.reduce((s, b) => s + Number(b.qty ?? (b as any).quantity ?? 0), 0)
+            : Number(prod.quantity || 0)
+
+        return sum + (currentQty * defaultSellingPrice)
+      }
+    }, 0)
 
   const { postedRevenue, totalCogs, grossProfit, grossMargin, netProfit, netMargin } = useMemo(() => {
     const glMetrics = finance.getFinancialMetrics()
@@ -1196,8 +1249,8 @@ export default function ControlCenter() {
         {/* Tab Content 1: Overview */}
         {activeTab === "overview" && (
           <div className="space-y-6">
-            {/* Colored Metric Cards (Posted Revenue, Gross Profit & Inventory Value) */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* Colored Metric Cards (Posted Revenue, Gross Profit, Total Inventory Value & Total Inventory Sale Value) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
               {dataLoading ? (
                 <>
                   <StatCardSkeleton />
@@ -1270,7 +1323,7 @@ export default function ControlCenter() {
                     </div>
                   </div>
 
-                  {/* Card 3: Inventory Value (Indigo/Violet Gradient) */}
+                  {/* Card 3: Total Inventory Value (Indigo/Violet Gradient) - Frozen Intake Cost */}
                   <div
                     className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-indigo-500/15 via-violet-600/5 to-white/70 border border-indigo-500/30 backdrop-blur-xl shadow-lg shadow-indigo-950/[0.04] flex flex-col justify-between"
                   >
@@ -1295,7 +1348,36 @@ export default function ControlCenter() {
                     </div>
                     <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-indigo-800 relative z-10">
                       <Layers className="size-4 shrink-0" />
-                      <span className="truncate">Valued across active stock batches</span>
+                      <span className="truncate">Intake cost value (frozen)</span>
+                    </div>
+                  </div>
+
+                  {/* Card 4: Total Inventory Sale Value (Purple/Fuchsia Gradient) - Real-time Selling Price */}
+                  <div
+                    className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-purple-500/15 via-fuchsia-600/5 to-white/70 border border-purple-500/30 backdrop-blur-xl shadow-lg shadow-purple-950/[0.04] flex flex-col justify-between"
+                  >
+                    <div className="absolute top-0 right-0 w-48 h-48 bg-purple-400/20 rounded-full blur-3xl pointer-events-none -mr-12 -mt-12" />
+                    <div>
+                      <div className="flex items-start justify-between relative z-10">
+                        <div>
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-600 text-white shadow-sm">
+                            Market Potential
+                          </span>
+                          <p className="text-xs text-purple-900 font-extrabold uppercase tracking-wider mt-2.5">Total Inventory Sale Value</p>
+                        </div>
+                        <div className="p-3 rounded-2xl bg-purple-500/20 text-purple-800 border border-purple-500/30 shadow-inner">
+                          <Tag className="size-6 text-purple-700" />
+                        </div>
+                      </div>
+                      <div className="mt-4 relative z-10">
+                        <p className="text-2xl sm:text-3xl font-black text-black tracking-tight font-mono">
+                          ETB {money(inventorySaleValue)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-purple-800 relative z-10">
+                      <Tag className="size-4 shrink-0" />
+                      <span className="truncate">Active stock valued at selling price</span>
                     </div>
                   </div>
                 </>

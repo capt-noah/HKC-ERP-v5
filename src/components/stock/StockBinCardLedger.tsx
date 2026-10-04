@@ -56,8 +56,6 @@ export default function StockBinCardLedger({
     ? product.batches
         .filter((b) => b.status !== "Quarantined")
         .reduce((sum, b) => sum + (Number(b.qty || 0) * Number(b.unitPrice ?? (b as any).unit_cost ?? product.unitCost ?? 0)), 0)
-    : product.totalStockValue != null && Number(product.totalStockValue) > 0
-    ? Number(product.totalStockValue)
     : currentBalance * Number(product.unitCost || 0)
 
   return (
@@ -94,11 +92,16 @@ export default function StockBinCardLedger({
             <tbody className="divide-y divide-zinc-150">
               {entries.map((rec) => {
                 const isQuarantine = rec.type === "quarantine" || (rec.party && rec.party.includes("Quarantine"))
-                const isEntry = !isQuarantine && (rec.type === "entry" || Number(rec.qtyReceived || 0) > 0)
-                const isLeave = !isQuarantine && (rec.type === "leave" || Number(rec.qtyIssued || 0) > 0)
+                const isTransfer = rec.type === "transfer_out" ||
+                  (rec.party && rec.party.toLowerCase().startsWith("transfer to")) ||
+                  (rec.remark && rec.remark.toLowerCase().includes("stock transfer dispatch"))
+                const isEntry = !isQuarantine && !isTransfer && (rec.type === "entry" || Number(rec.qtyReceived || 0) > 0)
+                const isLeave = !isQuarantine && !isTransfer && (rec.type === "leave" || Number(rec.qtyIssued || 0) > 0)
 
                 const rowBg = isQuarantine
                   ? "bg-amber-50/40 hover:bg-amber-50/70"
+                  : isTransfer
+                  ? "bg-sky-50/40 hover:bg-sky-50/70"
                   : isEntry
                   ? "bg-emerald-50/30 hover:bg-emerald-50/60"
                   : isLeave
@@ -112,7 +115,7 @@ export default function StockBinCardLedger({
                     <td className={`py-2.5 px-4 text-right font-mono font-bold border-r border-zinc-100 ${rec.qtyReceived > 0 ? "text-emerald-700 font-black" : "text-zinc-400"}`}>
                       {rec.qtyReceived > 0 ? `+${rec.qtyReceived.toLocaleString()}` : "-"}
                     </td>
-                    <td className={`py-2.5 px-4 text-right font-mono font-bold border-r border-zinc-100 ${rec.qtyIssued > 0 ? (isQuarantine ? "text-amber-800 font-black" : "text-rose-700 font-black") : "text-zinc-400"}`}>
+                    <td className={`py-2.5 px-4 text-right font-mono font-bold border-r border-zinc-100 ${rec.qtyIssued > 0 ? (isQuarantine ? "text-amber-800 font-black" : isTransfer ? "text-sky-800 font-black" : "text-rose-700 font-black") : "text-zinc-400"}`}>
                       {rec.qtyIssued > 0 ? `-${rec.qtyIssued.toLocaleString()}` : "-"}
                     </td>
                     <td className="py-2.5 px-4 text-right font-mono font-black text-zinc-950 bg-black/[0.02] border-r border-zinc-100">
@@ -123,8 +126,8 @@ export default function StockBinCardLedger({
                       {rec.unitPrice != null && Number(rec.unitPrice) > 0 ? (
                         <div>
                           <div>ETB {Number(rec.unitPrice).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                          <div className={`text-[9px] font-sans font-semibold ${isQuarantine ? "text-amber-700" : isLeave ? "text-rose-600" : "text-emerald-700"}`}>
-                            {isQuarantine ? "Loss" : isLeave ? "COGS" : "Acq Cost"}
+                          <div className={`text-[9px] font-sans font-semibold ${isQuarantine ? "text-amber-700" : isTransfer ? "text-sky-700" : isLeave ? "text-rose-600" : "text-emerald-700"}`}>
+                            {isQuarantine ? "Loss" : isTransfer ? "Transfer" : isLeave ? "COGS" : "Acq Cost"}
                           </div>
                         </div>
                       ) : product.unitCost ? (
@@ -173,9 +176,9 @@ export default function StockBinCardLedger({
                     <td className="py-2.5 px-4 font-mono text-zinc-600 border-r border-zinc-100">{rec.expiryDate || "-"}</td>
                     <td className="py-2.5 px-4 font-semibold text-zinc-800 border-r border-zinc-100">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        {isQuarantine && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300">
-                            QUARANTINE
+                        {isLeave && !isTransfer && !isQuarantine && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-900 border border-rose-300">
+                            Sold
                           </span>
                         )}
                         <span>{rec.party || "-"}</span>
@@ -184,8 +187,12 @@ export default function StockBinCardLedger({
                     <td className="py-2.5 px-4 text-zinc-500 max-w-xs truncate border-r border-zinc-100">{rec.remark || "-"}</td>
                     <td className="py-2.5 px-4 text-center">
                       {isQuarantine ? (
-                        <span className="inline-flex items-center px-2.5 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-900 text-[10px] font-black tracking-wider shadow-2xs">
-                          QA Locked
+                        <span className="text-[11px] font-bold text-amber-800">
+                          Quarantined
+                        </span>
+                      ) : isTransfer ? (
+                        <span className="text-[11px] font-bold text-sky-800">
+                          Transferred
                         </span>
                       ) : onEditEntry ? (
                         <button

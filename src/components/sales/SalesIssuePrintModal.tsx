@@ -87,7 +87,7 @@ export default function SalesIssuePrintModal({
     referenceNo: issue.reference_no || "",
     saleDate: issue.sale_date || "",
     customerName: issue.customer_name || "",
-    tin: (customer as any)?.tin || (customer as any)?.tinNumber || "",
+    tin: (customer as any)?.tin || (customer as any)?.tinNumber || (issue as any)?.customer_tin || (issue as any)?.tin || "",
     address: customer?.address || [customer?.region, customer?.country].filter(Boolean).join(", ") || "",
     accountNo: (customer as any)?.accountNumber || (customer as any)?.account_no || issue.customer_id || "",
     station: (issue as any).station || warehouse?.location || "Headquarters Store",

@@ -236,7 +236,7 @@ export default function WH1ChildMovementLedger({
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200/60 shadow-2xs">
-                          <ArrowUpRight className="size-3 text-amber-600" /> Leave
+                          <ArrowUpRight className="size-3 text-amber-600" /> Sold
                         </span>
                       )}
                     </td>
@@ -409,7 +409,9 @@ export default function WH1ChildMovementLedger({
                             </button>
                           )}
                           {isReject && (
-                            <span className="text-[10px] text-rose-400 italic">Loss Deducted</span>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                              Reject
+                            </span>
                           )}
                         </div>
                       </td>
