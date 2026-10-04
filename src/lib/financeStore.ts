@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { deleteResource, loadResource, persistResources, updateResource } from "./apiPersistence"
+import { createResource, deleteResource, loadResource, persistResources, updateResource } from "./apiPersistence"
 import { useAuthStore } from "./authStore"
 import { erpStore, type PurchaseOrder } from "./erpStore"
 import { validateJournalVoucher } from "../core/finance/ledgerEngine"
@@ -1656,7 +1656,6 @@ class FinanceStore {
 
   private saveToApi() {
     return persistResources([
-      { resource: "chart_of_accounts", items: this.accounts },
       { resource: "gl_account_mappings", items: this.glMappings },
       { resource: "journal_entries", items: this.entries },
       { resource: "journal_entry_lines", items: this.lines },
@@ -2332,12 +2331,21 @@ class FinanceStore {
       parent_account_id: normalizedParentId,
     }
     this.accounts = [newAcc, ...this.accounts]
-    persistResources([{ resource: "chart_of_accounts", items: this.accounts }])
+    void createResource("chart_of_accounts", newAcc).catch((err) =>
+      console.error("[FinanceStore] Failed to create account in database:", err)
+    )
     this.notify()
     return { success: true, account: newAcc }
   }
 
   public toggleAccountActive(id: string) {
+    const target = this.accounts.find((acc) => acc.id === id || acc.code === id)
+    if (target) {
+      const nextActive = !target.is_active
+      void updateResource<AccountItem>("chart_of_accounts", target.id || `ACC-${target.code}`, { is_active: nextActive }).catch((err) =>
+        console.error("[FinanceStore] Failed to update account active status:", err)
+      )
+    }
     this.accounts = this.accounts.map((acc) =>
       acc.id === id || acc.code === id ? { ...acc, is_active: !acc.is_active } : acc
     )

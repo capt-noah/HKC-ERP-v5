@@ -1,5 +1,5 @@
-import { useEffect } from "react"
-import { Wallet, Calendar, ArrowUpRight, DollarSign, TrendingUp, TrendingDown, BarChart3 } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Wallet, Calendar, ArrowUpRight, DollarSign, TrendingUp, TrendingDown, BarChart3, RefreshCw } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -17,15 +17,17 @@ export default function FinanceOverview() {
   const isLoading = store.isLoading()
 
   useEffect(() => {
-    void store.loadFromApi()
-    void erpStore.loadInventoryData()
-    void erpStore.loadSalesData()
+    void store.loadFromApi(true)
+    void erpStore.loadInventoryData(true)
+    void erpStore.loadSalesData(true)
   }, [])
 
   const invoices = store.getInvoices()
   const journalLines = store.getJournalEntryLines()
   const journalEntries = store.getJournalEntries()
   const accounts = store.getAccounts()
+  const salesIssues = erpStore.getSalesIssues()
+
   const accountById = new Map<string, any>()
   for (const account of accounts) {
     if (account.id) {
@@ -41,22 +43,72 @@ export default function FinanceOverview() {
   }
   const entryById = new Map(journalEntries.map((entry) => [entry.id, entry]))
 
-  const {
-    totalRevenue,
-    totalCogs,
-    grossProfit,
-    grossMargin,
-    netProfit,
-    netMargin,
-    cashPosition,
-    isCashNegative,
-  } = store.getFinancialMetrics()
+  const rawMetrics = store.getFinancialMetrics()
 
-  // Find distinct years from journal entries or fallback to current year
+  // Calculate robust fallback from invoices & sales issues if GL lines are not yet populated
+  const hasGlMetrics = rawMetrics.totalRevenue > 0 || rawMetrics.totalCogs > 0 || rawMetrics.cashPosition !== 0
+  
+  let totalRevenue = rawMetrics.totalRevenue
+  let totalCogs = rawMetrics.totalCogs
+  let grossProfit = rawMetrics.grossProfit
+  let grossMargin = rawMetrics.grossMargin
+  let netProfit = rawMetrics.netProfit
+  let netMargin = rawMetrics.netMargin
+  let cashPosition = rawMetrics.cashPosition
+  let isCashNegative = rawMetrics.isCashNegative
+
+  if (!hasGlMetrics) {
+    // 1. Calculate revenue from posted sales issues / invoices
+    const activeIssues = salesIssues.filter((si) => si.status !== "Cancelled")
+    let fbRevenue = activeIssues.reduce((sum, si) => sum + Number(si.total_amount || 0), 0)
+    if (fbRevenue === 0 && invoices.length > 0) {
+      fbRevenue = invoices.filter((i) => i.status !== "Void").reduce((sum, i) => sum + Number(i.total || (i as any).total_amount || 0), 0)
+    }
+
+    // 2. Calculate COGS from sales issue items or account_entries
+    let fbCogs = 0
+    let fbCash = 0
+    activeIssues.forEach((si) => {
+      const entries = typeof si.account_entries === "string" ? JSON.parse(si.account_entries) : si.account_entries
+      if (entries?.cogs_lines) {
+        fbCogs += entries.cogs_lines.reduce((s: number, l: any) => s + Number(l.debit || 0), 0)
+      } else if (Array.isArray(si.items)) {
+        si.items.forEach((it: any) => {
+          fbCogs += Number(it.quantity || 0) * Number(it.unit_cost || it.cost_price || 0)
+        })
+      }
+      if (si.payment_type === "Cash" || si.payment_status === "Paid") {
+        fbCash += Number(si.total_amount || 0)
+      }
+    })
+
+    const fbGp = Math.max(0, fbRevenue - fbCogs)
+    const fbGm = fbRevenue > 0 ? (fbGp / fbRevenue) * 100 : 0
+    const fbNp = fbRevenue - fbCogs
+    const fbNm = fbRevenue > 0 ? (fbNp / fbRevenue) * 100 : 0
+
+    totalRevenue = fbRevenue
+    totalCogs = fbCogs
+    grossProfit = fbGp
+    grossMargin = Math.round(fbGm * 10) / 10
+    netProfit = fbNp
+    netMargin = Math.round(fbNm * 10) / 10
+    cashPosition = fbCash
+    isCashNegative = cashPosition < 0
+  }
+
+  // Find distinct years from journal entries, sales issues, or invoices
   const entryYears = new Set<number>()
   for (const entry of journalEntries) {
     if (entry.entry_date) {
       const y = parseInt(entry.entry_date.slice(0, 4), 10)
+      if (!isNaN(y)) entryYears.add(y)
+    }
+  }
+  for (const si of salesIssues) {
+    const d = si.sale_date || (si as any).created_at
+    if (d) {
+      const y = parseInt(String(d).slice(0, 4), 10)
       if (!isNaN(y)) entryYears.add(y)
     }
   }
@@ -67,7 +119,7 @@ export default function FinanceOverview() {
   const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
   const cashFlowByMonth = new Map<string, { monthKey: string; name: string; Revenue: number; Expenses: number; COGS: number; NetProfit: number }>()
 
-  // Initialize all 12 months for the fiscal year so the chart renders a continuous baseline
+  // Initialize all 12 months for the fiscal year
   for (const yr of sortedYears) {
     for (let m = 1; m <= 12; m++) {
       const monthStr = m.toString().padStart(2, "0")
@@ -84,12 +136,14 @@ export default function FinanceOverview() {
     }
   }
 
+  // 1. Populate from GL journal lines if present
+  let hasGlChartData = false
   for (const line of journalLines) {
     const entry = entryById.get(line.journal_entry_id)
     const cleanAccountId = line.account_id ? String(line.account_id).trim() : ""
     const account = accountById.get(cleanAccountId) || accountById.get(cleanAccountId.replace(/^ACC-/, "")) || accountById.get(`ACC-${cleanAccountId}`)
     if (!entry || !account || !entry.entry_date) continue
-    const monthKey = entry.entry_date.slice(0, 7)
+    const monthKey = String(entry.entry_date).slice(0, 7)
     let row = cashFlowByMonth.get(monthKey)
     if (!row) {
       const mIdx = parseInt(monthKey.slice(5, 7), 10) - 1
@@ -104,16 +158,57 @@ export default function FinanceOverview() {
       cashFlowByMonth.set(monthKey, row)
     }
 
-    if (account.account_type === "Revenue") {
+    if (account.account_type === "Revenue" || account.code?.startsWith("4")) {
       row.Revenue += line.credit_amount - line.debit_amount
-    } else if (account.account_type === "Expense") {
+      hasGlChartData = true
+    } else if (account.account_type === "Expense" || account.code?.startsWith("5") || account.code?.startsWith("6") || account.code?.startsWith("7")) {
       const amt = line.debit_amount - line.credit_amount
       row.Expenses += amt
       if (isCogsAccount(account)) {
         row.COGS += amt
       }
+      hasGlChartData = true
     }
     row.NetProfit = row.Revenue - row.Expenses
+  }
+
+  // 2. If GL lines are empty or not loaded, populate chart from Sales Issues
+  if (!hasGlChartData && salesIssues.length > 0) {
+    for (const si of salesIssues) {
+      if (si.status === "Cancelled") continue
+      const dateStr = si.sale_date || (si as any).created_at
+      if (!dateStr) continue
+      const monthKey = String(dateStr).slice(0, 7)
+      let row = cashFlowByMonth.get(monthKey)
+      if (!row) {
+        const mIdx = parseInt(monthKey.slice(5, 7), 10) - 1
+        row = {
+          monthKey,
+          name: monthNames[mIdx] || monthKey,
+          Revenue: 0,
+          Expenses: 0,
+          COGS: 0,
+          NetProfit: 0,
+        }
+        cashFlowByMonth.set(monthKey, row)
+      }
+
+      const revAmt = Number(si.total_amount || 0)
+      row.Revenue += revAmt
+
+      const entries = typeof si.account_entries === "string" ? JSON.parse(si.account_entries) : si.account_entries
+      let cogsAmt = 0
+      if (entries?.cogs_lines) {
+        cogsAmt = entries.cogs_lines.reduce((s: number, l: any) => s + Number(l.debit || 0), 0)
+      } else if (Array.isArray(si.items)) {
+        si.items.forEach((it: any) => {
+          cogsAmt += Number(it.quantity || 0) * Number(it.unit_cost || it.cost_price || 0)
+        })
+      }
+      row.Expenses += cogsAmt
+      row.COGS += cogsAmt
+      row.NetProfit = row.Revenue - row.Expenses
+    }
   }
 
   const cashFlowData = [...cashFlowByMonth.entries()]
@@ -128,6 +223,21 @@ export default function FinanceOverview() {
   const sortedInvoiceTimeline = [...invoices]
     .filter((inv) => inv.status !== "Void")
     .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
+
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    try {
+      await Promise.all([
+        store.reloadFromApi(),
+        erpStore.loadInventoryData(true),
+        erpStore.loadSalesData(true)
+      ])
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
 
   return (
     <div className="min-h-screen page-gradient">
@@ -149,6 +259,15 @@ export default function FinanceOverview() {
             <p className="text-sm text-gray-400 mt-1">Real-time treasury status, profitability and cash flow insights.</p>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing || isLoading}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-zinc-200 bg-white/80 hover:bg-zinc-50 text-xs font-bold text-zinc-700 shadow-sm cursor-pointer transition-all disabled:opacity-50"
+              title="Refresh Finance Metrics & Chart"
+            >
+              <RefreshCw className={cn("size-3.5 text-zinc-500", (isRefreshing || isLoading) && "animate-spin")} />
+              Sync
+            </button>
             <SubPageNav items={getSectionChildren("/finance")} />
           </div>
         </div>
