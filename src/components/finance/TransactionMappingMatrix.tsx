@@ -6,9 +6,12 @@ import {
   Trash2,
   Building,
   BarChart3,
+  Layers,
+  FolderTree,
+  FileText,
 } from "lucide-react"
 import { GlassCard } from "@/components/GlassCard"
-import { useFinanceStore, type GlAccountMapping } from "@/lib/financeStore"
+import { useFinanceStore, type GlAccountMapping, type AccountItem } from "@/lib/financeStore"
 import { useFeedback } from "@/context/FeedbackContext"
 import AddCustomMappingModal from "@/components/finance/AddCustomMappingModal"
 import { TableScrollWrapper } from "@/components/TableScrollWrapper"
@@ -18,6 +21,107 @@ import { EditModalHeader } from "@/components/EditModalHeader"
 import { BodyScrollLock } from "@/components/ui/BodyScrollLock"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import COAAccountSelector from "@/components/finance/COAAccountSelector"
+
+interface StatGroupPreset {
+  id: string
+  code: string
+  title: string
+  description: string
+  type: "Revenue" | "Expense" | "Asset"
+}
+
+const STAT_GROUP_PRESETS: Record<string, StatGroupPreset[]> = {
+  kpi_stat_operating_revenue: [
+    {
+      id: "all_rev_4000",
+      code: "4000*",
+      title: "All Operating Revenue (Group 4000*)",
+      description: "Includes Domestic Veterinary Pharma Sales, Export Commodities, Cleaning, and Storage Services.",
+      type: "Revenue",
+    },
+    {
+      id: "export_rev_4000_02",
+      code: "4000-02*",
+      title: "Export Crop Revenue Only (4000-02*)",
+      description: "Aggregates WH1 Export sales: Green Mung, Soya Bean, Reddish Sesame, White Sesame, and Other Crops.",
+      type: "Revenue",
+    },
+    {
+      id: "domestic_rev_4000_01",
+      code: "4000-01*",
+      title: "Domestic Pharma Sales Only (4000-01*)",
+      description: "Aggregates Veterinary Medicine & Pharmaceutical product commercial dispatches.",
+      type: "Revenue",
+    },
+    {
+      id: "all_income_4",
+      code: "4*",
+      title: "All Revenue & Income (Group 4*)",
+      description: "Comprehensive group including core operations and Other Income (4200).",
+      type: "Revenue",
+    },
+  ],
+  kpi_stat_cost_of_goods_sold: [
+    {
+      id: "all_cogs_5000_5010",
+      code: "5000*, 5010*",
+      title: "All Direct Fulfillment COGS (5000* & 5010*)",
+      description: "Combines Domestic Veterinary Drugs and all Export Crop fulfillment costs.",
+      type: "Expense",
+    },
+    {
+      id: "export_cogs_5010",
+      code: "5010*",
+      title: "Export Commodity COGS Only (5010*)",
+      description: "Aggregates Green Mung, Soya Bean, Reddish Sesame, White Sesame, and Crops dispatch costs.",
+      type: "Expense",
+    },
+    {
+      id: "domestic_cogs_5000",
+      code: "5000*",
+      title: "Domestic Veterinary Drug COGS (5000*)",
+      description: "Aggregates direct cost of veterinary drugs sold from domestic stock.",
+      type: "Expense",
+    },
+    {
+      id: "all_cost_5",
+      code: "5*",
+      title: "All Cost of Sales Accounts (Group 5*)",
+      description: "Comprehensive direct cost accounts across all lines of business.",
+      type: "Expense",
+    },
+  ],
+  kpi_stat_cash_position: [
+    {
+      id: "all_cash_1000",
+      code: "1000*",
+      title: "All Cash & Bank Reserves (Group 1000*)",
+      description: "Aggregates Head Office cash, warehouse cash floats, and all corporate bank accounts.",
+      type: "Asset",
+    },
+    {
+      id: "bank_accounts_1000_02",
+      code: "1000-02*",
+      title: "Corporate Bank Accounts Only (1000-02*)",
+      description: "Aggregates CBE, Awash Bank, Abay Bank, Bank of Abyssinia, and Ahadu Bank accounts.",
+      type: "Asset",
+    },
+    {
+      id: "petty_cash_1000_01",
+      code: "1000-01*",
+      title: "Petty Cash Funds Only (1000-01*)",
+      description: "Aggregates Head Office and Branch operational cash floats.",
+      type: "Asset",
+    },
+    {
+      id: "cbe_main_bank",
+      code: "1000-02-26",
+      title: "CBE Main Operating Account (1000-02-26)",
+      description: "Primary commercial bank account used for large customer settlements and supplier wires.",
+      type: "Asset",
+    },
+  ],
+}
 
 const CATEGORY_OPTIONS = [
   "All Categories",
@@ -107,7 +211,8 @@ export default function TransactionMappingMatrix() {
 
   // Modal States - KPI Stat Group Mapping
   const [editingStatRule, setEditingStatRule] = useState<GlAccountMapping | null>(null)
-  const [editStatTargetType, setEditStatTargetType] = useState<"prefix" | "specific">("prefix")
+  const [editStatTargetType, setEditStatTargetType] = useState<"group" | "custom_prefix" | "specific">("group")
+  const [selectedPresetCode, setSelectedPresetCode] = useState<string>("")
   const [editStatPrefix, setEditStatPrefix] = useState("")
   const [editStatAccountId, setEditStatAccountId] = useState("")
   const [isSavingStat, setIsSavingStat] = useState(false)
@@ -152,6 +257,19 @@ export default function TransactionMappingMatrix() {
   const totalPages = Math.ceil(total / pageSize) || 1
   const paginatedMappings = sortedMappings.slice((page - 1) * pageSize, page * pageSize)
 
+  // Helper to extract matching accounts for a given prefix or group pattern
+  const getMatchingAccountsForPattern = (pattern: string, allAccounts: AccountItem[] = accounts) => {
+    if (!pattern) return []
+    const prefixes = pattern
+      .split(/[,|\s]+/)
+      .map((p) => p.replace(/\*$/, "").trim().toLowerCase())
+      .filter(Boolean)
+    return allAccounts.filter((a) => {
+      const c = (a.code || "").toLowerCase()
+      return prefixes.some((p) => c.startsWith(p))
+    })
+  }
+
   // Open Edit Modal for Transaction or Stat Rule
   const openEdit = (rule: GlAccountMapping) => {
     const isStat = Boolean(rule.is_kpi_stat || rule.transaction_type === "kpi_stat" || rule.id.startsWith("kpi_stat_"))
@@ -159,10 +277,23 @@ export default function TransactionMappingMatrix() {
       setEditingStatRule(rule)
       const isFormula = rule.account_code === "FORMULA" || rule.account_id === "FORMULA"
       if (!isFormula) {
-        const isPrefix = rule.account_code.endsWith("*")
-        setEditStatTargetType(isPrefix ? "prefix" : "specific")
-        setEditStatPrefix(rule.account_code.replace(/\*$/, ""))
-        setEditStatAccountId(rule.account_id || rule.account_code)
+        const currentCode = rule.account_code || ""
+        const presets = STAT_GROUP_PRESETS[rule.id] || []
+        const matchedPreset = presets.find((p) => p.code === currentCode || p.code.replace(/\*$/, "") === currentCode.replace(/\*$/, ""))
+
+        if (matchedPreset) {
+          setEditStatTargetType("group")
+          setSelectedPresetCode(matchedPreset.code)
+          setEditStatPrefix(matchedPreset.code)
+        } else if (currentCode.includes("*") || currentCode.includes(",")) {
+          setEditStatTargetType("custom_prefix")
+          setSelectedPresetCode("")
+          setEditStatPrefix(currentCode)
+        } else {
+          setEditStatTargetType("specific")
+          setSelectedPresetCode("")
+          setEditStatAccountId(rule.account_id || rule.account_code)
+        }
       }
       return
     }
@@ -239,16 +370,27 @@ export default function TransactionMappingMatrix() {
       let targetId = ""
       let targetName = ""
 
-      if (editStatTargetType === "prefix") {
+      if (editStatTargetType === "group") {
+        const presets = STAT_GROUP_PRESETS[editingStatRule.id] || []
+        const preset = presets.find((p) => p.code === selectedPresetCode) || presets[0]
+        if (!preset) {
+          showToast("Validation Error", "warning", "Please select an account group.")
+          setIsSavingStat(false)
+          return
+        }
+        targetCode = preset.code
+        targetId = preset.code
+        targetName = preset.title
+      } else if (editStatTargetType === "custom_prefix") {
         const cleanPrefix = editStatPrefix.trim()
         if (!cleanPrefix) {
           showToast("Validation Error", "warning", "Please enter an account group code prefix (e.g. 4000 or 5000).")
           setIsSavingStat(false)
           return
         }
-        targetCode = `${cleanPrefix}*`
+        targetCode = cleanPrefix.includes("*") ? cleanPrefix : `${cleanPrefix}*`
         targetId = cleanPrefix
-        targetName = `Group ${cleanPrefix}* Accounts`
+        targetName = `Group ${targetCode} Accounts`
       } else {
         const selectedAcc = accounts.find((a) => a.id === editStatAccountId || a.code === editStatAccountId)
         if (!selectedAcc) {
@@ -271,6 +413,9 @@ export default function TransactionMappingMatrix() {
       }
 
       await store.updateGlMapping(editingStatRule.id, targetId, {
+        account_code: targetCode,
+        account_name: targetName,
+        is_kpi_stat: true,
         updatedBy: "Finance Officer",
       })
 
@@ -954,59 +1099,183 @@ export default function TransactionMappingMatrix() {
                   </p>
                 </div>
               ) : (
-                /* Configurable Stat Mapping: Account Group Prefix vs Specific Account */
+                /* Configurable Stat Mapping: Account Group Presets vs Custom Prefix vs Specific Account */
                 <div className="space-y-4 pt-1">
                   <div>
                     <label className="block text-xs font-black text-zinc-900 mb-2">
                       Mapping Mode
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                       <button
                         type="button"
-                        onClick={() => setEditStatTargetType("prefix")}
-                        className={`p-3 rounded-xl border text-xs font-bold text-left transition-all cursor-pointer ${
-                          editStatTargetType === "prefix"
-                            ? "border-blue-500 bg-blue-50/60 text-blue-900 ring-2 ring-blue-500/20"
+                        onClick={() => {
+                          setEditStatTargetType("group")
+                          const presets = STAT_GROUP_PRESETS[editingStatRule.id] || []
+                          if (presets.length > 0 && !selectedPresetCode) {
+                            setSelectedPresetCode(presets[0].code)
+                          }
+                        }}
+                        className={`p-2.5 rounded-xl border text-xs font-bold text-left transition-all cursor-pointer flex flex-col justify-between ${
+                          editStatTargetType === "group"
+                            ? "border-blue-500 bg-blue-50/70 text-blue-900 ring-2 ring-blue-500/20"
                             : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
                         }`}
                       >
-                        <span className="block font-black">Account Group Code Prefix</span>
-                        <span className="text-[10px] text-zinc-500 font-medium">e.g. 4000*, 5000*, 1000*</span>
+                        <div className="flex items-center gap-1.5">
+                          <FolderTree className="size-3.5 text-blue-600 shrink-0" />
+                          <span className="font-black text-[11.5px]">COA Groups</span>
+                        </div>
+                        <span className="text-[10px] text-zinc-500 font-medium mt-1">Recommended</span>
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditStatTargetType("custom_prefix")
+                          if (!editStatPrefix) {
+                            setEditStatPrefix(editingStatRule.account_code || "")
+                          }
+                        }}
+                        className={`p-2.5 rounded-xl border text-xs font-bold text-left transition-all cursor-pointer flex flex-col justify-between ${
+                          editStatTargetType === "custom_prefix"
+                            ? "border-blue-500 bg-blue-50/70 text-blue-900 ring-2 ring-blue-500/20"
+                            : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <Layers className="size-3.5 text-blue-600 shrink-0" />
+                          <span className="font-black text-[11.5px]">Custom Prefix</span>
+                        </div>
+                        <span className="text-[10px] text-zinc-500 font-medium mt-1">e.g. 4000*, 5000*</span>
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => setEditStatTargetType("specific")}
-                        className={`p-3 rounded-xl border text-xs font-bold text-left transition-all cursor-pointer ${
+                        className={`p-2.5 rounded-xl border text-xs font-bold text-left transition-all cursor-pointer flex flex-col justify-between ${
                           editStatTargetType === "specific"
-                            ? "border-blue-500 bg-blue-50/60 text-blue-900 ring-2 ring-blue-500/20"
+                            ? "border-blue-500 bg-blue-50/70 text-blue-900 ring-2 ring-blue-500/20"
                             : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
                         }`}
                       >
-                        <span className="block font-black">Specific COA Account</span>
-                        <span className="text-[10px] text-zinc-500 font-medium">e.g. 4000-01-01</span>
+                        <div className="flex items-center gap-1.5">
+                          <FileText className="size-3.5 text-blue-600 shrink-0" />
+                          <span className="font-black text-[11.5px]">Specific Ledger</span>
+                        </div>
+                        <span className="text-[10px] text-zinc-500 font-medium mt-1">Single Account</span>
                       </button>
                     </div>
                   </div>
 
-                  {editStatTargetType === "prefix" ? (
-                    <div>
-                      <label className="block text-xs font-black text-zinc-900 mb-1.5">
-                        Group Prefix Pattern
+                  {/* 1. Account Group Presets Mode */}
+                  {editStatTargetType === "group" && (
+                    <div className="space-y-2.5">
+                      <label className="block text-xs font-black text-zinc-900">
+                        Select Standard COA Group
                       </label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={editStatPrefix}
-                          onChange={(e) => setEditStatPrefix(e.target.value)}
-                          placeholder="e.g. 4000, 5000, 1000, 4000-01..."
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 font-mono"
-                        />
+                      <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+                        {(STAT_GROUP_PRESETS[editingStatRule.id] || []).map((preset) => {
+                          const isSelected = selectedPresetCode === preset.code
+                          const matchingAccs = getMatchingAccountsForPattern(preset.code)
+
+                          return (
+                            <div
+                              key={preset.id}
+                              onClick={() => setSelectedPresetCode(preset.code)}
+                              className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                                isSelected
+                                  ? "border-blue-600 bg-blue-50/80 ring-2 ring-blue-500/25 shadow-xs"
+                                  : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50/50"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2 mb-1">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="px-2 py-0.5 rounded font-mono font-black text-xs bg-zinc-900 text-white shrink-0">
+                                    {preset.code}
+                                  </span>
+                                  <span className="font-black text-xs text-zinc-900 truncate">
+                                    {preset.title}
+                                  </span>
+                                </div>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 shrink-0">
+                                  {matchingAccs.length} Accounts
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-zinc-600 font-medium leading-relaxed mb-2">
+                                {preset.description}
+                              </p>
+
+                              {/* Preview of accounts inside this group */}
+                              <div className="flex flex-wrap gap-1 pt-1.5 border-t border-zinc-200/60">
+                                {matchingAccs.slice(0, 6).map((acc) => (
+                                  <span
+                                    key={acc.id}
+                                    className="px-1.5 py-0.5 rounded bg-white border border-zinc-200 text-[9.5px] font-bold text-zinc-700 font-mono"
+                                  >
+                                    {acc.code}
+                                  </span>
+                                ))}
+                                {matchingAccs.length > 6 && (
+                                  <span className="px-1.5 py-0.5 rounded bg-zinc-100 text-[9.5px] font-bold text-zinc-500">
+                                    +{matchingAccs.length - 6} more
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
-                      <p className="text-[11px] text-zinc-500 font-medium mt-1.5">
-                        Aggregates all posted ledger balances matching accounts starting with <code className="font-mono font-bold text-zinc-700">{editStatPrefix || "?"}*</code>.
-                      </p>
                     </div>
-                  ) : (
+                  )}
+
+                  {/* 2. Custom Prefix Mode */}
+                  {editStatTargetType === "custom_prefix" && (
+                    <div className="space-y-2.5">
+                      <div>
+                        <label className="block text-xs font-black text-zinc-900 mb-1.5">
+                          Custom Group Prefix Pattern (or comma-separated codes)
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={editStatPrefix}
+                            onChange={(e) => setEditStatPrefix(e.target.value)}
+                            placeholder="e.g. 4000, 5000, 5010, 1000, 4000-02..."
+                            className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 font-mono"
+                          />
+                        </div>
+                        <p className="text-[11px] text-zinc-500 font-medium mt-1.5">
+                          Aggregates all ledger postings starting with any of the specified prefixes (e.g. <code className="font-mono font-bold text-zinc-700">{editStatPrefix || "?"}*</code>).
+                        </p>
+                      </div>
+
+                      {/* Live matching accounts preview */}
+                      {editStatPrefix.trim() && (
+                        <div className="p-3 rounded-xl bg-zinc-50 border border-zinc-200">
+                          <div className="flex items-center justify-between mb-1.5 text-xs font-bold text-zinc-800">
+                            <span>Matching Chart of Accounts ({getMatchingAccountsForPattern(editStatPrefix).length})</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1 max-h-[90px] overflow-y-auto">
+                            {getMatchingAccountsForPattern(editStatPrefix).map((acc) => (
+                              <span
+                                key={acc.id}
+                                className="px-2 py-0.5 rounded bg-white border border-zinc-200 text-[10px] font-bold text-zinc-800 font-mono"
+                                title={acc.name}
+                              >
+                                {acc.code} <span className="font-sans font-normal text-zinc-500 truncate">({acc.name})</span>
+                              </span>
+                            ))}
+                            {getMatchingAccountsForPattern(editStatPrefix).length === 0 && (
+                              <span className="text-[11px] text-zinc-400 font-medium italic">No accounts match prefix &quot;{editStatPrefix}&quot;</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 3. Specific Account Mode */}
+                  {editStatTargetType === "specific" && (
                     <div>
                       <label className="block text-xs font-black text-zinc-900 mb-1.5">
                         Specific General Ledger Account
@@ -1019,6 +1288,9 @@ export default function TransactionMappingMatrix() {
                         placeholder="Select Chart of Accounts ledger..."
                         required
                       />
+                      <p className="text-[11px] text-zinc-500 font-medium mt-1.5">
+                        Limits this KPI calculation strictly to transactions posted to this single account ledger.
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1037,7 +1309,12 @@ export default function TransactionMappingMatrix() {
                 {editingStatRule.account_code !== "FORMULA" && (
                   <button
                     type="button"
-                    disabled={isSavingStat || (editStatTargetType === "prefix" ? !editStatPrefix.trim() : !editStatAccountId)}
+                    disabled={
+                      isSavingStat ||
+                      (editStatTargetType === "group" && !selectedPresetCode) ||
+                      (editStatTargetType === "custom_prefix" && !editStatPrefix.trim()) ||
+                      (editStatTargetType === "specific" && !editStatAccountId)
+                    }
                     onClick={handleSaveStatEdit}
                     className="h-10 min-w-[90px] inline-flex items-center justify-center rounded-xl bg-blue-700 hover:bg-blue-800 disabled:opacity-60 disabled:cursor-not-allowed px-5 text-xs font-black text-white transition-colors cursor-pointer shadow-sm"
                   >

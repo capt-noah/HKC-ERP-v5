@@ -1935,20 +1935,38 @@ class FinanceStore {
           warehouse_scope?: "ALL" | "IMPORT" | "EXPORT"
           item_type?: "GREEN_MUNG" | "SESAME" | "SOYA" | "VET_PHARMA" | "ALL"
           multi_accounts?: GlAccountMapping["multi_accounts"]
+          account_code?: string
+          account_name?: string
+          is_kpi_stat?: boolean
         } = "Finance Officer"
   ): Promise<boolean> {
-    const acc = this.accounts.find((a) => a.id === accountId || a.code === accountId)
+    const isOptionsObj = typeof optionsOrUpdatedBy === "object"
+    const isGroupOrPrefix = accountId.includes("*") || accountId.includes(",") || (isOptionsObj && Boolean(optionsOrUpdatedBy.account_code?.includes("*") || optionsOrUpdatedBy.account_code?.includes(",")))
+
+    let acc = this.accounts.find((a) => a.id === accountId || a.code === accountId)
+    if (!acc && isGroupOrPrefix) {
+      const code = isOptionsObj && optionsOrUpdatedBy.account_code ? optionsOrUpdatedBy.account_code : accountId
+      const name = isOptionsObj && optionsOrUpdatedBy.account_name ? optionsOrUpdatedBy.account_name : `Group ${code}`
+      acc = {
+        id: accountId,
+        code,
+        name,
+        account_type: "Revenue",
+        parent_account_id: null,
+        is_active: true,
+      }
+    }
     if (!acc) return false
 
-    const updatedBy =
-      typeof optionsOrUpdatedBy === "string"
-        ? optionsOrUpdatedBy
-        : optionsOrUpdatedBy?.updatedBy || "Finance Officer"
-    const label = typeof optionsOrUpdatedBy === "object" ? optionsOrUpdatedBy.label : undefined
-    const description = typeof optionsOrUpdatedBy === "object" ? optionsOrUpdatedBy.description : undefined
-    const warehouse_scope = typeof optionsOrUpdatedBy === "object" ? optionsOrUpdatedBy.warehouse_scope : undefined
-    const item_type = typeof optionsOrUpdatedBy === "object" ? optionsOrUpdatedBy.item_type : undefined
-    const multi_accounts = typeof optionsOrUpdatedBy === "object" ? optionsOrUpdatedBy.multi_accounts : undefined
+    const updatedBy = isOptionsObj ? optionsOrUpdatedBy.updatedBy || "Finance Officer" : optionsOrUpdatedBy || "Finance Officer"
+    const label = isOptionsObj ? optionsOrUpdatedBy.label : undefined
+    const description = isOptionsObj ? optionsOrUpdatedBy.description : undefined
+    const warehouse_scope = isOptionsObj ? optionsOrUpdatedBy.warehouse_scope : undefined
+    const item_type = isOptionsObj ? optionsOrUpdatedBy.item_type : undefined
+    const multi_accounts = isOptionsObj ? optionsOrUpdatedBy.multi_accounts : undefined
+    const targetCode = isOptionsObj && optionsOrUpdatedBy.account_code ? optionsOrUpdatedBy.account_code : acc.code
+    const targetName = isOptionsObj && optionsOrUpdatedBy.account_name ? optionsOrUpdatedBy.account_name : acc.name
+    const isKpiStat = isOptionsObj && optionsOrUpdatedBy.is_kpi_stat !== undefined ? optionsOrUpdatedBy.is_kpi_stat : undefined
 
     const defaultRule = DEFAULT_GL_ACCOUNT_MAPPINGS.find((r) => r.id === ruleId)
     const existingIdx = this.glMappings.findIndex((m) => m.id === ruleId)
@@ -1962,9 +1980,9 @@ class FinanceStore {
         item_type: item_type !== undefined ? item_type : current.item_type,
         multi_accounts: multi_accounts !== undefined ? multi_accounts : current.multi_accounts,
         account_id: acc.id,
-        account_code: acc.code,
-        account_name: acc.name,
-        is_kpi_stat: current.is_kpi_stat ?? defaultRule?.is_kpi_stat,
+        account_code: targetCode,
+        account_name: targetName,
+        is_kpi_stat: isKpiStat !== undefined ? isKpiStat : (current.is_kpi_stat ?? defaultRule?.is_kpi_stat),
         updated_by: updatedBy,
         updated_at: new Date().toISOString(),
       }
@@ -1979,11 +1997,11 @@ class FinanceStore {
         item_type: item_type !== undefined ? item_type : defaultRule?.item_type,
         multi_accounts: multi_accounts !== undefined ? multi_accounts : defaultRule?.multi_accounts,
         account_id: acc.id,
-        account_code: acc.code,
-        account_name: acc.name,
+        account_code: targetCode,
+        account_name: targetName,
         normal_posting: defaultRule?.normal_posting || "Debit",
         is_system_default: Boolean(defaultRule?.is_system_default),
-        is_kpi_stat: Boolean(defaultRule?.is_kpi_stat),
+        is_kpi_stat: isKpiStat !== undefined ? isKpiStat : Boolean(defaultRule?.is_kpi_stat),
         description: description !== undefined ? description : (defaultRule?.description || ""),
         updated_by: updatedBy,
         created_at: new Date().toISOString(),
@@ -2832,15 +2850,27 @@ class FinanceStore {
     const cogsMapping = this.glMappings.find((m) => m.id === "kpi_stat_cost_of_goods_sold")
     const cashMapping = this.glMappings.find((m) => m.id === "kpi_stat_cash_position")
 
+    // Helper to parse comma/space/wildcard prefixes into clean match strings
+    const parsePrefixes = (raw?: string | null, fallback: string = "") => {
+      const src = (raw || fallback || "").trim()
+      return src
+        .split(/[,|\s]+/)
+        .map((p) => p.replace(/\*$/, "").trim())
+        .filter(Boolean)
+    }
+
     // Extract prefixes or specific account codes
-    const revPrefix = (revMapping?.account_code?.replace(/\*$/, "") || this.companySettings.kpi_revenue_group_prefix || "4").trim()
-    const revSpecificAcc = revMapping && !revMapping.account_code.endsWith("*") ? revMapping.account_code : null
+    const isRevMulti = Boolean(revMapping?.account_code && (revMapping.account_code.includes("*") || revMapping.account_code.includes(",")))
+    const revPrefixes = parsePrefixes(revMapping?.account_code || this.companySettings.kpi_revenue_group_prefix, "4")
+    const revSpecificAcc = !isRevMulti && revMapping && revMapping.account_code ? revMapping.account_code : null
 
-    const cogsPrefix = (cogsMapping?.account_code?.replace(/\*$/, "") || this.companySettings.kpi_cogs_group_prefix || "5").trim()
-    const cogsSpecificAcc = cogsMapping && !cogsMapping.account_code.endsWith("*") ? cogsMapping.account_code : null
+    const isCogsMulti = Boolean(cogsMapping?.account_code && (cogsMapping.account_code.includes("*") || cogsMapping.account_code.includes(",")))
+    const cogsPrefixes = parsePrefixes(cogsMapping?.account_code || this.companySettings.kpi_cogs_group_prefix, "5")
+    const cogsSpecificAcc = !isCogsMulti && cogsMapping && cogsMapping.account_code ? cogsMapping.account_code : null
 
-    const cashPrefix = (cashMapping?.account_code?.replace(/\*$/, "") || this.companySettings.kpi_cash_group_code || "1000").trim()
-    const cashSpecificAcc = cashMapping && !cashMapping.account_code.endsWith("*") ? cashMapping.account_code : null
+    const isCashMulti = Boolean(cashMapping?.account_code && (cashMapping.account_code.includes("*") || cashMapping.account_code.includes(",")))
+    const cashPrefixes = parsePrefixes(cashMapping?.account_code || this.companySettings.kpi_cash_group_code, "1000")
+    const cashSpecificAcc = !isCashMulti && cashMapping && cashMapping.account_code ? cashMapping.account_code : null
 
     let totalRevenue = 0
     let totalCogs = 0
@@ -2878,11 +2908,11 @@ class FinanceStore {
         const code = account.code || ""
         const isRev = revSpecificAcc
           ? (account.id === revSpecificAcc || code === revSpecificAcc)
-          : (account.account_type === "Revenue" || (revPrefix ? code.startsWith(revPrefix) : code.startsWith("4")))
+          : (account.account_type === "Revenue" || revPrefixes.some((p) => code.startsWith(p)))
 
         const isCogs = cogsSpecificAcc
           ? (account.id === cogsSpecificAcc || code === cogsSpecificAcc)
-          : ((cogsPrefix ? code.startsWith(cogsPrefix) : code.startsWith("5")) || isCogsAccount(account))
+          : (cogsPrefixes.some((p) => code.startsWith(p)) || isCogsAccount(account))
 
         if (isRev) {
           totalRevenue += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
@@ -2899,7 +2929,7 @@ class FinanceStore {
           (cashSpecificAcc
             ? (account.id === cashSpecificAcc || code === cashSpecificAcc)
             : (account.peachtree_type === "Cash" ||
-                (cashPrefix ? code.startsWith(cashPrefix) : code.startsWith("1000")) ||
+                cashPrefixes.some((p) => code.startsWith(p)) ||
                 /cash|bank|cbe|boa|aib|abay|unb|cbo|ahadu|oib/i.test(account.name || "")))
         ) {
           cashDebits += Number(line.debit_amount || 0)
