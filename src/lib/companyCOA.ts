@@ -35,13 +35,15 @@ export const COMPANY_CHART_OF_ACCOUNTS: AccountItem[] = [
   { id: "1101-04", code: "1101-04", name: "LIYEW MENGISTE", account_type: "Asset", peachtree_type: "Accounts Receivable", parent_account_id: null, is_active: true, is_group: false },
   { id: "1200-03", code: "1200-03", name: "PRE-PAIED INSURANCE", account_type: "Asset", peachtree_type: "Accounts Receivable", parent_account_id: null, is_active: true, is_group: false },
   { id: "1200-06", code: "1200-06", name: "ESL CONTAINER DEPOSIT", account_type: "Asset", peachtree_type: "Accounts Receivable", parent_account_id: null, is_active: true, is_group: false },
+  { id: "1300-01", code: "1300-01", name: "EXPORT SALES RECIVEABLE", account_type: "Asset", peachtree_type: "Accounts Receivable", parent_account_id: null, is_active: true, is_group: false },
   { id: "1300-03", code: "1300-03", name: "VET MEDICEN SALES RECIVABLE", account_type: "Asset", peachtree_type: "Accounts Receivable", parent_account_id: null, is_active: true, is_group: false },
   { id: "1300-08", code: "1300-08", name: "SUNDARY RECEIVABLE", account_type: "Asset", peachtree_type: "Accounts Receivable", parent_account_id: null, is_active: true, is_group: false },
   { id: "1310", code: "1310", name: "OWNER RECEIVABLE", account_type: "Asset", peachtree_type: "Accounts Receivable", parent_account_id: null, is_active: true, is_group: false },
   { id: "1320-06-01", code: "1320-06-01", name: "WITHOLD TAX RECIVABLE", account_type: "Asset", peachtree_type: "Accounts Receivable", parent_account_id: null, is_active: true, is_group: false },
   { id: "1320-06-02", code: "1320-06-02", name: "VAT RECIVABLE", account_type: "Asset", peachtree_type: "Accounts Receivable", parent_account_id: null, is_active: true, is_group: false },
 
-  // ── INVENTORY & GOODS IN TRANSIT (1410–1500 series) ──
+  // ── INVENTORY & GOODS IN TRANSIT (1400–1500 series) ──
+  { id: "1400-01", code: "1400-01", name: "STOCK OF VETERINARY DRUG", account_type: "Asset", peachtree_type: "Inventory", parent_account_id: null, is_active: true, is_group: false },
   { id: "1410-01", code: "1410-01", name: "STOCK OF GREEN MUNG", account_type: "Asset", peachtree_type: "Inventory", parent_account_id: null, is_active: true, is_group: false },
   { id: "1410-02", code: "1410-02", name: "STOCK OF SOYA BEAN", account_type: "Asset", peachtree_type: "Inventory", parent_account_id: null, is_active: true, is_group: false },
   { id: "1410-03", code: "1410-03", name: "STOCK OF REDISH SESAME SEED", account_type: "Asset", peachtree_type: "Inventory", parent_account_id: null, is_active: true, is_group: false },
