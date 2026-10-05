@@ -33,7 +33,6 @@ import ControlCenter from "@/pages/ControlCenter"
 import FinanceOverview from "@/pages/finance/FinanceOverview"
 import Ledger from "@/pages/finance/Ledger"
 import Invoices from "@/pages/finance/Invoices"
-import Expenses from "@/pages/finance/Expenses"
 import Taxes from "@/pages/finance/Taxes"
 import FinancialReports from "@/pages/finance/FinancialReports"
 import FinanceExport from "@/pages/finance/FinanceExport"
@@ -113,7 +112,7 @@ export function App() {
         <Route path="/finance/ledger" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><Ledger /></ProtectedRoute>} />
         <Route path="/finance/invoices" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><Invoices /></ProtectedRoute>} />
         <Route path="/finance/stock" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><FinanceStock /></ProtectedRoute>} />
-        <Route path="/finance/expenses" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><Expenses /></ProtectedRoute>} />
+        <Route path="/finance/expenses" element={<Navigate to="/finance" replace />} />
         <Route path="/finance/banking" element={<Navigate to="/finance" replace />} />
         <Route path="/finance/taxes" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><Taxes /></ProtectedRoute>} />
         <Route path="/finance/reports" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><FinancialReports /></ProtectedRoute>} />

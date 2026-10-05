@@ -52,8 +52,6 @@ export default function FinanceOverview() {
   let totalCogs = rawMetrics.totalCogs
   let grossProfit = rawMetrics.grossProfit
   let grossMargin = rawMetrics.grossMargin
-  let netProfit = rawMetrics.netProfit
-  let netMargin = rawMetrics.netMargin
   let cashPosition = rawMetrics.cashPosition
   let isCashNegative = rawMetrics.isCashNegative
 
@@ -84,15 +82,11 @@ export default function FinanceOverview() {
 
     const fbGp = Math.max(0, fbRevenue - fbCogs)
     const fbGm = fbRevenue > 0 ? (fbGp / fbRevenue) * 100 : 0
-    const fbNp = fbRevenue - fbCogs
-    const fbNm = fbRevenue > 0 ? (fbNp / fbRevenue) * 100 : 0
 
     totalRevenue = fbRevenue
     totalCogs = fbCogs
     grossProfit = fbGp
     grossMargin = Math.round(fbGm * 10) / 10
-    netProfit = fbNp
-    netMargin = Math.round(fbNm * 10) / 10
     cashPosition = fbCash
     isCashNegative = cashPosition < 0
   }
@@ -413,7 +407,7 @@ export default function FinanceOverview() {
         </div>
 
         {/* Executive Profitability & Treasury Strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {/* Card 1: Operating Revenue */}
           <GlassCard className="p-4 flex flex-col justify-between">
             <div>
@@ -494,37 +488,7 @@ export default function FinanceOverview() {
             <p className="text-[11px] text-gray-400 mt-2 font-medium">Gross surplus (Revenue - COGS)</p>
           </GlassCard>
 
-          {/* Card 4: Net Operating Income (EBIT) */}
-          <GlassCard className="p-4 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Net Operating Income</span>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-mono">
-                    {netMargin.toFixed(1)}%
-                  </span>
-                  <div className="size-7 rounded-lg bg-blue-100/80 text-blue-700 flex items-center justify-center">
-                    <BarChart3 className="size-4" />
-                  </div>
-                </div>
-              </div>
-              {isLoading ? (
-                <Skeleton className="h-7 w-32 bg-zinc-200/80 my-1" />
-              ) : (
-                <div className="flex items-baseline gap-1.5 mt-1 min-w-0 overflow-hidden">
-                  <span className="text-xs font-extrabold text-emerald-800/70 font-sans tracking-wide shrink-0">
-                    ETB
-                  </span>
-                  <span className="text-lg sm:text-xl font-black font-mono text-emerald-800 truncate" title={`ETB ${netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}>
-                    {netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-              )}
-            </div>
-            <p className="text-[11px] text-gray-400 mt-2 font-medium">Bottom line profit (EBIT)</p>
-          </GlassCard>
-
-          {/* Card 5: Liquid Cash Position */}
+          {/* Card 4: Liquid Cash Position */}
           <GlassCard className="p-4 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-2">

@@ -812,19 +812,5 @@ export const DEFAULT_GL_ACCOUNT_MAPPINGS: GlAccountMapping[] = [
     is_kpi_stat: true,
     description: "Derived financial surplus computed mathematically as Revenue minus COGS. Automatically reflects edits made to Revenue and COGS groups.",
   },
-  {
-    id: "kpi_stat_net_operating_income",
-    label: "KPI Stat: Net Operating Income (EBIT)",
-    category: "Sales & Revenue",
-    transaction_type: "kpi_stat",
-    warehouse_scope: "ALL",
-    account_id: "FORMULA",
-    account_code: "FORMULA",
-    account_name: "Formula: Revenue - (COGS + Operating Expenses)",
-    normal_posting: "Credit",
-    is_system_default: true,
-    is_kpi_stat: true,
-    description: "Bottom-line net profit computed mathematically. Automatically reflects changes to revenue and expenses.",
-  },
 ]
 

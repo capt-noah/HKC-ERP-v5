@@ -557,8 +557,6 @@ export default function TransactionMappingMatrix() {
                       statDisplayValue = `ETB ${liveMetrics.cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     } else if (rule.id === "kpi_stat_gross_profit") {
                       statDisplayValue = `ETB ${liveMetrics.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                    } else if (rule.id === "kpi_stat_net_operating_income") {
-                      statDisplayValue = `ETB ${liveMetrics.netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     }
                   }
 
@@ -1071,11 +1069,6 @@ export default function TransactionMappingMatrix() {
                   {editingStatRule.id === "kpi_stat_gross_profit" && (
                     <span className="text-zinc-900">
                       ETB {liveMetrics.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  )}
-                  {editingStatRule.id === "kpi_stat_net_operating_income" && (
-                    <span className="text-zinc-900">
-                      ETB {liveMetrics.netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   )}
                 </div>

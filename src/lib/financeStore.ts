@@ -782,6 +782,7 @@ class FinanceStore {
           created_at: m.created_at || m.createdAt,
           updated_at: m.updated_at || m.updatedAt,
         }))
+        this.glMappings = this.glMappings.filter((m) => m.id !== "kpi_stat_net_operating_income")
         const loadedIds = new Set(this.glMappings.map((m) => m.id))
         const missingDefaults = DEFAULT_GL_ACCOUNT_MAPPINGS.filter((d) => !loadedIds.has(d.id))
         if (missingDefaults.length > 0) {
@@ -790,6 +791,7 @@ class FinanceStore {
       } else {
         this.glMappings = [...DEFAULT_GL_ACCOUNT_MAPPINGS]
       }
+      this.glMappings = this.glMappings.filter((m) => m.id !== "kpi_stat_net_operating_income")
 
       // Trigger cross-module live finance sync
       await this.syncCrossModule()
