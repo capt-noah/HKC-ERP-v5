@@ -717,8 +717,7 @@ export default function ControlCenter() {
   }, [])
 
   // Key ERP Metrics
-  // Key ERP Metrics
-  const products = useMemo(() => erp.getProducts(), [erp])
+  const products = erp.getProducts()
 
   // Total Inventory Value: FROZEN ON INTAKE (Cumulative receipts @ cost, does not fluctuate downwards on deduction)
   const inventoryValue = useMemo(() => {
@@ -961,7 +960,7 @@ export default function ControlCenter() {
   // Stock Valuation Breakdown by Commodity / Category
   const inventoryCategoryData = useMemo(() => {
     const categoryMap: Record<string, { value: number; count: number }> = {}
-    erp.getProducts().forEach((p) => {
+    products.forEach((p) => {
       const cat = p.category?.trim() || p.name || "General Stock"
       const val = Number(p.totalStockValue ?? (Number(p.quantity || 0) * Number(p.unitCost || 0)))
       if (!categoryMap[cat]) {
