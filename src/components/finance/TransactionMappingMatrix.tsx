@@ -60,23 +60,23 @@ const getScopeBadge = (mapping: GlAccountMapping) => {
 }
 
 const mappingColumns: TableColumn[] = [
-  { key: "label", label: "Business Transaction / Event", align: "left" },
+  { key: "label", label: "Transaction / Event", align: "left" },
   { key: "category", label: "Category", align: "left" },
-  { key: "scope", label: "Operational Scope", align: "left" },
-  { key: "normal_posting", label: "Normal Posting", align: "center" },
-  { key: "account_code", label: "Assigned General Ledger Account", align: "left" },
-  { key: "is_system_default", label: "Rule Type", align: "center" },
+  { key: "scope", label: "Scope", align: "left" },
+  { key: "normal_posting", label: "Posting", align: "center" },
+  { key: "account_code", label: "GL Account", align: "left" },
+  { key: "is_system_default", label: "Type", align: "center" },
   { key: "_actions", label: "Actions", align: "center", noSort: true },
 ]
 
 const defaultColWidths: Record<string, number> = {
-  label: 280,
-  category: 140,
-  scope: 170,
-  normal_posting: 120,
-  account_code: 280,
-  is_system_default: 120,
-  _actions: 90,
+  label: 240,
+  category: 125,
+  scope: 135,
+  normal_posting: 90,
+  account_code: 240,
+  is_system_default: 95,
+  _actions: 80,
 }
 
 export default function TransactionMappingMatrix() {

@@ -2842,41 +2842,71 @@ class FinanceStore {
     let cashDebits = 0
     let cashCredits = 0
 
-    for (const line of this.lines) {
-      const cleanAccountId = line.account_id ? String(line.account_id).trim() : ""
-      const account = accountById.get(cleanAccountId) || accountById.get(cleanAccountId.replace(/^ACC-/, "")) || accountById.get(`ACC-${cleanAccountId}`)
-      if (!account) continue
-      if (excludedAccIds.has(account.id) || excludedAccIds.has(account.code)) continue
+    if (this.lines.length > 0) {
+      for (const line of this.lines) {
+        const cleanAccountId = line.account_id ? String(line.account_id).trim() : ""
+        const account = accountById.get(cleanAccountId) || accountById.get(cleanAccountId.replace(/^ACC-/, "")) || accountById.get(`ACC-${cleanAccountId}`)
+        if (!account) continue
+        if (excludedAccIds.has(account.id) || excludedAccIds.has(account.code)) continue
 
-      const code = account.code || ""
-      const isRev = revSpecificAcc
-        ? (account.id === revSpecificAcc || code === revSpecificAcc)
-        : (account.account_type === "Revenue" || (revPrefix ? code.startsWith(revPrefix) : code.startsWith("4")))
+        const code = account.code || ""
+        const isRev = revSpecificAcc
+          ? (account.id === revSpecificAcc || code === revSpecificAcc)
+          : (account.account_type === "Revenue" || (revPrefix ? code.startsWith(revPrefix) : code.startsWith("4")))
 
-      const isCogs = cogsSpecificAcc
-        ? (account.id === cogsSpecificAcc || code === cogsSpecificAcc)
-        : ((cogsPrefix ? code.startsWith(cogsPrefix) : code.startsWith("5")) || isCogsAccount(account))
+        const isCogs = cogsSpecificAcc
+          ? (account.id === cogsSpecificAcc || code === cogsSpecificAcc)
+          : ((cogsPrefix ? code.startsWith(cogsPrefix) : code.startsWith("5")) || isCogsAccount(account))
 
-      if (isRev) {
-        totalRevenue += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
-      } else if (account.account_type === "Expense" || code.startsWith("5") || code.startsWith("6") || code.startsWith("7") || code.startsWith("8")) {
-        const amt = Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
-        totalExpenses += amt
-        if (isCogs) {
-          totalCogs += amt
-        } else {
+        if (isRev) {
+          totalRevenue += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
+        } else if (account.account_type === "Expense" || code.startsWith("5") || code.startsWith("6") || code.startsWith("7") || code.startsWith("8")) {
+          const amt = Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
+          totalExpenses += amt
+          if (isCogs) {
+            totalCogs += amt
+          } else {
+            operatingExpenses += amt
+          }
+        } else if (
+          (account.account_type === "Asset" || code.startsWith("1")) &&
+          (cashSpecificAcc
+            ? (account.id === cashSpecificAcc || code === cashSpecificAcc)
+            : (account.peachtree_type === "Cash" ||
+                (cashPrefix ? code.startsWith(cashPrefix) : code.startsWith("1000")) ||
+                /cash|bank|cbe|boa|aib|abay|unb|cbo|ahadu|oib/i.test(account.name || "")))
+        ) {
+          cashDebits += Number(line.debit_amount || 0)
+          cashCredits += Number(line.credit_amount || 0)
+        }
+      }
+    }
+
+    // Fallback: If GL lines are empty or not yet synchronized, derive directly from operational documents (invoices, sales issues, expenses, payments)
+    if (totalRevenue === 0 && totalCogs === 0 && cashDebits === 0) {
+      // 1. Operational Invoices / Sales Revenue
+      for (const inv of this.invoices) {
+        if (inv.status !== "Void") {
+          totalRevenue += Number(inv.total || inv.subtotal || 0)
+        }
+      }
+
+      // 2. Operational Expenses
+      for (const exp of this.expenses) {
+        if (exp.status !== "REJECTED") {
+          const amt = Number(exp.amount || exp.net_disbursed || 0)
+          totalExpenses += amt
           operatingExpenses += amt
         }
-      } else if (
-        (account.account_type === "Asset" || code.startsWith("1")) &&
-        (cashSpecificAcc
-          ? (account.id === cashSpecificAcc || code === cashSpecificAcc)
-          : (account.peachtree_type === "Cash" ||
-              (cashPrefix ? code.startsWith(cashPrefix) : code.startsWith("1000")) ||
-              /cash|bank|cbe|boa|aib|abay|unb|cbo|ahadu|oib/i.test(account.name || "")))
-      ) {
-        cashDebits += Number(line.debit_amount || 0)
-        cashCredits += Number(line.credit_amount || 0)
+      }
+
+      // 3. Operational Payments / Cash Inflow
+      for (const p of this.payments) {
+        if (p.direction === "Received") {
+          cashDebits += Number(p.amount || 0)
+        } else if (p.direction === "Made") {
+          cashCredits += Number(p.amount || 0)
+        }
       }
     }
 
