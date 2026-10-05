@@ -333,12 +333,6 @@ export default function ControlCenter() {
   const [soDocsMap, setSoDocsMap] = useState<Record<string, ShipmentDocAttachment[]>>({})
 
   useEffect(() => {
-    void erp.loadSalesData()
-    void erp.loadInventoryData()
-    void finance.loadFromApi()
-  }, [erp, finance])
-
-  useEffect(() => {
     fetchAllShipmentDocs().then((docs) => {
       if (Array.isArray(docs)) {
         const map: Record<string, ShipmentDocAttachment[]> = {}
@@ -378,7 +372,7 @@ export default function ControlCenter() {
     fetchSalesIssuesData()
   }, [])
 
-  const financeStore = useFinanceStore()
+  const financeStore = finance
   const invoices = financeStore.getInvoices()
 
   // Unsettled Invoices & Outstanding Customer Receivables Computation
@@ -678,8 +672,8 @@ export default function ControlCenter() {
         console.warn("Failed to load HR data:", e)
         return emptyHRData
       }),
-      erp.reloadFromApi().catch((e) => console.warn("Failed to reload ERP data:", e)),
-      finance.reloadFromApi().catch((e) => console.warn("Failed to reload Finance data:", e)),
+      erp.loadFromApi("all").catch((e) => console.warn("Failed to load ERP data:", e)),
+      finance.loadFromApi(false).catch((e) => console.warn("Failed to load Finance data:", e)),
     ])
       .then(([hr]) => {
         if (!cancelled) setHrData(hr)
@@ -723,10 +717,12 @@ export default function ControlCenter() {
   }, [])
 
   // Key ERP Metrics
+  // Key ERP Metrics
+  const products = useMemo(() => erp.getProducts(), [erp])
+
   // Total Inventory Value: FROZEN ON INTAKE (Cumulative receipts @ cost, does not fluctuate downwards on deduction)
-  const inventoryValue = erp
-    .getProducts()
-    .reduce((sum, prod) => {
+  const inventoryValue = useMemo(() => {
+    return products.reduce((sum, prod) => {
       const isWH1Item = isWH1(prod.warehouse)
       const wh1Entries = prod.wh1Entries || []
       const wh1TotalReceived = wh1Entries.reduce((s, e) => s + Number(e.quantityReceived || 0), 0)
@@ -745,11 +741,11 @@ export default function ControlCenter() {
 
       return sum + stockValAtCost
     }, 0)
+  }, [products])
 
   // Total Inventory Sale Value: FLUCTUATES with deductions, valued at active stock selling prices
-  const inventorySaleValue = erp
-    .getProducts()
-    .reduce((sum, prod) => {
+  const inventorySaleValue = useMemo(() => {
+    return products.reduce((sum, prod) => {
       const isWH1Item = isWH1(prod.warehouse)
       const defaultSellingPrice = Number(
         prod.sellingPrice ??
@@ -781,6 +777,7 @@ export default function ControlCenter() {
         return sum + (currentQty * defaultSellingPrice)
       }
     }, 0)
+  }, [products])
 
   const { postedRevenue, totalCogs, grossProfit, grossMargin, netProfit, netMargin } = useMemo(() => {
     const glMetrics = finance.getFinancialMetrics()
@@ -982,21 +979,21 @@ export default function ControlCenter() {
       }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 8)
-  }, [erp, erp.getProducts()])
+  }, [products])
 
   // Raw Stock Supplier Quality Benchmark (Strictly export warehouse raw arrivals & cleaning rejects)
   const wh1QualitySummary = useMemo(() => {
-    return computeWH1SupplierQuality(erp.getProducts(), qualityProductFilter, qualityWarehouseFilter)
-  }, [erp, erp.getProducts(), qualityProductFilter, qualityWarehouseFilter])
+    return computeWH1SupplierQuality(products, qualityProductFilter, qualityWarehouseFilter)
+  }, [products, qualityProductFilter, qualityWarehouseFilter])
 
   // WH2 & WH3 Stock Expiration Summary (9-Month Watch & 6-Month Critical)
   const adminExpirySummary = useMemo(() => {
-    return getExpiringItemsSummary(erp.getProducts(), {
+    return getExpiringItemsSummary(products, {
       thresholdDays: 270,
       warehouseId: adminExpiryWarehouse,
       tierFilter: adminExpiryTier,
     })
-  }, [erp, erp.getProducts(), adminExpiryWarehouse, adminExpiryTier])
+  }, [products, adminExpiryWarehouse, adminExpiryTier])
 
   // Resolve user identity against employees and user profiles, and resolve business activity details
   const logsWithUserInfo = useMemo(() => {

@@ -1646,8 +1646,7 @@ class FinanceStore {
           })
 
           if (hasNewSync) {
-            this.saveToApi().catch((err) => console.error("[FinanceSync] Failed to persist synced GL records:", err))
-            this.notify()
+            this.notify(false)
           }
       } catch (syncErr) {
         console.error("[FinanceSync] Cross-module sync error (GL not modified):", syncErr)
