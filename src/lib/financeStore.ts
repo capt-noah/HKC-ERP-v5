@@ -1065,7 +1065,7 @@ class FinanceStore {
                     })
                   }
                 } else {
-                  const debitAcc = this.getMappedAccount("cogs_stock_fulfillment", "6000-04")
+                  const debitAcc = this.getMappedAccount("cogs_stock_fulfillment", "5000-01")
                   const creditAcc = this.getMappedAccount("inventory_stock_in_hand", "1410-01")
                   const estimatedCost = Math.round(subtotal * 0.7)
 
