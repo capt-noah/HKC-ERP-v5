@@ -90,7 +90,6 @@ export default function TransactionMappingMatrix() {
   const [selectedCategory, setSelectedCategory] = useState<string>("All Categories")
   // Rule Type Filter: "all" | "transaction" | "stat"
   const [ruleTypeFilter, setRuleTypeFilter] = useState<"all" | "transaction" | "stat">("all")
-  const [scopeFilter, setScopeFilter] = useState<"ALL" | "IMPORT" | "EXPORT">("ALL")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
 
@@ -129,10 +128,6 @@ export default function TransactionMappingMatrix() {
       if (ruleTypeFilter === "transaction" && isStat) return false
       if (ruleTypeFilter === "stat" && !isStat) return false
 
-      if (scopeFilter !== "ALL" && m.warehouse_scope && m.warehouse_scope !== scopeFilter && m.warehouse_scope !== "ALL") {
-        return false
-      }
-
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
         const matchesLabel = (m.label || "").toLowerCase().includes(q)
@@ -148,7 +143,7 @@ export default function TransactionMappingMatrix() {
 
       return true
     })
-  }, [mappings, selectedCategory, ruleTypeFilter, scopeFilter, searchQuery])
+  }, [mappings, selectedCategory, ruleTypeFilter, searchQuery])
 
   // Resizable table hook
   const table = useResizableTable(mappingColumns, filteredMappings, defaultColWidths)
@@ -323,7 +318,7 @@ export default function TransactionMappingMatrix() {
         <div className="px-6 pt-6">
           <FinanceTableToolbar
             title="General Ledger Mappings & KPI Rules"
-            subtitle={`${filteredMappings.length} posting & executive KPI rules linking business operations to General Ledger Chart of Accounts`}
+            subtitle={`${filteredMappings.length} rules linking operational events and KPIs to the Chart of Accounts`}
             searchValue={searchQuery}
             onSearchChange={(val) => {
               setSearchQuery(val)
@@ -355,19 +350,6 @@ export default function TransactionMappingMatrix() {
                   value: cat,
                   label: cat,
                 })),
-              },
-              {
-                value: scopeFilter,
-                onChange: (val) => {
-                  setScopeFilter(val as any)
-                  setPage(1)
-                },
-                ariaLabel: "Filter by warehouse scope",
-                options: [
-                  { value: "ALL", label: "All Scopes" },
-                  { value: "IMPORT", label: "Import Scope" },
-                  { value: "EXPORT", label: "Export Scope (WH1)" },
-                ],
               },
             ]}
             actions={[
@@ -429,9 +411,9 @@ export default function TransactionMappingMatrix() {
                     } else if (rule.id === "kpi_stat_cash_position") {
                       statDisplayValue = `ETB ${liveMetrics.cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     } else if (rule.id === "kpi_stat_gross_profit") {
-                      statDisplayValue = `ETB ${liveMetrics.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${liveMetrics.grossMargin.toFixed(1)}%)`
+                      statDisplayValue = `ETB ${liveMetrics.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     } else if (rule.id === "kpi_stat_net_operating_income") {
-                      statDisplayValue = `ETB ${liveMetrics.netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${liveMetrics.netMargin.toFixed(1)}%)`
+                      statDisplayValue = `ETB ${liveMetrics.netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     }
                   }
 
@@ -942,24 +924,14 @@ export default function TransactionMappingMatrix() {
                     </span>
                   )}
                   {editingStatRule.id === "kpi_stat_gross_profit" && (
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-zinc-900">
-                        ETB {liveMetrics.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                      <span className="text-xs font-bold text-teal-700 font-sans">
-                        ({liveMetrics.grossMargin.toFixed(1)}% margin)
-                      </span>
-                    </div>
+                    <span className="text-zinc-900">
+                      ETB {liveMetrics.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   )}
                   {editingStatRule.id === "kpi_stat_net_operating_income" && (
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-zinc-900">
-                        ETB {liveMetrics.netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                      <span className="text-xs font-bold text-blue-700 font-sans">
-                        ({liveMetrics.netMargin.toFixed(1)}% margin)
-                      </span>
-                    </div>
+                    <span className="text-zinc-900">
+                      ETB {liveMetrics.netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
                   )}
                 </div>
               </div>

@@ -2884,10 +2884,35 @@ class FinanceStore {
 
     // Fallback: If GL lines are empty or not yet synchronized, derive directly from operational documents (invoices, sales issues, expenses, payments)
     if (totalRevenue === 0 && totalCogs === 0 && cashDebits === 0) {
-      // 1. Operational Invoices / Sales Revenue
-      for (const inv of this.invoices) {
-        if (inv.status !== "Void") {
-          totalRevenue += Number(inv.total || inv.subtotal || 0)
+      // 1. Sales Issues (Operational Dispatches) & Invoices
+      const activeIssues = (erpStore.getSalesIssues() || []).filter((si: any) => si.status !== "Cancelled")
+      for (const si of activeIssues) {
+        const rev = Number(si.total_amount || 0)
+        totalRevenue += rev
+
+        // Compute COGS
+        const entries = typeof si.account_entries === "string" ? JSON.parse(si.account_entries || "{}") : si.account_entries
+        if (entries?.cogs_lines && entries.cogs_lines.length > 0) {
+          totalCogs += entries.cogs_lines.reduce((s: number, l: any) => s + Number(l.debit || 0), 0)
+        } else if (Array.isArray(si.items)) {
+          for (const it of si.items) {
+            const qty = Number(it.quantity || 0)
+            const unitCost = Number(it.unit_cost || it.cost_price || (it.unit_price ? it.unit_price * 0.7 : 0))
+            totalCogs += qty * unitCost
+          }
+        }
+
+        // Cash collection
+        if (si.payment_type === "Cash" || si.payment_status === "Paid" || si.settlement_status === "Fully Settled") {
+          cashDebits += rev
+        }
+      }
+
+      if (totalRevenue === 0) {
+        for (const inv of this.invoices) {
+          if (inv.status !== "Void") {
+            totalRevenue += Number(inv.total || inv.subtotal || 0)
+          }
         }
       }
 
@@ -2897,6 +2922,7 @@ class FinanceStore {
           const amt = Number(exp.amount || exp.net_disbursed || 0)
           totalExpenses += amt
           operatingExpenses += amt
+          cashCredits += amt
         }
       }
 
