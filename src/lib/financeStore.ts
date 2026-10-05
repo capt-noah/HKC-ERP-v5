@@ -782,6 +782,11 @@ class FinanceStore {
           created_at: m.created_at || m.createdAt,
           updated_at: m.updated_at || m.updatedAt,
         }))
+        const loadedIds = new Set(this.glMappings.map((m) => m.id))
+        const missingDefaults = DEFAULT_GL_ACCOUNT_MAPPINGS.filter((d) => !loadedIds.has(d.id))
+        if (missingDefaults.length > 0) {
+          this.glMappings = [...this.glMappings, ...missingDefaults]
+        }
       } else {
         this.glMappings = [...DEFAULT_GL_ACCOUNT_MAPPINGS]
       }
@@ -1945,6 +1950,7 @@ class FinanceStore {
     const item_type = typeof optionsOrUpdatedBy === "object" ? optionsOrUpdatedBy.item_type : undefined
     const multi_accounts = typeof optionsOrUpdatedBy === "object" ? optionsOrUpdatedBy.multi_accounts : undefined
 
+    const defaultRule = DEFAULT_GL_ACCOUNT_MAPPINGS.find((r) => r.id === ruleId)
     const existingIdx = this.glMappings.findIndex((m) => m.id === ruleId)
     if (existingIdx >= 0) {
       const current = this.glMappings[existingIdx]
@@ -1958,12 +1964,12 @@ class FinanceStore {
         account_id: acc.id,
         account_code: acc.code,
         account_name: acc.name,
+        is_kpi_stat: current.is_kpi_stat ?? defaultRule?.is_kpi_stat,
         updated_by: updatedBy,
         updated_at: new Date().toISOString(),
       }
       this.glMappings[existingIdx] = updated
     } else {
-      const defaultRule = DEFAULT_GL_ACCOUNT_MAPPINGS.find((r) => r.id === ruleId)
       const newMapping: GlAccountMapping = {
         id: ruleId,
         label: label !== undefined ? label : (defaultRule?.label || ruleId),
@@ -1977,6 +1983,7 @@ class FinanceStore {
         account_name: acc.name,
         normal_posting: defaultRule?.normal_posting || "Debit",
         is_system_default: Boolean(defaultRule?.is_system_default),
+        is_kpi_stat: Boolean(defaultRule?.is_kpi_stat),
         description: description !== undefined ? description : (defaultRule?.description || ""),
         updated_by: updatedBy,
         created_at: new Date().toISOString(),
@@ -2012,6 +2019,15 @@ class FinanceStore {
           console.error("[FinanceStore] Failed to sync tax rules from GL mapping:", err)
         )
       }
+    }
+
+    // Bidirectional sync: If this GL rule is a KPI Stat rule, sync to companySettings
+    if (ruleId === "kpi_stat_operating_revenue") {
+      this.companySettings.kpi_revenue_group_prefix = acc.code
+    } else if (ruleId === "kpi_stat_cost_of_goods_sold") {
+      this.companySettings.kpi_cogs_group_prefix = acc.code
+    } else if (ruleId === "kpi_stat_cash_position") {
+      this.companySettings.kpi_cash_group_code = acc.code
     }
 
     this.notify()
@@ -2803,9 +2819,21 @@ class FinanceStore {
       }
     }
     const excludedAccIds = new Set(this.companySettings.kpi_excluded_account_ids || [])
-    const revPrefix = (this.companySettings.kpi_revenue_group_prefix || "4").trim()
-    const cogsPrefix = (this.companySettings.kpi_cogs_group_prefix || "5").trim()
-    const cashPrefix = (this.companySettings.kpi_cash_group_code || "1000").trim()
+
+    // Priority 1: Check glMappings for KPI stat rules
+    const revMapping = this.glMappings.find((m) => m.id === "kpi_stat_operating_revenue")
+    const cogsMapping = this.glMappings.find((m) => m.id === "kpi_stat_cost_of_goods_sold")
+    const cashMapping = this.glMappings.find((m) => m.id === "kpi_stat_cash_position")
+
+    // Extract prefixes or specific account codes
+    const revPrefix = (revMapping?.account_code?.replace(/\*$/, "") || this.companySettings.kpi_revenue_group_prefix || "4").trim()
+    const revSpecificAcc = revMapping && !revMapping.account_code.endsWith("*") ? revMapping.account_code : null
+
+    const cogsPrefix = (cogsMapping?.account_code?.replace(/\*$/, "") || this.companySettings.kpi_cogs_group_prefix || "5").trim()
+    const cogsSpecificAcc = cogsMapping && !cogsMapping.account_code.endsWith("*") ? cogsMapping.account_code : null
+
+    const cashPrefix = (cashMapping?.account_code?.replace(/\*$/, "") || this.companySettings.kpi_cash_group_code || "1000").trim()
+    const cashSpecificAcc = cashMapping && !cashMapping.account_code.endsWith("*") ? cashMapping.account_code : null
 
     let totalRevenue = 0
     let totalCogs = 0
@@ -2821,8 +2849,13 @@ class FinanceStore {
       if (excludedAccIds.has(account.id) || excludedAccIds.has(account.code)) continue
 
       const code = account.code || ""
-      const isRev = account.account_type === "Revenue" || (revPrefix ? code.startsWith(revPrefix) : code.startsWith("4"))
-      const isCogs = (cogsPrefix ? code.startsWith(cogsPrefix) : code.startsWith("5")) || isCogsAccount(account)
+      const isRev = revSpecificAcc
+        ? (account.id === revSpecificAcc || code === revSpecificAcc)
+        : (account.account_type === "Revenue" || (revPrefix ? code.startsWith(revPrefix) : code.startsWith("4")))
+
+      const isCogs = cogsSpecificAcc
+        ? (account.id === cogsSpecificAcc || code === cogsSpecificAcc)
+        : ((cogsPrefix ? code.startsWith(cogsPrefix) : code.startsWith("5")) || isCogsAccount(account))
 
       if (isRev) {
         totalRevenue += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
@@ -2836,9 +2869,11 @@ class FinanceStore {
         }
       } else if (
         (account.account_type === "Asset" || code.startsWith("1")) &&
-        (account.peachtree_type === "Cash" ||
-          (cashPrefix ? code.startsWith(cashPrefix) : code.startsWith("1000")) ||
-          /cash|bank|cbe|boa|aib|abay|unb|cbo|ahadu|oib/i.test(account.name || ""))
+        (cashSpecificAcc
+          ? (account.id === cashSpecificAcc || code === cashSpecificAcc)
+          : (account.peachtree_type === "Cash" ||
+              (cashPrefix ? code.startsWith(cashPrefix) : code.startsWith("1000")) ||
+              /cash|bank|cbe|boa|aib|abay|unb|cbo|ahadu|oib/i.test(account.name || "")))
       ) {
         cashDebits += Number(line.debit_amount || 0)
         cashCredits += Number(line.credit_amount || 0)

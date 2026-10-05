@@ -5,16 +5,7 @@ import {
   Lock,
   Trash2,
   Building,
-  Layers,
   BarChart3,
-  TrendingUp,
-  TrendingDown,
-  DollarSign,
-  Wallet,
-  ShieldCheck,
-  Check,
-  RotateCcw,
-  Info,
 } from "lucide-react"
 import { GlassCard } from "@/components/GlassCard"
 import { useFinanceStore, type GlAccountMapping } from "@/lib/financeStore"
@@ -97,12 +88,13 @@ export default function TransactionMappingMatrix() {
 
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<string>("All Categories")
-  const [statusFilter, setStatusFilter] = useState<"all" | "system" | "custom">("all")
+  // Rule Type Filter: "all" | "transaction" | "stat"
+  const [ruleTypeFilter, setRuleTypeFilter] = useState<"all" | "transaction" | "stat">("all")
   const [scopeFilter, setScopeFilter] = useState<"ALL" | "IMPORT" | "EXPORT">("ALL")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
 
-  // Modal States
+  // Modal States - Operational Transaction Mapping Rule
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [editingRule, setEditingRule] = useState<GlAccountMapping | null>(null)
   const [editAccountId, setEditAccountId] = useState("")
@@ -114,49 +106,17 @@ export default function TransactionMappingMatrix() {
   const [enableMultiAccountsInEdit, setEnableMultiAccountsInEdit] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
-  // Sub-view: "rules" (Transaction Posting Rules) vs "kpi_groups" (KPI Stat & Account Group Mappings)
-  const [activeViewTab, setActiveViewTab] = useState<"rules" | "kpi_groups">("rules")
-
-  // KPI Group Settings State from companySettings
-  const companySettings = store.getCompanySettings()
-  const [revPrefix, setRevPrefix] = useState(companySettings.kpi_revenue_group_prefix || "4")
-  const [cogsPrefix, setCogsPrefix] = useState(companySettings.kpi_cogs_group_prefix || "5")
-  const [cashPrefix, setCashPrefix] = useState(companySettings.kpi_cash_group_code || "1000")
-  const [isSavingKpiSettings, setIsSavingKpiSettings] = useState(false)
+  // Modal States - KPI Stat Group Mapping
+  const [editingStatRule, setEditingStatRule] = useState<GlAccountMapping | null>(null)
+  const [editStatTargetType, setEditStatTargetType] = useState<"prefix" | "specific">("prefix")
+  const [editStatPrefix, setEditStatPrefix] = useState("")
+  const [editStatAccountId, setEditStatAccountId] = useState("")
+  const [isSavingStat, setIsSavingStat] = useState(false)
 
   // Live KPI metrics derived dynamically
   const liveMetrics = useMemo(() => {
     return store.getFinancialMetrics()
-  }, [store, revPrefix, cogsPrefix, cashPrefix])
-
-  const handleSaveKpiSettings = async () => {
-    try {
-      setIsSavingKpiSettings(true)
-      store.updateCompanySettings({
-        kpi_revenue_group_prefix: revPrefix.trim(),
-        kpi_cogs_group_prefix: cogsPrefix.trim(),
-        kpi_cash_group_code: cashPrefix.trim(),
-      })
-      showToast("KPI Groups Saved", "success", "Dashboard KPI account group definitions have been updated.")
-    } catch {
-      showToast("Save Failed", "warning", "Failed to update KPI group mappings.")
-    } finally {
-      setIsSavingKpiSettings(false)
-    }
-  }
-
-  const handleResetKpiSettings = () => {
-    setRevPrefix("4")
-    setCogsPrefix("5")
-    setCashPrefix("1000")
-    store.updateCompanySettings({
-      kpi_revenue_group_prefix: "4",
-      kpi_cogs_group_prefix: "5",
-      kpi_cash_group_code: "1000",
-      kpi_excluded_account_ids: [],
-    })
-    showToast("Defaults Restored", "info", "Standard GAAP account group prefixes restored.")
-  }
+  }, [store, mappings])
 
   // Filtered rules
   const filteredMappings = useMemo(() => {
@@ -165,8 +125,9 @@ export default function TransactionMappingMatrix() {
         return false
       }
 
-      if (statusFilter === "system" && !m.is_system_default) return false
-      if (statusFilter === "custom" && m.is_system_default) return false
+      const isStat = Boolean(m.is_kpi_stat || m.transaction_type === "kpi_stat" || m.id.startsWith("kpi_stat_"))
+      if (ruleTypeFilter === "transaction" && isStat) return false
+      if (ruleTypeFilter === "stat" && !isStat) return false
 
       if (scopeFilter !== "ALL" && m.warehouse_scope && m.warehouse_scope !== scopeFilter && m.warehouse_scope !== "ALL") {
         return false
@@ -187,7 +148,7 @@ export default function TransactionMappingMatrix() {
 
       return true
     })
-  }, [mappings, selectedCategory, statusFilter, scopeFilter, searchQuery])
+  }, [mappings, selectedCategory, ruleTypeFilter, scopeFilter, searchQuery])
 
   // Resizable table hook
   const table = useResizableTable(mappingColumns, filteredMappings, defaultColWidths)
@@ -196,8 +157,21 @@ export default function TransactionMappingMatrix() {
   const totalPages = Math.ceil(total / pageSize) || 1
   const paginatedMappings = sortedMappings.slice((page - 1) * pageSize, page * pageSize)
 
-  // Open Edit Modal
+  // Open Edit Modal for Transaction or Stat Rule
   const openEdit = (rule: GlAccountMapping) => {
+    const isStat = Boolean(rule.is_kpi_stat || rule.transaction_type === "kpi_stat" || rule.id.startsWith("kpi_stat_"))
+    if (isStat) {
+      setEditingStatRule(rule)
+      const isFormula = rule.account_code === "FORMULA" || rule.account_id === "FORMULA"
+      if (!isFormula) {
+        const isPrefix = rule.account_code.endsWith("*")
+        setEditStatTargetType(isPrefix ? "prefix" : "specific")
+        setEditStatPrefix(rule.account_code.replace(/\*$/, ""))
+        setEditStatAccountId(rule.account_id || rule.account_code)
+      }
+      return
+    }
+
     setEditingRule(rule)
     setEditAccountId(rule.account_id || rule.account_code)
     setEditLabel(rule.label)
@@ -211,10 +185,12 @@ export default function TransactionMappingMatrix() {
 
   const closeEdit = () => {
     setEditingRule(null)
+    setEditingStatRule(null)
     setIsSaving(false)
+    setIsSavingStat(false)
   }
 
-  // Save changes from Edit Modal
+  // Save changes from Edit Modal (Transactional Rules)
   const handleSaveEdit = async () => {
     if (!editingRule) return
     const selectedAcc = accounts.find((a) => a.id === editAccountId || a.code === editAccountId)
@@ -258,10 +234,64 @@ export default function TransactionMappingMatrix() {
     }
   }
 
+  // Save changes from KPI Stat Edit Modal
+  const handleSaveStatEdit = async () => {
+    if (!editingStatRule) return
+    setIsSavingStat(true)
+
+    try {
+      let targetCode = ""
+      let targetId = ""
+      let targetName = ""
+
+      if (editStatTargetType === "prefix") {
+        const cleanPrefix = editStatPrefix.trim()
+        if (!cleanPrefix) {
+          showToast("Validation Error", "warning", "Please enter an account group code prefix (e.g. 4000 or 5000).")
+          setIsSavingStat(false)
+          return
+        }
+        targetCode = `${cleanPrefix}*`
+        targetId = cleanPrefix
+        targetName = `Group ${cleanPrefix}* Accounts`
+      } else {
+        const selectedAcc = accounts.find((a) => a.id === editStatAccountId || a.code === editStatAccountId)
+        if (!selectedAcc) {
+          showToast("Validation Error", "warning", "Please select a valid General Ledger account.")
+          setIsSavingStat(false)
+          return
+        }
+        targetCode = selectedAcc.code
+        targetId = selectedAcc.id
+        targetName = selectedAcc.name
+      }
+
+      // Sync with companySettings for immediate persistence
+      if (editingStatRule.id === "kpi_stat_operating_revenue") {
+        store.updateCompanySettings({ kpi_revenue_group_prefix: targetCode.replace(/\*$/, "") })
+      } else if (editingStatRule.id === "kpi_stat_cost_of_goods_sold") {
+        store.updateCompanySettings({ kpi_cogs_group_prefix: targetCode.replace(/\*$/, "") })
+      } else if (editingStatRule.id === "kpi_stat_cash_position") {
+        store.updateCompanySettings({ kpi_cash_group_code: targetCode.replace(/\*$/, "") })
+      }
+
+      await store.updateGlMapping(editingStatRule.id, targetId, {
+        updatedBy: "Finance Officer",
+      })
+
+      showToast("KPI Stat Updated", "success", `"${editingStatRule.label}" is now mapped to [${targetCode}] ${targetName}. Results immediately reflect across Finance Overview and Control Center.`)
+      closeEdit()
+    } catch (err) {
+      showToast("Update Failed", "warning", err instanceof Error ? err.message : "Failed to update KPI mapping.")
+    } finally {
+      setIsSavingStat(false)
+    }
+  }
+
   // Delete custom rule
   const handleDeleteRule = (rule: GlAccountMapping) => {
-    if (rule.is_system_default) {
-      showToast("Action Prohibited", "warning", "System default accounting rules cannot be deleted.")
+    if (rule.is_system_default || rule.is_kpi_stat) {
+      showToast("Action Prohibited", "warning", "System default and KPI stat rules cannot be deleted.")
       return
     }
 
@@ -289,365 +319,11 @@ export default function TransactionMappingMatrix() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Top View Mode Switcher */}
-      <div className="flex items-center gap-1.5 p-1 bg-zinc-200/60 rounded-2xl w-fit self-start border border-zinc-300/60 shadow-xs">
-        <button
-          type="button"
-          onClick={() => setActiveViewTab("rules")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-            activeViewTab === "rules"
-              ? "bg-white text-zinc-900 shadow-sm"
-              : "text-zinc-600 hover:text-zinc-900 hover:bg-white/40"
-          }`}
-        >
-          <Layers className="size-3.5 text-emerald-600" />
-          <span>Transaction Posting Rules</span>
-          <span className="ml-1 px-1.5 py-0.2 rounded-md bg-zinc-100 text-[10px] font-mono text-zinc-700 border border-zinc-200">
-            {mappings.length}
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveViewTab("kpi_groups")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-            activeViewTab === "kpi_groups"
-              ? "bg-white text-zinc-900 shadow-sm"
-              : "text-zinc-600 hover:text-zinc-900 hover:bg-white/40"
-          }`}
-        >
-          <BarChart3 className="size-3.5 text-blue-600" />
-          <span>KPI Stat & Account Group Mappings</span>
-          <span className="ml-1 px-1.5 py-0.2 rounded-md bg-blue-50 text-[10px] font-mono text-blue-700 border border-blue-200">
-            Live GAAP
-          </span>
-        </button>
-      </div>
-
-      {/* KPI Stat & Account Group Mappings View */}
-      {activeViewTab === "kpi_groups" && (
-        <div className="space-y-6">
-          {/* Header Card */}
-          <GlassCard className="p-6 border border-white/65 shadow-md">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <div className="size-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
-                    <BarChart3 className="size-4.5" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black text-zinc-900 tracking-tight">
-                      Dashboard KPI & Financial Group Mappings
-                    </h3>
-                    <p className="text-xs text-zinc-500 font-medium">
-                      Configure which Chart of Accounts (COA) account groups feed into high-level executive KPIs on Finance Overview and Admin Control Center.
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={handleResetKpiSettings}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-xs font-bold text-zinc-700 shadow-xs cursor-pointer transition-colors"
-                >
-                  <RotateCcw className="size-3.5 text-zinc-400" />
-                  Restore Defaults
-                </button>
-                <button
-                  type="button"
-                  disabled={isSavingKpiSettings}
-                  onClick={handleSaveKpiSettings}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-xs font-black text-white shadow-sm cursor-pointer transition-colors disabled:opacity-50"
-                >
-                  {isSavingKpiSettings ? (
-                    <LoadingDots color="bg-white" size="sm" />
-                  ) : (
-                    <>
-                      <Check className="size-3.5 text-white" />
-                      Save Group Mappings
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </GlassCard>
-
-          {/* Primary Group Config Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Card 1: Posted Revenue Group */}
-            <GlassCard className="p-5 border border-white/65 shadow-md flex flex-col justify-between">
-              <div>
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="size-9 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
-                      <DollarSign className="size-5" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-black text-zinc-900">Operating Revenue Group</h4>
-                      <p className="text-[11px] text-zinc-500 font-medium">Feeds Operating Revenue & Sales KPIs</p>
-                    </div>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
-                    Primary Group
-                  </span>
-                </div>
-
-                <div className="space-y-3 mt-4">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">
-                      Target Account Prefix or Type
-                    </label>
-                    <select
-                      value={revPrefix}
-                      onChange={(e) => setRevPrefix(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-900 focus:outline-none focus:border-emerald-600 cursor-pointer"
-                    >
-                      <option value="4">Group 4000* - All Operating & Export Revenue</option>
-                      <option value="4000-01">Group 4000-01* - Veterinary Drug Sales (Domestic Only)</option>
-                      <option value="4000-02">Group 4000-02* - Export Crop Sales (WH1 Only)</option>
-                    </select>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-emerald-50/60 border border-emerald-200/80 flex items-center justify-between text-xs">
-                    <span className="font-bold text-emerald-900">Current Computed Balance:</span>
-                    <span className="font-black font-mono text-emerald-700 text-sm">
-                      ETB {liveMetrics.totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <p className="text-[11px] text-zinc-400 mt-4 flex items-center gap-1 font-medium">
-                <Info className="size-3.5 text-zinc-400 shrink-0" />
-                Aggregates credit postings minus refunds from all mapped revenue ledger accounts.
-              </p>
-            </GlassCard>
-
-            {/* Card 2: Cost of Goods Sold Group */}
-            <GlassCard className="p-5 border border-white/65 shadow-md flex flex-col justify-between">
-              <div>
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="size-9 rounded-2xl bg-rose-100 text-rose-800 flex items-center justify-center">
-                      <TrendingDown className="size-5" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-black text-zinc-900">Cost of Goods Sold (COGS) Group</h4>
-                      <p className="text-[11px] text-zinc-500 font-medium">Feeds Direct Product Fulfillment Expense</p>
-                    </div>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300">
-                    Primary Group
-                  </span>
-                </div>
-
-                <div className="space-y-3 mt-4">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">
-                      Target Account Prefix or Type
-                    </label>
-                    <select
-                      value={cogsPrefix}
-                      onChange={(e) => setCogsPrefix(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-900 focus:outline-none focus:border-rose-600 cursor-pointer"
-                    >
-                      <option value="5">Group 5000* & 5010* - All Direct Fulfillment COGS</option>
-                      <option value="5000-01">Group 5000-01* - Cost of Veterinary Drug (Domestic)</option>
-                      <option value="5010">Group 5010* - Cost of Export Sales (WH1 Crops)</option>
-                    </select>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-rose-50/60 border border-rose-200/80 flex items-center justify-between text-xs">
-                    <span className="font-bold text-rose-900">Current Computed Balance:</span>
-                    <span className="font-black font-mono text-rose-700 text-sm">
-                      ETB {liveMetrics.totalCogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <p className="text-[11px] text-zinc-400 mt-4 flex items-center gap-1 font-medium">
-                <Info className="size-3.5 text-zinc-400 shrink-0" />
-                Debited synchronously during batch dispatch and sales issue fulfillments.
-              </p>
-            </GlassCard>
-
-            {/* Card 3: Liquid Cash & Bank Reserves */}
-            <GlassCard className="p-5 border border-white/65 shadow-md flex flex-col justify-between">
-              <div>
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="size-9 rounded-2xl bg-cyan-100 text-cyan-800 flex items-center justify-center">
-                      <Wallet className="size-5" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-black text-zinc-900">Liquid Cash & Bank Reserves</h4>
-                      <p className="text-[11px] text-zinc-500 font-medium">Feeds Treasury & Cash Position KPIs</p>
-                    </div>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-cyan-100 text-cyan-800 border border-cyan-300">
-                    Primary Group
-                  </span>
-                </div>
-
-                <div className="space-y-3 mt-4">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">
-                      Target Cash & Bank Account Group
-                    </label>
-                    <select
-                      value={cashPrefix}
-                      onChange={(e) => setCashPrefix(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-900 focus:outline-none focus:border-cyan-600 cursor-pointer"
-                    >
-                      <option value="1000">Group 1000 - CASH (Petty Cash + All Bank Accounts)</option>
-                      <option value="1000-02">Group 1000-02* - Commercial Banks Only (CBE, BOA, AIB, etc.)</option>
-                      <option value="1000-01">Group 1000-01* - Petty Cash Reserves Only</option>
-                    </select>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-cyan-50/60 border border-cyan-200/80 flex items-center justify-between text-xs">
-                    <span className="font-bold text-cyan-900">Current Computed Balance:</span>
-                    <span className="font-black font-mono text-cyan-800 text-sm">
-                      ETB {liveMetrics.cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <p className="text-[11px] text-zinc-400 mt-4 flex items-center gap-1 font-medium">
-                <Info className="size-3.5 text-zinc-400 shrink-0" />
-                Aggregates liquid debit deposits minus credit disbursements across accounts.
-              </p>
-            </GlassCard>
-
-            {/* Card 4: Operating Expenses */}
-            <GlassCard className="p-5 border border-white/65 shadow-md flex flex-col justify-between">
-              <div>
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="size-9 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center">
-                      <TrendingDown className="size-5" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-black text-zinc-900">Operating Expenses (OPEX)</h4>
-                      <p className="text-[11px] text-zinc-500 font-medium">Feeds SG&A & Administrative Overheads</p>
-                    </div>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300">
-                    Primary Group
-                  </span>
-                </div>
-
-                <div className="space-y-3 mt-4">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-700 mb-1">
-                      Standard OPEX Groups
-                    </label>
-                    <div className="px-3 py-2 rounded-xl bg-zinc-100 border border-zinc-200 text-xs font-bold text-zinc-800 flex items-center justify-between">
-                      <span>Groups 6000* (Selling) & 8000* (Administrative)</span>
-                      <ShieldCheck className="size-4 text-emerald-600 shrink-0" />
-                    </div>
-                  </div>
-
-                  <div className="p-3 rounded-xl bg-amber-50/60 border border-amber-200/80 flex items-center justify-between text-xs">
-                    <span className="font-bold text-amber-900">Current Computed Balance:</span>
-                    <span className="font-black font-mono text-amber-800 text-sm">
-                      ETB {liveMetrics.operatingExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <p className="text-[11px] text-zinc-400 mt-4 flex items-center gap-1 font-medium">
-                <Info className="size-3.5 text-zinc-400 shrink-0" />
-                Payroll, transportation, utilities, and general administration expenses.
-              </p>
-            </GlassCard>
-          </div>
-
-          {/* Derived Surplus Metrics - Formula Badges (Mathematical GAAP Definitions) */}
-          <GlassCard className="p-6 border border-white/65 shadow-md">
-            <div className="flex items-center justify-between gap-4 mb-4">
-              <div className="flex items-center gap-2">
-                <div className="size-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
-                  <TrendingUp className="size-4.5" />
-                </div>
-                <div>
-                  <h4 className="text-sm font-black text-zinc-900">
-                    Derived Financial Surplus Metrics (Formulas)
-                  </h4>
-                  <p className="text-xs text-zinc-500 font-medium">
-                    These metrics cannot be mapped to single accounts. They calculate automatically from primary groups.
-                  </p>
-                </div>
-              </div>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-zinc-100 text-zinc-700 border border-zinc-200">
-                <Lock className="size-3 text-zinc-500" />
-                Locked Mathematical Formulas
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-              {/* Formula 1: Gross Profit */}
-              <div className="p-4 rounded-2xl bg-zinc-50/80 border border-zinc-200 flex flex-col justify-between">
-                <div>
-                  <span className="text-[10px] font-extrabold text-zinc-500 uppercase tracking-wider">Gross Profit</span>
-                  <p className="text-sm font-black text-zinc-900 mt-1 font-mono">
-                    ETB {liveMetrics.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                </div>
-                <div className="mt-3 pt-2.5 border-t border-zinc-200/80 text-[10px] font-bold text-zinc-600">
-                  Formula: <span className="font-mono text-zinc-900">Revenue - COGS</span>
-                </div>
-              </div>
-
-              {/* Formula 2: Gross Margin */}
-              <div className="p-4 rounded-2xl bg-zinc-50/80 border border-zinc-200 flex flex-col justify-between">
-                <div>
-                  <span className="text-[10px] font-extrabold text-zinc-500 uppercase tracking-wider">Gross Margin</span>
-                  <p className="text-sm font-black text-teal-700 mt-1 font-mono">
-                    {liveMetrics.grossMargin.toFixed(1)}%
-                  </p>
-                </div>
-                <div className="mt-3 pt-2.5 border-t border-zinc-200/80 text-[10px] font-bold text-zinc-600">
-                  Formula: <span className="font-mono text-zinc-900">(Gross Profit / Revenue) × 100</span>
-                </div>
-              </div>
-
-              {/* Formula 3: Net Operating Income (EBIT) */}
-              <div className="p-4 rounded-2xl bg-zinc-50/80 border border-zinc-200 flex flex-col justify-between">
-                <div>
-                  <span className="text-[10px] font-extrabold text-zinc-500 uppercase tracking-wider">Net Operating Income</span>
-                  <p className="text-sm font-black text-emerald-800 mt-1 font-mono">
-                    ETB {liveMetrics.netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                </div>
-                <div className="mt-3 pt-2.5 border-t border-zinc-200/80 text-[10px] font-bold text-zinc-600">
-                  Formula: <span className="font-mono text-zinc-900">Revenue - Total Expenses</span>
-                </div>
-              </div>
-
-              {/* Formula 4: Net Margin */}
-              <div className="p-4 rounded-2xl bg-zinc-50/80 border border-zinc-200 flex flex-col justify-between">
-                <div>
-                  <span className="text-[10px] font-extrabold text-zinc-500 uppercase tracking-wider">Net Margin</span>
-                  <p className="text-sm font-black text-blue-700 mt-1 font-mono">
-                    {liveMetrics.netMargin.toFixed(1)}%
-                  </p>
-                </div>
-                <div className="mt-3 pt-2.5 border-t border-zinc-200/80 text-[10px] font-bold text-zinc-600">
-                  Formula: <span className="font-mono text-zinc-900">(Net Profit / Revenue) × 100</span>
-                </div>
-              </div>
-            </div>
-          </GlassCard>
-        </div>
-      )}
-
-      {/* Transaction Posting Rules View */}
-      {activeViewTab === "rules" && (
-        <GlassCard className="p-0 overflow-hidden border border-white/65 shadow-md">
+      <GlassCard className="p-0 overflow-hidden border border-white/65 shadow-md">
         <div className="px-6 pt-6">
           <FinanceTableToolbar
-            title="Transaction Mappings"
-            subtitle={`${filteredMappings.length} posting rules linking business operations to General Ledger Chart of Accounts`}
+            title="General Ledger Mappings & KPI Rules"
+            subtitle={`${filteredMappings.length} posting & executive KPI rules linking business operations to General Ledger Chart of Accounts`}
             searchValue={searchQuery}
             onSearchChange={(val) => {
               setSearchQuery(val)
@@ -656,16 +332,16 @@ export default function TransactionMappingMatrix() {
             searchPlaceholder="Search event, rule key, or account..."
             filters={[
               {
-                value: statusFilter,
+                value: ruleTypeFilter,
                 onChange: (val) => {
-                  setStatusFilter(val as any)
+                  setRuleTypeFilter(val as any)
                   setPage(1)
                 },
                 ariaLabel: "Filter by rule type",
                 options: [
                   { value: "all", label: "All Rules" },
-                  { value: "system", label: "System Defaults" },
-                  { value: "custom", label: "Custom Rules" },
+                  { value: "transaction", label: "Transaction Rules" },
+                  { value: "stat", label: "Stat Rules" },
                 ],
               },
               {
@@ -730,25 +406,52 @@ export default function TransactionMappingMatrix() {
               {paginatedMappings.length === 0 ? (
                 <tr>
                   <td colSpan={mappingColumns.length} className="py-16 text-center text-xs font-bold text-zinc-400">
-                    No transaction mapping rules match your filters.
+                    No mapping rules match your filters.
                   </td>
                 </tr>
               ) : (
                 paginatedMappings.map((rule) => {
+                  const isStat = Boolean(rule.is_kpi_stat || rule.transaction_type === "kpi_stat" || rule.id.startsWith("kpi_stat_"))
+                  const isFormula = rule.account_code === "FORMULA" || rule.account_id === "FORMULA"
                   const badge = CATEGORY_BADGES[rule.category] || CATEGORY_BADGES["Custom Rules"]
-                  const scope = getScopeBadge(rule)
+                  const scope = isStat
+                    ? { label: "Dashboard KPIs", bg: "bg-blue-100 text-blue-900 border-blue-300" }
+                    : getScopeBadge(rule)
                   const hasMulti = Boolean(rule.multi_accounts && rule.multi_accounts.length > 1)
+
+                  // Live computed amount for stat rules
+                  let statDisplayValue: string | null = null
+                  if (isStat) {
+                    if (rule.id === "kpi_stat_operating_revenue") {
+                      statDisplayValue = `ETB ${liveMetrics.totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    } else if (rule.id === "kpi_stat_cost_of_goods_sold") {
+                      statDisplayValue = `ETB ${liveMetrics.totalCogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    } else if (rule.id === "kpi_stat_cash_position") {
+                      statDisplayValue = `ETB ${liveMetrics.cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    } else if (rule.id === "kpi_stat_gross_profit") {
+                      statDisplayValue = `ETB ${liveMetrics.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${liveMetrics.grossMargin.toFixed(1)}%)`
+                    } else if (rule.id === "kpi_stat_net_operating_income") {
+                      statDisplayValue = `ETB ${liveMetrics.netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${liveMetrics.netMargin.toFixed(1)}%)`
+                    }
+                  }
 
                   return (
                     <tr
                       key={rule.id}
-                      className="border-b border-zinc-150/40 hover:bg-zinc-50/60 transition-colors text-xs"
+                      className={`border-b border-zinc-150/40 transition-colors text-xs ${
+                        isStat ? "bg-blue-50/20 hover:bg-blue-50/40" : "hover:bg-zinc-50/60"
+                      }`}
                     >
                       {/* Column 1: Business Transaction / Event */}
                       <td style={{ width: `${table.colWidths.label}px` }} className="px-3 py-3 align-middle">
-                        <span className="font-bold text-zinc-950 text-xs truncate block" title={rule.label}>
-                          {rule.label}
-                        </span>
+                        <div className="flex items-center gap-1.5 truncate">
+                          {isStat && (
+                            <span className="size-2 rounded-full bg-blue-600 shrink-0" title="KPI Metric" />
+                          )}
+                          <span className="font-bold text-zinc-950 text-xs truncate block" title={rule.label}>
+                            {rule.label}
+                          </span>
+                        </div>
                       </td>
 
                       {/* Column 2: Category */}
@@ -782,18 +485,28 @@ export default function TransactionMappingMatrix() {
                         </span>
                       </td>
 
-                      {/* Column 5: Assigned Peachtree Account */}
+                      {/* Column 5: Assigned General Ledger Account */}
                       <td style={{ width: `${table.colWidths.account_code}px` }} className="px-3 py-3 align-middle">
                         <div className="flex flex-col gap-0.5 truncate">
                           <div className="flex items-center gap-1.5 truncate">
-                            <code className="font-mono font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[11px] border border-emerald-200/80 shrink-0">
+                            <code className={`font-mono font-black px-1.5 py-0.5 rounded text-[11px] border shrink-0 ${
+                              isStat
+                                ? "text-blue-800 bg-blue-50 border-blue-200"
+                                : "text-emerald-700 bg-emerald-50 border-emerald-200/80"
+                            }`}>
                               {rule.account_code}
                             </code>
                             <span className="font-bold text-zinc-800 text-xs truncate" title={rule.account_name}>
                               {rule.account_name}
                             </span>
                           </div>
-                          {hasMulti && (
+                          {isStat && statDisplayValue && (
+                            <div className="flex items-center gap-1 text-[11px] font-mono font-bold text-blue-700 pl-0.5">
+                              <span>Live Balance:</span>
+                              <span className="font-black">{statDisplayValue}</span>
+                            </div>
+                          )}
+                          {!isStat && hasMulti && (
                             <span className="text-[10px] font-bold text-zinc-500">
                               +{rule.multi_accounts!.length - 1} settlement accounts in pool
                             </span>
@@ -803,7 +516,11 @@ export default function TransactionMappingMatrix() {
 
                       {/* Column 6: Rule Type / Status */}
                       <td style={{ width: `${table.colWidths.is_system_default}px` }} className="px-3 py-3 text-center align-middle">
-                        {!rule.is_system_default ? (
+                        {isStat ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-300">
+                            KPI Stat
+                          </span>
+                        ) : !rule.is_system_default ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-800 border border-indigo-200">
                             Custom
                           </span>
@@ -821,9 +538,10 @@ export default function TransactionMappingMatrix() {
                             type="button"
                             onClick={() => openEdit(rule)}
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                            title="Edit GL Mapping"
+                            title={isStat ? (isFormula ? "View KPI Formula" : "Edit KPI Mapping") : "Edit GL Mapping"}
                           >
-                            <Pencil className="size-3 text-zinc-700" /> Edit
+                            <Pencil className="size-3 text-zinc-700" />
+                            {isStat ? (isFormula ? "View" : "Edit") : "Edit"}
                           </button>
                         </div>
                       </td>
@@ -884,7 +602,6 @@ export default function TransactionMappingMatrix() {
           )}
         </div>
       </GlassCard>
-      )}
 
       {/* EDIT GL MAPPING MODAL */}
       {editingRule && (
@@ -1160,6 +877,201 @@ export default function TransactionMappingMatrix() {
                 >
                   {isSaving ? <LoadingDots color="bg-white" size="sm" /> : "Save Changes"}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT KPI STAT RULE MODAL */}
+      {editingStatRule && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          <BodyScrollLock />
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={closeEdit}
+          />
+          <div className="relative max-h-[90vh] w-full max-w-lg overflow-y-auto no-scrollbar rounded-3xl bg-white p-6 shadow-2xl border border-zinc-200">
+            <EditModalHeader
+              title={editingStatRule.account_code === "FORMULA" ? "View KPI Metric Formula" : "Edit KPI Stat Mapping"}
+              subtitle={editingStatRule.label}
+              onClose={closeEdit}
+            />
+
+            <div className="space-y-4">
+              {/* Metric Type & Category Banner */}
+              <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200/80 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="size-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold">
+                    <BarChart3 className="size-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-black text-blue-950 block">{editingStatRule.label}</span>
+                    <span className="text-[11px] text-blue-700 font-medium">{editingStatRule.category}</span>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-200/70 text-blue-900 border border-blue-300">
+                  {editingStatRule.account_code === "FORMULA" ? "GAAP Formula" : "Live KPI Stat"}
+                </span>
+              </div>
+
+              {/* Description Card */}
+              <p className="text-xs text-zinc-600 leading-relaxed font-medium">
+                {editingStatRule.description}
+              </p>
+
+              {/* Current Computed Balance Preview */}
+              <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-zinc-500 block mb-1">
+                  Current Live Value (Finance & Control Center)
+                </span>
+                <div className="text-base font-black font-mono text-zinc-950">
+                  {editingStatRule.id === "kpi_stat_operating_revenue" && (
+                    <span className="text-emerald-700">
+                      ETB {liveMetrics.totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  )}
+                  {editingStatRule.id === "kpi_stat_cost_of_goods_sold" && (
+                    <span className="text-rose-700">
+                      ETB {liveMetrics.totalCogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  )}
+                  {editingStatRule.id === "kpi_stat_cash_position" && (
+                    <span className="text-cyan-800">
+                      ETB {liveMetrics.cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  )}
+                  {editingStatRule.id === "kpi_stat_gross_profit" && (
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-zinc-900">
+                        ETB {liveMetrics.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      <span className="text-xs font-bold text-teal-700 font-sans">
+                        ({liveMetrics.grossMargin.toFixed(1)}% margin)
+                      </span>
+                    </div>
+                  )}
+                  {editingStatRule.id === "kpi_stat_net_operating_income" && (
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-zinc-900">
+                        ETB {liveMetrics.netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      <span className="text-xs font-bold text-blue-700 font-sans">
+                        ({liveMetrics.netMargin.toFixed(1)}% margin)
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Locked Formula State for Derived Stats */}
+              {editingStatRule.account_code === "FORMULA" ? (
+                <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 space-y-2">
+                  <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                    <Lock className="size-4 text-amber-700 shrink-0" />
+                    <span>Calculated Metric (Mathematical Formula)</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                    This surplus stat cannot be mapped to a single General Ledger account because it represents a mathematical GAAP formula:
+                  </p>
+                  <div className="p-2 rounded-xl bg-white border border-amber-200/80 font-mono text-xs font-black text-amber-950">
+                    {editingStatRule.account_name}
+                  </div>
+                  <p className="text-[11px] text-amber-700 font-medium">
+                    To modify the resulting balance, edit the primary Operating Revenue or Cost of Goods Sold mappings in this table.
+                  </p>
+                </div>
+              ) : (
+                /* Configurable Stat Mapping: Account Group Prefix vs Specific Account */
+                <div className="space-y-4 pt-1">
+                  <div>
+                    <label className="block text-xs font-black text-zinc-900 mb-2">
+                      Mapping Mode
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditStatTargetType("prefix")}
+                        className={`p-3 rounded-xl border text-xs font-bold text-left transition-all cursor-pointer ${
+                          editStatTargetType === "prefix"
+                            ? "border-blue-500 bg-blue-50/60 text-blue-900 ring-2 ring-blue-500/20"
+                            : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                        }`}
+                      >
+                        <span className="block font-black">Account Group Code Prefix</span>
+                        <span className="text-[10px] text-zinc-500 font-medium">e.g. 4000*, 5000*, 1000*</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditStatTargetType("specific")}
+                        className={`p-3 rounded-xl border text-xs font-bold text-left transition-all cursor-pointer ${
+                          editStatTargetType === "specific"
+                            ? "border-blue-500 bg-blue-50/60 text-blue-900 ring-2 ring-blue-500/20"
+                            : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                        }`}
+                      >
+                        <span className="block font-black">Specific COA Account</span>
+                        <span className="text-[10px] text-zinc-500 font-medium">e.g. 4000-01-01</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {editStatTargetType === "prefix" ? (
+                    <div>
+                      <label className="block text-xs font-black text-zinc-900 mb-1.5">
+                        Group Prefix Pattern
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={editStatPrefix}
+                          onChange={(e) => setEditStatPrefix(e.target.value)}
+                          placeholder="e.g. 4000, 5000, 1000, 4000-01..."
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 font-mono"
+                        />
+                      </div>
+                      <p className="text-[11px] text-zinc-500 font-medium mt-1.5">
+                        Aggregates all posted ledger balances matching accounts starting with <code className="font-mono font-bold text-zinc-700">{editStatPrefix || "?"}*</code>.
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-xs font-black text-zinc-900 mb-1.5">
+                        Specific General Ledger Account
+                      </label>
+                      <COAAccountSelector
+                        value={editStatAccountId}
+                        onChange={(acc) => {
+                          setEditStatAccountId(acc.id || acc.code)
+                        }}
+                        placeholder="Select Chart of Accounts ledger..."
+                        required
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Modal Footer */}
+              <div className="mt-6 flex justify-end gap-2 border-t border-zinc-100 pt-4">
+                <button
+                  type="button"
+                  disabled={isSavingStat}
+                  onClick={closeEdit}
+                  className="h-10 rounded-xl border border-zinc-200 px-4 text-xs font-black hover:bg-zinc-50 disabled:opacity-50 transition-colors cursor-pointer"
+                >
+                  {editingStatRule.account_code === "FORMULA" ? "Close" : "Cancel"}
+                </button>
+                {editingStatRule.account_code !== "FORMULA" && (
+                  <button
+                    type="button"
+                    disabled={isSavingStat || (editStatTargetType === "prefix" ? !editStatPrefix.trim() : !editStatAccountId)}
+                    onClick={handleSaveStatEdit}
+                    className="h-10 min-w-[90px] inline-flex items-center justify-center rounded-xl bg-blue-700 hover:bg-blue-800 disabled:opacity-60 disabled:cursor-not-allowed px-5 text-xs font-black text-white transition-colors cursor-pointer shadow-sm"
+                  >
+                    {isSavingStat ? <LoadingDots color="bg-white" size="sm" /> : "Save KPI Mapping"}
+                  </button>
+                )}
               </div>
             </div>
           </div>

@@ -927,7 +927,7 @@ export default function FinanceOverview() {
                           return null
                         }}
                       />
-                      <Bar dataKey="quantity" fill="#18181b" radius={[8, 8, 0, 0]} />
+                      <Bar dataKey="quantity" name="Quantity Sold" fill="#059669" radius={[8, 8, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}

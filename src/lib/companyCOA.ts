@@ -151,6 +151,7 @@ export interface GlAccountMapping {
     default_split_percent?: number
   }[]
   is_system_default: boolean
+  is_kpi_stat?: boolean
   description?: string
   updated_by?: string
   created_at?: string
@@ -751,6 +752,77 @@ export const DEFAULT_GL_ACCOUNT_MAPPINGS: GlAccountMapping[] = [
     normal_posting: "Credit",
     is_system_default: true,
     description: "Interest income credited during monthly bank statement reconciliation.",
+  },
+  // ── DASHBOARD KPI STAT MAPPINGS ──
+  {
+    id: "kpi_stat_operating_revenue",
+    label: "KPI Stat: Operating Revenue",
+    category: "Sales & Revenue",
+    transaction_type: "kpi_stat",
+    warehouse_scope: "ALL",
+    account_id: "4000-01-01",
+    account_code: "4000*",
+    account_name: "Group 4000* (Operating Revenue Accounts)",
+    normal_posting: "Credit",
+    is_system_default: true,
+    is_kpi_stat: true,
+    description: "Chart of Accounts group/prefix or primary account driving Operating Revenue KPIs across Finance Overview and Control Center.",
+  },
+  {
+    id: "kpi_stat_cost_of_goods_sold",
+    label: "KPI Stat: Cost of Goods Sold (COGS)",
+    category: "Inventory & COGS",
+    transaction_type: "kpi_stat",
+    warehouse_scope: "ALL",
+    account_id: "5000-01",
+    account_code: "5000*",
+    account_name: "Group 5000* & 5010* (Direct Fulfillment COGS)",
+    normal_posting: "Debit",
+    is_system_default: true,
+    is_kpi_stat: true,
+    description: "Chart of Accounts group/prefix or primary account driving Cost of Goods Sold (COGS) KPIs across Finance Overview and Control Center.",
+  },
+  {
+    id: "kpi_stat_cash_position",
+    label: "KPI Stat: Liquid Cash & Bank Position",
+    category: "Cash & Bank Accounts",
+    transaction_type: "kpi_stat",
+    warehouse_scope: "ALL",
+    account_id: "1000-02-26",
+    account_code: "1000*",
+    account_name: "Group 1000 (Petty Cash & Bank Reserves)",
+    normal_posting: "Debit",
+    is_system_default: true,
+    is_kpi_stat: true,
+    description: "Chart of Accounts group code or primary bank account driving Liquid Cash Position KPIs on Finance Overview.",
+  },
+  {
+    id: "kpi_stat_gross_profit",
+    label: "KPI Stat: Gross Profit & Margin",
+    category: "Sales & Revenue",
+    transaction_type: "kpi_stat",
+    warehouse_scope: "ALL",
+    account_id: "FORMULA",
+    account_code: "FORMULA",
+    account_name: "Formula: Operating Revenue - COGS",
+    normal_posting: "Credit",
+    is_system_default: true,
+    is_kpi_stat: true,
+    description: "Derived financial surplus computed mathematically as Revenue minus COGS. Automatically reflects edits made to Revenue and COGS groups.",
+  },
+  {
+    id: "kpi_stat_net_operating_income",
+    label: "KPI Stat: Net Operating Income (EBIT)",
+    category: "Sales & Revenue",
+    transaction_type: "kpi_stat",
+    warehouse_scope: "ALL",
+    account_id: "FORMULA",
+    account_code: "FORMULA",
+    account_name: "Formula: Revenue - (COGS + Operating Expenses)",
+    normal_posting: "Credit",
+    is_system_default: true,
+    is_kpi_stat: true,
+    description: "Bottom-line net profit computed mathematically. Automatically reflects changes to revenue and expenses.",
   },
 ]
 
