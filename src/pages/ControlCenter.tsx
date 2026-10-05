@@ -780,44 +780,36 @@ export default function ControlCenter() {
 
   const { postedRevenue, totalCogs, grossProfit, grossMargin, netProfit, netMargin } = useMemo(() => {
     const glMetrics = finance.getFinancialMetrics()
-    if (glMetrics.totalRevenue > 0 || glMetrics.totalCogs > 0 || glMetrics.totalExpenses > 0) {
-      return {
-        postedRevenue: glMetrics.totalRevenue,
-        totalCogs: glMetrics.totalCogs,
-        grossProfit: glMetrics.grossProfit,
-        grossMargin: glMetrics.grossMargin,
-        totalExpenses: glMetrics.totalExpenses,
-        netProfit: glMetrics.netProfit,
-        netMargin: glMetrics.netMargin,
-      }
-    }
 
-    // Fallback only if GL lines are empty (e.g., fresh system before first GL posting)
     const activeIssues = salesIssues.filter((si) => si.status !== "Cancelled")
-    const salesIssueRev = activeIssues.reduce((sum, si) => sum + Number(si.total_amount || 0), 0)
-    let salesIssueCogs = 0
+    let localSalesIssueCogs = 0
+    let localSalesIssueRev = 0
     activeIssues.forEach((si) => {
+      localSalesIssueRev += Number(si.total_amount || 0)
       if (Array.isArray(si.items)) {
         si.items.forEach((item) => {
           const qty = Number(item.quantity || 0)
           const cost = Number((item as any).unit_cost || (item as any).cost_price || 0)
-          salesIssueCogs += qty * cost
+          localSalesIssueCogs += qty * cost
         })
       }
     })
 
-    const gp = Math.max(0, salesIssueRev - salesIssueCogs)
-    const gm = salesIssueRev > 0 ? (gp / salesIssueRev) * 100 : 0
-    const np = salesIssueRev - salesIssueCogs
-    const nm = salesIssueRev > 0 ? (np / salesIssueRev) * 100 : 0
+    const rev = glMetrics.totalRevenue > 0 ? glMetrics.totalRevenue : localSalesIssueRev
+    const cogs = glMetrics.totalCogs > 0 ? glMetrics.totalCogs : localSalesIssueCogs
+    const exp = glMetrics.totalExpenses > 0 ? glMetrics.totalExpenses : cogs
+    const gp = Math.max(0, rev - cogs)
+    const gm = rev > 0 ? (gp / rev) * 100 : 0
+    const np = rev - exp
+    const nm = rev > 0 ? (np / rev) * 100 : 0
 
     return {
-      postedRevenue: salesIssueRev,
-      totalCogs: salesIssueCogs,
-      grossProfit: gp,
+      postedRevenue: Math.round(rev * 100) / 100,
+      totalCogs: Math.round(cogs * 100) / 100,
+      grossProfit: Math.round(gp * 100) / 100,
       grossMargin: Math.round(gm * 10) / 10,
-      totalExpenses: salesIssueCogs,
-      netProfit: np,
+      totalExpenses: Math.round(exp * 100) / 100,
+      netProfit: Math.round(np * 100) / 100,
       netMargin: Math.round(nm * 10) / 10,
     }
   }, [salesIssues, finance])

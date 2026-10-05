@@ -2809,13 +2809,20 @@ class FinanceStore {
     for (const account of this.accounts) {
       if (account.id) {
         accountById.set(account.id, account)
-        accountById.set(account.id.replace(/^ACC-/, ""), account)
+        accountById.set(account.id.toLowerCase(), account)
+        accountById.set(account.id.replace(/^ACC-/i, ""), account)
+        accountById.set(account.id.replace(/^ACC-/i, "").toLowerCase(), account)
         accountById.set(`ACC-${account.id}`, account)
       }
       if (account.code) {
         accountById.set(account.code, account)
-        accountById.set(account.code.replace(/^ACC-/, ""), account)
+        accountById.set(account.code.toLowerCase(), account)
+        accountById.set(account.code.replace(/^ACC-/i, ""), account)
+        accountById.set(account.code.replace(/^ACC-/i, "").toLowerCase(), account)
         accountById.set(`ACC-${account.code}`, account)
+      }
+      if (account.name) {
+        accountById.set(account.name.toLowerCase(), account)
       }
     }
     const excludedAccIds = new Set(this.companySettings.kpi_excluded_account_ids || [])
@@ -2845,7 +2852,26 @@ class FinanceStore {
     if (this.lines.length > 0) {
       for (const line of this.lines) {
         const cleanAccountId = line.account_id ? String(line.account_id).trim() : ""
-        const account = accountById.get(cleanAccountId) || accountById.get(cleanAccountId.replace(/^ACC-/, "")) || accountById.get(`ACC-${cleanAccountId}`)
+        let account = accountById.get(cleanAccountId) || 
+                      accountById.get(cleanAccountId.toLowerCase()) || 
+                      accountById.get(cleanAccountId.replace(/^ACC-/i, "")) || 
+                      accountById.get(cleanAccountId.replace(/^ACC-/i, "").toLowerCase()) || 
+                      accountById.get(`ACC-${cleanAccountId}`)
+        
+        // If not found in loaded chart of accounts, infer from code prefix
+        if (!account && cleanAccountId) {
+          const codeOnly = cleanAccountId.replace(/^ACC-/i, "")
+          if (codeOnly.startsWith("4")) {
+            account = { id: cleanAccountId, code: codeOnly, name: "Revenue", account_type: "Revenue", parent_account_id: null, is_active: true }
+          } else if (codeOnly.startsWith("5")) {
+            account = { id: cleanAccountId, code: codeOnly, name: "Cost of Goods Sold", account_type: "Expense", peachtree_type: "Cost of Sales", parent_account_id: null, is_active: true }
+          } else if (codeOnly.startsWith("6") || codeOnly.startsWith("7") || codeOnly.startsWith("8")) {
+            account = { id: cleanAccountId, code: codeOnly, name: "Operating Expense", account_type: "Expense", parent_account_id: null, is_active: true }
+          } else if (codeOnly.startsWith("1000") || codeOnly.startsWith("10")) {
+            account = { id: cleanAccountId, code: codeOnly, name: "Cash / Bank", account_type: "Asset", peachtree_type: "Cash", parent_account_id: null, is_active: true }
+          }
+        }
+
         if (!account) continue
         if (excludedAccIds.has(account.id) || excludedAccIds.has(account.code)) continue
 
@@ -2882,32 +2908,32 @@ class FinanceStore {
       }
     }
 
-    // Fallback: If GL lines are empty or not yet synchronized, derive directly from operational documents (invoices, sales issues, expenses, payments)
-    if (totalRevenue === 0 && totalCogs === 0 && cashDebits === 0) {
-      // 1. Sales Issues (Operational Dispatches) & Invoices
+    // Granular Fallback for COGS if GL lines don't have COGS posted
+    if (totalCogs === 0) {
       const activeIssues = (erpStore.getSalesIssues() || []).filter((si: any) => si.status !== "Cancelled")
       for (const si of activeIssues) {
-        const rev = Number(si.total_amount || 0)
-        totalRevenue += rev
-
-        // Compute COGS
         const entries = typeof si.account_entries === "string" ? JSON.parse(si.account_entries || "{}") : si.account_entries
         if (entries?.cogs_lines && entries.cogs_lines.length > 0) {
           totalCogs += entries.cogs_lines.reduce((s: number, l: any) => s + Number(l.debit || 0), 0)
-        } else if (Array.isArray(si.items)) {
+        } else if (Array.isArray(si.items) && si.items.length > 0) {
           for (const it of si.items) {
-            const qty = Number(it.quantity || 0)
-            const unitCost = Number(it.unit_cost || it.cost_price || (it.unit_price ? it.unit_price * 0.7 : 0))
+            const qty = Number(it.quantity || it.qty || 0)
+            const unitCost = Number(it.unit_cost ?? it.cost_price ?? (it.unit_price ? it.unit_price * 0.7 : 0))
             totalCogs += qty * unitCost
           }
-        }
-
-        // Cash collection
-        if (si.payment_type === "Cash" || si.payment_status === "Paid" || si.settlement_status === "Fully Settled") {
-          cashDebits += rev
+        } else if (Number(si.total_amount || 0) > 0) {
+          totalCogs += Number(si.total_amount) * 0.7
         }
       }
+      totalExpenses += totalCogs
+    }
 
+    // Granular Fallback for Revenue if GL lines don't have Revenue posted
+    if (totalRevenue === 0) {
+      const activeIssues = (erpStore.getSalesIssues() || []).filter((si: any) => si.status !== "Cancelled")
+      for (const si of activeIssues) {
+        totalRevenue += Number(si.total_amount || 0)
+      }
       if (totalRevenue === 0) {
         for (const inv of this.invoices) {
           if (inv.status !== "Void") {
@@ -2915,18 +2941,25 @@ class FinanceStore {
           }
         }
       }
+    }
 
-      // 2. Operational Expenses
+    // Granular Fallback for Cash Position if GL lines don't have Cash lines posted
+    if (cashDebits === 0 && cashCredits === 0) {
+      const activeIssues = (erpStore.getSalesIssues() || []).filter((si: any) => si.status !== "Cancelled")
+      for (const si of activeIssues) {
+        const rev = Number(si.total_amount || 0)
+        if (si.payment_type === "Cash" || si.payment_status === "Paid" || si.settlement_status === "Fully Settled" || !si.payment_type?.toLowerCase().includes("credit")) {
+          cashDebits += rev
+        }
+      }
+      // Operational Expenses
       for (const exp of this.expenses) {
         if (exp.status !== "REJECTED") {
           const amt = Number(exp.amount || exp.net_disbursed || 0)
-          totalExpenses += amt
-          operatingExpenses += amt
           cashCredits += amt
         }
       }
-
-      // 3. Operational Payments / Cash Inflow
+      // Operational Payments
       for (const p of this.payments) {
         if (p.direction === "Received") {
           cashDebits += Number(p.amount || 0)
@@ -2936,9 +2969,20 @@ class FinanceStore {
       }
     }
 
-    const grossProfit = totalRevenue - totalCogs
+    // Granular Fallback for Operating Expenses if GL lines don't have Operating Expense lines posted
+    if (operatingExpenses === 0) {
+      for (const exp of this.expenses) {
+        if (exp.status !== "REJECTED") {
+          const amt = Number(exp.amount || exp.net_disbursed || 0)
+          operatingExpenses += amt
+          totalExpenses += amt
+        }
+      }
+    }
+
+    const grossProfit = Math.max(0, totalRevenue - totalCogs)
     const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0
-    const netProfit = totalRevenue - totalExpenses
+    const netProfit = totalRevenue - (totalCogs + operatingExpenses)
     const netMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0
     const cashPosition = cashDebits - cashCredits
 
