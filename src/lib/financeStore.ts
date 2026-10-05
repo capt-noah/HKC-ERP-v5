@@ -317,6 +317,10 @@ export interface CompanySettings {
   tax_brackets_config?: { min: number; max: number | null; ratePercent: number; deductible: number }[]
   fiscal_lock_date?: string
   fiscal_lock_reason?: string
+  kpi_revenue_group_prefix?: string
+  kpi_cogs_group_prefix?: string
+  kpi_cash_group_code?: string
+  kpi_excluded_account_ids?: string[]
 }
 
 const emptyCompanySettings: CompanySettings = {
@@ -2798,6 +2802,11 @@ class FinanceStore {
         accountById.set(`ACC-${account.code}`, account)
       }
     }
+    const excludedAccIds = new Set(this.companySettings.kpi_excluded_account_ids || [])
+    const revPrefix = (this.companySettings.kpi_revenue_group_prefix || "4").trim()
+    const cogsPrefix = (this.companySettings.kpi_cogs_group_prefix || "5").trim()
+    const cashPrefix = (this.companySettings.kpi_cash_group_code || "1000").trim()
+
     let totalRevenue = 0
     let totalCogs = 0
     let totalExpenses = 0
@@ -2809,21 +2818,26 @@ class FinanceStore {
       const cleanAccountId = line.account_id ? String(line.account_id).trim() : ""
       const account = accountById.get(cleanAccountId) || accountById.get(cleanAccountId.replace(/^ACC-/, "")) || accountById.get(`ACC-${cleanAccountId}`)
       if (!account) continue
+      if (excludedAccIds.has(account.id) || excludedAccIds.has(account.code)) continue
 
-      if (account.account_type === "Revenue" || account.code?.startsWith("4")) {
+      const code = account.code || ""
+      const isRev = account.account_type === "Revenue" || (revPrefix ? code.startsWith(revPrefix) : code.startsWith("4"))
+      const isCogs = (cogsPrefix ? code.startsWith(cogsPrefix) : code.startsWith("5")) || isCogsAccount(account)
+
+      if (isRev) {
         totalRevenue += Number(line.credit_amount || 0) - Number(line.debit_amount || 0)
-      } else if (account.account_type === "Expense" || account.code?.startsWith("5") || account.code?.startsWith("6") || account.code?.startsWith("7")) {
+      } else if (account.account_type === "Expense" || code.startsWith("5") || code.startsWith("6") || code.startsWith("7") || code.startsWith("8")) {
         const amt = Number(line.debit_amount || 0) - Number(line.credit_amount || 0)
         totalExpenses += amt
-        if (isCogsAccount(account)) {
+        if (isCogs) {
           totalCogs += amt
         } else {
           operatingExpenses += amt
         }
       } else if (
-        (account.account_type === "Asset" || account.code?.startsWith("1")) &&
+        (account.account_type === "Asset" || code.startsWith("1")) &&
         (account.peachtree_type === "Cash" ||
-          account.code?.startsWith("1000") ||
+          (cashPrefix ? code.startsWith(cashPrefix) : code.startsWith("1000")) ||
           /cash|bank|cbe|boa|aib|abay|unb|cbo|ahadu|oib/i.test(account.name || ""))
       ) {
         cashDebits += Number(line.debit_amount || 0)

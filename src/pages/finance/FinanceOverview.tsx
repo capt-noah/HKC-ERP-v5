@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react"
-import { Wallet, Calendar, ArrowUpRight, DollarSign, TrendingUp, TrendingDown, BarChart3, RefreshCw } from "lucide-react"
+import { useEffect, useState, useMemo } from "react"
+import { Wallet, Calendar, ArrowUpRight, DollarSign, TrendingUp, TrendingDown, BarChart3, RefreshCw, Package, ChevronLeft, ChevronRight } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -7,7 +7,7 @@ import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFinanceStore, isCogsAccount } from "@/lib/financeStore"
 import { erpStore } from "@/lib/erpStore"
 import { cn } from "@/lib/utils"
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
 import { Link } from "react-router-dom"
 
 import { Skeleton } from "@/components/ui/skeleton"
@@ -214,6 +214,146 @@ export default function FinanceOverview() {
   const cashFlowData = [...cashFlowByMonth.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([, value]) => value)
+
+  // --- Items Sold Graph & Analytics State ---
+  const currentMonthStr = useMemo(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+  }, [])
+
+  const [activeChartTab, setActiveChartTab] = useState<"cash_flow" | "items_sold">("cash_flow")
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string>("all")
+  const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthStr)
+  const [selectedWeek, setSelectedWeek] = useState<"all" | "1" | "2" | "3" | "4">("all")
+  const [itemsViewMode, setItemsViewMode] = useState<"by_item" | "by_week">("by_item")
+
+  // Discover all distinct months from sales issues and journal entries
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>()
+    set.add(currentMonthStr)
+    salesIssues.forEach((si) => {
+      const d = si.sale_date || (si as any).created_at
+      if (d && String(d).length >= 7) {
+        set.add(String(d).slice(0, 7))
+      }
+    })
+    return Array.from(set).sort().reverse()
+  }, [salesIssues, currentMonthStr])
+
+  // Helper for previous/next month navigation
+  const handlePrevMonth = () => {
+    const [y, m] = selectedMonth.split("-").map(Number)
+    const prevDate = new Date(y, m - 2, 1)
+    setSelectedMonth(`${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`)
+  }
+
+  const handleNextMonth = () => {
+    const [y, m] = selectedMonth.split("-").map(Number)
+    const nextDate = new Date(y, m, 1)
+    setSelectedMonth(`${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}`)
+  }
+
+  // Format month label (e.g. October 2026)
+  const selectedMonthDisplay = useMemo(() => {
+    const [y, m] = selectedMonth.split("-").map(Number)
+    if (isNaN(y) || isNaN(m)) return selectedMonth
+    const d = new Date(y, m - 1, 1)
+    return d.toLocaleString("default", { month: "long", year: "numeric" })
+  }, [selectedMonth])
+
+  // Aggregate items sold data filtered by month, warehouse, and week
+  const itemsSoldChartData = useMemo(() => {
+    const itemMap = new Map<string, {
+      name: string
+      quantity: number
+      packagingUnit: string
+      totalValue: number
+      w1Qty: number
+      w2Qty: number
+      w3Qty: number
+      w4Qty: number
+    }>()
+
+    let totalVolumeInFilter = 0
+
+    salesIssues.forEach((si) => {
+      if (si.status === "Cancelled") return
+
+      const dateStr = String(si.sale_date || (si as any).created_at || "")
+      if (!dateStr.startsWith(selectedMonth)) return
+
+      // Warehouse filter
+      const wh = String(si.warehouse_id || "").toUpperCase()
+      if (selectedWarehouse !== "all") {
+        if (selectedWarehouse === "WH1" && !wh.includes("WH1") && !wh.includes("EXP")) return
+        if (selectedWarehouse === "WH2" && !wh.includes("WH2")) return
+        if (selectedWarehouse === "WH3" && !wh.includes("WH3")) return
+      }
+
+      // Determine week number (1 to 4+)
+      const dayOfMonth = parseInt(dateStr.slice(8, 10), 10) || 1
+      let weekNum: "1" | "2" | "3" | "4" = "1"
+      if (dayOfMonth <= 7) weekNum = "1"
+      else if (dayOfMonth <= 14) weekNum = "2"
+      else if (dayOfMonth <= 21) weekNum = "3"
+      else weekNum = "4"
+
+      // Filter by selected week if active
+      if (selectedWeek !== "all" && weekNum !== selectedWeek) return
+
+      if (Array.isArray(si.items)) {
+        si.items.forEach((item: any) => {
+          const rawName = String(item.item_name || item.name || "Unknown Item").trim()
+          const qty = Number(item.quantity || item.qty || 0)
+          const unitPrice = Number(item.unit_price || item.unitPrice || 0)
+          const amount = Number(item.amount || item.total || (qty * unitPrice))
+          const packUnit = item.packaging_unit || item.unit || "Units"
+
+          if (!itemMap.has(rawName)) {
+            itemMap.set(rawName, {
+              name: rawName,
+              quantity: 0,
+              packagingUnit: packUnit,
+              totalValue: 0,
+              w1Qty: 0,
+              w2Qty: 0,
+              w3Qty: 0,
+              w4Qty: 0,
+            })
+          }
+
+          const record = itemMap.get(rawName)!
+          record.quantity += qty
+          record.totalValue += amount
+          totalVolumeInFilter += qty
+
+          if (weekNum === "1") record.w1Qty += qty
+          else if (weekNum === "2") record.w2Qty += qty
+          else if (weekNum === "3") record.w3Qty += qty
+          else record.w4Qty += qty
+        })
+      }
+    })
+
+    const sorted = Array.from(itemMap.values())
+      .map((item) => ({
+        ...item,
+        sharePercent: totalVolumeInFilter > 0 ? Math.round((item.quantity / totalVolumeInFilter) * 1000) / 10 : 0,
+      }))
+      .sort((a, b) => b.quantity - a.quantity)
+
+    return {
+      topItems: sorted.slice(0, 10),
+      totalVolume: totalVolumeInFilter,
+      distinctItemCount: sorted.length,
+      weeklySummary: [
+        { name: "Week 1 (1–7)", quantity: sorted.reduce((s, i) => s + i.w1Qty, 0), value: 0 },
+        { name: "Week 2 (8–14)", quantity: sorted.reduce((s, i) => s + i.w2Qty, 0), value: 0 },
+        { name: "Week 3 (15–21)", quantity: sorted.reduce((s, i) => s + i.w3Qty, 0), value: 0 },
+        { name: "Week 4+ (22–End)", quantity: sorted.reduce((s, i) => s + i.w4Qty, 0), value: 0 },
+      ],
+    }
+  }, [salesIssues, selectedMonth, selectedWarehouse, selectedWeek])
 
   // Unpaid invoices
   const unpaidInvoices = invoices.filter((inv) => inv.balance_due > 0)
@@ -489,78 +629,310 @@ export default function FinanceOverview() {
 
         {/* Mid grid: Cash Flow Chart + Unpaid Invoices List */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-4 mb-6">
-          {/* Revenue vs Expenses vs Net Profit Chart */}
+          {/* Revenue vs Expenses vs Net Profit Chart OR Items Sold Volume Bar Graph */}
           <GlassCard>
-            <div className="flex items-center justify-between mb-6">
+            {/* Top Header & View Tabs */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5 pb-4 border-b border-black/5">
               <div>
-                <h3 className="font-semibold text-base text-black">Cash Flow & Profit Trends</h3>
-                <p className="text-xs text-gray-400">Monthly breakdown of operating revenue, costs, and net operating income</p>
-              </div>
-              <div className="flex items-center gap-4 text-xs font-semibold">
-                <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#18181b]" /> Revenue</div>
-                <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-rose-500" /> Expenses</div>
-                <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-emerald-600" /> Net Profit</div>
-              </div>
-            </div>
-            <div className="h-[300px]">
-              {cashFlowData.length === 0 ? (
-                <div className="flex h-full items-center justify-center text-xs font-medium text-gray-400">
-                  No posted revenue or expense activity yet.
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-base text-black">
+                    {activeChartTab === "cash_flow" ? "Cash Flow & Profit Trends" : "Items Sold & Volume Analytics"}
+                  </h3>
+                  {activeChartTab === "items_sold" && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      {selectedMonthDisplay}
+                    </span>
+                  )}
                 </div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={cashFlowData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#18181b" stopOpacity={0.2}/>
-                        <stop offset="95%" stopColor="#18181b" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.2}/>
-                        <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#059669" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#059669" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
-                    <XAxis dataKey="name" stroke="#888" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis
-                      stroke="#888"
-                      fontSize={11}
-                      tickLine={false}
-                      axisLine={false}
-                      tickFormatter={(val) => {
-                        if (Math.abs(val) >= 1000000) return `ETB ${(val / 1000000).toFixed(1)}M`
-                        if (Math.abs(val) >= 1000) return `ETB ${(val / 1000).toFixed(0)}k`
-                        return `ETB ${val}`
-                      }}
-                    />
-                    <Tooltip
-                      formatter={(value: any, name: any) => [
-                        `ETB ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                        name === "NetProfit" || name === "Net Profit" ? "Net Operating Income" : name
-                      ]}
-                      labelStyle={{ fontWeight: 800, color: "#18181b", marginBottom: "4px" }}
-                      contentStyle={{
-                        backgroundColor: "rgba(255, 255, 255, 0.96)",
-                        backdropFilter: "blur(8px)",
-                        borderRadius: "14px",
-                        border: "1px solid rgba(0, 0, 0, 0.08)",
-                        boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
-                        padding: "10px 14px",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                      }}
-                    />
-                    <Area type="monotone" dataKey="Revenue" stroke="#18181b" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRev)" />
-                    <Area type="monotone" dataKey="Expenses" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#colorExp)" />
-                    <Area type="monotone" dataKey="NetProfit" name="Net Profit" stroke="#059669" strokeWidth={2.5} fillOpacity={1} fill="url(#colorProfit)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              )}
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {activeChartTab === "cash_flow"
+                    ? "Monthly breakdown of operating revenue, costs, and net operating income"
+                    : `Breakdown of physical quantities sold across warehouses for ${selectedMonthDisplay}`}
+                </p>
+              </div>
+
+              {/* View Switcher Tabs */}
+              <div className="flex items-center gap-1 p-1 bg-black/5 rounded-2xl shrink-0 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setActiveChartTab("cash_flow")}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                    activeChartTab === "cash_flow" ? "bg-white text-black shadow-xs" : "text-gray-500 hover:text-black"
+                  )}
+                >
+                  <TrendingUp className="size-3.5 text-emerald-600" />
+                  Cash Flow
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveChartTab("items_sold")}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                    activeChartTab === "items_sold" ? "bg-white text-black shadow-xs" : "text-gray-500 hover:text-black"
+                  )}
+                >
+                  <BarChart3 className="size-3.5 text-indigo-600" />
+                  Items Sold
+                </button>
+              </div>
             </div>
+
+            {/* Filter Controls Bar (Visible when Items Sold tab is active) */}
+            {activeChartTab === "items_sold" && (
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-5 p-2.5 rounded-2xl bg-zinc-50 border border-zinc-200/80">
+                {/* Month Stepper & Picker */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handlePrevMonth}
+                    title="Previous Month"
+                    className="p-1.5 rounded-xl hover:bg-zinc-200 text-zinc-700 transition-colors cursor-pointer"
+                  >
+                    <ChevronLeft className="size-4" />
+                  </button>
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="bg-white border border-zinc-200 text-xs font-black text-zinc-900 rounded-xl px-2.5 py-1.5 shadow-2xs outline-none cursor-pointer"
+                  >
+                    {availableMonths.map((m) => {
+                      const [yr, mo] = m.split("-").map(Number)
+                      const d = new Date(yr, mo - 1, 1)
+                      const label = d.toLocaleString("default", { month: "short", year: "numeric" })
+                      return (
+                        <option key={m} value={m}>
+                          {label} {m === currentMonthStr ? "• Current" : ""}
+                        </option>
+                      )
+                    })}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleNextMonth}
+                    title="Next Month"
+                    className="p-1.5 rounded-xl hover:bg-zinc-200 text-zinc-700 transition-colors cursor-pointer"
+                  >
+                    <ChevronRight className="size-4" />
+                  </button>
+                </div>
+
+                {/* Warehouse & Week Filters */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Warehouse Selector */}
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase">WH:</span>
+                    <select
+                      value={selectedWarehouse}
+                      onChange={(e) => setSelectedWarehouse(e.target.value)}
+                      className="bg-white border border-zinc-200 text-xs font-bold text-zinc-800 rounded-xl px-2 py-1.5 shadow-2xs outline-none cursor-pointer"
+                    >
+                      <option value="all">All Warehouses</option>
+                      <option value="WH1">WH1 • Export & Cleaning</option>
+                      <option value="WH2">WH2 • Central Vet Pharma</option>
+                      <option value="WH3">WH3 • Branch Vet Pharma</option>
+                    </select>
+                  </div>
+
+                  {/* Regional Week Selector */}
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase">Week:</span>
+                    <select
+                      value={selectedWeek}
+                      onChange={(e) => setSelectedWeek(e.target.value as any)}
+                      className="bg-white border border-zinc-200 text-xs font-bold text-zinc-800 rounded-xl px-2 py-1.5 shadow-2xs outline-none cursor-pointer"
+                    >
+                      <option value="all">All 4 Weeks</option>
+                      <option value="1">Week 1 (Days 1–7)</option>
+                      <option value="2">Week 2 (Days 8–14)</option>
+                      <option value="3">Week 3 (Days 15–21)</option>
+                      <option value="4">Week 4+ (Days 22–End)</option>
+                    </select>
+                  </div>
+
+                  {/* Mode Toggle: Top Items vs 4 Weeks */}
+                  <div className="flex items-center gap-1 p-0.5 bg-zinc-200/60 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setItemsViewMode("by_item")}
+                      className={cn(
+                        "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer",
+                        itemsViewMode === "by_item" ? "bg-white text-zinc-950 shadow-2xs" : "text-zinc-600 hover:text-black"
+                      )}
+                    >
+                      Top Items
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setItemsViewMode("by_week")}
+                      className={cn(
+                        "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer",
+                        itemsViewMode === "by_week" ? "bg-white text-zinc-950 shadow-2xs" : "text-zinc-600 hover:text-black"
+                      )}
+                    >
+                      4 Regional Weeks
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 1 CONTENT: Cash Flow & Profit Trends AreaChart */}
+            {activeChartTab === "cash_flow" && (
+              <>
+                <div className="flex items-center justify-end gap-4 text-xs font-semibold mb-4">
+                  <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#18181b]" /> Revenue</div>
+                  <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-rose-500" /> Expenses</div>
+                  <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-emerald-600" /> Net Profit</div>
+                </div>
+                <div className="h-[300px]">
+                  {cashFlowData.length === 0 ? (
+                    <div className="flex h-full items-center justify-center text-xs font-medium text-gray-400">
+                      No posted revenue or expense activity yet.
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={cashFlowData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#18181b" stopOpacity={0.2}/>
+                            <stop offset="95%" stopColor="#18181b" stopOpacity={0}/>
+                          </linearGradient>
+                          <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.2}/>
+                            <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
+                          </linearGradient>
+                          <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#059669" stopOpacity={0.3}/>
+                            <stop offset="95%" stopColor="#059669" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                        <XAxis dataKey="name" stroke="#888" fontSize={11} tickLine={false} axisLine={false} />
+                        <YAxis
+                          stroke="#888"
+                          fontSize={11}
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={(val) => {
+                            if (Math.abs(val) >= 1000000) return `ETB ${(val / 1000000).toFixed(1)}M`
+                            if (Math.abs(val) >= 1000) return `ETB ${(val / 1000).toFixed(0)}k`
+                            return `ETB ${val}`
+                          }}
+                        />
+                        <Tooltip
+                          formatter={(value: any, name: any) => [
+                            `ETB ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                            name === "NetProfit" || name === "Net Profit" ? "Net Operating Income" : name
+                          ]}
+                          labelStyle={{ fontWeight: 800, color: "#18181b", marginBottom: "4px" }}
+                          contentStyle={{
+                            backgroundColor: "rgba(255, 255, 255, 0.96)",
+                            backdropFilter: "blur(8px)",
+                            borderRadius: "14px",
+                            border: "1px solid rgba(0, 0, 0, 0.08)",
+                            boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
+                            padding: "10px 14px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                          }}
+                        />
+                        <Area type="monotone" dataKey="Revenue" stroke="#18181b" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRev)" />
+                        <Area type="monotone" dataKey="Expenses" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#colorExp)" />
+                        <Area type="monotone" dataKey="NetProfit" name="Net Profit" stroke="#059669" strokeWidth={2.5} fillOpacity={1} fill="url(#colorProfit)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* TAB 2 CONTENT: Items Sold BarChart */}
+            {activeChartTab === "items_sold" && (
+              <div className="h-[300px]">
+                {itemsSoldChartData.topItems.length === 0 ? (
+                  <div className="flex flex-col h-full items-center justify-center text-center p-6 text-gray-400">
+                    <Package className="size-8 text-zinc-300 mb-2" />
+                    <p className="text-xs font-bold text-zinc-600">No Sales Dispatches Found for {selectedMonthDisplay}</p>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">
+                      No posted sales issues match warehouse ({selectedWarehouse}) in this time window.
+                    </p>
+                  </div>
+                ) : itemsViewMode === "by_week" ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={itemsSoldChartData.weeklySummary} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                      <XAxis dataKey="name" stroke="#888" fontSize={11} tickLine={false} axisLine={false} />
+                      <YAxis stroke="#888" fontSize={11} tickLine={false} axisLine={false} />
+                      <Tooltip
+                        formatter={(value: any) => [`${Number(value || 0).toLocaleString()} units`, "Volume Sold"]}
+                        contentStyle={{
+                          backgroundColor: "rgba(255, 255, 255, 0.96)",
+                          backdropFilter: "blur(8px)",
+                          borderRadius: "14px",
+                          border: "1px solid rgba(0, 0, 0, 0.08)",
+                          boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.1)",
+                          padding: "10px 14px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                        }}
+                      />
+                      <Bar dataKey="quantity" name="Quantity Sold" fill="#059669" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={itemsSoldChartData.topItems.map((item) => ({
+                        name: item.name.length > 18 ? `${item.name.slice(0, 16)}…` : item.name,
+                        fullName: item.name,
+                        quantity: item.quantity,
+                        packagingUnit: item.packagingUnit,
+                        totalValue: item.totalValue,
+                        sharePercent: item.sharePercent,
+                      }))}
+                      margin={{ top: 10, right: 10, left: 10, bottom: 25 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                      <XAxis
+                        dataKey="name"
+                        stroke="#888"
+                        fontSize={10}
+                        tickLine={false}
+                        axisLine={false}
+                        interval={0}
+                        angle={-15}
+                        textAnchor="end"
+                      />
+                      <YAxis stroke="#888" fontSize={11} tickLine={false} axisLine={false} />
+                      <Tooltip
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload
+                            return (
+                              <div className="bg-white/95 backdrop-blur-md p-3 rounded-2xl border border-black/10 shadow-xl text-xs space-y-1">
+                                <p className="font-black text-black">{data.fullName}</p>
+                                <p className="font-mono text-emerald-700 font-extrabold">
+                                  {Number(data.quantity).toLocaleString()} {data.packagingUnit}
+                                </p>
+                                <p className="text-[11px] text-zinc-500 font-semibold">
+                                  Gross Value: ETB {Number(data.totalValue).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                                <p className="text-[10px] text-zinc-400 font-bold">
+                                  Share of Period Sales: {data.sharePercent}%
+                                </p>
+                              </div>
+                            )
+                          }
+                          return null
+                        }}
+                      />
+                      <Bar dataKey="quantity" fill="#18181b" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            )}
           </GlassCard>
 
           {/* Unpaid Invoices List Card */}

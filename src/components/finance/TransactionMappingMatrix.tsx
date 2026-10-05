@@ -5,6 +5,16 @@ import {
   Lock,
   Trash2,
   Building,
+  Layers,
+  BarChart3,
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  Wallet,
+  ShieldCheck,
+  Check,
+  RotateCcw,
+  Info,
 } from "lucide-react"
 import { GlassCard } from "@/components/GlassCard"
 import { useFinanceStore, type GlAccountMapping } from "@/lib/financeStore"
@@ -103,6 +113,50 @@ export default function TransactionMappingMatrix() {
   const [editMultiAccounts, setEditMultiAccounts] = useState<GlAccountMapping["multi_accounts"]>([])
   const [enableMultiAccountsInEdit, setEnableMultiAccountsInEdit] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+
+  // Sub-view: "rules" (Transaction Posting Rules) vs "kpi_groups" (KPI Stat & Account Group Mappings)
+  const [activeViewTab, setActiveViewTab] = useState<"rules" | "kpi_groups">("rules")
+
+  // KPI Group Settings State from companySettings
+  const companySettings = store.getCompanySettings()
+  const [revPrefix, setRevPrefix] = useState(companySettings.kpi_revenue_group_prefix || "4")
+  const [cogsPrefix, setCogsPrefix] = useState(companySettings.kpi_cogs_group_prefix || "5")
+  const [cashPrefix, setCashPrefix] = useState(companySettings.kpi_cash_group_code || "1000")
+  const [isSavingKpiSettings, setIsSavingKpiSettings] = useState(false)
+
+  // Live KPI metrics derived dynamically
+  const liveMetrics = useMemo(() => {
+    return store.getFinancialMetrics()
+  }, [store, revPrefix, cogsPrefix, cashPrefix])
+
+  const handleSaveKpiSettings = async () => {
+    try {
+      setIsSavingKpiSettings(true)
+      store.updateCompanySettings({
+        kpi_revenue_group_prefix: revPrefix.trim(),
+        kpi_cogs_group_prefix: cogsPrefix.trim(),
+        kpi_cash_group_code: cashPrefix.trim(),
+      })
+      showToast("KPI Groups Saved", "success", "Dashboard KPI account group definitions have been updated.")
+    } catch {
+      showToast("Save Failed", "warning", "Failed to update KPI group mappings.")
+    } finally {
+      setIsSavingKpiSettings(false)
+    }
+  }
+
+  const handleResetKpiSettings = () => {
+    setRevPrefix("4")
+    setCogsPrefix("5")
+    setCashPrefix("1000")
+    store.updateCompanySettings({
+      kpi_revenue_group_prefix: "4",
+      kpi_cogs_group_prefix: "5",
+      kpi_cash_group_code: "1000",
+      kpi_excluded_account_ids: [],
+    })
+    showToast("Defaults Restored", "info", "Standard GAAP account group prefixes restored.")
+  }
 
   // Filtered rules
   const filteredMappings = useMemo(() => {
@@ -235,7 +289,361 @@ export default function TransactionMappingMatrix() {
 
   return (
     <div className="flex flex-col gap-4">
-      <GlassCard className="p-0 overflow-hidden border border-white/65 shadow-md">
+      {/* Top View Mode Switcher */}
+      <div className="flex items-center gap-1.5 p-1 bg-zinc-200/60 rounded-2xl w-fit self-start border border-zinc-300/60 shadow-xs">
+        <button
+          type="button"
+          onClick={() => setActiveViewTab("rules")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+            activeViewTab === "rules"
+              ? "bg-white text-zinc-900 shadow-sm"
+              : "text-zinc-600 hover:text-zinc-900 hover:bg-white/40"
+          }`}
+        >
+          <Layers className="size-3.5 text-emerald-600" />
+          <span>Transaction Posting Rules</span>
+          <span className="ml-1 px-1.5 py-0.2 rounded-md bg-zinc-100 text-[10px] font-mono text-zinc-700 border border-zinc-200">
+            {mappings.length}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveViewTab("kpi_groups")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+            activeViewTab === "kpi_groups"
+              ? "bg-white text-zinc-900 shadow-sm"
+              : "text-zinc-600 hover:text-zinc-900 hover:bg-white/40"
+          }`}
+        >
+          <BarChart3 className="size-3.5 text-blue-600" />
+          <span>KPI Stat & Account Group Mappings</span>
+          <span className="ml-1 px-1.5 py-0.2 rounded-md bg-blue-50 text-[10px] font-mono text-blue-700 border border-blue-200">
+            Live GAAP
+          </span>
+        </button>
+      </div>
+
+      {/* KPI Stat & Account Group Mappings View */}
+      {activeViewTab === "kpi_groups" && (
+        <div className="space-y-6">
+          {/* Header Card */}
+          <GlassCard className="p-6 border border-white/65 shadow-md">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="size-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
+                    <BarChart3 className="size-4.5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-zinc-900 tracking-tight">
+                      Dashboard KPI & Financial Group Mappings
+                    </h3>
+                    <p className="text-xs text-zinc-500 font-medium">
+                      Configure which Chart of Accounts (COA) account groups feed into high-level executive KPIs on Finance Overview and Admin Control Center.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleResetKpiSettings}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 text-xs font-bold text-zinc-700 shadow-xs cursor-pointer transition-colors"
+                >
+                  <RotateCcw className="size-3.5 text-zinc-400" />
+                  Restore Defaults
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingKpiSettings}
+                  onClick={handleSaveKpiSettings}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-xs font-black text-white shadow-sm cursor-pointer transition-colors disabled:opacity-50"
+                >
+                  {isSavingKpiSettings ? (
+                    <LoadingDots color="bg-white" size="sm" />
+                  ) : (
+                    <>
+                      <Check className="size-3.5 text-white" />
+                      Save Group Mappings
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </GlassCard>
+
+          {/* Primary Group Config Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Card 1: Posted Revenue Group */}
+            <GlassCard className="p-5 border border-white/65 shadow-md flex flex-col justify-between">
+              <div>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="size-9 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
+                      <DollarSign className="size-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-zinc-900">Operating Revenue Group</h4>
+                      <p className="text-[11px] text-zinc-500 font-medium">Feeds Operating Revenue & Sales KPIs</p>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    Primary Group
+                  </span>
+                </div>
+
+                <div className="space-y-3 mt-4">
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">
+                      Target Account Prefix or Type
+                    </label>
+                    <select
+                      value={revPrefix}
+                      onChange={(e) => setRevPrefix(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-900 focus:outline-none focus:border-emerald-600 cursor-pointer"
+                    >
+                      <option value="4">Group 4000* - All Operating & Export Revenue</option>
+                      <option value="4000-01">Group 4000-01* - Veterinary Drug Sales (Domestic Only)</option>
+                      <option value="4000-02">Group 4000-02* - Export Crop Sales (WH1 Only)</option>
+                    </select>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-emerald-50/60 border border-emerald-200/80 flex items-center justify-between text-xs">
+                    <span className="font-bold text-emerald-900">Current Computed Balance:</span>
+                    <span className="font-black font-mono text-emerald-700 text-sm">
+                      ETB {liveMetrics.totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[11px] text-zinc-400 mt-4 flex items-center gap-1 font-medium">
+                <Info className="size-3.5 text-zinc-400 shrink-0" />
+                Aggregates credit postings minus refunds from all mapped revenue ledger accounts.
+              </p>
+            </GlassCard>
+
+            {/* Card 2: Cost of Goods Sold Group */}
+            <GlassCard className="p-5 border border-white/65 shadow-md flex flex-col justify-between">
+              <div>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="size-9 rounded-2xl bg-rose-100 text-rose-800 flex items-center justify-center">
+                      <TrendingDown className="size-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-zinc-900">Cost of Goods Sold (COGS) Group</h4>
+                      <p className="text-[11px] text-zinc-500 font-medium">Feeds Direct Product Fulfillment Expense</p>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300">
+                    Primary Group
+                  </span>
+                </div>
+
+                <div className="space-y-3 mt-4">
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">
+                      Target Account Prefix or Type
+                    </label>
+                    <select
+                      value={cogsPrefix}
+                      onChange={(e) => setCogsPrefix(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-900 focus:outline-none focus:border-rose-600 cursor-pointer"
+                    >
+                      <option value="5">Group 5000* & 5010* - All Direct Fulfillment COGS</option>
+                      <option value="5000-01">Group 5000-01* - Cost of Veterinary Drug (Domestic)</option>
+                      <option value="5010">Group 5010* - Cost of Export Sales (WH1 Crops)</option>
+                    </select>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-rose-50/60 border border-rose-200/80 flex items-center justify-between text-xs">
+                    <span className="font-bold text-rose-900">Current Computed Balance:</span>
+                    <span className="font-black font-mono text-rose-700 text-sm">
+                      ETB {liveMetrics.totalCogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[11px] text-zinc-400 mt-4 flex items-center gap-1 font-medium">
+                <Info className="size-3.5 text-zinc-400 shrink-0" />
+                Debited synchronously during batch dispatch and sales issue fulfillments.
+              </p>
+            </GlassCard>
+
+            {/* Card 3: Liquid Cash & Bank Reserves */}
+            <GlassCard className="p-5 border border-white/65 shadow-md flex flex-col justify-between">
+              <div>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="size-9 rounded-2xl bg-cyan-100 text-cyan-800 flex items-center justify-center">
+                      <Wallet className="size-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-zinc-900">Liquid Cash & Bank Reserves</h4>
+                      <p className="text-[11px] text-zinc-500 font-medium">Feeds Treasury & Cash Position KPIs</p>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-cyan-100 text-cyan-800 border border-cyan-300">
+                    Primary Group
+                  </span>
+                </div>
+
+                <div className="space-y-3 mt-4">
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">
+                      Target Cash & Bank Account Group
+                    </label>
+                    <select
+                      value={cashPrefix}
+                      onChange={(e) => setCashPrefix(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-zinc-200 text-xs font-bold text-zinc-900 focus:outline-none focus:border-cyan-600 cursor-pointer"
+                    >
+                      <option value="1000">Group 1000 - CASH (Petty Cash + All Bank Accounts)</option>
+                      <option value="1000-02">Group 1000-02* - Commercial Banks Only (CBE, BOA, AIB, etc.)</option>
+                      <option value="1000-01">Group 1000-01* - Petty Cash Reserves Only</option>
+                    </select>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-cyan-50/60 border border-cyan-200/80 flex items-center justify-between text-xs">
+                    <span className="font-bold text-cyan-900">Current Computed Balance:</span>
+                    <span className="font-black font-mono text-cyan-800 text-sm">
+                      ETB {liveMetrics.cashPosition.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[11px] text-zinc-400 mt-4 flex items-center gap-1 font-medium">
+                <Info className="size-3.5 text-zinc-400 shrink-0" />
+                Aggregates liquid debit deposits minus credit disbursements across accounts.
+              </p>
+            </GlassCard>
+
+            {/* Card 4: Operating Expenses */}
+            <GlassCard className="p-5 border border-white/65 shadow-md flex flex-col justify-between">
+              <div>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="size-9 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center">
+                      <TrendingDown className="size-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-zinc-900">Operating Expenses (OPEX)</h4>
+                      <p className="text-[11px] text-zinc-500 font-medium">Feeds SG&A & Administrative Overheads</p>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300">
+                    Primary Group
+                  </span>
+                </div>
+
+                <div className="space-y-3 mt-4">
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1">
+                      Standard OPEX Groups
+                    </label>
+                    <div className="px-3 py-2 rounded-xl bg-zinc-100 border border-zinc-200 text-xs font-bold text-zinc-800 flex items-center justify-between">
+                      <span>Groups 6000* (Selling) & 8000* (Administrative)</span>
+                      <ShieldCheck className="size-4 text-emerald-600 shrink-0" />
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-amber-50/60 border border-amber-200/80 flex items-center justify-between text-xs">
+                    <span className="font-bold text-amber-900">Current Computed Balance:</span>
+                    <span className="font-black font-mono text-amber-800 text-sm">
+                      ETB {liveMetrics.operatingExpenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[11px] text-zinc-400 mt-4 flex items-center gap-1 font-medium">
+                <Info className="size-3.5 text-zinc-400 shrink-0" />
+                Payroll, transportation, utilities, and general administration expenses.
+              </p>
+            </GlassCard>
+          </div>
+
+          {/* Derived Surplus Metrics - Formula Badges (Mathematical GAAP Definitions) */}
+          <GlassCard className="p-6 border border-white/65 shadow-md">
+            <div className="flex items-center justify-between gap-4 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="size-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center">
+                  <TrendingUp className="size-4.5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black text-zinc-900">
+                    Derived Financial Surplus Metrics (Formulas)
+                  </h4>
+                  <p className="text-xs text-zinc-500 font-medium">
+                    These metrics cannot be mapped to single accounts. They calculate automatically from primary groups.
+                  </p>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-zinc-100 text-zinc-700 border border-zinc-200">
+                <Lock className="size-3 text-zinc-500" />
+                Locked Mathematical Formulas
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+              {/* Formula 1: Gross Profit */}
+              <div className="p-4 rounded-2xl bg-zinc-50/80 border border-zinc-200 flex flex-col justify-between">
+                <div>
+                  <span className="text-[10px] font-extrabold text-zinc-500 uppercase tracking-wider">Gross Profit</span>
+                  <p className="text-sm font-black text-zinc-900 mt-1 font-mono">
+                    ETB {liveMetrics.grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className="mt-3 pt-2.5 border-t border-zinc-200/80 text-[10px] font-bold text-zinc-600">
+                  Formula: <span className="font-mono text-zinc-900">Revenue - COGS</span>
+                </div>
+              </div>
+
+              {/* Formula 2: Gross Margin */}
+              <div className="p-4 rounded-2xl bg-zinc-50/80 border border-zinc-200 flex flex-col justify-between">
+                <div>
+                  <span className="text-[10px] font-extrabold text-zinc-500 uppercase tracking-wider">Gross Margin</span>
+                  <p className="text-sm font-black text-teal-700 mt-1 font-mono">
+                    {liveMetrics.grossMargin.toFixed(1)}%
+                  </p>
+                </div>
+                <div className="mt-3 pt-2.5 border-t border-zinc-200/80 text-[10px] font-bold text-zinc-600">
+                  Formula: <span className="font-mono text-zinc-900">(Gross Profit / Revenue) × 100</span>
+                </div>
+              </div>
+
+              {/* Formula 3: Net Operating Income (EBIT) */}
+              <div className="p-4 rounded-2xl bg-zinc-50/80 border border-zinc-200 flex flex-col justify-between">
+                <div>
+                  <span className="text-[10px] font-extrabold text-zinc-500 uppercase tracking-wider">Net Operating Income</span>
+                  <p className="text-sm font-black text-emerald-800 mt-1 font-mono">
+                    ETB {liveMetrics.netProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className="mt-3 pt-2.5 border-t border-zinc-200/80 text-[10px] font-bold text-zinc-600">
+                  Formula: <span className="font-mono text-zinc-900">Revenue - Total Expenses</span>
+                </div>
+              </div>
+
+              {/* Formula 4: Net Margin */}
+              <div className="p-4 rounded-2xl bg-zinc-50/80 border border-zinc-200 flex flex-col justify-between">
+                <div>
+                  <span className="text-[10px] font-extrabold text-zinc-500 uppercase tracking-wider">Net Margin</span>
+                  <p className="text-sm font-black text-blue-700 mt-1 font-mono">
+                    {liveMetrics.netMargin.toFixed(1)}%
+                  </p>
+                </div>
+                <div className="mt-3 pt-2.5 border-t border-zinc-200/80 text-[10px] font-bold text-zinc-600">
+                  Formula: <span className="font-mono text-zinc-900">(Net Profit / Revenue) × 100</span>
+                </div>
+              </div>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Transaction Posting Rules View */}
+      {activeViewTab === "rules" && (
+        <GlassCard className="p-0 overflow-hidden border border-white/65 shadow-md">
         <div className="px-6 pt-6">
           <FinanceTableToolbar
             title="Transaction Mappings"
@@ -476,6 +884,7 @@ export default function TransactionMappingMatrix() {
           )}
         </div>
       </GlassCard>
+      )}
 
       {/* EDIT GL MAPPING MODAL */}
       {editingRule && (
