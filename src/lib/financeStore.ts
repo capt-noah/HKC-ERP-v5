@@ -75,6 +75,7 @@ export interface JournalEntry {
     | "Recurring Expense"
     | "Round Off"
     | "Reversal"
+    | "Inventory"
   source_id: string | null
   created_by: string
   currency: string
@@ -89,6 +90,8 @@ export interface JournalEntryLine {
   id: string
   journal_entry_id: string
   account_id: string
+  account_code?: string
+  account_name?: string
   debit_amount: number
   credit_amount: number
   currency: string
@@ -97,6 +100,7 @@ export interface JournalEntryLine {
   party_type?: "Customer" | "Supplier" | "Employee" | null
   party_id?: string | null
   party_name?: string | null
+  description?: string
   is_cleared?: boolean
   cleared_date?: string | null
 }
@@ -782,7 +786,22 @@ class FinanceStore {
           created_at: m.created_at || m.createdAt,
           updated_at: m.updated_at || m.updatedAt,
         }))
-        this.glMappings = this.glMappings.filter((m) => m.id !== "kpi_stat_net_operating_income")
+        this.glMappings = this.glMappings.filter((m) => {
+          if (m.id === "kpi_stat_net_operating_income") return false
+          if (m.category === "Purchase" && (m.id.startsWith("purchase_export_") || m.id === "purchase_pharma_stock")) {
+            return false
+          }
+          return true
+        }).map((m) => {
+          if (m.id === "ap_trade_payable" || m.id === "po_grni_clearing" || m.id === "ap_advance_prepayment") {
+            return { ...m, category: "Payables & Clearing" }
+          }
+          if (m.id === "supplier_payment_bank") {
+            return { ...m, category: "Cash & Bank Accounts" }
+          }
+          return m
+        })
+
         const loadedIds = new Set(this.glMappings.map((m) => m.id))
         const missingDefaults = DEFAULT_GL_ACCOUNT_MAPPINGS.filter((d) => !loadedIds.has(d.id))
         if (missingDefaults.length > 0) {
@@ -791,7 +810,21 @@ class FinanceStore {
       } else {
         this.glMappings = [...DEFAULT_GL_ACCOUNT_MAPPINGS]
       }
-      this.glMappings = this.glMappings.filter((m) => m.id !== "kpi_stat_net_operating_income")
+      this.glMappings = this.glMappings.filter((m) => {
+        if (m.id === "kpi_stat_net_operating_income") return false
+        if (m.category === "Purchase" && (m.id.startsWith("purchase_export_") || m.id === "purchase_pharma_stock")) {
+          return false
+        }
+        return true
+      }).map((m) => {
+        if (m.id === "ap_trade_payable" || m.id === "po_grni_clearing" || m.id === "ap_advance_prepayment") {
+          return { ...m, category: "Payables & Clearing" }
+        }
+        if (m.id === "supplier_payment_bank") {
+          return { ...m, category: "Cash & Bank Accounts" }
+        }
+        return m
+      })
 
       // Trigger cross-module live finance sync
       await this.syncCrossModule()
@@ -1271,18 +1304,14 @@ class FinanceStore {
                 }
               } else {
                 // 2. Default two-legged double entry with dynamic accounts
-                const isPharma = String(po.warehouse_id || po.warehouseId || po.warehouse || "").toUpperCase().includes("WH2") ||
-                                 String(po.warehouse_id || po.warehouseId || po.warehouse || "").toUpperCase().includes("WH3") ||
-                                 String(po.category || "").toUpperCase().includes("PHARMA") ||
-                                 String(po.category || "").toUpperCase().includes("VET")
-
-                const debitRule = isPharma ? "purchase_pharma_stock" : "purchase_export_commodity"
-                const debitFallback = isPharma ? "1400-01" : "1410-01"
-
-                const debitAcc = (po.targetAccountId && this.accounts.find((a) => a.id === po.targetAccountId))
+                let debitAcc = (po.targetAccountId && this.accounts.find((a) => a.id === po.targetAccountId))
                   || (po.targetAccountCode && this.accounts.find((a) => a.code === po.targetAccountCode))
-                  || this.getMappedAccount(debitRule, debitFallback)
-                  || (isPharma ? this.getMappedAccount("inventory_pharma_stock", "1400-01") : this.getMappedAccount("po_grni_inventory", "1410-01"))
+                if (!debitAcc && po.category) {
+                  debitAcc = this.getMappedAccount(po.category, "8101-004")
+                }
+                if (!debitAcc) {
+                  debitAcc = this.getMappedAccount("purchase_freight_transport", "8101-004")
+                }
 
                 const creditRule = isCash ? "purchase_cash_bank" : "purchase_ap_credit"
                 const creditFallback = isCash ? "1000-02-26" : "2100-06"
@@ -1773,7 +1802,10 @@ class FinanceStore {
     } else if (ruleKey === "inventory_stock_pharma") {
       if (isExport) {
         const customMatch = itemName ? this.glMappings.find(
-          (m) => m.category === "Inventory & COGS" && m.label.toLowerCase().includes(itemName)
+          (m) => (m.category === "Inventory & COGS" || m.category === "Inventory") &&
+                 !m.label.toLowerCase().includes("cost") &&
+                 !m.label.toLowerCase().includes("cogs") &&
+                 m.label.toLowerCase().includes(itemName)
         ) : null
         if (customMatch) {
           targetRuleKey = customMatch.id
@@ -1787,7 +1819,10 @@ class FinanceStore {
         targetRuleKey = "inventory_pharma_stock"
       } else {
         const customMatch = itemName ? this.glMappings.find(
-          (m) => m.category === "Inventory & COGS" && m.label.toLowerCase().includes(itemName)
+          (m) => (m.category === "Inventory & COGS" || m.category === "Inventory") &&
+                 !m.label.toLowerCase().includes("cost") &&
+                 !m.label.toLowerCase().includes("cogs") &&
+                 m.label.toLowerCase().includes(itemName)
         ) : null
         if (customMatch) {
           targetRuleKey = customMatch.id
@@ -1798,7 +1833,9 @@ class FinanceStore {
     } else if (ruleKey === "cogs_stock_fulfillment") {
       if (isExport) {
         const customMatch = itemName ? this.glMappings.find(
-          (m) => m.category === "Inventory & COGS" && m.label.toLowerCase().includes("cost") && m.label.toLowerCase().includes(itemName)
+          (m) => (m.category === "Inventory & COGS" || m.category === "Inventory") &&
+                 (m.label.toLowerCase().includes("cost") || m.label.toLowerCase().includes("cogs")) &&
+                 m.label.toLowerCase().includes(itemName)
         ) : null
         if (customMatch) {
           targetRuleKey = customMatch.id
@@ -1812,7 +1849,9 @@ class FinanceStore {
         targetRuleKey = "cogs_stock_fulfillment"
       } else {
         const customMatch = itemName ? this.glMappings.find(
-          (m) => m.category === "Inventory & COGS" && m.label.toLowerCase().includes("cost") && m.label.toLowerCase().includes(itemName)
+          (m) => (m.category === "Inventory & COGS" || m.category === "Inventory") &&
+                 (m.label.toLowerCase().includes("cost") || m.label.toLowerCase().includes("cogs")) &&
+                 m.label.toLowerCase().includes(itemName)
         ) : null
         if (customMatch) {
           targetRuleKey = customMatch.id
@@ -1844,11 +1883,37 @@ class FinanceStore {
     if (!mapping && targetRuleKey !== ruleKey) {
       mapping = this.glMappings.find((m) => m.id === ruleKey)
     }
+    if (!mapping) {
+      const cleanTarget = targetRuleKey.toLowerCase().replace(/[^a-z0-9]/g, "")
+      const cleanRule = ruleKey.toLowerCase().replace(/[^a-z0-9]/g, "")
+      mapping = this.glMappings.find((m) => {
+        const mLabelClean = (m.label || "").toLowerCase().replace(/[^a-z0-9]/g, "")
+        const mIdClean = (m.id || "").toLowerCase().replace(/[^a-z0-9]/g, "")
+        return (
+          mLabelClean === cleanTarget ||
+          mLabelClean === cleanRule ||
+          mIdClean === cleanTarget ||
+          mIdClean === cleanRule ||
+          (cleanTarget.length >= 5 && mLabelClean.includes(cleanTarget))
+        )
+      })
+    }
     if (mapping) {
       const acc = this.accounts.find(
         (a) => (a.id === mapping.account_id || a.code === mapping.account_code || a.id === mapping.account_code) && a.is_active
       )
-      if (acc) return acc
+      if (acc) {
+        // Guard: do not allow an asset account for a COGS rule or an expense account for an inventory rule
+        const isInvRule = ruleKey.includes("inventory") || targetRuleKey.includes("inventory")
+        const isCogsRule = ruleKey.includes("cogs") || targetRuleKey.includes("cogs")
+        if (isInvRule && (acc.account_type === "Expense" || acc.code.startsWith("5000") || acc.code.startsWith("5010"))) {
+          // Skip invalid cross-matched mapping
+        } else if (isCogsRule && (acc.account_type === "Asset" || acc.code.startsWith("1400") || acc.code.startsWith("1410"))) {
+          // Skip invalid cross-matched mapping
+        } else {
+          return acc
+        }
+      }
     }
 
     // 2. Check fallbackCode if provided
@@ -1858,6 +1923,20 @@ class FinanceStore {
       )
       if (fallbackAcc) return fallbackAcc
     }
+
+    // 2.5. Direct COA account name matching ("since we mapped it with the same name as the coa account")
+    const cleanTargetKey = targetRuleKey.toLowerCase().replace(/[^a-z0-9]/g, "")
+    const cleanBaseKey = ruleKey.toLowerCase().replace(/[^a-z0-9]/g, "")
+    const nameMatchAcc = this.accounts.find((a) => {
+      if (!a.is_active || a.is_group) return false
+      const aNameClean = (a.name || "").toLowerCase().replace(/[^a-z0-9]/g, "")
+      return (
+        aNameClean === cleanTargetKey ||
+        aNameClean === cleanBaseKey ||
+        (cleanTargetKey.length >= 5 && (aNameClean.includes(cleanTargetKey) || cleanTargetKey.includes(aNameClean)))
+      )
+    })
+    if (nameMatchAcc) return nameMatchAcc
 
     // 3. Check DEFAULT_GL_ACCOUNT_MAPPINGS for built-in rule default
     const defaultRule =
@@ -2343,7 +2422,7 @@ class FinanceStore {
   }
 
   public addAccount(account: Omit<AccountItem, "id">): { success: boolean; error?: string; account?: AccountItem } {
-    if (this.accounts.some((a) => a.code.toLowerCase() === account.code.toLowerCase())) {
+    if (this.accounts.some((a) => (a.code || "").toLowerCase() === (account.code || "").toLowerCase())) {
       return { success: false, error: `Account code "${account.code}" already exists in Chart of Accounts.` }
     }
 
@@ -2444,7 +2523,7 @@ class FinanceStore {
 
       // 2. HARD RULE ENFORCEMENT: Reject creating any line against Receivable, Payable, or Payroll Payable account without party reference
       const accCode = acc.code
-      const accName = acc.name.toLowerCase()
+      const accName = (acc.name || "").toLowerCase()
       const isReceivable = accCode === "1200" || accName.includes("receivable")
       const isPayable = accCode === "2000" || accName.includes("payable")
       const isPayrollPayable = accCode === "2100" || accCode === "2210" || accName.includes("payroll")
@@ -3466,6 +3545,200 @@ class FinanceStore {
     this.lines = this.lines.filter((l) => !matchingIds.has(l.journal_entry_id))
     this.notify()
     return { success: true }
+  }
+
+  // --- Initial & Batch Stock Intake GL Valuation ---
+  public recordStockIntake(params: {
+    productId: string
+    productName: string
+    sku?: string
+    warehouseId?: string
+    quantity: number
+    unitCost: number
+    unit?: string
+    entryDate?: string
+    entryId?: string
+    batchNo?: string
+    isChild?: boolean
+  }): { success: boolean; error?: string; entry?: JournalEntry } {
+    const qty = Number(params.quantity || 0)
+    const cost = Number(params.unitCost || 0)
+    if (qty <= 0 || cost <= 0) {
+      return { success: false, error: "Stock intake requires positive quantity and cost price." }
+    }
+
+    const totalValuation = Math.round(qty * cost * 100) / 100
+    if (totalValuation <= 0) {
+      return { success: false, error: "Total stock valuation is zero." }
+    }
+
+    const cleanWh = String(params.warehouseId || "").trim().toUpperCase()
+    const isExport = cleanWh.startsWith("WH1") || cleanWh.includes("EXP") || cleanWh.includes("AGRI")
+
+    // Resolve Stock Asset Account
+    let stockAccCode = isExport ? "1410-01" : "1400-01"
+    if (isExport) {
+      const commSet = resolveCommodityAccounts(params.productName || params.sku || "")
+      stockAccCode = commSet.inventoryCode
+    }
+    const stockAcc = this.getMappedAccount(
+      isExport ? "inventory_stock_in_hand" : "inventory_stock_pharma",
+      stockAccCode,
+      { warehouseId: params.warehouseId, itemName: params.productName }
+    )
+
+    // Resolve Beginning Balance / Opening Equity Account (3200 Retained Earnings)
+    const equityAcc =
+      this.accounts.find((a) => a.code === "3200" || a.id === "3200") ||
+      this.accounts.find((a) => a.account_type === "Equity" && a.is_active) ||
+      stockAcc
+
+    const labelPrefix = params.isChild
+      ? `Child Batch Intake Valuation`
+      : params.entryId || params.batchNo
+      ? `Stock Inbound Intake Valuation`
+      : `Initial Inventory Stock Intake Valuation`
+    const batchPart = params.batchNo ? ` [Batch: ${params.batchNo}]` : params.entryId ? ` [Entry: ${params.entryId}]` : ""
+    const desc = `${labelPrefix}: ${params.productName}${batchPart} (+${qty} ${params.unit || "Units"} @ ETB ${cost.toFixed(2)})`
+    const entryDate = params.entryDate || new Date().toISOString().split("T")[0]
+    const sourceId = `STK-IN-${params.entryId || params.batchNo || params.sku || params.productId}`
+
+    return this.postJournalEntry(
+      {
+        entry_date: entryDate,
+        description: desc,
+        source_type: "Inventory",
+        source_id: sourceId,
+        created_by: "System Inventory Manager",
+        currency: "ETB",
+        exchange_rate: 1,
+        is_reversal_of: null,
+      },
+      [
+        {
+          account_id: stockAcc.id,
+          debit_amount: totalValuation,
+          credit_amount: 0,
+          warehouse_id: params.warehouseId || null,
+        },
+        {
+          account_id: equityAcc.id,
+          debit_amount: 0,
+          credit_amount: totalValuation,
+          warehouse_id: params.warehouseId || null,
+        },
+      ]
+    )
+  }
+
+  public recordInitialStockIntake(params: {
+    productId: string
+    productName: string
+    sku?: string
+    warehouseId?: string
+    quantity: number
+    unitCost: number
+    unit?: string
+    entryDate?: string
+  }): { success: boolean; error?: string; entry?: JournalEntry } {
+    return this.recordStockIntake(params)
+  }
+
+  // --- Inventory Loss & Shrinkage GL Accounting (Quarantine, Rejection, Diff) ---
+  public recordStockLoss(params: {
+    productId: string
+    productName: string
+    lossType: "quarantine" | "reject" | "diff"
+    recordId: string
+    warehouseId?: string
+    quantity: number
+    unitCost: number
+    unit?: string
+    lossDate?: string
+    reason?: string
+    batchNo?: string
+  }): { success: boolean; error?: string; entry?: JournalEntry } {
+    const qty = Number(params.quantity || 0)
+    const cost = Number(params.unitCost || 0)
+    if (qty <= 0 || cost <= 0) {
+      return { success: false, error: "Loss record requires positive quantity and cost price." }
+    }
+
+    const totalValuation = Math.round(qty * cost * 100) / 100
+    if (totalValuation <= 0) {
+      return { success: false, error: "Total loss valuation is zero." }
+    }
+
+    const cleanWh = String(params.warehouseId || "").trim().toUpperCase()
+    const isExport = cleanWh.startsWith("WH1") || cleanWh.includes("EXP") || cleanWh.includes("AGRI")
+
+    // 1. Resolve Stock Asset Account (To be Credited)
+    let stockAccCode = isExport ? "1410-01" : "1400-01"
+    if (isExport) {
+      const commSet = resolveCommodityAccounts(params.productName || "")
+      stockAccCode = commSet.inventoryCode
+    }
+    const stockAcc = this.getMappedAccount(
+      isExport ? "inventory_stock_in_hand" : "inventory_stock_pharma",
+      stockAccCode,
+      { warehouseId: params.warehouseId, itemName: params.productName }
+    )
+
+    // 2. Resolve Loss / Shrinkage Account (To be Debited)
+    // stock_shrinkage_loss maps to 6000-22 (OTHER / Shrinkage Loss)
+    const lossAcc = this.getMappedAccount(
+      "stock_shrinkage_loss",
+      "6000-22",
+      { warehouseId: params.warehouseId, itemName: params.productName }
+    )
+
+    const typeLabel =
+      params.lossType === "quarantine"
+        ? "Quarantine Hold Loss"
+        : params.lossType === "reject"
+        ? "Cleaning Rejection Loss"
+        : "Sales Cleaning Difference / Shrinkage"
+
+    const batchPart = params.batchNo ? ` [Batch: ${params.batchNo}]` : ""
+    const reasonPart = params.reason ? ` - ${params.reason}` : ""
+    const desc = `Inventory ${typeLabel}: ${params.productName}${batchPart} (-${qty} ${params.unit || "Units"} @ ETB ${cost.toFixed(2)})${reasonPart}`
+    const entryDate = params.lossDate || new Date().toISOString().split("T")[0]
+    const sourceId = `STK-LOSS-${params.lossType.toUpperCase()}-${params.recordId}`
+
+    return this.postJournalEntry(
+      {
+        entry_date: entryDate,
+        description: desc,
+        source_type: "Inventory",
+        source_id: sourceId,
+        created_by: "System Inventory Quality Manager",
+        currency: "ETB",
+        exchange_rate: 1,
+        is_reversal_of: null,
+      },
+      [
+        {
+          account_id: lossAcc.id,
+          debit_amount: totalValuation,
+          credit_amount: 0,
+          warehouse_id: params.warehouseId || null,
+        },
+        {
+          account_id: stockAcc.id,
+          debit_amount: 0,
+          credit_amount: totalValuation,
+          warehouse_id: params.warehouseId || null,
+        },
+      ]
+    )
+  }
+
+  public reverseStockLoss(
+    lossType: "quarantine" | "reject" | "diff",
+    recordId: string
+  ): { success: boolean } {
+    const sourceId = `STK-LOSS-${lossType.toUpperCase()}-${recordId}`
+    return this.deleteJournalEntriesBySource("Inventory", sourceId)
   }
 
   // --- Invoice & Payment Actions ---
@@ -4957,8 +5230,8 @@ class FinanceStore {
     if (accIndex === -1) return { success: false, error: "Account not found." }
 
     // If changing code, verify uniqueness
-    if (updated.code && updated.code.toLowerCase() !== this.accounts[accIndex].code.toLowerCase()) {
-      if (this.accounts.some((a) => a.code.toLowerCase() === updated.code?.toLowerCase() && a.id !== id && a.code !== id)) {
+    if (updated.code && updated.code.toLowerCase() !== (this.accounts[accIndex].code || "").toLowerCase()) {
+      if (this.accounts.some((a) => (a.code || "").toLowerCase() === updated.code?.toLowerCase() && a.id !== id && a.code !== id)) {
         return { success: false, error: `Account code "${updated.code}" already exists.` }
       }
     }

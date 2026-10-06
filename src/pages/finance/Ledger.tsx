@@ -453,12 +453,14 @@ export default function Ledger() {
 
   // COA Tree Helpers
   const isRootCategoryDummy = (a: any) => {
+    if (!a) return false
+    const aName = (a.name || "").toLowerCase()
     return (
-      (a.code === "1000" && a.name.toLowerCase() === "assets") ||
-      (a.code === "2000" && a.name.toLowerCase() === "liabilities") ||
-      (a.code === "3000" && a.name.toLowerCase() === "equity") ||
-      (a.code === "4000" && (a.name.toLowerCase().includes("income") || a.name.toLowerCase().includes("revenue"))) ||
-      (a.code === "5000" && a.name.toLowerCase() === "expenses" && a.is_group === true)
+      (a.code === "1000" && aName === "assets") ||
+      (a.code === "2000" && aName === "liabilities") ||
+      (a.code === "3000" && aName === "equity") ||
+      (a.code === "4000" && (aName.includes("income") || aName.includes("revenue"))) ||
+      (a.code === "5000" && aName === "expenses" && a.is_group === true)
     )
   }
 
@@ -485,37 +487,62 @@ export default function Ledger() {
     return getChildrenOfAccount(acc).length > 0
   }
 
-  const getAccountNetBalance = (acc: any) => {
-    const accLines = lines.filter((l) => l.account_id === acc.id || l.account_id === acc.code || l.account_id === `ACC-${acc.code}`)
-    const debitSum = accLines.reduce((s, l) => s + l.debit_amount, 0)
-    const creditSum = accLines.reduce((s, l) => s + l.credit_amount, 0)
+  const getAccountDebitCredit = (acc: any): { debit: number; credit: number; net: number } => {
+    const accLines = lines.filter((l) => {
+      const lineAccId = String(l.account_id || "").trim()
+      const lineAccCode = String((l as any).account_code || "").trim()
+      return (
+        lineAccId === acc.id ||
+        lineAccId === acc.code ||
+        lineAccId === `ACC-${acc.code}` ||
+        (lineAccCode && lineAccCode === acc.code)
+      )
+    })
+    const debitSum = accLines.reduce((s, l) => s + Number(l.debit_amount || 0), 0)
+    const creditSum = accLines.reduce((s, l) => s + Number(l.credit_amount || 0), 0)
+    let net = 0
     if (acc.account_type === "Asset" || acc.account_type === "Expense") {
-      return debitSum - creditSum
+      net = debitSum - creditSum
+    } else {
+      net = creditSum - debitSum
     }
-    return creditSum - debitSum
+    return { debit: debitSum, credit: creditSum, net }
   }
 
-  const getGroupNetBalance = (acc: any): number => {
-    let sum = getAccountNetBalance(acc)
+  const getAccountNetBalance = (acc: any) => {
+    return getAccountDebitCredit(acc).net
+  }
+
+  const getGroupDebitCredit = (acc: any): { debit: number; credit: number; net: number } => {
+    const self = getAccountDebitCredit(acc)
+    let dr = self.debit
+    let cr = self.credit
+    let net = self.net
     const children = getChildrenOfAccount(acc)
     for (const child of children) {
       if (isGroupAccount(child)) {
-        sum += getGroupNetBalance(child)
+        const sub = getGroupDebitCredit(child)
+        dr += sub.debit
+        cr += sub.credit
+        net += sub.net
       } else {
-        sum += getAccountNetBalance(child)
+        const sub = getAccountDebitCredit(child)
+        dr += sub.debit
+        cr += sub.credit
+        net += sub.net
       }
     }
-    return sum
+    return { debit: dr, credit: cr, net }
   }
 
   // Root category definitions mapping cleanly to company COA
   const coaRootCategories = [
-    { key: "Asset", title: "Assets (1000s)", code: "1", color: "emerald", filter: (a: any) => a.account_type === "Asset" },
-    { key: "Liability", title: "Liabilities (2000s)", code: "2", color: "amber", filter: (a: any) => a.account_type === "Liability" },
-    { key: "Equity", title: "Equity & Capital (3000s)", code: "3", color: "purple", filter: (a: any) => a.account_type === "Equity" },
-    { key: "Revenue", title: "Income & Revenue (4000s)", code: "4", color: "teal", filter: (a: any) => a.account_type === "Revenue" },
-    { key: "COGS", title: "Cost of Sales / Selling & Distribution (6000s)", code: "6", color: "orange", filter: (a: any) => a.account_type === "Expense" && ((a?.code || "").startsWith("6") || (a?.id || "").startsWith("6") || a.peachtree_type === "Cost of Sales") },
-    { key: "AdminExpense", title: "Administrative & General Expenses (8000s)", code: "8", color: "rose", filter: (a: any) => a.account_type === "Expense" && !((a?.code || "").startsWith("6") || (a?.id || "").startsWith("6") || a.peachtree_type === "Cost of Sales") },
+    { key: "Asset", title: "Assets (1000s)", code: "1", color: "emerald", filter: (a: any) => a.account_type === "Asset" || (a?.code || "").startsWith("1") },
+    { key: "Liability", title: "Liabilities (2000s)", code: "2", color: "amber", filter: (a: any) => a.account_type === "Liability" || (a?.code || "").startsWith("2") },
+    { key: "Equity", title: "Equity & Capital (3000s)", code: "3", color: "purple", filter: (a: any) => a.account_type === "Equity" || (a?.code || "").startsWith("3") },
+    { key: "Revenue", title: "Income & Revenue (4000s)", code: "4", color: "teal", filter: (a: any) => a.account_type === "Revenue" || (a?.code || "").startsWith("4") },
+    { key: "COGS", title: "Cost of Goods Sold (5000s)", code: "5", color: "orange", filter: (a: any) => ((a.account_type === "Expense" || a.account_type === "Cost of Sales") && ((a?.code || "").startsWith("5") || (a?.id || "").startsWith("5") || a.peachtree_type === "Cost of Sales")) },
+    { key: "AdminExpense", title: "Operating & Administrative Expenses (6000s/8000s)", code: "6", color: "rose", filter: (a: any) => a.account_type === "Expense" && !((a?.code || "").startsWith("5") || (a?.id || "").startsWith("5") || a.peachtree_type === "Cost of Sales") },
   ]
 
   const getTopLevelAccountsForCategory = (catKey: string) => {
@@ -543,7 +570,9 @@ export default function Ledger() {
     const children = getChildrenOfAccount(acc)
     const nodeKey = acc.code || acc.id
     const isExpanded = !!expandedNodes[nodeKey] || coaSearch.trim().length > 0
-    const netBalance = isGroup ? getGroupNetBalance(acc) : getAccountNetBalance(acc)
+    const totals = isGroup ? getGroupDebitCredit(acc) : getAccountDebitCredit(acc)
+    const netBalance = totals.net
+    const hasActivity = totals.debit > 0 || totals.credit > 0
 
     // AR / AP Filter Mode Check
     if (coaFilterMode === "AR") {
@@ -554,8 +583,8 @@ export default function Ledger() {
         (acc.code || "").startsWith("4") ||
         acc.peachtree_type === "Accounts Receivable" ||
         acc.peachtree_type === "Income" ||
-        acc.name.toLowerCase().includes("receivable") ||
-        acc.name.toLowerCase().includes("sales")
+        (acc.name || "").toLowerCase().includes("receivable") ||
+        (acc.name || "").toLowerCase().includes("sales")
       const childHasAr = children.some((c: any) =>
         (c.code || "").startsWith("11") ||
         (c.code || "").startsWith("12") ||
@@ -563,8 +592,8 @@ export default function Ledger() {
         (c.code || "").startsWith("4") ||
         c.peachtree_type === "Accounts Receivable" ||
         c.peachtree_type === "Income" ||
-        c.name.toLowerCase().includes("receivable") ||
-        c.name.toLowerCase().includes("sales")
+        (c.name || "").toLowerCase().includes("receivable") ||
+        (c.name || "").toLowerCase().includes("sales")
       )
       if (!isArMatch && !childHasAr) return null
     }
@@ -578,10 +607,10 @@ export default function Ledger() {
         acc.peachtree_type === "Other Current Liabilities" ||
         acc.peachtree_type === "Cost of Sales" ||
         acc.peachtree_type === "Expenses" ||
-        acc.name.toLowerCase().includes("payable") ||
-        acc.name.toLowerCase().includes("accrual") ||
-        acc.name.toLowerCase().includes("expense") ||
-        acc.name.toLowerCase().includes("cost")
+        (acc.name || "").toLowerCase().includes("payable") ||
+        (acc.name || "").toLowerCase().includes("accrual") ||
+        (acc.name || "").toLowerCase().includes("expense") ||
+        (acc.name || "").toLowerCase().includes("cost")
       const childHasAp = children.some((c: any) =>
         (c.code || "").startsWith("20") ||
         (c.code || "").startsWith("21") ||
@@ -590,10 +619,10 @@ export default function Ledger() {
         c.peachtree_type === "Other Current Liabilities" ||
         c.peachtree_type === "Cost of Sales" ||
         c.peachtree_type === "Expenses" ||
-        c.name.toLowerCase().includes("payable") ||
-        c.name.toLowerCase().includes("accrual") ||
-        c.name.toLowerCase().includes("expense") ||
-        c.name.toLowerCase().includes("cost")
+        (c.name || "").toLowerCase().includes("payable") ||
+        (c.name || "").toLowerCase().includes("accrual") ||
+        (c.name || "").toLowerCase().includes("expense") ||
+        (c.name || "").toLowerCase().includes("cost")
       )
       if (!isApMatch && !childHasAp) return null
     }
@@ -695,16 +724,28 @@ export default function Ledger() {
           </div>
 
           {/* Right Balance & Actions */}
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="text-right mr-1">
-              <div className={`font-mono font-black text-xs ${isGroup ? "text-zinc-950" : "text-zinc-800"}`}>
-                ETB {netBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              {isGroup && (
-                <div className="text-[9px] font-bold text-zinc-400 uppercase tracking-tight">
-                  {children.length} sub-account{children.length === 1 ? "" : "s"}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-2.5 text-right">
+              {hasActivity && (
+                <div className="hidden sm:flex flex-col text-[10px] font-mono leading-tight text-right">
+                  <span className="text-blue-700 font-bold whitespace-nowrap">
+                    Dr: ETB {totals.debit.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-purple-700 font-bold whitespace-nowrap">
+                    Cr: ETB {totals.credit.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
                 </div>
               )}
+              <div className="text-right mr-1">
+                <div className={`font-mono font-black text-xs ${isGroup ? "text-zinc-950" : "text-zinc-800"}`}>
+                  ETB {netBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                {isGroup && (
+                  <div className="text-[9px] font-bold text-zinc-400 uppercase tracking-tight">
+                    {children.length} sub-account{children.length === 1 ? "" : "s"}
+                  </div>
+                )}
+              </div>
             </div>
 
             <button
@@ -1070,7 +1111,12 @@ export default function Ledger() {
                                     return (
                                       <div key={l.id} className="flex items-center justify-between gap-2 text-[11px] truncate bg-zinc-50 dark:bg-zinc-800/40 px-1.5 py-0.5 rounded">
                                         <span className="font-mono text-zinc-700 truncate">
-                                          {acc ? `${acc.code} - ${acc.name}` : l.account_id}
+                                          {(() => {
+                                            const code = acc?.code || acc?.id || l.account_code || l.account_id || ""
+                                            const name = acc?.name || l.account_name || ""
+                                            if (code && name && code !== name) return `${code} - ${name}`
+                                            return name || code || "Account"
+                                          })()}
                                         </span>
                                         <span className={`font-mono font-bold shrink-0 text-[10px] ${isDr ? "text-blue-700" : "text-emerald-700"}`}>
                                           {isDr ? "Dr " : "Cr "}ETB {lineAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

@@ -713,8 +713,9 @@ export function parsePeachtreeBeginningBalanceCsv(
   const accountByCode = new Map<string, AccountItem>()
   const accountById = new Map<string, AccountItem>()
   for (const acc of accounts) {
-    accountByCode.set(acc.code.trim().toLowerCase(), acc)
-    accountById.set(acc.id.trim().toLowerCase(), acc)
+    if (!acc) continue
+    if (acc.code) accountByCode.set(String(acc.code).trim().toLowerCase(), acc)
+    if (acc.id) accountById.set(String(acc.id).trim().toLowerCase(), acc)
   }
 
   let totalDebit = 0
@@ -732,9 +733,8 @@ export function parsePeachtreeBeginningBalanceCsv(
     if (!rawCode && !rawName) continue
 
     const matchedAcc =
-      accountByCode.get(rawCode.toLowerCase()) ||
-      accountById.get(rawCode.toLowerCase()) ||
-      accounts.find((a) => a.name.toLowerCase() === rawName.toLowerCase())
+      (rawCode ? (accountByCode.get(rawCode.toLowerCase()) || accountById.get(rawCode.toLowerCase())) : null) ||
+      accounts.find((a) => (a?.name || "").toLowerCase() === rawName.toLowerCase())
 
     if (!matchedAcc) {
       errors.push(`Row ${rowIdx + 1}: Account "${rawCode || rawName}" not found in HKC Chart of Accounts.`)

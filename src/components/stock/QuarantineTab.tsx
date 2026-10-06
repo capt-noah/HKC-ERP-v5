@@ -12,6 +12,7 @@ import {
 import { useFeedback } from "@/context/FeedbackContext"
 import { useErpStore, type QuarantineRecord } from "@/lib/erpStore"
 import { useAuthStore } from "@/lib/authStore"
+import { financeStore } from "@/lib/financeStore"
 import { DataTable } from "@/components/DataTable"
 import { type TableColumn } from "@/components/ResizableTable"
 import { LoadingDots } from "@/components/ui/LoadingDots"
@@ -279,7 +280,7 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
       const whRecord = commercialWarehouses.find(
         (w) => matchesWarehouse(w.id, addWarehouse) || matchesWarehouse(w.code, addWarehouse)
       )
-      await erp.addQuarantineRecord({
+      const qrnRecord = await erp.addQuarantineRecord({
         warehouseId: addWarehouse,
         warehouseName: whRecord?.name || addWarehouse,
         productId: selectedProduct.id,
@@ -290,6 +291,27 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
         proposedReleaseDate: addProposedReleaseDate,
         reason: addReason.trim() || "Broken / Damaged Medicine",
       })
+
+      // Post GL loss entry for quarantine
+      const targetBatch = (selectedProduct.batches || []).find((b) => b.batchNo === addBatchNo)
+      const batchUnitCost = Number((targetBatch as any)?.unitPrice ?? (targetBatch as any)?.costPrice ?? selectedProduct.unitCost ?? 0)
+      try {
+        financeStore.recordStockLoss({
+          productId: selectedProduct.id,
+          productName: selectedProduct.name,
+          lossType: "quarantine",
+          recordId: qrnRecord?.id || `QRN-${Date.now()}`,
+          warehouseId: addWarehouse,
+          quantity: qtyNum,
+          unitCost: batchUnitCost,
+          unit: selectedProduct.unit,
+          lossDate: addQuarantineDate,
+          batchNo: addBatchNo,
+          reason: addReason.trim() || "Broken / Damaged Medicine",
+        })
+      } catch (finErr) {
+        console.warn("Failed to record quarantine loss to GL:", finErr)
+      }
 
       showToast(
         "Quarantine Recorded",
@@ -336,6 +358,11 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
     setIsDeleting(true)
     try {
       await erp.deleteQuarantineRecord(deletingRecord.id)
+      try {
+        financeStore.reverseStockLoss("quarantine", deletingRecord.id)
+      } catch (finErr) {
+        console.warn("Failed to reverse quarantine loss in GL:", finErr)
+      }
       showToast(
         "Record Deleted",
         "success",

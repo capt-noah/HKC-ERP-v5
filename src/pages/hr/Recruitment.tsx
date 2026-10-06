@@ -53,17 +53,22 @@ export default function Recruitment() {
 
   const departments = ["All", ...Array.from(new Set(openings.map((o) => o.department)))]
 
+  const q = (searchQuery || "").toLowerCase().trim()
   const filteredOpenings = openings.filter((o) => {
-    const matchesSearch = o.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          o.department.toLowerCase().includes(searchQuery.toLowerCase())
+    if (!o) return false
+    const matchesSearch = !q ||
+                          (o.title || "").toLowerCase().includes(q) ||
+                          (o.department || "").toLowerCase().includes(q)
     const matchesDept = selectedDept === "All" || o.department === selectedDept
     return matchesSearch && matchesDept
   })
 
   const filteredApplicants = applicants.filter((a) => {
-    return a.applicantName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-           a.jobTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-           a.email.toLowerCase().includes(searchQuery.toLowerCase())
+    if (!a) return false
+    return !q ||
+           (a.applicantName || "").toLowerCase().includes(q) ||
+           (a.jobTitle || "").toLowerCase().includes(q) ||
+           (a.email || "").toLowerCase().includes(q)
   })
 
   const handleCreateOpening = (e: React.FormEvent) => {

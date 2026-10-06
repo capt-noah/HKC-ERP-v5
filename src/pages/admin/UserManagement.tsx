@@ -442,17 +442,20 @@ export default function UserManagement() {
 
   // Filter Calculation
   const filteredUsers = users.filter(user => {
+    if (!user) return false
+    const q = (searchQuery || "").toLowerCase().trim()
     const matchesSearch =
-      user.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.fullname.toLowerCase().includes(searchQuery.toLowerCase())
+      !q ||
+      (user.username || "").toLowerCase().includes(q) ||
+      (user.fullname || "").toLowerCase().includes(q)
     
     const matchesRole =
       selectedRoleFilter === "All" ||
-      user.roles.includes(selectedRoleFilter as Role)
+      (user.roles && user.roles.includes(selectedRoleFilter as Role))
 
     const matchesStatus =
       selectedStatusFilter === "All" ||
-      user.status === selectedStatusFilter.toLowerCase()
+      (user.status || "").toLowerCase() === selectedStatusFilter.toLowerCase()
 
     return matchesSearch && matchesRole && matchesStatus
   })

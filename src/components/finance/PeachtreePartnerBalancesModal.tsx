@@ -116,10 +116,11 @@ export const PeachtreePartnerBalancesModal: React.FC<PeachtreePartnerBalancesMod
     const q = searchQuery.toLowerCase().trim()
     return rows.filter(
       (r) =>
-        r.partner_name.toLowerCase().includes(q) ||
-        r.invoice_number.toLowerCase().includes(q) ||
-        r.terms.toLowerCase().includes(q) ||
-        r.notes.toLowerCase().includes(q)
+        Boolean(r) &&
+        ((r.partner_name || "").toLowerCase().includes(q) ||
+         (r.invoice_number || "").toLowerCase().includes(q) ||
+         (r.terms || "").toLowerCase().includes(q) ||
+         (r.notes || "").toLowerCase().includes(q))
     )
   }, [rows, searchQuery])
 
@@ -242,7 +243,7 @@ export const PeachtreePartnerBalancesModal: React.FC<PeachtreePartnerBalancesMod
             const notes = parts[6] || ""
 
             if (partnerName && invNo && parseFloat(amount) > 0) {
-              const match = currentPartners.find((p) => p.name.toLowerCase() === partnerName.toLowerCase())
+              const match = currentPartners.find((p) => (p?.name || "").toLowerCase() === partnerName.toLowerCase())
               parsedRows.push({
                 id: `import-${Date.now()}-${i}`,
                 partner_id: match?.id || `PARTNER-${Date.now()}-${i}`,

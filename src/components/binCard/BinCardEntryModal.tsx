@@ -223,7 +223,7 @@ export default function BinCardEntryModal({
                       {(() => {
                         const suppliers = erp.getSuppliers()
                         const filtered = party.trim()
-                          ? suppliers.filter((s) => s.name.toLowerCase().includes(party.toLowerCase()))
+                          ? suppliers.filter((s) => (s?.name || "").toLowerCase().includes(party.toLowerCase()))
                           : suppliers
                         if (filtered.length === 0) {
                           return (

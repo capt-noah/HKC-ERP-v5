@@ -78,7 +78,7 @@ export default function PurchaseOrders() {
   const [voucherDate, setVoucherDate] = useState(new Date().toISOString().split("T")[0])
   const [paidTo, setPaidTo] = useState("")
   const [reasonForPayment, setReasonForPayment] = useState("")
-  const [operationalCategory, setOperationalCategory] = useState<string>("export_commodities")
+  const [operationalCategory, setOperationalCategory] = useState<string>("freight_transport")
   const [bankName, setBankName] = useState<string>("Commercial Bank of Ethiopia (CBE)")
   const [paymentMethod, setPaymentMethod] = useState<"Cheque" | "Bank Transfer" | "RTGS" | "Cash">("Cheque")
   const [chequeNo, setChequeNo] = useState("")
@@ -181,25 +181,84 @@ export default function PurchaseOrders() {
     })
   }, [purchaseOrders, filterTab, searchQuery])
 
+  // Dynamic Purchase Categories strictly matching the 31 operational expense accounts
+  const purchaseCategoryOptions = useMemo(() => {
+    const list: Array<{ id: string; label: string; ruleKey?: string; defaultCode?: string }> = [
+      ...PURCHASE_OPERATIONAL_CATEGORIES,
+    ]
+    const existingIds = new Set(list.map((c) => c.id.toLowerCase()))
+    const existingLabels = new Set(list.map((c) => c.label.toLowerCase().trim()))
+
+    const glMappings = financeStore.getGlMappings()
+    for (const m of glMappings) {
+      if (m.category === "Purchase" || m.category === "Purchasing & AP") {
+        const code = m.account_code || ""
+        // Strictly exclude legacy inventory/stock and AP clearing codes
+        if (
+          code.startsWith("1400") ||
+          code.startsWith("1410") ||
+          code.startsWith("2100") ||
+          code.startsWith("1000") ||
+          code.startsWith("1100")
+        ) {
+          continue
+        }
+        if (
+          m.id.startsWith("purchase_export_") ||
+          m.id === "purchase_pharma_stock" ||
+          m.id.startsWith("ap_") ||
+          m.id.startsWith("po_grni_")
+        ) {
+          continue
+        }
+
+        const normId = (m.id || "").toLowerCase()
+        const normLabel = (m.label || "").toLowerCase().trim()
+        if (normLabel && !existingLabels.has(normLabel)) {
+          list.push({
+            id: m.id,
+            label: m.label,
+            ruleKey: m.id,
+            defaultCode: m.account_code,
+          })
+          existingIds.add(normId)
+          existingLabels.add(normLabel)
+        }
+      }
+    }
+    return list
+  }, [financeStore])
+
   // Handle Payment Type Toggle
   const handlePaymentTypeChange = (newType: "Cash" | "Credit") => {
     setPaymentType(newType)
-    const newCrCode = newType === "Cash" ? "1000-02-26" : "2100-06"
-    const newCrName = newType === "Cash" ? "CBE ECB - 1000006734589" : "Other Accruals & Payables"
-    if (newType === "Cash") setBankName(newCrName)
+    const { creditAccount } = resolvePurchaseAccountsFromMatrix(operationalCategory, newType, financeStore)
+    if (newType === "Cash") setBankName(creditAccount.name)
 
-    if (modalCreditLines.length <= 1) {
-      setModalCreditLines([
-        {
-          id: `cr-init-${Date.now()}`,
-          accountId: newCrCode,
-          accountCode: newCrCode,
-          accountName: newCrName,
-          description: newType === "Cash" ? "Bank Disbursement" : "Supplier Credit Settlement",
-          amount: Number(paidAmount) || 0,
-        },
-      ])
-    }
+    setModalCreditLines((prev) => {
+      if (prev.length <= 1) {
+        return [
+          {
+            id: prev[0]?.id || `cr-init-${Date.now()}`,
+            accountId: creditAccount.id,
+            accountCode: creditAccount.code,
+            accountName: creditAccount.name,
+            description: newType === "Cash" ? "Bank Disbursement" : "Supplier Credit Settlement",
+            amount: Number(paidAmount) || 0,
+          },
+        ]
+      }
+      return prev.map((l, idx) =>
+        idx === 0
+          ? {
+              ...l,
+              accountId: creditAccount.id,
+              accountCode: creditAccount.code,
+              accountName: creditAccount.name,
+            }
+          : l
+      )
+    })
   }
 
   // Handle Amount Change with auto single-line sync
@@ -217,18 +276,61 @@ export default function PurchaseOrders() {
   // Handle Category Change with auto default sync
   const handleCategoryChange = (newCat: string) => {
     setOperationalCategory(newCat)
-    if (modalDebitLines.length <= 1) {
-      const { debitAccount } = resolvePurchaseAccountsFromMatrix(newCat, paymentType, financeStore)
-      setModalDebitLines([
-        {
-          id: `dr-init-${Date.now()}`,
-          accountId: debitAccount.id,
-          accountCode: debitAccount.code,
-          accountName: debitAccount.name,
-          description: reasonForPayment.trim() || "Procurement Purchase",
-          amount: Number(paidAmount) || 0,
-        },
-      ])
+    const { debitAccount, normalPosting, categoryLabel } = resolvePurchaseAccountsFromMatrix(newCat, paymentType, financeStore)
+    const effectiveDesc = categoryLabel || "Procurement Purchase"
+
+    if (normalPosting === "Credit") {
+      setModalCreditLines((prev) => {
+        if (prev.length <= 1) {
+          return [
+            {
+              id: prev[0]?.id || `cr-init-${Date.now()}`,
+              accountId: debitAccount.id,
+              accountCode: debitAccount.code,
+              accountName: debitAccount.name,
+              description: reasonForPayment.trim() || effectiveDesc,
+              amount: Number(paidAmount) || 0,
+            },
+          ]
+        }
+        return prev.map((l, idx) =>
+          idx === 0
+            ? {
+                ...l,
+                accountId: debitAccount.id,
+                accountCode: debitAccount.code,
+                accountName: debitAccount.name,
+                description: l.description === "Payment Disbursement" || !l.description ? effectiveDesc : l.description,
+              }
+            : l
+        )
+      })
+    } else {
+      setModalDebitLines((prev) => {
+        if (prev.length <= 1) {
+          return [
+            {
+              id: prev[0]?.id || `dr-init-${Date.now()}`,
+              accountId: debitAccount.id,
+              accountCode: debitAccount.code,
+              accountName: debitAccount.name,
+              description: reasonForPayment.trim() || effectiveDesc,
+              amount: Number(paidAmount) || 0,
+            },
+          ]
+        }
+        return prev.map((l, idx) =>
+          idx === 0
+            ? {
+                ...l,
+                accountId: debitAccount.id,
+                accountCode: debitAccount.code,
+                accountName: debitAccount.name,
+                description: l.description === "Procurement Purchase" || !l.description ? effectiveDesc : l.description,
+              }
+            : l
+        )
+      })
     }
   }
 
@@ -238,8 +340,8 @@ export default function PurchaseOrders() {
     setVoucherDate(new Date().toISOString().split("T")[0])
     setPaidTo("")
     setReasonForPayment("")
-    setOperationalCategory("export_commodities")
-    setBankName("CBE ECB - 1000006734589")
+    const initialCategory = purchaseCategoryOptions[0]?.id || "freight_transport"
+    setOperationalCategory(initialCategory)
     setPaymentMethod("Cheque")
     setChequeNo("")
     setPaidAmount("")
@@ -250,7 +352,8 @@ export default function PurchaseOrders() {
     setEditingPo(null)
 
     // Initialize COA debit & credit split
-    const { debitAccount, creditAccount } = resolvePurchaseAccountsFromMatrix("export_commodities", "Cash", financeStore)
+    const { debitAccount, creditAccount } = resolvePurchaseAccountsFromMatrix(initialCategory, "Cash", financeStore)
+    setBankName(creditAccount.name)
     setModalDebitLines([
       {
         id: `dr-init-${Date.now()}`,
@@ -578,7 +681,7 @@ export default function PurchaseOrders() {
     const isCredit = paymentType === "Credit"
     const amountInWords = numberToBirrWords(numericAmount)
 
-    const catObj = PURCHASE_OPERATIONAL_CATEGORIES.find((c) => c.id === operationalCategory)
+    const catObj = purchaseCategoryOptions.find((c) => c.id === operationalCategory || c.label === operationalCategory || c.ruleKey === operationalCategory)
     const effectiveDesc = reasonForPayment.trim() || catObj?.label || "Procurement Purchase"
 
     // Validate COA split balance
@@ -1398,7 +1501,7 @@ export default function PurchaseOrders() {
                       onChange={(e) => handleCategoryChange(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-bold outline-none cursor-pointer"
                     >
-                      {PURCHASE_OPERATIONAL_CATEGORIES.map((cat) => (
+                      {purchaseCategoryOptions.map((cat) => (
                         <option key={cat.id} value={cat.id}>
                           {cat.label}
                         </option>

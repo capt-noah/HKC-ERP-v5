@@ -244,7 +244,16 @@ export function unwrapRow(row, storage) {
       payload = { ...payload, ...payload.payload }
       delete payload.payload
     }
-    const merged = { ...(payload || {}), id: row.id || payload?.id }
+    const rowCopy = { ...row }
+    delete rowCopy.payload
+    const merged = { ...rowCopy, ...(payload || {}), id: row.id || payload?.id }
+    for (const [k, v] of Object.entries(rowCopy)) {
+      if (merged[k] === undefined || merged[k] === null || merged[k] === "") {
+        if (v !== undefined && v !== null && v !== "") {
+          merged[k] = v
+        }
+      }
+    }
     if (row.created_at && !merged.created_at) merged.created_at = row.created_at
     if (row.updated_at && !merged.updated_at) merged.updated_at = row.updated_at
     return merged

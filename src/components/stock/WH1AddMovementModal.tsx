@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { X, ArrowDownLeft, MinusCircle, ChevronDown, CheckCircle2 } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useErpStore, type Product, type WH1Entry } from "@/lib/erpStore"
+import { financeStore } from "@/lib/financeStore"
 
 interface WH1AddMovementModalProps {
   isOpen: boolean
@@ -159,7 +160,7 @@ export default function WH1AddMovementModal({
     try {
       if (saveSupplierToRegistry && customer.trim()) {
         const suppName = customer.trim()
-        const existingSupp = erp.getSuppliers().find((s) => s.name.toLowerCase() === suppName.toLowerCase())
+        const existingSupp = erp.getSuppliers().find((s) => (s?.name || "").toLowerCase() === suppName.toLowerCase())
         if (!existingSupp) {
           erp.addSupplier({
             id: `SUP-${Date.now()}`,
@@ -181,6 +182,25 @@ export default function WH1AddMovementModal({
         sellingPrice: Number(sellingPrice) > 0 ? Number(sellingPrice) : undefined,
         notes: notes.trim(),
       })
+
+      // Automatically post GL stock intake for inbound movement
+      try {
+        financeStore.recordStockIntake({
+          productId: product.id,
+          productName: product.name,
+          sku: product.sku,
+          warehouseId: product.warehouse,
+          quantity: finalQty,
+          unitCost: costPrice,
+          unit: "Quintal",
+          entryDate,
+          entryId: voucherNo.trim() ? `GRV-${voucherNo.trim()}` : undefined,
+          isChild: true,
+        })
+      } catch (finErr) {
+        console.warn("Failed to record inbound truckload stock GL intake:", finErr)
+      }
+
       showToast("Success", "success", `Inbound entry of ${finalQty.toLocaleString()} Quintals recorded.`)
       onClose()
     } catch (err: any) {
@@ -356,7 +376,7 @@ export default function WH1AddMovementModal({
                 <div className="space-y-1 block relative">
                   <div className="flex items-center justify-between">
                     <span className="text-zinc-500 uppercase text-[10px] font-black">Supplier / Source</span>
-                    {!erp.getSuppliers().some((s) => s.name.toLowerCase() === customer.trim().toLowerCase()) && customer.trim() !== "" && (
+                    {!erp.getSuppliers().some((s) => (s?.name || "").toLowerCase() === customer.trim().toLowerCase()) && customer.trim() !== "" && (
                       <label className="inline-flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-200 transition-colors">
                         <input
                           type="checkbox"
@@ -402,7 +422,7 @@ export default function WH1AddMovementModal({
                           ].filter((s): s is string => Boolean(s && s.trim())))
                         )
                         const filtered = customer.trim()
-                          ? allSuppliers.filter((s) => s.toLowerCase().includes(customer.toLowerCase()))
+                          ? allSuppliers.filter((s) => (s || "").toLowerCase().includes(customer.toLowerCase()))
                           : allSuppliers
                         if (filtered.length === 0) {
                           return (
@@ -412,7 +432,7 @@ export default function WH1AddMovementModal({
                           )
                         }
                         return filtered.map((suppName) => {
-                          const regSupp = erp.getSuppliers().find((s) => s.name.toLowerCase() === suppName.toLowerCase())
+                          const regSupp = erp.getSuppliers().find((s) => (s?.name || "").toLowerCase() === (suppName || "").toLowerCase())
                           return (
                             <button
                               key={suppName}
@@ -463,10 +483,13 @@ export default function WH1AddMovementModal({
                 </label>
 
                 <label className="space-y-1 block">
-                  <span className="text-zinc-500 uppercase text-[10px] font-black">Quantity</span>
+                  <span className="text-zinc-700 uppercase text-[10px] font-black">
+                    Quantity ({packagingUnit}) *
+                  </span>
                   <input
                     type="number"
                     step="0.01"
+                    min="0.01"
                     placeholder="Quantity"
                     value={quantity}
                     onChange={(e) => setQuantity(e.target.value)}
@@ -739,7 +762,7 @@ export default function WH1AddMovementModal({
                           ].filter((s): s is string => Boolean(s && s.trim())))
                         )
                         const filtered = rejectParty.trim()
-                          ? allSuppliers.filter((s) => s.toLowerCase().includes(rejectParty.toLowerCase()))
+                          ? allSuppliers.filter((s) => (s || "").toLowerCase().includes(rejectParty.toLowerCase()))
                           : allSuppliers
                         if (filtered.length === 0) {
                           return (
@@ -749,7 +772,7 @@ export default function WH1AddMovementModal({
                           )
                         }
                         return filtered.map((suppName) => {
-                          const regSupp = erp.getSuppliers().find((s) => s.name.toLowerCase() === suppName.toLowerCase())
+                          const regSupp = erp.getSuppliers().find((s) => (s?.name || "").toLowerCase() === (suppName || "").toLowerCase())
                           return (
                             <button
                               key={suppName}

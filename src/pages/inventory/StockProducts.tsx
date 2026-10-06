@@ -11,12 +11,14 @@ import {
   AlertTriangle,
   AlertOctagon,
   FileSpreadsheet,
+  Lock,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFeedback } from "@/context/FeedbackContext"
+import { useFinanceStore } from "@/lib/financeStore"
 import StoreTransfersTab from "@/components/StoreTransfersTab"
 import QuarantineTab from "@/components/stock/QuarantineTab"
 import { useErpStore, type Product, type WH1Entry, type BinCardMovementEntry } from "@/lib/erpStore"
@@ -97,6 +99,7 @@ function ProductTableSkeletonRows({ colSpan }: { colSpan: number }) {
 export default function StockProducts() {
   const { showToast } = useFeedback()
   const erp = useErpStore()
+  const financeStore = useFinanceStore()
   
   const { user } = useAuthStore()
   const userRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
@@ -304,6 +307,7 @@ export default function StockProducts() {
         addWarehouse &&
         addEntryDate &&
         Number(addQuantity) > 0 &&
+        Number(addUnitPrice) > 0 &&
         !addDateInvalid
       )
     : Boolean(
@@ -313,9 +317,10 @@ export default function StockProducts() {
         addBatchNumber &&
         addMfgDate &&
         addExpDate &&
-        addQtyPerPack &&
-        addNumCartons &&
+        Number(addQtyPerPack) >= 1 &&
+        Number(addNumCartons) >= 1 &&
         addTotalQuantity > 0 &&
+        Number(addUnitPrice) > 0 &&
         !addDateInvalid &&
         !addDuplicateBatch
       )
@@ -399,10 +404,11 @@ export default function StockProducts() {
   // Suggested matching existing items list for WH1 & Import Warehouses auto-complete lookup
   const stockItemSuggestions = useMemo(() => {
     if (!addDescription || addDescription.length < 2) return []
+    const q = addDescription.toLowerCase()
     if (isWH1Form) {
-      return products.filter((p) => isWH1(p.warehouse) && p.name.toLowerCase().includes(addDescription.toLowerCase()))
+      return products.filter((p) => isWH1(p.warehouse) && (p?.name || "").toLowerCase().includes(q))
     }
-    return products.filter((p) => !isWH1(p.warehouse) && matchesWarehouse(p.warehouse, addWarehouse) && p.name.toLowerCase().includes(addDescription.toLowerCase()))
+    return products.filter((p) => !isWH1(p.warehouse) && matchesWarehouse(p.warehouse, addWarehouse) && (p?.name || "").toLowerCase().includes(q))
   }, [products, addDescription, isWH1Form, addWarehouse])
 
   // Table Column Definitions
@@ -496,8 +502,20 @@ export default function StockProducts() {
 
   // Handle Save product form
   const handleSaveNewStockItem = async (addAnother = false) => {
+    if (Number(addUnitPrice || 0) <= 0) {
+      showToast("Cannot save item", "warning", "Cost Price per unit is mandatory and must be greater than 0 ETB.")
+      return
+    }
+    if (isWH1Form && Number(addQuantity || 0) <= 0) {
+      showToast("Cannot save item", "warning", "Quantity is mandatory and must be greater than 0.")
+      return
+    }
+    if (!isWH1Form && (Number(addNumCartons || 0) <= 0 || Number(addQtyPerPack || 0) < 1)) {
+      showToast("Cannot save item", "warning", "Number of Cartons and Quantity Per Pack are mandatory and must be at least 1.")
+      return
+    }
     if (!canSaveAdd) {
-      showToast("Cannot save item", "warning", "Complete required stock fields and resolve warnings.")
+      showToast("Cannot save item", "warning", "Complete all required stock fields and resolve warnings.")
       return
     }
 
@@ -505,7 +523,7 @@ export default function StockProducts() {
     try {
       if (isWH1Form && saveSupplierToRegistry && addCustomer.trim()) {
         const suppName = addCustomer.trim()
-        const existingSupp = erp.getSuppliers().find((s) => s.name.toLowerCase() === suppName.toLowerCase())
+        const existingSupp = erp.getSuppliers().find((s) => (s?.name || "").toLowerCase() === suppName.toLowerCase())
         if (!existingSupp) {
           erp.addSupplier({
             id: `SUP-${Date.now()}`,
@@ -537,12 +555,32 @@ export default function StockProducts() {
             notes: addNotes.trim() || undefined,
           }
           await erp.addWH1Entry(selectedExistingProduct.id, newEntryPayload)
+
+          // Automatically record GL stock intake in General Ledger
+          try {
+            financeStore.recordStockIntake({
+              productId: selectedExistingProduct.id,
+              productName: selectedExistingProduct.name,
+              sku: selectedExistingProduct.sku,
+              warehouseId: selectedExistingProduct.warehouse,
+              quantity: addTotalQuantity,
+              unitCost: Number(addUnitPrice || 0),
+              unit: targetUOM,
+              entryDate: addEntryDate,
+              entryId: newEntryPayload.voucherNo ? `GRV-${newEntryPayload.voucherNo}` : undefined,
+              isChild: true,
+            })
+          } catch (finErr) {
+            console.warn("Failed to record child stock GL valuation:", finErr)
+          }
+
           showToast("Stock entry added", "success", `Entry added to existing export item ${selectedExistingProduct.name}.`)
         } else {
           // Option A2: Add incoming batch to existing import warehouse medicine
           const entryBatch = addBatchNumber.trim()
           const packSize = Number(selectedExistingProduct.quantityPerPack || addQtyPerPack || 1)
           const addedCartons = Number(addNumCartons) || (packSize > 0 ? Math.round((addTotalQuantity / packSize) * 100) / 100 : 0)
+          const effectiveUnitCost = Number(addUnitPrice || selectedExistingProduct.unitCost || 0)
 
           const binEntryPayload: Omit<BinCardMovementEntry, "id"> = {
             date: addMfgDate || new Date().toISOString().slice(0, 10),
@@ -554,10 +592,29 @@ export default function StockProducts() {
             qtyReceived: addTotalQuantity,
             qtyIssued: 0,
             balance: (Number(selectedExistingProduct.quantity || 0) + addTotalQuantity),
-            unitPrice: Number(addUnitPrice || selectedExistingProduct.unitCost || 0),
+            unitPrice: effectiveUnitCost,
             remark: `Intake: +${addTotalQuantity} units (${addedCartons} ctns @ ${packSize}/pk)${addNotes.trim() ? ` - ${addNotes.trim()}` : ""}`,
           }
           await erp.addBinCardEntry(selectedExistingProduct.id, binEntryPayload)
+
+          // Automatically record GL stock intake in General Ledger
+          try {
+            financeStore.recordStockIntake({
+              productId: selectedExistingProduct.id,
+              productName: selectedExistingProduct.name,
+              sku: selectedExistingProduct.sku,
+              warehouseId: selectedExistingProduct.warehouse,
+              quantity: addTotalQuantity,
+              unitCost: effectiveUnitCost,
+              unit: selectedExistingProduct.unit,
+              entryDate: binEntryPayload.date,
+              batchNo: binEntryPayload.batchNo,
+              isChild: true,
+            })
+          } catch (finErr) {
+            console.warn("Failed to record batch stock GL valuation:", finErr)
+          }
+
           showToast("Batch added to medicine", "success", `Added ${addTotalQuantity} units (${addedCartons} ctns) to ${selectedExistingProduct.name}.`)
         }
       } else {
@@ -648,6 +705,25 @@ export default function StockProducts() {
         }
 
         await erp.addProduct(product)
+
+        // Automatically record initial stock intake in General Ledger if initial stock exists
+        if (addTotalQuantity > 0 && parsedUnitCost > 0) {
+          try {
+            financeStore.recordInitialStockIntake({
+              productId: product.id,
+              productName: product.name,
+              sku: product.sku,
+              warehouseId: product.warehouse,
+              quantity: addTotalQuantity,
+              unitCost: parsedUnitCost,
+              unit: targetUOM,
+              entryDate: isWH1Form ? addEntryDate : (addMfgDate || now.slice(0, 10)),
+            })
+          } catch (finErr) {
+            console.warn("Failed to record initial stock GL valuation:", finErr)
+          }
+        }
+
         showToast("Stock item saved", "success", `${addDescription} was saved to inventory.`)
       }
 
@@ -698,6 +774,28 @@ export default function StockProducts() {
     }
   ) => {
     await erp.addWH1RejectEntry(productId, rejectData)
+    const prod = products.find((p) => p.id === productId)
+    if (prod && rejectData.rejectQuantity > 0) {
+      const entryObj = (prod.wh1Entries || []).find((e) => e.entryId === rejectData.entryId || e.id === rejectData.entryId)
+      const effectiveCost = Number(entryObj?.unitPrice ?? prod.unitCost ?? 0)
+      const recordId = rejectData.voucherNo || rejectData.entryId || `${productId}-${Date.now()}`
+      try {
+        financeStore.recordStockLoss({
+          productId,
+          productName: prod.name,
+          lossType: "reject",
+          recordId,
+          warehouseId: prod.warehouse,
+          quantity: rejectData.rejectQuantity,
+          unitCost: effectiveCost,
+          unit: prod.unit || "Quintal",
+          lossDate: rejectData.date,
+          reason: rejectData.reason || rejectData.notes || "Cleaning Rejection Loss",
+        })
+      } catch (err) {
+        console.warn("Failed to record WH1 reject loss to GL:", err)
+      }
+    }
   }
 
   const handleSaveWH1Processed = async (
@@ -732,14 +830,9 @@ export default function StockProducts() {
   }
 
   const handleSaveSubEntryEdit = async () => {
-    if (!editingSubEntry || !editSubEntryQty || !editSubEntryDate) return
+    if (!editingSubEntry || !editSubEntryDate) return
     setIsSavingSubEdit(true)
     try {
-      const nextQty = Number(editSubEntryQty)
-      const originalRemaining = editingSubEntry.entry.quantityRemaining
-      const difference = editingSubEntry.entry.quantityReceived - nextQty
-      const nextRemaining = Math.max(0, originalRemaining - difference)
-
       const targetEntryId = editingSubEntry.entry.entryId || editingSubEntry.entry.id || ""
       await erp.updateWH1Entry(editingSubEntry.product.id, targetEntryId, {
         voucherNo: editSubEntryVoucherNo.trim() || undefined,
@@ -747,9 +840,9 @@ export default function StockProducts() {
         plateNumber: editSubEntryPlateNumber.trim() || undefined,
         entryDate: editSubEntryDate,
         leaveDate: editSubEntryLeave || undefined,
-        quantityReceived: nextQty,
-        quantityRemaining: nextRemaining,
-        unitPrice: Number(editSubEntryPrice || 0),
+        quantityReceived: editingSubEntry.entry.quantityReceived,
+        quantityRemaining: editingSubEntry.entry.quantityRemaining,
+        unitPrice: Number(editingSubEntry.entry.unitPrice || 0),
         sellingPrice: Number(editSubEntrySellingPrice || 0) > 0 ? Number(editSubEntrySellingPrice) : undefined,
         notes: editSubEntryNotes.trim() || undefined,
       })
@@ -1743,37 +1836,48 @@ export default function StockProducts() {
                         </select>
                       </label>
                       <label className="space-y-1">
-                        <span className="block text-[11px] font-black uppercase text-zinc-500">Quantity Per Pack (Pack Size)</span>
+                        <div className="flex items-center justify-between">
+                          <span className="block text-[11px] font-black uppercase text-zinc-500">Quantity Per Pack (Pack Size)</span>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
+                            <Lock className="size-2.5" /> Locked (GL)
+                          </span>
+                        </div>
                         <input 
                           type="number"
-                          min="1"
+                          readOnly
                           value={editForm.quantityPerPack || "1"} 
-                          onChange={(e) => updateEditForm({ quantityPerPack: e.target.value })} 
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
-                          placeholder="e.g. 10"
+                          className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100/80 px-3 text-xs font-mono text-zinc-600 cursor-not-allowed" 
+                          title="Pack size is locked to preserve General Ledger inventory valuation consistency."
                         />
                       </label>
                       <label className="space-y-1">
-                        <span className="block text-[11px] font-black uppercase text-zinc-500">Number of Cartons</span>
+                        <div className="flex items-center justify-between">
+                          <span className="block text-[11px] font-black uppercase text-zinc-500">Number of Cartons</span>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
+                            <Lock className="size-2.5" /> Locked (GL)
+                          </span>
+                        </div>
                         <input 
                           type="number"
-                          min="0"
+                          readOnly
                           value={editForm.numberOfCartons || "0"} 
-                          onChange={(e) => updateEditForm({ numberOfCartons: e.target.value })} 
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
-                          placeholder="e.g. 50"
+                          className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100/80 px-3 text-xs font-mono text-zinc-600 cursor-not-allowed" 
+                          title="Quantity is tracked by intake movements and bin ledger. To add stock, register a new incoming batch."
                         />
                       </label>
                       <label className="space-y-1">
-                        <span className="block text-[11px] font-black uppercase text-zinc-500">Unit Price (ETB)</span>
+                        <div className="flex items-center justify-between">
+                          <span className="block text-[11px] font-black uppercase text-zinc-500">Unit Price (ETB)</span>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
+                            <Lock className="size-2.5" /> Locked (GL)
+                          </span>
+                        </div>
                         <input
                           type="number"
-                          min="0"
-                          step="any"
+                          readOnly
                           value={editForm.unitCost}
-                          onChange={(e) => updateEditForm({ unitCost: e.target.value, sellingPrice: e.target.value, price: e.target.value })}
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
-                          placeholder="e.g. 150"
+                          className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100/80 px-3 text-xs font-mono text-zinc-600 cursor-not-allowed"
+                          title="Cost price is locked to maintain Chart of Accounts General Ledger inventory valuation consistency."
                         />
                       </label>
                       <label className="space-y-1">
@@ -1846,7 +1950,7 @@ export default function StockProducts() {
                                 )
                               }
                               return filtered.map((suppName) => {
-                                const regSupp = erp.getSuppliers().find((s) => s.name.toLowerCase() === suppName.toLowerCase())
+                                const regSupp = erp.getSuppliers().find((s) => (s?.name || "").toLowerCase() === (suppName || "").toLowerCase())
                                 return (
                                   <button
                                     key={suppName}
@@ -1904,15 +2008,18 @@ export default function StockProducts() {
                         </select>
                       </label>
                       <label className="space-y-1">
-                        <span className="block text-[11px] font-black uppercase text-zinc-500">Price / Cost per Unit (ETB)</span>
+                        <div className="flex items-center justify-between">
+                          <span className="block text-[11px] font-black uppercase text-zinc-500">Price / Cost per Unit (ETB)</span>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
+                            <Lock className="size-2.5" /> Locked (GL)
+                          </span>
+                        </div>
                         <input
                           type="number"
-                          min="0"
-                          step="any"
+                          readOnly
                           value={editForm.price}
-                          onChange={(e) => updateEditForm({ price: e.target.value, unitCost: e.target.value, sellingPrice: e.target.value })}
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono"
-                          placeholder="e.g. 2400"
+                          className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100/80 px-3 text-xs font-mono text-zinc-600 cursor-not-allowed"
+                          title="Cost price is locked to maintain Chart of Accounts General Ledger inventory valuation consistency."
                         />
                       </label>
                     </>
@@ -2132,7 +2239,7 @@ export default function StockProducts() {
                             <span className="text-[11px] font-black uppercase text-zinc-700">
                               Supplier / Source <span className="text-[10px] text-zinc-400 lowercase">(optional)</span>
                             </span>
-                            {!erp.getSuppliers().some((s) => s.name.toLowerCase() === addCustomer.trim().toLowerCase()) && addCustomer.trim() !== "" && (
+                            {!erp.getSuppliers().some((s) => (s?.name || "").toLowerCase() === addCustomer.trim().toLowerCase()) && addCustomer.trim() !== "" && (
                               <label className="inline-flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-200 transition-colors">
                                 <input
                                   type="checkbox"
@@ -2171,7 +2278,7 @@ export default function StockProducts() {
                               {(() => {
                                 const list = erp.getSuppliers()
                                 const filtered = addCustomer.trim()
-                                  ? list.filter((s) => s.name.toLowerCase().includes(addCustomer.toLowerCase()))
+                                  ? list.filter((s) => (s?.name || "").toLowerCase().includes(addCustomer.toLowerCase()))
                                   : list
                                 if (filtered.length === 0) {
                                   return (
@@ -2228,6 +2335,9 @@ export default function StockProducts() {
                           <span className="text-[11px] font-black uppercase text-zinc-700">Quantity <span className="text-rose-600">*</span></span>
                           <input
                             type="number"
+                            min="0.01"
+                            step="any"
+                            required
                             placeholder="e.g. 50"
                             value={addQuantity}
                             onChange={(e) => setAddQuantity(e.target.value)}
@@ -2237,9 +2347,12 @@ export default function StockProducts() {
 
                         {/* Row 5 (WH1): Cost Price on left & Selling Price on right */}
                         <label className="space-y-1">
-                          <span className="text-[11px] font-black uppercase text-zinc-700">Cost Price per unit (ETB)</span>
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Cost Price per unit (ETB) <span className="text-rose-600">*</span></span>
                           <input
                             type="number"
+                            min="0.01"
+                            step="any"
+                            required
                             placeholder="0.00"
                             value={addUnitPrice}
                             onChange={(e) => setAddUnitPrice(e.target.value)}
@@ -2273,9 +2386,12 @@ export default function StockProducts() {
                       <>
                         {/* Import Pricing: Cost Price (left) & Selling Price (right) */}
                         <label className="space-y-1">
-                          <span className="text-[11px] font-black uppercase text-zinc-700">Cost Price per unit (ETB)</span>
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Cost Price per unit (ETB) <span className="text-rose-600">*</span></span>
                           <input
                             type="number"
+                            min="0.01"
+                            step="any"
+                            required
                             placeholder="0.00"
                             value={addUnitPrice}
                             onChange={(e) => setAddUnitPrice(e.target.value)}
@@ -2324,6 +2440,8 @@ export default function StockProducts() {
                           </div>
                           <input
                             type="number"
+                            min="1"
+                            required
                             placeholder="e.g. 100"
                             value={addQtyPerPack}
                             disabled={!!selectedExistingProduct && Number(selectedExistingProduct.quantityPerPack || (selectedExistingProduct as any).quantity_per_pack || 0) > 0}
@@ -2355,7 +2473,9 @@ export default function StockProducts() {
                           </div>
                           <input
                             type="number"
+                            min="1"
                             step="any"
+                            required
                             placeholder="e.g. 50"
                             value={addNumCartons}
                             onChange={(e) => setAddNumCartons(e.target.value)}
@@ -2512,7 +2632,7 @@ export default function StockProducts() {
                             )
                           }
                           return filtered.map((suppName) => {
-                            const regSupp = erp.getSuppliers().find((s) => s.name.toLowerCase() === suppName.toLowerCase())
+                            const regSupp = erp.getSuppliers().find((s) => (s?.name || "").toLowerCase() === (suppName || "").toLowerCase())
                             return (
                               <button
                                 key={suppName}
@@ -2551,24 +2671,34 @@ export default function StockProducts() {
                   </label>
 
                   <label className="space-y-1 block">
-                    <span className="text-zinc-500 uppercase text-[10px] font-black">Quantity (Received)</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-zinc-500 uppercase text-[10px] font-black">Quantity (Received)</span>
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
+                        <Lock className="size-2.5" /> Locked (GL)
+                      </span>
+                    </div>
                     <input 
                       type="number" 
+                      readOnly
                       value={editSubEntryQty} 
-                      onChange={(e) => setEditSubEntryQty(e.target.value)} 
-                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                      className="h-10 w-full border border-zinc-200 bg-zinc-100/80 rounded-xl px-3 font-mono text-zinc-600 cursor-not-allowed"
+                      title="Quantity is locked to maintain Chart of Accounts General Ledger inventory valuation consistency."
                     />
                   </label>
 
                   <label className="space-y-1 block">
-                    <span className="text-zinc-500 uppercase text-[10px] font-black">Cost / Unit Price (ETB)</span>
+                    <div className="flex items-center justify-between">
+                      <span className="text-zinc-500 uppercase text-[10px] font-black">Cost / Unit Price (ETB)</span>
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
+                        <Lock className="size-2.5" /> Locked (GL)
+                      </span>
+                    </div>
                     <input 
                       type="number" 
-                      step="any"
-                      placeholder="0.00"
+                      readOnly
                       value={editSubEntryPrice} 
-                      onChange={(e) => setEditSubEntryPrice(e.target.value)} 
-                      className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono"
+                      className="h-10 w-full border border-zinc-200 bg-zinc-100/80 rounded-xl px-3 font-mono text-zinc-600 cursor-not-allowed"
+                      title="Cost price is locked to maintain Chart of Accounts General Ledger inventory valuation consistency."
                     />
                   </label>
 

@@ -210,9 +210,9 @@ export default function FinanceExport() {
     const q = searchQuery.toLowerCase()
     return exportCards.filter(
       (c) =>
-        c.title.toLowerCase().includes(q) ||
-        c.peachtreeTarget.toLowerCase().includes(q) ||
-        c.description.toLowerCase().includes(q)
+        (c.title || "").toLowerCase().includes(q) ||
+        (c.peachtreeTarget || "").toLowerCase().includes(q) ||
+        (c.description || "").toLowerCase().includes(q)
     )
   }, [exportCards, searchQuery])
 

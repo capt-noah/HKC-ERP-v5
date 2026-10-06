@@ -254,9 +254,9 @@ export default function Banking() {
     if (!bankSearch.trim()) return true
     const q = bankSearch.toLowerCase()
     return (
-      line.reference.toLowerCase().includes(q) ||
-      line.payee.toLowerCase().includes(q) ||
-      line.date.includes(q)
+      (line.reference || "").toLowerCase().includes(q) ||
+      (line.payee || "").toLowerCase().includes(q) ||
+      (line.date || "").includes(q)
     )
   })
 

@@ -4,6 +4,7 @@ import { CheckCircle2, Scale, X } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { BodyScrollLock } from "@/components/ui/BodyScrollLock"
 import type { Product } from "@/lib/erpStore"
+import { financeStore } from "@/lib/financeStore"
 
 export interface DiffModalRow {
   id: string
@@ -63,6 +64,11 @@ export default function WH1SalesIssueDiffModal({
       setIsSaving(true)
       try {
         await onSaveDifference(product.id, row.id, 0, undefined)
+        try {
+          financeStore.reverseStockLoss("diff", row.id)
+        } catch (finErr) {
+          console.warn("Failed to reverse cleaning diff GL loss:", finErr)
+        }
         showToast("Difference Cleared", "info", "Cleaning difference reset to 0.")
         onClose()
       } catch (err: any) {
@@ -83,6 +89,31 @@ export default function WH1SalesIssueDiffModal({
     setIsSaving(true)
     try {
       await onSaveDifference(product.id, row.id, diffVal, notes.trim() || undefined)
+      if (diffVal > 0) {
+        try {
+          financeStore.recordStockLoss({
+            productId: product.id,
+            productName: product.name,
+            lossType: "diff",
+            recordId: row.id,
+            warehouseId: product.warehouse,
+            quantity: diffVal,
+            unitCost,
+            unit: product.unit || "Quintal",
+            lossDate: row.date || new Date().toISOString().slice(0, 10),
+            reason: notes.trim() || "Sales Issue Cleaning Difference / Shrinkage",
+          })
+        } catch (finErr) {
+          console.warn("Failed to record cleaning diff GL loss:", finErr)
+        }
+      } else {
+        try {
+          financeStore.reverseStockLoss("diff", row.id)
+        } catch (finErr) {
+          console.warn("Failed to reverse cleaning diff GL loss:", finErr)
+        }
+      }
+
       showToast(
         "Difference Saved",
         "success",

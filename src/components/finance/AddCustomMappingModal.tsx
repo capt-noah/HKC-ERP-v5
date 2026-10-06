@@ -17,48 +17,78 @@ const CATEGORY_DEFINITIONS = [
     id: "Sales & Revenue",
     name: "Sales & Revenue",
     events: [
-      { key: "sales_cash_clearing", label: "Direct Cash / Bank Sales Settlement", defaultSide: "Debit" as const, defaultCode: "1000-02-26" },
-      { key: "sales_credit_ar", label: "Trade Accounts Receivable (Credit Sales - Domestic)", defaultSide: "Debit" as const, defaultCode: "1300-03" },
-      { key: "sales_credit_ar_export", label: "Trade Accounts Receivable (Credit Sales - Export)", defaultSide: "Debit" as const, defaultCode: "1300-01" },
-      { key: "sales_revenue_domestic", label: "Commercial Sales Revenue", defaultSide: "Credit" as const, defaultCode: "4000-01-01" },
-      { key: "sales_revenue_export", label: "Export Commodity Sales Revenue", defaultSide: "Credit" as const, defaultCode: "4000-02-01" },
-      { key: "sales_revenue_services", label: "Service Revenue (Cleaning & Storage)", defaultSide: "Credit" as const, defaultCode: "4000-03-02" },
-      { key: "custom_sales_event", label: "Other Sales Transaction Event", defaultSide: "Credit" as const, defaultCode: "4000-01-01" },
+      { key: "sales_cash_clearing", label: "Direct Cash", defaultSide: "Debit" as const, defaultCode: "1000-02-26" },
+      { key: "sales_credit_ar", label: "Import Receivable", defaultSide: "Debit" as const, defaultCode: "1300-03" },
+      { key: "sales_credit_ar_export", label: "Export Receivable", defaultSide: "Debit" as const, defaultCode: "1300-01" },
+      { key: "sales_revenue_domestic", label: "Import Sales", defaultSide: "Credit" as const, defaultCode: "4000-01-01" },
+      { key: "sales_revenue_export", label: "Export Sales", defaultSide: "Credit" as const, defaultCode: "4000-02-01" },
+      { key: "sales_revenue_services", label: "Cleaning Service", defaultSide: "Credit" as const, defaultCode: "4000-03-02" },
     ],
   },
   {
-    id: "Purchasing & AP",
-    name: "Purchasing & AP",
+    id: "Purchase",
+    name: "Purchase",
     events: [
-      { key: "ap_trade_payable", label: "Supplier Bills (Accounts Payable)", defaultSide: "Credit" as const, defaultCode: "2100-06" },
-      { key: "po_grni_clearing", label: "Goods Received Not Invoiced (GRNI)", defaultSide: "Credit" as const, defaultCode: "2100-06" },
-      { key: "ap_advance_prepayment", label: "Supplier Advances & Prepayments", defaultSide: "Debit" as const, defaultCode: "1100-03" },
-      { key: "supplier_payment_bank", label: "Supplier Payment Disbursing Bank Account", defaultSide: "Credit" as const, defaultCode: "1000-02-26" },
-      { key: "custom_purchase_event", label: "Other Purchasing Transaction Event", defaultSide: "Credit" as const, defaultCode: "2100-06" },
+      // Attached Operational Expenses (8101..8401 series)
+      { key: "purchase_freight_transport", label: "Freight and Transport", defaultSide: "Debit" as const, defaultCode: "8101-004" },
+      { key: "purchase_transit_service", label: "Transit Service", defaultSide: "Debit" as const, defaultCode: "8101-005" },
+      { key: "purchase_inspection_cert", label: "Inspection, Certificate and OT", defaultSide: "Debit" as const, defaultCode: "8101-008" },
+      { key: "purchase_commission", label: "Commission", defaultSide: "Debit" as const, defaultCode: "8101-009" },
+      { key: "purchase_plomb_labour", label: "Plomb, BL. Labour & Others", defaultSide: "Debit" as const, defaultCode: "8101-010" },
+      { key: "purchase_salary_wage", label: "Salary and Wage", defaultSide: "Debit" as const, defaultCode: "8201-001" },
+      { key: "purchase_transport_allowance", label: "Transport Allowance", defaultSide: "Debit" as const, defaultCode: "8201-002" },
+      { key: "purchase_bonus", label: "Bonus", defaultSide: "Debit" as const, defaultCode: "8201-003" },
+      { key: "purchase_overtime", label: "Over Time", defaultSide: "Debit" as const, defaultCode: "8201-004" },
+      { key: "purchase_stationery_supplies", label: "Stationery, Printing & Off Sup", defaultSide: "Debit" as const, defaultCode: "8201-006" },
+      { key: "purchase_office_rent", label: "Office Rent", defaultSide: "Debit" as const, defaultCode: "8201-009" },
+      { key: "purchase_telephone_internet", label: "Telephone and Internet", defaultSide: "Debit" as const, defaultCode: "8201-010" },
+      { key: "purchase_perdiem_travel", label: "Per-Diem and Traveling", defaultSide: "Debit" as const, defaultCode: "8201-011" },
+      { key: "purchase_loading_unloading", label: "Loading / Unloading", defaultSide: "Debit" as const, defaultCode: "8201-012" },
+      { key: "purchase_fuel_lubricants", label: "Fuel and Lubricants", defaultSide: "Debit" as const, defaultCode: "8201-013" },
+      { key: "purchase_postage_photocopy", label: "Postage and Photocopy", defaultSide: "Debit" as const, defaultCode: "8201-014" },
+      { key: "purchase_repair_maintenance", label: "Repair and Maintenance", defaultSide: "Debit" as const, defaultCode: "8201-015" },
+      { key: "purchase_utility", label: "Utility", defaultSide: "Debit" as const, defaultCode: "8201-016" },
+      { key: "purchase_registration_license", label: "Registration and License", defaultSide: "Debit" as const, defaultCode: "8201-017" },
+      { key: "purchase_insurance", label: "Insurance", defaultSide: "Debit" as const, defaultCode: "8201-018" },
+      { key: "purchase_depreciation", label: "Depreciation Expense", defaultSide: "Debit" as const, defaultCode: "8201-020" },
+      { key: "purchase_membership_registration", label: "Membership & Registration Annu", defaultSide: "Debit" as const, defaultCode: "8201-024" },
+      { key: "purchase_audit_professional", label: "Audit Fee & Professional Fee", defaultSide: "Debit" as const, defaultCode: "8201-025" },
+      { key: "purchase_education_tuition", label: "Education and Tuition Fee", defaultSide: "Debit" as const, defaultCode: "8201-026" },
+      { key: "purchase_donation", label: "Donation", defaultSide: "Debit" as const, defaultCode: "8201-050" },
+      { key: "purchase_entertainment", label: "Entertainment", defaultSide: "Debit" as const, defaultCode: "8201-051" },
+      { key: "purchase_miscellaneous", label: "Miscellaneous", defaultSide: "Debit" as const, defaultCode: "8201-100" },
+      { key: "purchase_bank_service_charge", label: "Bank Service Charge", defaultSide: "Debit" as const, defaultCode: "8301-001" },
+      { key: "purchase_stamp_duty", label: "Stamp Duty", defaultSide: "Debit" as const, defaultCode: "8301-002" },
+      { key: "purchase_interest_expense", label: "Interest Expense", defaultSide: "Debit" as const, defaultCode: "8301-003" },
+      { key: "purchase_penalty", label: "Penalty", defaultSide: "Debit" as const, defaultCode: "8401-001" },
     ],
   },
   {
     id: "Inventory & COGS",
     name: "Inventory & COGS",
     events: [
-      { key: "inventory_stock_pharma", label: "Inventory Stock In Hand", defaultSide: "Debit" as const, defaultCode: "1400-01" },
-      { key: "cogs_stock_fulfillment", label: "Cost of Goods Sold (COGS)", defaultSide: "Debit" as const, defaultCode: "5000-01" },
-      { key: "stock_shrinkage_loss", label: "Physical Inventory Shrinkage / Count Loss", defaultSide: "Debit" as const, defaultCode: "6000-22" },
-      { key: "stock_adjustment_gain", label: "Physical Inventory Surplus / Count Gain", defaultSide: "Credit" as const, defaultCode: "4200" },
-      { key: "custom_inventory_event", label: "Other Inventory Movement Event", defaultSide: "Debit" as const, defaultCode: "1400-01" },
+      { key: "inventory_stock_pharma", label: "Import Stock", defaultSide: "Debit" as const, defaultCode: "1400-01" },
+      { key: "inventory_stock_in_hand", label: "Export Stock", defaultSide: "Debit" as const, defaultCode: "1410-01" },
+      { key: "cogs_stock_fulfillment", label: "Cost of Veterinary", defaultSide: "Debit" as const, defaultCode: "5000-01" },
+      { key: "cogs_sesame_fulfillment", label: "Cost of Sesame Seed", defaultSide: "Debit" as const, defaultCode: "5010-03" },
+      { key: "cogs_export_fulfillment", label: "Cost of Green Mung", defaultSide: "Debit" as const, defaultCode: "5010-01" },
+      { key: "cogs_soya_fulfillment", label: "Cost of Soya Bean", defaultSide: "Debit" as const, defaultCode: "5010-02" },
+      { key: "cogs_white_sesame_fulfillment", label: "Cost of White Sesame Seed", defaultSide: "Debit" as const, defaultCode: "5010-04" },
+      { key: "cogs_export_other_fulfillment", label: "Cost of Other Export Crops", defaultSide: "Debit" as const, defaultCode: "5010-05" },
     ],
   },
   {
-    id: "Taxes & Statutory",
-    name: "Taxes & Statutory",
+    id: "Tax",
+    name: "Tax",
     events: [
-      { key: "sales_vat_output", label: "Output VAT (15%) Payable", defaultSide: "Credit" as const, defaultCode: "2000-05" },
-      { key: "expense_vat_input", label: "Input VAT (15%) Claimable Asset", defaultSide: "Debit" as const, defaultCode: "1320-06-02" },
-      { key: "sales_wht_withheld", label: "Withholding Tax Receivable Asset (2%/30%)", defaultSide: "Debit" as const, defaultCode: "1320-06-01" },
+      { key: "tax_vat_zero", label: "Zero-Tax (0%)", defaultSide: "Credit" as const, defaultCode: "2000-05" },
+      { key: "sales_vat_output", label: "Standard VAT (15%)", defaultSide: "Credit" as const, defaultCode: "2000-05" },
+      { key: "expense_vat_input", label: "Input VAT (15%)", defaultSide: "Debit" as const, defaultCode: "1320-06-02" },
+      { key: "sales_wht_withheld", label: "Withholding Tax Receivable (2%/30%)", defaultSide: "Debit" as const, defaultCode: "1320-06-01" },
       { key: "expense_wht_payable", label: "Withholding Tax Payable (2%/30%)", defaultSide: "Credit" as const, defaultCode: "2000-04" },
-      { key: "tax_tot_payable", label: "Turnover Tax (TOT 2%/10%) Payable", defaultSide: "Credit" as const, defaultCode: "2000-05" },
-      { key: "tax_income_tax_payable", label: "Employment Income Tax (PAYE) Payable", defaultSide: "Credit" as const, defaultCode: "2000-02" },
-      { key: "custom_tax_event", label: "Other Statutory / Authority Tax Event", defaultSide: "Credit" as const, defaultCode: "2000-05" },
+      { key: "tax_tot_payable", label: "Turnover Tax TOT (2%)", defaultSide: "Credit" as const, defaultCode: "2000-05" },
+      { key: "tax_tot_10_payable", label: "Turnover Tax TOT (10%)", defaultSide: "Credit" as const, defaultCode: "2000-05" },
+      { key: "tax_income_tax_payable", label: "Employment Income Tax (PAYE)", defaultSide: "Credit" as const, defaultCode: "2000-02" },
     ],
   },
   {
@@ -119,7 +149,7 @@ export default function AddCustomMappingModal({ isOpen, onClose, onSuccess }: Ad
   // Current category definition with dynamic tax rules from DB
   const currentCategoryDef = useMemo(() => {
     const base = CATEGORY_DEFINITIONS.find((c) => c.id === category) || CATEGORY_DEFINITIONS[0]
-    if (category === "Taxes & Statutory") {
+    if (category === "Tax" || category === "Taxes & Statutory") {
       const dynamicTaxEvents = (rawTaxRules || [])
         .filter((tr) => tr && tr.is_active && !["TAX-001", "TAX-002", "TAX-003"].includes(tr.id || ""))
         .map((tr) => ({
@@ -132,9 +162,8 @@ export default function AddCustomMappingModal({ isOpen, onClose, onSuccess }: Ad
       return {
         ...base,
         events: [
+          ...base.events,
           ...dynamicTaxEvents,
-          { key: "tax_income_tax_payable", label: "Employment Income Tax (PAYE) Payable", defaultSide: "Credit" as const, defaultCode: "2000-02" },
-          { key: "custom_tax_event", label: "Other Statutory Tax Event", defaultSide: "Credit" as const, defaultCode: "2000-05" },
         ],
       }
     }
@@ -145,7 +174,7 @@ export default function AddCustomMappingModal({ isOpen, onClose, onSuccess }: Ad
   const handleCategoryChange = (newCat: string) => {
     setCategory(newCat)
     let eventsList = (CATEGORY_DEFINITIONS.find((c) => c.id === newCat) || CATEGORY_DEFINITIONS[0]).events
-    if (newCat === "Taxes & Statutory") {
+    if (newCat === "Tax" || newCat === "Taxes & Statutory") {
       const dynamicTaxEvents = (rawTaxRules || [])
         .filter((tr) => tr && tr.is_active && !["TAX-001", "TAX-002", "TAX-003"].includes(tr.id || ""))
         .map((tr) => ({
@@ -155,9 +184,8 @@ export default function AddCustomMappingModal({ isOpen, onClose, onSuccess }: Ad
           defaultCode: tr.accountCode || "2000-05",
         }))
       eventsList = [
+        ...eventsList,
         ...dynamicTaxEvents,
-        { key: "tax_income_tax_payable", label: "Employment Income Tax (PAYE) Payable", defaultSide: "Credit" as const, defaultCode: "2000-02" },
-        { key: "custom_tax_event", label: "Other Statutory Tax Event", defaultSide: "Credit" as const, defaultCode: "2000-05" },
       ]
     }
     if (eventsList.length > 0) {
@@ -250,6 +278,7 @@ export default function AddCustomMappingModal({ isOpen, onClose, onSuccess }: Ad
           ]
 
       const created = await store.addGlMapping({
+        id: selectedEventKey && !selectedEventKey.startsWith("custom_") ? selectedEventKey : undefined,
         label: finalRuleLabel,
         category,
         account_id: primaryAcc.id,
@@ -326,7 +355,7 @@ export default function AddCustomMappingModal({ isOpen, onClose, onSuccess }: Ad
 
             <div>
               <label className="block text-xs font-black text-zinc-900 mb-1.5">
-                Business Event / Type
+                Type
               </label>
               <select
                 value={selectedEventKey}

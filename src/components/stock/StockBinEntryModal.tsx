@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react"
-import { ChevronDown } from "lucide-react"
+import { ChevronDown, Lock } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { useErpStore, type BinCardMovementEntry, type Product } from "@/lib/erpStore"
+import { financeStore } from "@/lib/financeStore"
 
 interface StockBinEntryModalProps {
   isOpen: boolean
@@ -114,12 +115,17 @@ export default function StockBinEntryModal({
       return
     }
 
+    const isRec = movementType === "received"
+    const effectiveUnitPrice = unitPrice ? Number(unitPrice) : (product?.unitCost !== undefined ? Number(product.unitCost) : undefined)
+    const effectiveSellingPrice = sellingPrice ? Number(sellingPrice) : (product?.sellingPrice !== undefined ? Number(product.sellingPrice) : undefined)
+
+    if (isRec && (!effectiveUnitPrice || effectiveUnitPrice <= 0)) {
+      showToast("Validation Error", "warning", "Cost Price is mandatory and must be greater than 0 ETB.")
+      return
+    }
+
     setIsSaving(true)
     try {
-      const isRec = movementType === "received"
-      const effectiveUnitPrice = unitPrice ? Number(unitPrice) : (product?.unitCost !== undefined ? Number(product.unitCost) : undefined)
-      const effectiveSellingPrice = sellingPrice ? Number(sellingPrice) : (product?.sellingPrice !== undefined ? Number(product.sellingPrice) : undefined)
-
       const entryPayload: Omit<BinCardMovementEntry, "id" | "balance"> = {
         type: isRec ? "entry" : "leave",
         date,
@@ -135,6 +141,27 @@ export default function StockBinEntryModal({
       }
 
       await onSave(product.id, entryPayload, entry?.id)
+
+      // Automatically post GL stock intake for new inbound receipts
+      if (!isEditing && isRec && effectiveUnitPrice && effectiveUnitPrice > 0) {
+        try {
+          financeStore.recordStockIntake({
+            productId: product.id,
+            productName: product.name,
+            sku: product.sku,
+            warehouseId: product.warehouse,
+            quantity: qtyNum,
+            unitCost: effectiveUnitPrice,
+            unit: product.unit,
+            entryDate: date,
+            batchNo: batchNo.trim().toUpperCase(),
+            isChild: true,
+          })
+        } catch (finErr) {
+          console.warn("Failed to record bin card movement intake to GL:", finErr)
+        }
+      }
+
       showToast("Success", "success", isEditing ? "Movement entry updated." : "Stock movement entry recorded.")
       onClose()
     } catch (err: any) {
@@ -248,20 +275,33 @@ export default function StockBinEntryModal({
             {/* Quantity & Price Fields */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="space-y-1">
-                <label className="block text-[10px] font-black uppercase text-zinc-500">
-                  Quantity ({product.unit}) *
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-black uppercase text-zinc-500">
+                    Quantity ({product.unit}) *
+                  </label>
+                  {isEditing && (
+                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
+                      <Lock className="size-2.5" /> Locked (GL)
+                    </span>
+                  )}
+                </div>
                 <input
                   type="number"
                   min="0.01"
                   step="any"
                   required
+                  readOnly={isEditing}
                   placeholder="e.g. 100"
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-zinc-900 outline-none font-mono"
+                  className={`w-full px-3.5 py-2.5 border rounded-xl outline-none font-mono ${
+                    isEditing
+                      ? "bg-zinc-100/80 border-zinc-200 text-zinc-600 cursor-not-allowed"
+                      : "bg-zinc-50 border-zinc-200 focus:bg-white focus:border-zinc-900"
+                  }`}
+                  title={isEditing ? "Quantity is locked to maintain General Ledger inventory valuation consistency." : undefined}
                 />
-                {Number(product.quantityPerPack || 0) > 0 && Number(quantity || 0) > 0 && (
+                {!isEditing && Number(product.quantityPerPack || 0) > 0 && Number(quantity || 0) > 0 && (
                   <div className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md mt-0.5">
                     {movementType === "received" ? "+" : "-"}
                     {Math.round((Number(quantity) / Number(product.quantityPerPack)) * 100) / 100} ctns
@@ -275,17 +315,31 @@ export default function StockBinEntryModal({
               </div>
 
               <div className="space-y-1">
-                <label className="block text-[10px] font-black uppercase text-zinc-500">
-                  {movementType === "received" ? "Cost Price (ETB)" : "COGS Unit Cost (ETB)"}
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-black uppercase text-zinc-500">
+                    {movementType === "received" ? "Cost Price (ETB) *" : "COGS Unit Cost (ETB)"}
+                  </label>
+                  {isEditing && (
+                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
+                      <Lock className="size-2.5" /> Locked (GL)
+                    </span>
+                  )}
+                </div>
                 <input
                   type="number"
-                  min="0"
+                  min="0.01"
                   step="any"
+                  required={movementType === "received"}
+                  readOnly={isEditing}
                   placeholder="e.g. 240.00"
                   value={unitPrice}
                   onChange={(e) => setUnitPrice(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl focus:bg-white focus:border-zinc-900 outline-none font-mono"
+                  className={`w-full px-3.5 py-2.5 border rounded-xl outline-none font-mono ${
+                    isEditing
+                      ? "bg-zinc-100/80 border-zinc-200 text-zinc-600 cursor-not-allowed"
+                      : "bg-zinc-50 border-zinc-200 focus:bg-white focus:border-zinc-900"
+                  }`}
+                  title={isEditing ? "Cost price is locked to maintain General Ledger inventory valuation consistency." : undefined}
                 />
               </div>
 
@@ -369,7 +423,7 @@ export default function StockBinEntryModal({
                         ].filter((s): s is string => Boolean(s && s.trim())))
                       )
                       const filtered = party.trim()
-                        ? allSuppliers.filter((s) => s.toLowerCase().includes(party.toLowerCase()))
+                        ? allSuppliers.filter((s) => (s || "").toLowerCase().includes(party.toLowerCase()))
                         : allSuppliers
                       if (filtered.length === 0) {
                         return (
@@ -379,7 +433,7 @@ export default function StockBinEntryModal({
                         )
                       }
                       return filtered.map((suppName) => {
-                        const regSupp = erp.getSuppliers().find((s) => s.name.toLowerCase() === suppName.toLowerCase())
+                        const regSupp = erp.getSuppliers().find((s) => (s?.name || "").toLowerCase() === (suppName || "").toLowerCase())
                         return (
                           <button
                             key={suppName}

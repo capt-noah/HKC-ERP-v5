@@ -3773,7 +3773,7 @@ class ErpStore {
 
   // --- Actions: Suppliers ---
   public addSupplier(supplier: Supplier) {
-    const existing = this.suppliers.find((s) => s.id === supplier.id || (s.name && s.name.toLowerCase() === supplier.name.toLowerCase()))
+    const existing = this.suppliers.find((s) => s.id === supplier.id || ((s.name || "").toLowerCase() === (supplier.name || "").toLowerCase()))
     if (existing) {
       this.updateSupplier(existing.id, supplier)
       return existing
@@ -3978,7 +3978,7 @@ class ErpStore {
 
         if (debit > 0 || credit > 0) {
           const accCode = acc.code
-          const isPartyReq = accCode === "1200" || accCode === "2000" || accCode === "2100" || acc.name.toLowerCase().includes("payable") || acc.name.toLowerCase().includes("receivable")
+          const isPartyReq = accCode === "1200" || accCode === "2000" || accCode === "2100" || (acc.name || "").toLowerCase().includes("payable") || (acc.name || "").toLowerCase().includes("receivable")
           rawLines.push({
             account_id: acc.id,
             debit_amount: debit,
@@ -4018,9 +4018,9 @@ class ErpStore {
 
     const bankAcc = (po.creditAccountId && accounts.find((a) => a.id === po.creditAccountId))
       || (po.creditAccountCode && accounts.find((a) => a.code === po.creditAccountCode))
-      || (po.bankName && accounts.find((a) => a.name.toLowerCase().includes(po.bankName!.toLowerCase()) || a.code === po.bankName))
+      || (po.bankName && accounts.find((a) => (a.name || "").toLowerCase().includes(po.bankName!.toLowerCase()) || a.code === po.bankName))
       || accounts.find((a) => a.code === "1000-02-26")
-      || accounts.find((a) => a.code === "1010" || a.name.toLowerCase().includes("bank") || a.name.toLowerCase().includes("cash"))
+      || accounts.find((a) => a.code === "1010" || (a.name || "").toLowerCase().includes("bank") || (a.name || "").toLowerCase().includes("cash"))
       || accounts.find((a) => a.account_type === "Asset" && !a.is_group)
 
     if (totalDebit > totalCredit) {

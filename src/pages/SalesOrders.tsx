@@ -1435,7 +1435,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                             delete next.customer
                             return next
                           })
-                          const match = customers.find((c) => (c.name || "").toLowerCase() === e.target.value.toLowerCase())
+                          const match = customers.find((c) => (c.name || "").toLowerCase() === (e.target.value || "").toLowerCase())
                           if (match) {
                             setNewCustomerId(match.id)
                             setCustPhone(match.phone || "")

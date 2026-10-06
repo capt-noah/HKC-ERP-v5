@@ -5,6 +5,7 @@ import { erpStore } from "@/lib/erpStore"
 import { useFeedback } from "@/context/FeedbackContext"
 import COAAccountSelector from "@/components/finance/COAAccountSelector"
 import { LoadingDots } from "@/components/ui/LoadingDots"
+import { resolveCommodityAccounts } from "@/lib/commodityAccounts"
 
 interface InvoiceGLSplitModalProps {
   isOpen: boolean
@@ -346,8 +347,13 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
             })
         )
       } else {
-        const defaultCogsCode = isExport ? "5010-01" : "5000-01"
-        const defaultStockCode = isExport ? "1410-01" : "1400-01"
+        const firstItemDesc = invoice.line_items?.[0]?.description || ""
+        const commSet = isExport ? resolveCommodityAccounts(firstItemDesc) : null
+        const defaultCogsCode = isExport ? (commSet?.cogsCode || "5010-01") : "5000-01"
+        const defaultStockCode = isExport ? (commSet?.inventoryCode || "1410-01") : "1400-01"
+        const defaultCogsName = isExport ? (commSet?.cogsName || "Cost of Goods Export") : "Cost of Goods Sold"
+        const defaultStockName = isExport ? (commSet?.inventoryName || "Stock of Export Crop") : "Inventory Stock"
+
         const defaultCogsAcc = liveAccounts.find((a) => a.code === defaultCogsCode) || liveAccounts.find((a) => a.code === "5000-01")
         const defaultStockAcc = liveAccounts.find((a) => a.code === defaultStockCode) || liveAccounts.find((a) => a.code === "1400-01")
 
@@ -377,7 +383,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
             id: `dr-cogs-init-${Date.now()}`,
             accountId: defaultCogsAcc?.id || defaultCogsCode,
             accountCode: defaultCogsAcc?.code || defaultCogsCode,
-            accountName: defaultCogsAcc?.name || "Cost of Goods Sold",
+            accountName: defaultCogsAcc?.name || defaultCogsName,
             description: "Inventory Cost of Goods Sold",
             amount: defaultCogsTotal,
           },
@@ -387,7 +393,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
             id: `cr-cogs-init-${Date.now()}`,
             accountId: defaultStockAcc?.id || defaultStockCode,
             accountCode: defaultStockAcc?.code || defaultStockCode,
-            accountName: defaultStockAcc?.name || "Inventory Stock",
+            accountName: defaultStockAcc?.name || defaultStockName,
             description: "Inventory Stock In Hand Derecognition",
             amount: defaultCogsTotal,
           },

@@ -79,10 +79,10 @@ export default function Taxes() {
       if (!ruleSearchQuery.trim()) return true
       const q = ruleSearchQuery.toLowerCase()
       return (
-        rule.name.toLowerCase().includes(q) ||
-        rule.id.toLowerCase().includes(q) ||
-        rule.accountCode.toLowerCase().includes(q) ||
-        (rule.description?.toLowerCase().includes(q) ?? false)
+        (rule.name || "").toLowerCase().includes(q) ||
+        (rule.id || "").toLowerCase().includes(q) ||
+        (rule.accountCode || "").toLowerCase().includes(q) ||
+        ((rule.description || "").toLowerCase().includes(q))
       )
     })
   }, [taxRules, filterRuleType, ruleSearchQuery])

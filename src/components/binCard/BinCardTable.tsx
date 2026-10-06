@@ -62,22 +62,26 @@ export default function BinCardTable({
   const filteredCards = useMemo(() => {
     return cards.map(card => {
       const entries = card.entries || []
+      const q = (searchQuery || "").toLowerCase().trim()
       const filteredEntries = entries.filter(e => {
+        if (!e) return false
         const matchesSearch = 
-          e.batchNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          e.party.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          e.remark.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          e.date.includes(searchQuery)
+          !q ||
+          (e.batchNo || "").toLowerCase().includes(q) ||
+          (e.party || "").toLowerCase().includes(q) ||
+          (e.remark || "").toLowerCase().includes(q) ||
+          (e.date || "").includes(q)
 
         const matchesBatch = selectedBatchFilter === "ALL" || e.batchNo === selectedBatchFilter
         return matchesSearch && matchesBatch
       })
 
       const cardMatchesSearch = 
-        card.cardNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        card.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        card.dosage.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        card.shelfNo.toLowerCase().includes(searchQuery.toLowerCase())
+        !q ||
+        (card.cardNo || "").toLowerCase().includes(q) ||
+        (card.description || "").toLowerCase().includes(q) ||
+        (card.dosage || "").toLowerCase().includes(q) ||
+        (card.shelfNo || "").toLowerCase().includes(q)
 
       const shouldShow = cardMatchesSearch || filteredEntries.length > 0
       return {

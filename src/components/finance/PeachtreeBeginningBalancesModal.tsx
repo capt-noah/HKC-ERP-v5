@@ -59,21 +59,25 @@ export const PeachtreeBeginningBalancesModal: React.FC<PeachtreeBeginningBalance
     let count = 0
 
     for (const acc of postableAccounts) {
-      const accLines = lines.filter(
-        (l) => l.account_id === acc.id || l.account_id === acc.code || l.account_id === `ACC-${acc.code}`
-      )
+      const accLines = lines.filter((l) => {
+        const lineAccId = String(l.account_id || "").trim()
+        const lineAccCode = String((l as any).account_code || "").trim()
+        return (
+          lineAccId === acc.id ||
+          lineAccId === acc.code ||
+          lineAccId === `ACC-${acc.code}` ||
+          (lineAccCode && lineAccCode === acc.code)
+        )
+      })
       const debitSum = accLines.reduce((s, l) => s + (Number(l.debit_amount) || 0), 0)
       const creditSum = accLines.reduce((s, l) => s + (Number(l.credit_amount) || 0), 0)
-      const net = Math.round((debitSum - creditSum) * 100) / 100
 
-      if (net > 0) {
-        ledgerMap[acc.id] = { debit: net.toFixed(2), credit: "" }
+      ledgerMap[acc.id] = {
+        debit: debitSum > 0 ? (Math.round(debitSum * 100) / 100).toFixed(2) : "",
+        credit: creditSum > 0 ? (Math.round(creditSum * 100) / 100).toFixed(2) : "",
+      }
+      if (debitSum > 0 || creditSum > 0) {
         count++
-      } else if (net < 0) {
-        ledgerMap[acc.id] = { debit: "", credit: Math.abs(net).toFixed(2) }
-        count++
-      } else {
-        ledgerMap[acc.id] = { debit: "", credit: "" }
       }
     }
 
@@ -110,7 +114,7 @@ export const PeachtreeBeginningBalancesModal: React.FC<PeachtreeBeginningBalance
       }
       setBalanceMap(initialMap)
     } else {
-      // Automatically load actual net balances from current ledger journal lines!
+      // Automatically load actual debit and credit balances from current ledger journal lines!
       populateFromActualLedger()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -121,20 +125,21 @@ export const PeachtreeBeginningBalancesModal: React.FC<PeachtreeBeginningBalance
     let filtered = postableAccounts
 
     if (activeTab !== "ALL") {
-      filtered = filtered.filter((a) => a.account_type === activeTab)
+      filtered = filtered.filter((a) => a && a.account_type === activeTab)
     }
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim()
       filtered = filtered.filter(
         (a) =>
-          a.code.toLowerCase().includes(q) ||
-          a.name.toLowerCase().includes(q) ||
-          (a.peachtree_type && a.peachtree_type.toLowerCase().includes(q))
+          Boolean(a) &&
+          ((a.code || "").toLowerCase().includes(q) ||
+           (a.name || "").toLowerCase().includes(q) ||
+           (a.peachtree_type || "").toLowerCase().includes(q))
       )
     }
 
-    return [...filtered].sort((a, b) => String(a.code || a.id || "").localeCompare(String(b.code || b.id || "")))
+    return [...filtered].sort((a, b) => String(a?.code || a?.id || "").localeCompare(String(b?.code || b?.id || "")))
   }, [postableAccounts, activeTab, searchQuery])
 
   // Real-time Sum Calculations
@@ -177,7 +182,7 @@ export const PeachtreeBeginningBalancesModal: React.FC<PeachtreeBeginningBalance
       ...prev,
       [accId]: {
         debit: sanitized,
-        credit: sanitized && parseFloat(sanitized) > 0 ? "" : (prev[accId]?.credit || ""),
+        credit: prev[accId]?.credit || "",
       },
     }))
   }
@@ -190,7 +195,7 @@ export const PeachtreeBeginningBalancesModal: React.FC<PeachtreeBeginningBalance
     setBalanceMap((prev) => ({
       ...prev,
       [accId]: {
-        debit: sanitized && parseFloat(sanitized) > 0 ? "" : (prev[accId]?.debit || ""),
+        debit: prev[accId]?.debit || "",
         credit: sanitized,
       },
     }))

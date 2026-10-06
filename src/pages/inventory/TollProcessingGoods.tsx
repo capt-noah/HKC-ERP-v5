@@ -75,10 +75,13 @@ export default function TollProcessingGoods() {
   const onSiteGoods = services
 
   const filteredGoods = onSiteGoods.filter((s) => {
+    if (!s) return false
+    const q = (searchQuery || "").toLowerCase().trim()
     const matchesSearch =
-      s.reference_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.client_company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.goods_description.toLowerCase().includes(searchQuery.toLowerCase())
+      !q ||
+      (s.reference_number || "").toLowerCase().includes(q) ||
+      (s.client_company_name || "").toLowerCase().includes(q) ||
+      (s.goods_description || "").toLowerCase().includes(q)
     const matchesStage = stageFilter === "ALL" || s.status === stageFilter
     return matchesSearch && matchesStage
   })

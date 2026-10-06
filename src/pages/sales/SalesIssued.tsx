@@ -838,16 +838,6 @@ export default function SalesIssued() {
       defaultCogsCode,
       { warehouseId: whId, itemName }
     )
-    const cogsDebitLines: SplitLineItem[] = isProcessing ? [] : [
-      {
-        id: `dr-cogs-${Date.now()}-1`,
-        accountId: cogsDrAcc?.id || defaultCogsCode,
-        accountCode: cogsDrAcc?.code || defaultCogsCode,
-        accountName: cogsDrAcc?.name || defaultCogsName,
-        description: "Cost of Goods Sold - Stock Issued",
-        amount: cogsVal,
-      },
-    ]
 
     const defaultInvCode = isWh1Sale ? (commSet?.inventoryCode || "1410-01") : "1400-01"
     const defaultInvName = isWh1Sale ? (commSet?.inventoryName || "STOCK OF GREEN MUNG") : "STOCK OF VETERINARY DRUG"
@@ -857,12 +847,44 @@ export default function SalesIssued() {
       defaultInvCode,
       { warehouseId: whId, itemName }
     )
+
+    let finalCogsDrCode = cogsDrAcc?.code || defaultCogsCode
+    let finalCogsDrName = cogsDrAcc?.name || defaultCogsName
+    let finalCogsDrId = cogsDrAcc?.id || defaultCogsCode
+
+    let finalCogsCrCode = cogsCrAcc?.code || defaultInvCode
+    let finalCogsCrName = cogsCrAcc?.name || defaultInvName
+    let finalCogsCrId = cogsCrAcc?.id || defaultInvCode
+
+    // Safeguard: Ensure Debit (COGS) and Credit (Stock Asset) are NEVER identical
+    if (finalCogsDrCode === finalCogsCrCode || finalCogsDrId === finalCogsCrId || finalCogsDrCode.startsWith("14")) {
+      finalCogsDrCode = defaultCogsCode
+      finalCogsDrName = defaultCogsName
+      finalCogsDrId = defaultCogsCode
+    }
+    if (finalCogsCrCode === finalCogsDrCode || finalCogsCrCode.startsWith("50")) {
+      finalCogsCrCode = defaultInvCode
+      finalCogsCrName = defaultInvName
+      finalCogsCrId = defaultInvCode
+    }
+
+    const cogsDebitLines: SplitLineItem[] = isProcessing ? [] : [
+      {
+        id: `dr-cogs-${Date.now()}-1`,
+        accountId: finalCogsDrId,
+        accountCode: finalCogsDrCode,
+        accountName: finalCogsDrName,
+        description: "Cost of Goods Sold - Stock Issued",
+        amount: cogsVal,
+      },
+    ]
+
     const cogsCreditLines: SplitLineItem[] = isProcessing ? [] : [
       {
         id: `cr-cogs-${Date.now()}-1`,
-        accountId: cogsCrAcc?.id || defaultInvCode,
-        accountCode: cogsCrAcc?.code || defaultInvCode,
-        accountName: cogsCrAcc?.name || defaultInvName,
+        accountId: finalCogsCrId,
+        accountCode: finalCogsCrCode,
+        accountName: finalCogsCrName,
         description: "Inventory Asset Relieved - Stock Issued",
         amount: cogsVal,
       },
@@ -1653,8 +1675,9 @@ export default function SalesIssued() {
         const single = prevCogsDr[0] || def.cogsDebitLines[0]
         const singleCode = (single?.accountCode || single?.accountId || "").trim()
         const expectedDr = def.cogsDebitLines[0]
-        const isStandardCogs = !singleCode || singleCode.startsWith("5000-") || singleCode.startsWith("5010-")
-        if (isStandardCogs && expectedDr && singleCode !== (expectedDr.accountCode || expectedDr.accountId)) {
+        const isStockAccInDebit = singleCode.startsWith("1400-") || singleCode.startsWith("1410-")
+        const isStandardCogs = singleCode.startsWith("5000-") || singleCode.startsWith("5010-")
+        if ((isStockAccInDebit || !isStandardCogs || (expectedDr && singleCode !== (expectedDr.accountCode || expectedDr.accountId))) && expectedDr) {
           return [{ ...expectedDr, amount: itemCostTotal }]
         }
         return [{ ...single, amount: itemCostTotal }]
@@ -1667,8 +1690,9 @@ export default function SalesIssued() {
         const single = prevCogsCr[0] || def.cogsCreditLines[0]
         const singleCode = (single?.accountCode || single?.accountId || "").trim()
         const expectedCr = def.cogsCreditLines[0]
-        const isStandardStock = !singleCode || singleCode.startsWith("1400-") || singleCode.startsWith("1410-")
-        if (isStandardStock && expectedCr && singleCode !== (expectedCr.accountCode || expectedCr.accountId)) {
+        const isCogsAccInCredit = singleCode.startsWith("5000-") || singleCode.startsWith("5010-")
+        const isStandardStock = singleCode.startsWith("1400-") || singleCode.startsWith("1410-")
+        if ((isCogsAccInCredit || !isStandardStock || (expectedCr && singleCode !== (expectedCr.accountCode || expectedCr.accountId))) && expectedCr) {
           return [{ ...expectedCr, amount: itemCostTotal }]
         }
         return [{ ...single, amount: itemCostTotal }]

@@ -152,24 +152,28 @@ export const PeachtreeBankReconciliationModal: React.FC<PeachtreeBankReconciliat
 
   // Filtered deposits and checks
   const checksList = useMemo(() => {
+    const q = (searchQuery || "").toLowerCase().trim()
     return accountLines.filter(
       (l) =>
+        Boolean(l) &&
         l.type === "Check" &&
-        (!searchQuery ||
-          l.reference.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          l.payee.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          l.amount.toString().includes(searchQuery))
+        (!q ||
+          (l.reference || "").toLowerCase().includes(q) ||
+          (l.payee || "").toLowerCase().includes(q) ||
+          String(l.amount ?? "").toLowerCase().includes(q))
     )
   }, [accountLines, searchQuery])
 
   const depositsList = useMemo(() => {
+    const q = (searchQuery || "").toLowerCase().trim()
     return accountLines.filter(
       (l) =>
+        Boolean(l) &&
         l.type === "Deposit" &&
-        (!searchQuery ||
-          l.reference.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          l.payee.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          l.amount.toString().includes(searchQuery))
+        (!q ||
+          (l.reference || "").toLowerCase().includes(q) ||
+          (l.payee || "").toLowerCase().includes(q) ||
+          String(l.amount ?? "").toLowerCase().includes(q))
     )
   }, [accountLines, searchQuery])
 

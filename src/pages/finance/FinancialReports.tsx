@@ -104,48 +104,70 @@ export default function FinancialReports() {
 
   // Dynamic Trial Balance Calculation (filtered by Date preset / custom)
   const trialBalance = useMemo(() => {
-    const accountMap = new Map<
+    const distinctEntries = new Map<
       string,
       { code: string; name: string; account_type: string; debit_sum: number; credit_sum: number }
     >()
 
     accounts.forEach((acc) => {
-      accountMap.set(acc.id, {
-        code: acc.code,
-        name: acc.name,
-        account_type: acc.account_type,
+      distinctEntries.set(acc.id, {
+        code: acc.code || acc.id,
+        name: acc.name || acc.code || acc.id,
+        account_type: acc.account_type || "Asset",
         debit_sum: 0,
         credit_sum: 0,
       })
     })
+
+    const findEntry = (accId: string) => {
+      if (!accId) return null
+      const clean = String(accId).trim()
+      let found = distinctEntries.get(clean)
+      if (found) return found
+      const codeClean = clean.replace(/^ACC-/, "")
+      for (const [id, val] of distinctEntries.entries()) {
+        if (id === codeClean || val.code === clean || val.code === codeClean || `ACC-${val.code}` === clean) {
+          return val
+        }
+      }
+      return null
+    }
 
     lines.forEach((line) => {
       const parentEntry = entries.find((e) => e.id === line.journal_entry_id)
       if (!parentEntry) return
       if (!isDateInPreset(parentEntry.entry_date, tbDateFilter, tbCustomStart, tbCustomEnd)) return
 
-      let acc = accountMap.get(line.account_id)
-      if (!acc) {
-        const matched = accounts.find((a) => a.code === line.account_id || a.id === line.account_id)
-        if (matched) {
-          acc = accountMap.get(matched.id)
-        }
-      }
+      const acc = findEntry(line.account_id)
       if (acc) {
-        acc.debit_sum += line.debit_amount
-        acc.credit_sum += line.credit_amount
+        acc.debit_sum += Number(line.debit_amount || 0)
+        acc.credit_sum += Number(line.credit_amount || 0)
+      } else {
+        distinctEntries.set(line.account_id, {
+          code: line.account_code || line.account_id,
+          name: line.account_name || line.account_id,
+          account_type: "Asset",
+          debit_sum: Number(line.debit_amount || 0),
+          credit_sum: Number(line.credit_amount || 0),
+        })
       }
     })
 
-    const rows = Array.from(accountMap.entries()).map(([id, val]) => ({
-      account_id: id,
-      code: val.code,
-      name: val.name,
-      account_type: val.account_type,
-      debit_sum: Math.round(val.debit_sum * 100) / 100,
-      credit_sum: Math.round(val.credit_sum * 100) / 100,
-      net_balance: Math.round((val.debit_sum - val.credit_sum) * 100) / 100,
-    }))
+    const rows = Array.from(distinctEntries.entries()).map(([id, val]) => {
+      const isCreditNormal = val.account_type === "Liability" || val.account_type === "Equity" || val.account_type === "Revenue"
+      const rawNet = val.debit_sum - val.credit_sum
+      const displayNet = isCreditNormal ? val.credit_sum - val.debit_sum : val.debit_sum - val.credit_sum
+      return {
+        account_id: id,
+        code: val.code,
+        name: val.name,
+        account_type: val.account_type,
+        debit_sum: Math.round(val.debit_sum * 100) / 100,
+        credit_sum: Math.round(val.credit_sum * 100) / 100,
+        net_balance: Math.round(displayNet * 100) / 100,
+        raw_net: Math.round(rawNet * 100) / 100,
+      }
+    })
 
     const totalDebits = Math.round(rows.reduce((sum, r) => sum + r.debit_sum, 0) * 100) / 100
     const totalCredits = Math.round(rows.reduce((sum, r) => sum + r.credit_sum, 0) * 100) / 100
@@ -162,9 +184,9 @@ export default function FinancialReports() {
     if (tbSearchTerm.trim()) {
       const q = tbSearchTerm.toLowerCase()
       const matches =
-        r.code.toLowerCase().includes(q) ||
-        r.name.toLowerCase().includes(q) ||
-        r.account_type.toLowerCase().includes(q)
+        (r.code || "").toLowerCase().includes(q) ||
+        (r.name || "").toLowerCase().includes(q) ||
+        (r.account_type || "").toLowerCase().includes(q)
       if (!matches) return false
     }
     return true
@@ -254,13 +276,13 @@ export default function FinancialReports() {
     if (glSearchQuery.trim()) {
       const q = glSearchQuery.toLowerCase()
       const matches =
-        tx.source_id.toLowerCase().includes(q) ||
-        tx.journal_entry_id.toLowerCase().includes(q) ||
-        tx.description.toLowerCase().includes(q) ||
-        tx.account_code.toLowerCase().includes(q) ||
-        tx.account_name.toLowerCase().includes(q) ||
-        (tx.party_name && tx.party_name.toLowerCase().includes(q)) ||
-        tx.against_account.toLowerCase().includes(q)
+        (tx.source_id || "").toLowerCase().includes(q) ||
+        (tx.journal_entry_id || "").toLowerCase().includes(q) ||
+        (tx.description || "").toLowerCase().includes(q) ||
+        (tx.account_code || "").toLowerCase().includes(q) ||
+        (tx.account_name || "").toLowerCase().includes(q) ||
+        ((tx.party_name || "").toLowerCase().includes(q)) ||
+        (tx.against_account || "").toLowerCase().includes(q)
       if (!matches) return false
     }
 
@@ -300,9 +322,6 @@ export default function FinancialReports() {
 
   const sortedGlTransactions = glTable.sorted()
 
-  const glTotalDebit = sortedGlTransactions.reduce((s, tx) => s + tx.debit_amount, 0)
-  const glTotalCredit = sortedGlTransactions.reduce((s, tx) => s + tx.credit_amount, 0)
-
   const accountsByType = {
     Asset: accounts.filter((a) => a.account_type === "Asset"),
     Liability: accounts.filter((a) => a.account_type === "Liability"),
@@ -321,8 +340,9 @@ export default function FinancialReports() {
   const isCogsAccount = (account: { code?: string | null; name?: string | null; peachtree_type?: string | null }) => {
     if (!account) return false
     if (account.peachtree_type === "Cost of Sales") return true
-    if (account.code === "5001" || account.code?.startsWith("6")) return true
-    if (/cogs|cost of (goods|sales)/i.test(account.name || "")) return true
+    const code = account.code || ""
+    if (code.startsWith("5") || code === "5000-01" || code === "5001") return true
+    if (/cogs|cost of (goods|sales|veterinary|drugs?)/i.test(account.name || "")) return true
     return false
   }
   const cogsTotal = accountsByType.Expense.filter(isCogsAccount).reduce((total, account) => total + accountBalance(account), 0)
@@ -335,7 +355,8 @@ export default function FinancialReports() {
     if (transaction.account_type === "Revenue") row.revenue += transaction.credit_amount - transaction.debit_amount
     if (transaction.account_type === "Expense") {
       const amount = transaction.debit_amount - transaction.credit_amount
-      const isCogsTx = transaction.account_code === "5001" || transaction.account_code?.startsWith("6") || /cogs|cost of (goods|sales)/i.test(transaction.account_name || "")
+      const code = transaction.account_code || ""
+      const isCogsTx = code.startsWith("5") || code === "5000-01" || code === "5001" || /cogs|cost of (goods|sales|veterinary|drugs?)/i.test(transaction.account_name || "")
       if (isCogsTx) row.cogs += amount
       else row.expenses += amount
     }
@@ -411,43 +432,6 @@ export default function FinancialReports() {
         {/* TAB 0: General Ledger (ERPNext Account-Wise Detailed Report) */}
         {activeTab === "GL" && (
           <div className="flex flex-col gap-4">
-              {/* Summary Metric Strip - Standardized 3 KPI Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2">
-                <GlassCard className="p-4 flex flex-col justify-between">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Debits Posted</span>
-                  {isLoading ? (
-                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
-                  ) : (
-                    <p className="text-xl font-black text-emerald-700 font-mono mt-1">
-                      ETB {glTotalDebit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  )}
-                  <span className="text-[10px] text-gray-400 mt-1">Across all active account lines</span>
-                </GlassCard>
-                <GlassCard className="p-4 flex flex-col justify-between">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Credits Posted</span>
-                  {isLoading ? (
-                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
-                  ) : (
-                    <p className="text-xl font-black text-emerald-700 font-mono mt-1">
-                      ETB {glTotalCredit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  )}
-                  <span className="text-[10px] text-gray-400 mt-1">Across all active account lines</span>
-                </GlassCard>
-                <GlassCard className="p-4 flex flex-col justify-between">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Net Running Balance</span>
-                  {isLoading ? (
-                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
-                  ) : (
-                    <p className="text-xl font-black text-zinc-950 font-mono mt-1">
-                      ETB {runningBal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  )}
-                  <span className="text-[10px] text-gray-400 mt-1">Cumulative ledger position</span>
-                </GlassCard>
-              </div>
-
               {/* General Ledger Table with Integrated Filter Parameters */}
               <GlassCard className="flex flex-col p-0">
                 <div className="px-6 pt-6">
@@ -656,56 +640,6 @@ export default function FinancialReports() {
           {/* TAB 3: Trial Balance */}
           {activeTab === "TrialBalance" && (
             <div className="flex flex-col gap-4">
-              {/* Summary Metric Strip - 3 Standard KPI Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2">
-                <GlassCard className="p-4 flex flex-col justify-between">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Debits</span>
-                  {isLoading ? (
-                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
-                  ) : (
-                    <p className="text-xl font-black text-emerald-700 font-mono mt-1">
-                      ETB {trialBalance.totalDebits.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  )}
-                  <span className="text-[10px] text-gray-400 mt-1">All debit account lines</span>
-                </GlassCard>
-
-                <GlassCard className="p-4 flex flex-col justify-between">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total Credits</span>
-                  {isLoading ? (
-                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
-                  ) : (
-                    <p className="text-xl font-black text-emerald-700 font-mono mt-1">
-                      ETB {trialBalance.totalCredits.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  )}
-                  <span className="text-[10px] text-gray-400 mt-1">All credit account lines</span>
-                </GlassCard>
-
-                <GlassCard className="p-4 flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Trial Balance Health</span>
-                    {isLoading ? (
-                      <Skeleton className="h-5 w-20 rounded-full bg-zinc-200/80" />
-                    ) : (
-                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full font-mono ${
-                        trialBalance.isBalanced ? "text-emerald-700 bg-emerald-100/80 border border-emerald-200" : "text-rose-700 bg-rose-100/80 border border-rose-200"
-                      }`}>
-                        {trialBalance.isBalanced ? "BALANCED" : "IMBALANCED"}
-                      </span>
-                    )}
-                  </div>
-                  {isLoading ? (
-                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
-                  ) : (
-                    <p className="text-xl font-black text-zinc-900 font-mono mt-1">
-                      ETB {Math.abs(trialBalance.totalDebits - trialBalance.totalCredits).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  )}
-                  <span className="text-[10px] text-gray-400 mt-1">Net difference (should be 0.00)</span>
-                </GlassCard>
-              </div>
-
               {/* Table Container Card with Standard FinanceTableToolbar */}
               <GlassCard className="flex flex-col p-0">
                 <div className="px-6 pt-6">
@@ -841,8 +775,8 @@ export default function FinancialReports() {
                           }
                           const categoryStyle = categoryStyleMap[r.account_type] || "bg-zinc-100 text-zinc-800 border-zinc-200"
 
-                          const isDebit = r.net_balance > 0 || (r.net_balance === 0 && r.debit_sum > r.credit_sum)
-                          const isCredit = r.net_balance < 0 || (r.net_balance === 0 && r.credit_sum > r.debit_sum)
+                          const isDebit = (r as any).raw_net > 0 || (r.debit_sum > r.credit_sum)
+                          const isCredit = (r as any).raw_net < 0 || (r.credit_sum > r.debit_sum)
 
                           return (
                             <tr key={r.account_id} className="hover:bg-zinc-50/80 transition-colors">
@@ -1451,7 +1385,7 @@ export default function FinancialReports() {
           {activeTab === "CashFlow" && (
             <div className="flex flex-col gap-6">
               {/* Summary KPIs */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-2">
                 <GlassCard className="p-4 flex flex-col justify-between">
                   <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Operating Cash Flow</span>
                   {isLoading ? (
@@ -1486,21 +1420,6 @@ export default function FinancialReports() {
                     </p>
                   )}
                   <span className="text-[10px] text-gray-400 mt-1">Debt Servicing & Capital</span>
-                </GlassCard>
-
-                <GlassCard className="p-4 flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Net Cash Position Increase</span>
-                    <Coins className="size-4 text-emerald-600" />
-                  </div>
-                  {isLoading ? (
-                    <Skeleton className="h-7 w-36 bg-zinc-200/80 my-1" />
-                  ) : (
-                    <p className="text-xl font-black text-emerald-800 font-mono mt-1">
-                      ETB {cashFlowTrendData.reduce((total, row) => total + row.netCash, 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                    </p>
-                  )}
-                  <span className="text-[10px] text-emerald-600 font-semibold mt-1">Net Liquidity Inflow YTD</span>
                 </GlassCard>
               </div>
 

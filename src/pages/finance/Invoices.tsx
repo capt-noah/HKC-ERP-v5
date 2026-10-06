@@ -130,10 +130,10 @@ export default function Invoices() {
       const party = (inv.customer_name || inv.supplier_name || "").toLowerCase()
       const matchSearch =
         !q ||
-        inv.invoice_number.toLowerCase().includes(q) ||
+        (inv.invoice_number || "").toLowerCase().includes(q) ||
         party.includes(q) ||
-        (inv.voucher_no && inv.voucher_no.toLowerCase().includes(q)) ||
-        (inv.purchase_order_id && inv.purchase_order_id.toLowerCase().includes(q))
+        ((inv.voucher_no || "").toLowerCase().includes(q)) ||
+        ((inv.purchase_order_id || "").toLowerCase().includes(q))
 
       const matchDate = isDateInPreset(inv.issue_date, datePreset, customStart, customEnd)
       return matchType && matchStatus && matchSearch && matchDate
