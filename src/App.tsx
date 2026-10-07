@@ -54,15 +54,15 @@ function RoleHomeRedirect() {
   switch (primaryRole) {
     case "superadmin":
       return <Navigate to="/admin" replace />
-    case "sales_manager":
+    case "sales":
       return <Navigate to="/sales" replace />
-    case "hr_manager":
+    case "hr":
       return <Navigate to="/hr" replace />
-    case "inventory_admin":
+    case "inventory":
       return <Navigate to="/inventory" replace />
-    case "finance_manager":
+    case "finance":
       return <Navigate to="/finance" replace />
-    case "hkc_docs_manager":
+    case "hkc_docs":
       return <Navigate to="/sales/hkc-docs" replace />
     default:
       return <Navigate to="/sales" replace />
@@ -87,43 +87,43 @@ export function App() {
         />
 
         {/* Sales section */}
-        <Route path="/sales" element={<ProtectedRoute allowedRoles={["superadmin", "sales_manager", "hkc_docs_manager"]}><SalesDashboard /></ProtectedRoute>} />
-        <Route path="/sales/hkc-docs" element={<ProtectedRoute allowedRoles={["superadmin", "sales_manager", "hkc_docs_manager"]}><HkcDocs /></ProtectedRoute>} />
+        <Route path="/sales" element={<ProtectedRoute allowedRoles={["superadmin", "sales", "hkc_docs"]}><SalesDashboard /></ProtectedRoute>} />
+        <Route path="/sales/hkc-docs" element={<ProtectedRoute allowedRoles={["superadmin", "sales", "hkc_docs"]}><HkcDocs /></ProtectedRoute>} />
         <Route path="/sales/processing-services" element={<Navigate to="/inventory/processing-services" replace />} />
-        <Route path="/sales/sales-issued" element={<ProtectedRoute allowedRoles={["superadmin", "sales_manager", "hkc_docs_manager"]}><SalesIssued /></ProtectedRoute>} />
-        <Route path="/sales/sales-issued/:id/attachment" element={<ProtectedRoute allowedRoles={["superadmin", "sales_manager", "hkc_docs_manager"]}><CreditSalesAttachment /></ProtectedRoute>} />
-        <Route path="/sales/sales-orders" element={<ProtectedRoute allowedRoles={["superadmin", "sales_manager", "hkc_docs_manager"]}><SalesOrders /></ProtectedRoute>} />
+        <Route path="/sales/sales-issued" element={<ProtectedRoute allowedRoles={["superadmin", "sales", "hkc_docs"]}><SalesIssued /></ProtectedRoute>} />
+        <Route path="/sales/sales-issued/:id/attachment" element={<ProtectedRoute allowedRoles={["superadmin", "sales", "hkc_docs"]}><CreditSalesAttachment /></ProtectedRoute>} />
+        <Route path="/sales/sales-orders" element={<ProtectedRoute allowedRoles={["superadmin", "sales", "hkc_docs"]}><SalesOrders /></ProtectedRoute>} />
         <Route path="/sales/quotations" element={<Navigate to="/sales/sales-orders" replace />} />
         <Route path="/sales/delivery-notes" element={<Navigate to="/sales/sales-orders" replace />} />
-        <Route path="/sales/purchase-orders" element={<ProtectedRoute allowedRoles={["superadmin", "sales_manager", "hkc_docs_manager"]}><PurchaseOrders /></ProtectedRoute>} />
+        <Route path="/sales/purchase-orders" element={<ProtectedRoute allowedRoles={["superadmin", "sales", "hkc_docs"]}><PurchaseOrders /></ProtectedRoute>} />
         <Route path="/purchase-orders" element={<Navigate to="/sales/purchase-orders" replace />} />
 
         {/* Inventory section */}
-        <Route path="/inventory" element={<ProtectedRoute allowedRoles={["superadmin", "inventory_admin"]}><InventoryDashboard /></ProtectedRoute>} />
+        <Route path="/inventory" element={<ProtectedRoute allowedRoles={["superadmin", "inventory"]}><InventoryDashboard /></ProtectedRoute>} />
         <Route path="/inventory/dashboard" element={<Navigate to="/inventory" replace />} />
-        <Route path="/inventory/stock" element={<ProtectedRoute allowedRoles={["superadmin", "inventory_admin"]}><StockProducts /></ProtectedRoute>} />
+        <Route path="/inventory/stock" element={<ProtectedRoute allowedRoles={["superadmin", "inventory"]}><StockProducts /></ProtectedRoute>} />
         <Route path="/inventory/bin-card" element={<Navigate to="/inventory/stock" replace />} />
-        <Route path="/inventory/processing-services" element={<ProtectedRoute allowedRoles={["superadmin", "inventory_admin"]}><ProcessingServices /></ProtectedRoute>} />
+        <Route path="/inventory/processing-services" element={<ProtectedRoute allowedRoles={["superadmin", "inventory"]}><ProcessingServices /></ProtectedRoute>} />
         <Route path="/inventory/toll-processing" element={<Navigate to="/inventory/processing-services" replace />} />
-        <Route path="/inventory/stock/add-item" element={<ProtectedRoute allowedRoles={["superadmin", "inventory_admin"]}><AddStockItem /></ProtectedRoute>} />
+        <Route path="/inventory/stock/add-item" element={<ProtectedRoute allowedRoles={["superadmin", "inventory"]}><AddStockItem /></ProtectedRoute>} />
 
         {/* Finance section */}
-        <Route path="/finance" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><FinanceOverview /></ProtectedRoute>} />
-        <Route path="/finance/ledger" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><Ledger /></ProtectedRoute>} />
-        <Route path="/finance/invoices" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><Invoices /></ProtectedRoute>} />
-        <Route path="/finance/stock" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><FinanceStock /></ProtectedRoute>} />
+        <Route path="/finance" element={<ProtectedRoute allowedRoles={["superadmin", "finance"]}><FinanceOverview /></ProtectedRoute>} />
+        <Route path="/finance/ledger" element={<ProtectedRoute allowedRoles={["superadmin", "finance"]}><Ledger /></ProtectedRoute>} />
+        <Route path="/finance/invoices" element={<ProtectedRoute allowedRoles={["superadmin", "finance"]}><Invoices /></ProtectedRoute>} />
+        <Route path="/finance/stock" element={<ProtectedRoute allowedRoles={["superadmin", "finance"]}><FinanceStock /></ProtectedRoute>} />
         <Route path="/finance/expenses" element={<Navigate to="/finance" replace />} />
         <Route path="/finance/banking" element={<Navigate to="/finance" replace />} />
-        <Route path="/finance/taxes" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><Taxes /></ProtectedRoute>} />
-        <Route path="/finance/reports" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><FinancialReports /></ProtectedRoute>} />
-        <Route path="/finance/export" element={<ProtectedRoute allowedRoles={["superadmin", "finance_manager"]}><FinanceExport /></ProtectedRoute>} />
+        <Route path="/finance/taxes" element={<ProtectedRoute allowedRoles={["superadmin", "finance"]}><Taxes /></ProtectedRoute>} />
+        <Route path="/finance/reports" element={<ProtectedRoute allowedRoles={["superadmin", "finance"]}><FinancialReports /></ProtectedRoute>} />
+        <Route path="/finance/export" element={<ProtectedRoute allowedRoles={["superadmin", "finance"]}><FinanceExport /></ProtectedRoute>} />
 
         {/* HR section */}
-        <Route path="/hr" element={<ProtectedRoute allowedRoles={["superadmin", "hr_manager"]}><HRDashboard /></ProtectedRoute>} />
-        <Route path="/hr/employees" element={<ProtectedRoute allowedRoles={["superadmin", "hr_manager"]}><Employees /></ProtectedRoute>} />
+        <Route path="/hr" element={<ProtectedRoute allowedRoles={["superadmin", "hr"]}><HRDashboard /></ProtectedRoute>} />
+        <Route path="/hr/employees" element={<ProtectedRoute allowedRoles={["superadmin", "hr"]}><Employees /></ProtectedRoute>} />
         <Route path="/hr/attendance" element={<Navigate to="/hr" replace />} />
-        <Route path="/hr/leave" element={<ProtectedRoute allowedRoles={["superadmin", "hr_manager"]}><Leave /></ProtectedRoute>} />
-        <Route path="/hr/payroll" element={<ProtectedRoute allowedRoles={["superadmin", "hr_manager"]}><Payroll /></ProtectedRoute>} />
+        <Route path="/hr/leave" element={<ProtectedRoute allowedRoles={["superadmin", "hr"]}><Leave /></ProtectedRoute>} />
+        <Route path="/hr/payroll" element={<ProtectedRoute allowedRoles={["superadmin", "hr"]}><Payroll /></ProtectedRoute>} />
         <Route path="/hr/attendance-leave" element={<Navigate to="/hr/leave" replace />} />
         <Route path="/hr/recruitment" element={<Navigate to="/hr" replace />} />
         <Route path="/hr/onboarding-separation" element={<Navigate to="/hr" replace />} />

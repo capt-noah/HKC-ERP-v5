@@ -599,11 +599,11 @@ export async function deleteProduct(id) {
       candidateSourceIds.push(`STK-IN-${product.sku}`, product.sku)
     }
 
-    // Query journal entries by source_id inside payload
+    // Query journal entries by source_id
     if (candidateSourceIds.length > 0) {
       const placeholders = candidateSourceIds.map(() => "?").join(", ")
       const [jes] = await conn.query(
-        `SELECT id FROM \`journal_entries\` WHERE payload->>'$.source_id' IN (${placeholders}) OR id IN (${placeholders})`,
+        `SELECT id FROM \`journal_entries\` WHERE source_id IN (${placeholders}) OR id IN (${placeholders})`,
         [...candidateSourceIds, ...candidateSourceIds]
       )
       jes.forEach((j) => jeIdSet.add(j.id))
@@ -626,8 +626,8 @@ export async function deleteProduct(id) {
     if (product?.name) {
       const [jesByName] = await conn.query(
         `SELECT id FROM \`journal_entries\` 
-         WHERE (payload->>'$.source_type' IN ('Inventory', 'Inventory Intake', 'Stock Intake') OR id LIKE 'JE-INTAKE-%') 
-           AND payload->>'$.description' LIKE ?`,
+         WHERE (source_type IN ('Inventory', 'Inventory Intake', 'Stock Intake') OR id LIKE 'JE-INTAKE-%') 
+           AND description LIKE ?`,
         [`%${product.name}%`]
       )
       jesByName.forEach((j) => jeIdSet.add(j.id))
@@ -636,8 +636,8 @@ export async function deleteProduct(id) {
     if (product?.sku) {
       const [jesBySku] = await conn.query(
         `SELECT id FROM \`journal_entries\` 
-         WHERE (payload->>'$.source_type' IN ('Inventory', 'Inventory Intake', 'Stock Intake') OR id LIKE 'JE-INTAKE-%') 
-           AND payload->>'$.description' LIKE ?`,
+         WHERE (source_type IN ('Inventory', 'Inventory Intake', 'Stock Intake') OR id LIKE 'JE-INTAKE-%') 
+           AND description LIKE ?`,
         [`%${product.sku}%`]
       )
       jesBySku.forEach((j) => jeIdSet.add(j.id))
@@ -646,20 +646,16 @@ export async function deleteProduct(id) {
     for (const bNo of batchNos) {
       const [jesByBatch] = await conn.query(
         `SELECT id FROM \`journal_entries\` 
-         WHERE (payload->>'$.source_type' IN ('Inventory', 'Inventory Intake', 'Stock Intake') OR id LIKE 'JE-INTAKE-%') 
-           AND (payload->>'$.description' LIKE ? OR payload->>'$.source_id' = ?)`,
+         WHERE (source_type IN ('Inventory', 'Inventory Intake', 'Stock Intake') OR id LIKE 'JE-INTAKE-%') 
+           AND (description LIKE ? OR source_id = ?)`,
         [`%${bNo}%`, `STK-IN-${bNo}`]
       )
       jesByBatch.forEach((j) => jeIdSet.add(j.id))
     }
 
-    // Cascade delete journal_entry_lines and journal_entries
+    // Cascade delete journal_entries (MySQL fk_jel_journal_entry ON DELETE CASCADE automatically purges lines)
     const jeIdsToDelete = Array.from(jeIdSet)
     for (const jeId of jeIdsToDelete) {
-      await conn.query(
-        "DELETE FROM `journal_entry_lines` WHERE id LIKE CONCAT(?, '%') OR payload->>'$.journal_entry_id' = ?",
-        [jeId, jeId]
-      )
       await conn.query("DELETE FROM `journal_entries` WHERE id = ?", [jeId])
     }
 

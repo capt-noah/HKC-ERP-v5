@@ -71,9 +71,8 @@ export default function HkcDocEditModal({
             fileUrl: upRes.url,
             fileName: upRes.originalName || item.fileName,
           })
-        } catch (err) {
-          console.warn("Pre-save upload failed, keeping original:", err)
-          processed.push(item)
+        } catch (err: any) {
+          throw new Error(`Failed to upload ${item.fileName}. Please verify network connection and try again.`)
         }
       } else {
         processed.push(item)

@@ -111,6 +111,8 @@ export function normalizeBodyToDbColumns(body, validCols) {
     toWarehouseId: "to_warehouse_id",
     to_warehouse: "to_warehouse_id",
     requestDate: "request_date",
+    recordDate: "record_date",
+    record_date: "record_date",
     completedDate: "completed_date",
     requestedBy: "requested_by",
     approvedBy: "approved_by",
@@ -192,6 +194,30 @@ export function normalizeBodyToDbColumns(body, validCols) {
     otherCharges: "other_charges",
     advancePayment: "advance_payment",
     balancePayment: "balance_payment",
+    entryNumber: "entry_number",
+    entryDate: "entry_date",
+    sourceType: "source_type",
+    sourceId: "source_id",
+    postingStatus: "posting_status",
+    totalAmount: "total_amount",
+    isReversalOf: "is_reversal_of",
+    autoReverse: "auto_reverse",
+    reversalDate: "reversal_date",
+    reversedById: "reversed_by_id",
+    journalEntryId: "journal_entry_id",
+    accountId: "account_id",
+    accountCode: "account_code",
+    accountName: "account_name",
+    debitAmount: "debit_amount",
+    creditAmount: "credit_amount",
+    exchangeRateAtTime: "exchange_rate_at_time",
+    isCleared: "is_cleared",
+    clearedDate: "cleared_date",
+    accountType: "account_type",
+    peachtreeType: "peachtree_type",
+    parentAccountId: "parent_account_id",
+    isGroup: "is_group",
+    isActive: "is_active",
   }
 
   for (const [key, value] of Object.entries(body)) {
@@ -212,6 +238,16 @@ export function normalizeBodyToDbColumns(body, validCols) {
         dbCol = "party_name"
       } else if ((key === "customer" || key === "party") && validCols.has("customer_name")) {
         dbCol = "customer_name"
+      } else if (key === "date" && validCols.has("order_date")) {
+        dbCol = "order_date"
+      } else if (key === "date" && validCols.has("record_date")) {
+        dbCol = "record_date"
+      } else if (key === "date" && validCols.has("issue_date")) {
+        dbCol = "issue_date"
+      } else if (key === "desc" && validCols.has("description")) {
+        dbCol = "description"
+      } else if (key === "rate" && validCols.has("rate_percent")) {
+        dbCol = "rate_percent"
       }
     }
     // If the explicit direct column was already provided in body, do not let an alias override it
@@ -273,6 +309,9 @@ export function unwrapRow(row, storage) {
     "payment_advice_attachment",
     "installment_payments",
     "account_entries",
+    "line_items",
+    "gl_distribution",
+    "multi_accounts",
   ]) {
     if (out[k] !== undefined) {
       out[k] = parseJsonField(out[k])
@@ -648,6 +687,168 @@ export function unwrapRow(row, storage) {
   if (out.binCardEntryId !== undefined && out.bin_card_entry_id === undefined) out.bin_card_entry_id = out.binCardEntryId
   if (out.disposal_notes !== undefined && out.disposalNotes === undefined) out.disposalNotes = out.disposal_notes
   if (out.disposalNotes !== undefined && out.disposal_notes === undefined) out.disposal_notes = out.disposalNotes
+
+  // Normalization for journal_entries
+  if (out.entry_number !== undefined && out.entryNumber === undefined) out.entryNumber = out.entry_number
+  if (out.entryNumber !== undefined && out.entry_number === undefined) out.entry_number = out.entryNumber
+  if (out.entry_date !== undefined) {
+    if (out.entry_date instanceof Date) {
+      out.entry_date = out.entry_date.toISOString().slice(0, 10)
+    }
+    if (out.entryDate === undefined) out.entryDate = out.entry_date
+  }
+  if (out.source_type !== undefined && out.sourceType === undefined) out.sourceType = out.source_type
+  if (out.source_id !== undefined && out.sourceId === undefined) out.sourceId = out.source_id
+  if (out.posting_status !== undefined && out.postingStatus === undefined) out.postingStatus = out.posting_status
+  if (out.total_amount !== undefined) {
+    out.total_amount = Number(out.total_amount)
+    if (out.totalAmount === undefined) out.totalAmount = Number(out.total_amount)
+  }
+  if (out.exchange_rate !== undefined) {
+    out.exchange_rate = Number(out.exchange_rate)
+    if (out.exchangeRate === undefined) out.exchangeRate = Number(out.exchange_rate)
+  }
+
+  // Normalization for journal_entry_lines
+  if (out.journal_entry_id !== undefined && out.journalEntryId === undefined) out.journalEntryId = out.journal_entry_id
+  if (out.account_id !== undefined && out.accountId === undefined) out.accountId = out.account_id
+  if (out.account_code !== undefined && out.accountCode === undefined) out.accountCode = out.account_code
+  if (out.account_name !== undefined && out.accountName === undefined) out.accountName = out.account_name
+  if (out.debit_amount !== undefined) {
+    out.debit_amount = Number(out.debit_amount)
+    if (out.debitAmount === undefined) out.debitAmount = Number(out.debit_amount)
+    if (out.debit === undefined) out.debit = Number(out.debit_amount)
+  }
+  if (out.credit_amount !== undefined) {
+    out.credit_amount = Number(out.credit_amount)
+    if (out.creditAmount === undefined) out.creditAmount = Number(out.credit_amount)
+    if (out.credit === undefined) out.credit = Number(out.credit_amount)
+  }
+  if (out.exchange_rate_at_time !== undefined) {
+    out.exchange_rate_at_time = Number(out.exchange_rate_at_time)
+    if (out.exchangeRateAtTime === undefined) out.exchangeRateAtTime = Number(out.exchange_rate_at_time)
+  }
+  if (out.is_cleared !== undefined) {
+    out.is_cleared = Boolean(out.is_cleared)
+    out.isCleared = Boolean(out.is_cleared)
+  }
+  if (out.cleared_date !== undefined) {
+    if (out.cleared_date instanceof Date) {
+      out.cleared_date = out.cleared_date.toISOString().slice(0, 10)
+    }
+    if (out.clearedDate === undefined) out.clearedDate = out.cleared_date
+  }
+
+  // Normalization for customers
+  if (out.contact_person !== undefined && out.contactPerson === undefined) out.contactPerson = out.contact_person
+  if (out.trade_paper_url !== undefined && out.tradePaperUrl === undefined) out.tradePaperUrl = out.trade_paper_url
+  if (out.trade_paper_file_name !== undefined && out.tradePaperFileName === undefined) out.tradePaperFileName = out.trade_paper_file_name
+  if (out.trade_paper_uploaded_at !== undefined && out.tradePaperUploadedAt === undefined) out.tradePaperUploadedAt = out.trade_paper_uploaded_at
+  if (out.default_tax_schedule_id !== undefined && out.defaultTaxScheduleId === undefined) out.defaultTaxScheduleId = out.default_tax_schedule_id
+  if (out.warehouse_target !== undefined && out.warehouseTarget === undefined) out.warehouseTarget = out.warehouse_target
+  if (out.credit_limit !== undefined) {
+    out.credit_limit = Number(out.credit_limit)
+    if (out.creditLimit === undefined) out.creditLimit = Number(out.credit_limit)
+  }
+  if (out.is_gov_agent !== undefined) {
+    out.is_gov_agent = Boolean(out.is_gov_agent)
+    if (out.isGovAgent === undefined) out.isGovAgent = Boolean(out.is_gov_agent)
+  }
+
+  // Normalization for suppliers
+  if (out.tax_id !== undefined && out.taxId === undefined) out.taxId = out.tax_id
+
+  // Normalization for sales_orders
+  if (out.order_number !== undefined && out.orderNumber === undefined) out.orderNumber = out.order_number
+  if (out.order_date !== undefined) {
+    if (out.order_date instanceof Date) {
+      out.order_date = out.order_date.toISOString().slice(0, 10)
+    }
+    if (out.orderDate === undefined) out.orderDate = out.order_date
+    if (out.date === undefined) out.date = out.order_date
+  }
+  if (out.customer_phone !== undefined && out.customerPhone === undefined) out.customerPhone = out.customer_phone
+  if (out.customer_group !== undefined && out.customerGroup === undefined) out.customerGroup = out.customer_group
+  if (out.warehouse_name !== undefined && out.warehouseName === undefined) out.warehouseName = out.warehouse_name
+  if (out.billed_amount !== undefined) {
+    out.billed_amount = Number(out.billed_amount)
+    if (out.billedAmount === undefined) out.billedAmount = Number(out.billed_amount)
+  }
+  if (out.delivered_amount !== undefined) {
+    out.delivered_amount = Number(out.delivered_amount)
+    if (out.deliveredAmount === undefined) out.deliveredAmount = Number(out.delivered_amount)
+  }
+  if (out.billing_status !== undefined && out.billingStatus === undefined) out.billingStatus = out.billing_status
+  if (out.delivery_status !== undefined && out.deliveryStatus === undefined) out.deliveryStatus = out.delivery_status
+  if (out.approval_status !== undefined && out.approvalStatus === undefined) out.approvalStatus = out.approval_status
+  if (out.urgent !== undefined) {
+    out.urgent = Boolean(out.urgent)
+  }
+  if (out.description !== undefined && out.desc === undefined) out.desc = out.description
+
+  // Normalization for hkc_doc_records
+  if (out.shipment_id !== undefined && out.shipmentId === undefined) out.shipmentId = out.shipment_id
+  if (out.items_description !== undefined && out.itemsDescription === undefined) out.itemsDescription = out.items_description
+  if (out.record_date !== undefined) {
+    if (out.record_date instanceof Date) {
+      out.record_date = out.record_date.toISOString().slice(0, 10)
+    }
+    if (out.recordDate === undefined) out.recordDate = out.record_date
+    if (out.date === undefined) out.date = out.record_date
+  }
+
+  // Normalization for invoices
+  if (out.invoice_number !== undefined && out.invoiceNumber === undefined) out.invoiceNumber = out.invoice_number
+  if (out.line_items !== undefined) {
+    if (out.lineItems === undefined) out.lineItems = out.line_items
+    if (out.items === undefined) out.items = out.line_items
+  }
+  if (out.gl_distribution !== undefined && out.glDistribution === undefined) out.glDistribution = out.gl_distribution
+  if (out.discount_amount !== undefined) {
+    out.discount_amount = Number(out.discount_amount)
+    if (out.discountAmount === undefined) out.discountAmount = Number(out.discount_amount)
+  }
+  if (out.tax_rate !== undefined) {
+    out.tax_rate = Number(out.tax_rate)
+    if (out.taxRate === undefined) out.taxRate = Number(out.tax_rate)
+  }
+
+  // Normalization for tax_rules
+  if (out.rate_percent !== undefined) {
+    out.rate_percent = Number(out.rate_percent)
+    if (out.ratePercent === undefined) out.ratePercent = Number(out.rate_percent)
+    if (out.rate === undefined) out.rate = Number(out.rate_percent)
+  }
+  if (out.applies_to !== undefined && out.appliesTo === undefined) out.appliesTo = out.applies_to
+  if (out.gl_account_code !== undefined && out.glAccountCode === undefined) out.glAccountCode = out.gl_account_code
+  if (out.is_deduction !== undefined) {
+    out.is_deduction = Boolean(out.is_deduction)
+    if (out.isDeduction === undefined) out.isDeduction = Boolean(out.is_deduction)
+  }
+  if (out.is_inclusive !== undefined) {
+    out.is_inclusive = Boolean(out.is_inclusive)
+    if (out.isInclusive === undefined) out.isInclusive = Boolean(out.is_inclusive)
+  }
+
+  // Normalization for employees and HR
+  if (out.employee_number !== undefined && out.employeeNumber === undefined) out.employeeNumber = out.employee_number
+  if (out.full_name !== undefined) {
+    if (out.fullName === undefined) out.fullName = out.full_name
+    if (out.name === undefined) out.name = out.full_name
+  }
+  if (out.employment_type !== undefined && out.employmentType === undefined) out.employmentType = out.employment_type
+  if (out.basic_salary !== undefined) {
+    out.basic_salary = Number(out.basic_salary)
+    if (out.basicSalary === undefined) out.basicSalary = Number(out.basic_salary)
+  }
+  if (out.gross_pay !== undefined) {
+    out.gross_pay = Number(out.gross_pay)
+    if (out.grossPay === undefined) out.grossPay = Number(out.gross_pay)
+  }
+  if (out.net_pay !== undefined) {
+    out.net_pay = Number(out.net_pay)
+    if (out.netPay === undefined) out.netPay = Number(out.net_pay)
+  }
 
   return out
 }

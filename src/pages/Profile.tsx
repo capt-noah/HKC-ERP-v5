@@ -125,7 +125,7 @@ const roleDescriptions: Record<Role, { title: string; desc: string; color: strin
       "Cross-Module Oversight (Sales, Inventory, Finance, HR)",
     ],
   },
-  sales_manager: {
+  sales: {
     title: "Sales",
     desc: "Manages the entire sales pipeline from orders and quotations to warehouse dispatch and client shipments.",
     color: "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
@@ -137,7 +137,7 @@ const roleDescriptions: Record<Role, { title: string; desc: string; color: strin
       "Client Registry & Ledger Verification",
     ],
   },
-  inventory_admin: {
+  inventory: {
     title: "Inventory",
     desc: "Oversees multi-location stock movements, bin cards, batch tracking, and commodity transfers.",
     color: "bg-teal-50 text-teal-800 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300",
@@ -149,7 +149,7 @@ const roleDescriptions: Record<Role, { title: string; desc: string; color: strin
       "Stock Valuation & Reorder Alerts",
     ],
   },
-  finance_manager: {
+  finance: {
     title: "Finance",
     desc: "Maintains financial compliance, chart of accounts, journal entries, tax filings, and ledger reports.",
     color: "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
@@ -161,7 +161,7 @@ const roleDescriptions: Record<Role, { title: string; desc: string; color: strin
       "Financial Statements & Peachtree Exports",
     ],
   },
-  hr_manager: {
+  hr: {
     title: "HR",
     desc: "Administers employee records, monthly payroll calculations, attendance tracking, and leave workflows.",
     color: "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300",
@@ -173,9 +173,9 @@ const roleDescriptions: Record<Role, { title: string; desc: string; color: strin
       "Onboarding & Separation Workflows",
     ],
   },
-  hkc_docs_manager: {
+  hkc_docs: {
     title: "HKC Export Docs",
-    desc: "Compiles specialized export/import documentation, customs clearances, and regulatory certificates.",
+    desc: "Compiles export/import documentation, customs clearances, and regulatory certificates.",
     color: "bg-teal-50 text-teal-800 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300",
     capabilities: [
       "Customs Export & Import Dossiers",
@@ -475,7 +475,7 @@ export default function Profile() {
   // Check whether this user operates or is assigned to warehouses
   const hasWarehouseAccess =
     isSuperAdmin ||
-    userRoles.includes("inventory_admin") ||
+    userRoles.includes("inventory") ||
     Boolean(profileData?.warehouse_id) ||
     Boolean(profileData?.warehouse_ids && profileData.warehouse_ids.length > 0) ||
     Boolean((authUser as any)?.warehouse_id) ||
@@ -511,8 +511,8 @@ export default function Profile() {
       if (matches.length > 0) return matches
     }
 
-    // Default for inventory administrator without explicit warehouse restriction: all facility locations
-    if (userRoles.includes("inventory_admin")) {
+    // Default for inventory role without explicit warehouse restriction: all facility locations
+    if (userRoles.includes("inventory")) {
       return sourceWarehouses
     }
 
@@ -1170,11 +1170,11 @@ export default function Profile() {
                     </h4>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
                       {[
-                        { label: "Sales & Orders", allowed: isSuperAdmin || userRoles.includes("sales_manager") },
-                        { label: "Inventory & Stocks", allowed: isSuperAdmin || userRoles.includes("inventory_admin") },
-                        { label: "Finance & Ledger", allowed: isSuperAdmin || userRoles.includes("finance_manager") },
-                        { label: "HR & Payroll", allowed: isSuperAdmin || userRoles.includes("hr_manager") },
-                        { label: "HKC Export Docs", allowed: isSuperAdmin || userRoles.includes("hkc_docs_manager") },
+                        { label: "Sales & Orders", allowed: isSuperAdmin || userRoles.includes("sales") },
+                        { label: "Inventory & Stocks", allowed: isSuperAdmin || userRoles.includes("inventory") },
+                        { label: "Finance & Ledger", allowed: isSuperAdmin || userRoles.includes("finance") },
+                        { label: "HR & Payroll", allowed: isSuperAdmin || userRoles.includes("hr") },
+                        { label: "HKC Export Docs", allowed: isSuperAdmin || userRoles.includes("hkc_docs") },
                         { label: "Admin Control Center", allowed: isSuperAdmin },
                       ].map((item) => (
                         <div

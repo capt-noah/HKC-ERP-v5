@@ -35,23 +35,20 @@ async function verifyAtomicity() {
     `, [testSmId, testId, testBatchNo])
 
     // 4. Insert dummy journal entry & lines
-    const jePayload = {
-      id: testJeId,
-      entry_date: '2026-10-07',
-      source_id: `STK-IN-${testBatchNo}`,
-      source_type: 'Inventory',
-      description: `Stock Intake Valuation — TEST MEDICINE FOR ATOMIC PURGE [Batch: ${testBatchNo}] (+100 @ ETB 50.00)`,
-    }
-    await conn.query(`INSERT INTO journal_entries (id, payload) VALUES (?, ?)`, [testJeId, JSON.stringify(jePayload)])
+    await conn.query(`
+      INSERT INTO journal_entries (id, entry_number, entry_date, description, source_type, source_id, posting_status, total_amount)
+      VALUES (?, ?, '2026-10-07', ?, 'Inventory', ?, 'Posted', 5000)
+    `, [testJeId, testJeId, `Stock Intake Valuation — TEST MEDICINE FOR ATOMIC PURGE [Batch: ${testBatchNo}] (+100 @ ETB 50.00)`, `STK-IN-${testBatchNo}`])
 
-    await conn.query(`INSERT INTO journal_entry_lines (id, payload) VALUES (?, ?)`, [
-      testJeLineDr,
-      JSON.stringify({ id: testJeLineDr, journal_entry_id: testJeId, account_id: '1400-01', debit_amount: 5000, credit_amount: 0 })
-    ])
-    await conn.query(`INSERT INTO journal_entry_lines (id, payload) VALUES (?, ?)`, [
-      testJeLineCr,
-      JSON.stringify({ id: testJeLineCr, journal_entry_id: testJeId, account_id: '3200', debit_amount: 0, credit_amount: 5000 })
-    ])
+    await conn.query(`
+      INSERT INTO journal_entry_lines (id, journal_entry_id, account_id, description, debit_amount, credit_amount)
+      VALUES (?, ?, '1400-01', 'Test Debit', 5000, 0)
+    `, [testJeLineDr, testJeId])
+
+    await conn.query(`
+      INSERT INTO journal_entry_lines (id, journal_entry_id, account_id, description, debit_amount, credit_amount)
+      VALUES (?, ?, '3200', 'Test Credit', 0, 5000)
+    `, [testJeLineCr, testJeId])
 
     await conn.commit()
     conn.release()
@@ -88,9 +85,9 @@ async function verifyAtomicity() {
     const [expCount] = await pool.query("SELECT count(*) as count FROM export_products")
     const [tb] = await pool.query(`
       SELECT 
-        ROUND(SUM(CAST(payload->>'$.debit_amount' AS DECIMAL(15,2))), 2) as total_debit,
-        ROUND(SUM(CAST(payload->>'$.credit_amount' AS DECIMAL(15,2))), 2) as total_credit,
-        ROUND(SUM(CAST(payload->>'$.debit_amount' AS DECIMAL(15,2))) - SUM(CAST(payload->>'$.credit_amount' AS DECIMAL(15,2))), 2) as diff
+        ROUND(SUM(debit_amount), 2) as total_debit,
+        ROUND(SUM(credit_amount), 2) as total_credit,
+        ROUND(SUM(debit_amount) - SUM(credit_amount), 2) as diff
       FROM journal_entry_lines
     `)
 

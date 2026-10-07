@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { 
   Search, 
   Plus, 
@@ -497,42 +497,35 @@ export default function Ledger() {
     )
   }
 
-  const isChildOf = (child: any, parent: any) => {
-    if (!child.parent_account_id || child.id === parent.id) return false
-    const pId = parent.id
-    const pCode = parent.code
-    const cParent = child.parent_account_id
-    return (
-      cParent === pId ||
-      cParent === pCode ||
-      cParent === `ACC-${pCode}` ||
-      (pId.startsWith("ACC-") && cParent === pId.replace("ACC-", ""))
-    )
-  }
+  // Pre-Index Line Balances in O(Lines) into an O(1) Map for Instant Lookups
+  const accountBalancesMap = useMemo(() => {
+    const map = new Map<string, { debit: number; credit: number }>()
+    for (const l of lines) {
+      const accId = String(l.account_id || "").trim()
+      const accCode = String((l as any).account_code || "").trim()
+      const dr = Number(l.debit_amount || (l as any).debit || 0)
+      const cr = Number(l.credit_amount || (l as any).credit || 0)
 
-  const getChildrenOfAccount = (parent: any) => {
-    if (isRootCategoryDummy(parent)) return []
-    return accounts.filter((a) => !isRootCategoryDummy(a) && isChildOf(a, parent))
-  }
+      const accumulate = (key: string) => {
+        if (!key) return
+        const existing = map.get(key) || { debit: 0, credit: 0 }
+        existing.debit += dr
+        existing.credit += cr
+        map.set(key, existing)
+      }
 
-  const isGroupAccount = (acc: any) => {
-    if (acc.is_group === true) return true
-    return getChildrenOfAccount(acc).length > 0
-  }
+      accumulate(accId)
+      if (accCode && accCode !== accId) accumulate(accCode)
+      if (accId.startsWith("ACC-")) accumulate(accId.replace("ACC-", ""))
+      else accumulate(`ACC-${accId}`)
+    }
+    return map
+  }, [lines])
 
   const getAccountDebitCredit = (acc: any): { debit: number; credit: number; net: number } => {
-    const accLines = lines.filter((l) => {
-      const lineAccId = String(l.account_id || "").trim()
-      const lineAccCode = String((l as any).account_code || "").trim()
-      return (
-        lineAccId === acc.id ||
-        lineAccId === acc.code ||
-        lineAccId === `ACC-${acc.code}` ||
-        (lineAccCode && lineAccCode === acc.code)
-      )
-    })
-    const debitSum = accLines.reduce((s, l) => s + Number(l.debit_amount || 0), 0)
-    const creditSum = accLines.reduce((s, l) => s + Number(l.credit_amount || 0), 0)
+    const found = accountBalancesMap.get(acc.id) || accountBalancesMap.get(acc.code) || { debit: 0, credit: 0 }
+    const debitSum = found.debit
+    const creditSum = found.credit
     let net = 0
     if (acc.account_type === "Asset" || acc.account_type === "Expense") {
       net = debitSum - creditSum
@@ -546,26 +539,86 @@ export default function Ledger() {
     return getAccountDebitCredit(acc).net
   }
 
-  const getGroupDebitCredit = (acc: any): { debit: number; credit: number; net: number } => {
-    const self = getAccountDebitCredit(acc)
-    let dr = self.debit
-    let cr = self.credit
-    let net = self.net
-    const children = getChildrenOfAccount(acc)
-    for (const child of children) {
-      if (isGroupAccount(child)) {
-        const sub = getGroupDebitCredit(child)
-        dr += sub.debit
-        cr += sub.credit
-        net += sub.net
-      } else {
-        const sub = getAccountDebitCredit(child)
+  // Pre-Index COA Tree Hierarchy & Children adjacency in O(Accounts)
+  const { childrenByParentMap, groupAccountIdsSet } = useMemo(() => {
+    const childrenMap = new Map<string, any[]>()
+    const groupSet = new Set<string>()
+
+    for (const a of accounts) {
+      if (isRootCategoryDummy(a)) continue
+      if (a.is_group) groupSet.add(a.id)
+
+      if (a.parent_account_id) {
+        const p = String(a.parent_account_id).trim()
+        groupSet.add(p)
+        if (!childrenMap.has(p)) childrenMap.set(p, [])
+        childrenMap.get(p)!.push(a)
+
+        const cleanP = p.replace(/^ACC-/, "")
+        if (cleanP !== p) {
+          groupSet.add(cleanP)
+          if (!childrenMap.has(cleanP)) childrenMap.set(cleanP, [])
+          childrenMap.get(cleanP)!.push(a)
+        } else {
+          const accP = `ACC-${p}`
+          groupSet.add(accP)
+          if (!childrenMap.has(accP)) childrenMap.set(accP, [])
+          childrenMap.get(accP)!.push(a)
+        }
+      }
+    }
+    return { childrenByParentMap: childrenMap, groupAccountIdsSet: groupSet }
+  }, [accounts])
+
+  const getChildrenOfAccount = (parent: any) => {
+    if (isRootCategoryDummy(parent)) return []
+    const byId = childrenByParentMap.get(parent.id)
+    if (byId && byId.length > 0) return byId
+    return childrenByParentMap.get(parent.code) || []
+  }
+
+  const isGroupAccount = (acc: any) => {
+    if (acc.is_group === true) return true
+    if (groupAccountIdsSet.has(acc.id) || groupAccountIdsSet.has(acc.code)) return true
+    return getChildrenOfAccount(acc).length > 0
+  }
+
+  // Pre-Compute Group Rollups in a single pass so renderAccountTreeNode takes 0ms
+  const groupTotalsMap = useMemo(() => {
+    const totalsMap = new Map<string, { debit: number; credit: number; net: number }>()
+
+    const calculateTotals = (acc: any): { debit: number; credit: number; net: number } => {
+      if (totalsMap.has(acc.id)) return totalsMap.get(acc.id)!
+
+      const self = getAccountDebitCredit(acc)
+      let dr = self.debit
+      let cr = self.credit
+      let net = self.net
+
+      const children = getChildrenOfAccount(acc)
+      for (const child of children) {
+        const sub = calculateTotals(child)
         dr += sub.debit
         cr += sub.credit
         net += sub.net
       }
+
+      const res = { debit: dr, credit: cr, net }
+      totalsMap.set(acc.id, res)
+      if (acc.code) totalsMap.set(acc.code, res)
+      return res
     }
-    return { debit: dr, credit: cr, net }
+
+    for (const acc of accounts) {
+      if (!isRootCategoryDummy(acc)) {
+        calculateTotals(acc)
+      }
+    }
+    return totalsMap
+  }, [accounts, accountBalancesMap, childrenByParentMap])
+
+  const getGroupDebitCredit = (acc: any): { debit: number; credit: number; net: number } => {
+    return groupTotalsMap.get(acc.id) || groupTotalsMap.get(acc.code) || getAccountDebitCredit(acc)
   }
 
   // Root category definitions mapping cleanly to company COA
@@ -578,24 +631,28 @@ export default function Ledger() {
     { key: "AdminExpense", title: "Operating & Administrative Expenses (6000s/8000s)", code: "6", color: "rose", filter: (a: any) => a.account_type === "Expense" && !((a?.code || "").startsWith("5") || (a?.id || "").startsWith("5") || a.peachtree_type === "Cost of Sales") },
   ]
 
+  const topLevelAccountsByCategory = useMemo(() => {
+    const map = new Map<string, any[]>()
+    for (const cat of coaRootCategories) {
+      const list = accounts.filter((a) => {
+        if (!cat.filter(a)) return false
+        if (isRootCategoryDummy(a)) return false
+        if (!a.parent_account_id) return true
+        const parentAcc = accounts.find(
+          (p) => p.id === a.parent_account_id || p.code === a.parent_account_id || `ACC-${p.code}` === a.parent_account_id
+        )
+        if (!parentAcc) return true
+        if (isRootCategoryDummy(parentAcc)) return true
+        if (!cat.filter(parentAcc)) return true
+        return false
+      })
+      map.set(cat.key, list)
+    }
+    return map
+  }, [accounts])
+
   const getTopLevelAccountsForCategory = (catKey: string) => {
-    const cat = coaRootCategories.find((c) => c.key === catKey)
-    if (!cat) return []
-    return accounts.filter((a) => {
-      if (!cat.filter(a)) return false
-      if (isRootCategoryDummy(a)) return false
-
-      if (!a.parent_account_id) return true
-
-      const parentAcc = accounts.find(
-        (p) => p.id === a.parent_account_id || p.code === a.parent_account_id || `ACC-${p.code}` === a.parent_account_id
-      )
-      if (!parentAcc) return true
-      if (isRootCategoryDummy(parentAcc)) return true
-      if (!cat.filter(parentAcc)) return true
-
-      return false
-    })
+    return topLevelAccountsByCategory.get(catKey) || []
   }
 
   const renderAccountTreeNode = (acc: any, level = 1) => {

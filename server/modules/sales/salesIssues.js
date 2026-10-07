@@ -622,48 +622,27 @@ async function reverseSalesIssuePosting(conn, issue) {
     `JE-COGS-${fsNo}`,
   ]
   const [matchingJes] = await conn.query(
-    "SELECT id FROM `journal_entries` WHERE payload->>'$.source_id' IN (?, ?) OR id IN (?, ?, ?, ?)",
+    "SELECT id FROM `journal_entries` WHERE source_id IN (?, ?) OR id IN (?, ?, ?, ?)",
     [issueId, fsNo, ...jeIds]
   )
   const allJeIdsToDelete = Array.from(new Set([...jeIds, ...matchingJes.map(j => j.id)]))
   for (const jId of allJeIdsToDelete) {
-    await conn.query(
-      "DELETE FROM `journal_entry_lines` WHERE id LIKE CONCAT(?, '%') OR payload->>'$.journal_entry_id' = ?",
-      [jId, jId]
-    )
     await conn.query("DELETE FROM `journal_entries` WHERE id = ?", [jId])
   }
 
   // 3. Mark linked invoice as Cancelled
-  const [invRows] = await conn.query(
-    "SELECT id, payload FROM `invoices` WHERE id IN (?, ?) OR payload->>'$.sales_issue_id' IN (?, ?) OR payload->>'$.fs_no' IN (?, ?)",
+  await conn.query(
+    "UPDATE `invoices` SET status = 'Cancelled', balance_due = 0, updated_at = NOW(3) WHERE id IN (?, ?) OR sales_issue_id IN (?, ?) OR fs_no IN (?, ?)",
     [`INV-SI-${issueId}`, `INV-SI-${fsNo}`, issueId, fsNo, issueId, fsNo]
   )
-  for (const inv of invRows) {
-    let payload = inv.payload
-    if (typeof payload === "string") {
-      try { payload = JSON.parse(payload) } catch { payload = {} }
-    }
-    payload.status = "Cancelled"
-    payload.balance_due = 0
-    await conn.query("UPDATE `invoices` SET payload = ?, updated_at = NOW(3) WHERE id = ?", [JSON.stringify(payload), inv.id])
-  }
 
   // 4. Revert linked sales order if applicable
   const soId = issue.sales_order_id || (issue.reference_no && String(issue.reference_no).startsWith("SO-") ? issue.reference_no : null)
   if (soId) {
-    const [soRows] = await conn.query("SELECT id, payload FROM `sales_orders` WHERE id = ? FOR UPDATE", [soId])
-    if (soRows.length > 0) {
-      let soPayload = soRows[0].payload
-      if (typeof soPayload === "string") {
-        try { soPayload = JSON.parse(soPayload) } catch { soPayload = {} }
-      }
-      soPayload.stage = "Confirmed"
-      soPayload.deliveryStatus = "Pending"
-      soPayload.deliveredAmount = 0
-      soPayload.updatedAt = new Date().toISOString()
-      await conn.query("UPDATE `sales_orders` SET payload = ?, updated_at = NOW(3) WHERE id = ?", [JSON.stringify(soPayload), soId])
-    }
+    await conn.query(
+      "UPDATE `sales_orders` SET stage = 'Confirmed', delivery_status = 'Pending', delivered_amount = 0, updated_at = NOW(3) WHERE id = ?",
+      [soId]
+    )
   }
 }
 
@@ -963,7 +942,7 @@ export async function deleteSalesIssue(id, existingConn = null) {
 
       // Delete linked invoices
       await conn.query(
-        "DELETE FROM `invoices` WHERE id IN (?, ?) OR payload->>'$.sales_issue_id' IN (?, ?) OR payload->>'$.fs_no' IN (?, ?)",
+        "DELETE FROM `invoices` WHERE id IN (?, ?) OR sales_issue_id IN (?, ?) OR fs_no IN (?, ?)",
         [`INV-SI-${issue.id}`, `INV-SI-${issue.fs_no}`, issue.id, issue.fs_no, issue.id, issue.fs_no]
       )
 
@@ -1365,10 +1344,53 @@ export async function postSalesIssue(arg1, arg2 = null, existingConn = null) {
         total_amount: grandTotal,
         posting_status: "POSTED",
       }
-      await conn.query(
-        "INSERT INTO `journal_entries` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
-        [saleJeId, JSON.stringify(saleJePayload)]
-      )
+      const jeInsertSql = `
+        INSERT INTO \`journal_entries\` 
+          (id, entry_number, entry_date, description, source_type, source_id, created_by, currency, exchange_rate, total_amount, posting_status, created_at, updated_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3)) 
+        ON DUPLICATE KEY UPDATE 
+          entry_number = VALUES(entry_number),
+          entry_date = VALUES(entry_date),
+          description = VALUES(description),
+          source_type = VALUES(source_type),
+          source_id = VALUES(source_id),
+          total_amount = VALUES(total_amount),
+          posting_status = VALUES(posting_status),
+          updated_at = NOW(3)
+      `
+
+      const jelInsertSql = `
+        INSERT INTO \`journal_entry_lines\` 
+          (id, journal_entry_id, account_id, account_code, account_name, description, debit_amount, credit_amount, currency, exchange_rate_at_time, warehouse_id, party_type, party_id, party_name, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))
+        ON DUPLICATE KEY UPDATE 
+          journal_entry_id = VALUES(journal_entry_id),
+          account_id = VALUES(account_id),
+          account_code = VALUES(account_code),
+          account_name = VALUES(account_name),
+          description = VALUES(description),
+          debit_amount = VALUES(debit_amount),
+          credit_amount = VALUES(credit_amount),
+          warehouse_id = VALUES(warehouse_id),
+          party_type = VALUES(party_type),
+          party_id = VALUES(party_id),
+          party_name = VALUES(party_name),
+          updated_at = NOW(3)
+      `
+
+      await conn.query(jeInsertSql, [
+        saleJeId,
+        saleJePayload.entry_number,
+        saleJePayload.entry_date,
+        saleJePayload.description,
+        saleJePayload.source_type,
+        saleJePayload.source_id,
+        saleJePayload.created_by,
+        saleJePayload.currency,
+        saleJePayload.exchange_rate,
+        saleJePayload.total_amount,
+        saleJePayload.posting_status,
+      ])
 
       // B. Sales Journal Entry Lines
       const debitInfo = getAccInfo(debitAccId)
@@ -1389,10 +1411,22 @@ export async function postSalesIssue(arg1, arg2 = null, existingConn = null) {
         description: `Customer settlement for Issue ${existing.fs_no || existing.id}`,
         entry_date: existing.sale_date || getLocalDateString(),
       }
-      await conn.query(
-        "INSERT INTO `journal_entry_lines` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
-        [drLine.id, JSON.stringify(drLine)]
-      )
+      await conn.query(jelInsertSql, [
+        drLine.id,
+        drLine.journal_entry_id,
+        drLine.account_id,
+        drLine.account_code,
+        drLine.account_name,
+        drLine.description,
+        drLine.debit_amount,
+        drLine.credit_amount,
+        drLine.currency,
+        drLine.exchange_rate_at_time,
+        drLine.warehouse_id,
+        drLine.party_type,
+        drLine.party_id,
+        drLine.party_name,
+      ])
 
       const revInfo = getAccInfo(revenueAccId)
       const crLine = {
@@ -1412,10 +1446,22 @@ export async function postSalesIssue(arg1, arg2 = null, existingConn = null) {
         description: `Sales revenue for Issue ${existing.fs_no || existing.id}`,
         entry_date: existing.sale_date || getLocalDateString(),
       }
-      await conn.query(
-        "INSERT INTO `journal_entry_lines` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
-        [crLine.id, JSON.stringify(crLine)]
-      )
+      await conn.query(jelInsertSql, [
+        crLine.id,
+        crLine.journal_entry_id,
+        crLine.account_id,
+        crLine.account_code,
+        crLine.account_name,
+        crLine.description,
+        crLine.debit_amount,
+        crLine.credit_amount,
+        crLine.currency,
+        crLine.exchange_rate_at_time,
+        crLine.warehouse_id,
+        crLine.party_type,
+        crLine.party_id,
+        crLine.party_name,
+      ])
 
       if (issueVatAmount > 0) {
         const vatInfo = getAccInfo(vatAccId)
@@ -1436,10 +1482,22 @@ export async function postSalesIssue(arg1, arg2 = null, existingConn = null) {
           description: `Output VAT for Issue ${existing.fs_no || existing.id}`,
           entry_date: existing.sale_date || getLocalDateString(),
         }
-        await conn.query(
-          "INSERT INTO `journal_entry_lines` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
-          [vatLine.id, JSON.stringify(vatLine)]
-        )
+        await conn.query(jelInsertSql, [
+          vatLine.id,
+          vatLine.journal_entry_id,
+          vatLine.account_id,
+          vatLine.account_code,
+          vatLine.account_name,
+          vatLine.description,
+          vatLine.debit_amount,
+          vatLine.credit_amount,
+          vatLine.currency,
+          vatLine.exchange_rate_at_time,
+          vatLine.warehouse_id,
+          vatLine.party_type,
+          vatLine.party_id,
+          vatLine.party_name,
+        ])
       }
 
       // C. COGS Journal Entry
@@ -1457,10 +1515,19 @@ export async function postSalesIssue(arg1, arg2 = null, existingConn = null) {
           total_amount: totalCost,
           posting_status: "POSTED",
         }
-        await conn.query(
-          "INSERT INTO `journal_entries` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
-          [cogsJeId, JSON.stringify(cogsJePayload)]
-        )
+        await conn.query(jeInsertSql, [
+          cogsJeId,
+          cogsJePayload.entry_number,
+          cogsJePayload.entry_date,
+          cogsJePayload.description,
+          cogsJePayload.source_type,
+          cogsJePayload.source_id,
+          cogsJePayload.created_by,
+          cogsJePayload.currency,
+          cogsJePayload.exchange_rate,
+          cogsJePayload.total_amount,
+          cogsJePayload.posting_status,
+        ])
 
         const cogsInfo = getAccInfo(cogsAccId)
         const cogsDrLine = {
@@ -1477,10 +1544,22 @@ export async function postSalesIssue(arg1, arg2 = null, existingConn = null) {
           description: `COGS expense for Issue ${existing.fs_no || existing.id}`,
           entry_date: existing.sale_date || getLocalDateString(),
         }
-        await conn.query(
-          "INSERT INTO `journal_entry_lines` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
-          [cogsDrLine.id, JSON.stringify(cogsDrLine)]
-        )
+        await conn.query(jelInsertSql, [
+          cogsDrLine.id,
+          cogsDrLine.journal_entry_id,
+          cogsDrLine.account_id,
+          cogsDrLine.account_code,
+          cogsDrLine.account_name,
+          cogsDrLine.description,
+          cogsDrLine.debit_amount,
+          cogsDrLine.credit_amount,
+          cogsDrLine.currency,
+          cogsDrLine.exchange_rate_at_time,
+          cogsDrLine.warehouse_id,
+          null,
+          null,
+          null,
+        ])
 
         const invInfo = getAccInfo(inventoryAccId)
         const invCrLine = {
@@ -1497,82 +1576,113 @@ export async function postSalesIssue(arg1, arg2 = null, existingConn = null) {
           description: `Inventory stock relief for Issue ${existing.fs_no || existing.id}`,
           entry_date: existing.sale_date || getLocalDateString(),
         }
-        await conn.query(
-          "INSERT INTO `journal_entry_lines` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
-          [invCrLine.id, JSON.stringify(invCrLine)]
-        )
+        await conn.query(jelInsertSql, [
+          invCrLine.id,
+          invCrLine.journal_entry_id,
+          invCrLine.account_id,
+          invCrLine.account_code,
+          invCrLine.account_name,
+          invCrLine.description,
+          invCrLine.debit_amount,
+          invCrLine.credit_amount,
+          invCrLine.currency,
+          invCrLine.exchange_rate_at_time,
+          invCrLine.warehouse_id,
+          null,
+          null,
+          null,
+        ])
       }
 
       // 5. Authoritative Invoice in `invoices`
       const invId = `INV-SI-${existing.fs_no || existing.id}`
+      const invoiceNumber = `INV-${existing.fs_no || existing.reference_no || existing.id}`
       const lineItems = itemsToProcess.map(i => ({
         description: i.item_name || "Issued Item",
         quantity: Number(i.quantity || 1),
         unit_price: Number(i.unit_price || 0),
         line_total: Number(i.amount || (Number(i.quantity || 1) * Number(i.unit_price || 0))),
       }))
-      const invPayload = {
-        id: invId,
-        invoice_number: `INV-${existing.fs_no || existing.reference_no || existing.id}`,
-        invoice_type: "Sales",
-        party_type: "Customer",
-        customer_name: existing.customer_name || "Customer",
-        sales_issue_id: existing.fs_no || existing.id,
-        fs_no: existing.fs_no || existing.id,
-        sales_order_id: existing.sales_order_id || null,
-        issue_date: existing.sale_date || getLocalDateString(),
-        due_date: existing.sale_date || getLocalDateString(),
-        currency: "ETB",
-        line_items: lineItems.length > 0 ? lineItems : [{ description: `Sales Issue ${existing.fs_no || existing.id}`, quantity: 1, unit_price: grandTotal, line_total: grandTotal }],
-        subtotal: issueSubtotal,
-        tax_amount: issueVatAmount,
-        tax_rate: issueVatRate,
-        discount_amount: 0,
-        total: grandTotal,
-        total_amount: grandTotal,
-        amount_paid: existingPaid,
-        balance_due: existingBal,
-        payment_terms: isCash ? "Cash" : "Credit (Net 30)",
-        status: paymentStatus,
-        settlement_status: settlementStatus,
-        gl_distribution: {
-          revenue_lines: [
-            { account_id: debitAccId, debit: grandTotal, credit: 0, description: "Customer Settlement" },
-            { account_id: revenueAccId, debit: 0, credit: issueSubtotal, description: "Sales Revenue" },
-            ...(issueVatAmount > 0 ? [{ account_id: vatAccId, debit: 0, credit: issueVatAmount, description: "VAT Output Payable" }] : [])
-          ],
-          cogs_lines: totalCost > 0 ? [
-            { account_id: cogsAccId, debit: totalCost, credit: 0, description: "Cost of Goods Sold" },
-            { account_id: inventoryAccId, debit: 0, credit: totalCost, description: "Inventory Stock In Hand" }
-          ] : [],
-          updated_at: new Date().toISOString(),
-          updated_by: "Sales Issue System",
-        },
+      const glDist = {
+        revenue_lines: [
+          { account_id: debitAccId, debit: grandTotal, credit: 0, description: "Customer Settlement" },
+          { account_id: revenueAccId, debit: 0, credit: issueSubtotal, description: "Sales Revenue" },
+          ...(issueVatAmount > 0 ? [{ account_id: vatAccId, debit: 0, credit: issueVatAmount, description: "VAT Output Payable" }] : [])
+        ],
+        cogs_lines: totalCost > 0 ? [
+          { account_id: cogsAccId, debit: totalCost, credit: 0, description: "Cost of Goods Sold" },
+          { account_id: inventoryAccId, debit: 0, credit: totalCost, description: "Inventory Stock In Hand" }
+        ] : [],
+        updated_at: new Date().toISOString(),
+        updated_by: "Sales Issue System",
       }
+
       await conn.query(
-        "INSERT INTO `invoices` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
-        [invId, JSON.stringify(invPayload)]
+        `INSERT INTO \`invoices\` 
+          (id, invoice_number, fs_no, sales_issue_id, sales_order_id, customer_id, customer_name, issue_date, due_date, status, payment_terms, settlement_status, currency, subtotal, tax_rate, tax_amount, discount_amount, total_amount, amount_paid, balance_due, line_items, gl_distribution, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))
+         ON DUPLICATE KEY UPDATE
+          invoice_number = VALUES(invoice_number),
+          fs_no = VALUES(fs_no),
+          sales_issue_id = VALUES(sales_issue_id),
+          sales_order_id = VALUES(sales_order_id),
+          customer_id = VALUES(customer_id),
+          customer_name = VALUES(customer_name),
+          issue_date = VALUES(issue_date),
+          due_date = VALUES(due_date),
+          status = VALUES(status),
+          payment_terms = VALUES(payment_terms),
+          settlement_status = VALUES(settlement_status),
+          currency = VALUES(currency),
+          subtotal = VALUES(subtotal),
+          tax_rate = VALUES(tax_rate),
+          tax_amount = VALUES(tax_amount),
+          discount_amount = VALUES(discount_amount),
+          total_amount = VALUES(total_amount),
+          amount_paid = VALUES(amount_paid),
+          balance_due = VALUES(balance_due),
+          line_items = VALUES(line_items),
+          gl_distribution = VALUES(gl_distribution),
+          updated_at = NOW(3)`,
+        [
+          invId,
+          invoiceNumber,
+          existing.fs_no || existing.id,
+          existing.fs_no || existing.id,
+          existing.sales_order_id || null,
+          existing.customer_id || null,
+          existing.customer_name || "Customer",
+          existing.sale_date || getLocalDateString(),
+          existing.sale_date || getLocalDateString(),
+          paymentStatus,
+          isCash ? "Cash" : "Credit (Net 30)",
+          settlementStatus,
+          "ETB",
+          issueSubtotal,
+          issueVatRate,
+          issueVatAmount,
+          0,
+          grandTotal,
+          existingPaid,
+          existingBal,
+          JSON.stringify(lineItems.length > 0 ? lineItems : [{ description: `Sales Issue ${existing.fs_no || existing.id}`, quantity: 1, unit_price: grandTotal, line_total: grandTotal }]),
+          JSON.stringify(glDist),
+        ]
       )
 
       // 6. Update linked Sales Order
       const targetSoId = existing.sales_order_id || (existing.reference_no && String(existing.reference_no).startsWith("SO-") ? existing.reference_no : null)
       if (targetSoId) {
-        const [soRows] = await conn.query("SELECT id, payload FROM `sales_orders` WHERE id = ? FOR UPDATE", [targetSoId])
-        if (soRows.length > 0) {
-          let soData = soRows[0].payload
-          if (typeof soData === "string") {
-            try { soData = JSON.parse(soData) } catch { soData = {} }
-          }
-          const updatedSo = {
-            ...soData,
-            stage: "Shipped",
-            deliveryStatus: "Fully Delivered",
-            deliveredAmount: grandTotal,
-            billingStatus: isCash ? "Fully Billed" : (soData.billingStatus || "Fully Billed"),
-            updatedAt: new Date().toISOString(),
-          }
-          await conn.query("UPDATE `sales_orders` SET payload = ?, updated_at = NOW(3) WHERE id = ?", [JSON.stringify(updatedSo), targetSoId])
-        }
+        await conn.query(
+          `UPDATE \`sales_orders\` SET 
+            stage = 'Shipped', 
+            delivery_status = 'Fully Delivered', 
+            delivered_amount = ?, 
+            billing_status = CASE WHEN ? = 1 THEN 'Fully Billed' ELSE billing_status END, 
+            updated_at = NOW(3) 
+           WHERE id = ?`,
+          [grandTotal, isCash ? 1 : 0, targetSoId]
+        )
       }
 
       return { status: 200, body: { ...existing, status: "Posted", ok: true } }

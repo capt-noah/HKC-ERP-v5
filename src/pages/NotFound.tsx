@@ -29,23 +29,23 @@ export default function NotFound() {
         homeRoute = "/admin"
         roleLabel = "Admin Control Center"
         break
-      case "sales_manager":
+      case "sales":
         homeRoute = "/sales"
         roleLabel = "Sales Dashboard"
         break
-      case "inventory_admin":
+      case "inventory":
         homeRoute = "/inventory"
         roleLabel = "Inventory Register"
         break
-      case "finance_manager":
+      case "finance":
         homeRoute = "/finance"
         roleLabel = "Finance Overview"
         break
-      case "hr_manager":
+      case "hr":
         homeRoute = "/hr"
         roleLabel = "HR Management"
         break
-      case "hkc_docs_manager":
+      case "hkc_docs":
         homeRoute = "/sales/hkc-docs"
         roleLabel = "HKC Export Docs"
         break
@@ -126,7 +126,7 @@ export default function NotFound() {
                 Quick Navigation
               </span>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                {(primaryRole === "superadmin" || primaryRole === "sales_manager") && (
+                {(primaryRole === "superadmin" || primaryRole === "sales") && (
                   <button
                     onClick={() => navigate("/sales")}
                     className="p-2.5 rounded-xl bg-white/60 hover:bg-white border border-zinc-200/60 hover:border-emerald-300 flex flex-col items-center gap-1.5 transition-all shadow-xs cursor-pointer group"
@@ -135,7 +135,7 @@ export default function NotFound() {
                     <span className="font-bold text-[11px] text-zinc-700 group-hover:text-emerald-800">Sales</span>
                   </button>
                 )}
-                {(primaryRole === "superadmin" || primaryRole === "inventory_admin") && (
+                {(primaryRole === "superadmin" || primaryRole === "inventory") && (
                   <button
                     onClick={() => navigate("/inventory")}
                     className="p-2.5 rounded-xl bg-white/60 hover:bg-white border border-zinc-200/60 hover:border-emerald-300 flex flex-col items-center gap-1.5 transition-all shadow-xs cursor-pointer group"
@@ -144,7 +144,7 @@ export default function NotFound() {
                     <span className="font-bold text-[11px] text-zinc-700 group-hover:text-emerald-800">Inventory</span>
                   </button>
                 )}
-                {(primaryRole === "superadmin" || primaryRole === "finance_manager") && (
+                {(primaryRole === "superadmin" || primaryRole === "finance") && (
                   <button
                     onClick={() => navigate("/finance")}
                     className="p-2.5 rounded-xl bg-white/60 hover:bg-white border border-zinc-200/60 hover:border-emerald-300 flex flex-col items-center gap-1.5 transition-all shadow-xs cursor-pointer group"
@@ -153,7 +153,7 @@ export default function NotFound() {
                     <span className="font-bold text-[11px] text-zinc-700 group-hover:text-emerald-800">Finance</span>
                   </button>
                 )}
-                {(primaryRole === "superadmin" || primaryRole === "hr_manager") && (
+                {(primaryRole === "superadmin" || primaryRole === "hr") && (
                   <button
                     onClick={() => navigate("/hr")}
                     className="p-2.5 rounded-xl bg-white/60 hover:bg-white border border-zinc-200/60 hover:border-emerald-300 flex flex-col items-center gap-1.5 transition-all shadow-xs cursor-pointer group"

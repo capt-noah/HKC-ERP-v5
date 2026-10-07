@@ -1185,10 +1185,10 @@ class ErpStore {
     }
 
     const tasks: Promise<void>[] = []
-    if (roles.includes("inventory_admin")) {
+    if (roles.includes("inventory")) {
       tasks.push(this.loadInventoryData(true))
     }
-    if (roles.includes("sales_manager") || roles.includes("hkc_docs_manager")) {
+    if (roles.includes("sales") || roles.includes("hkc_docs")) {
       tasks.push(this.loadSalesData(true))
     }
 

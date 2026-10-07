@@ -233,13 +233,11 @@ export default function CameraCaptureModal({
         fileUrl: upRes.url,
       })
       onClose()
-    } catch (err) {
-      console.warn("Camera photo upload failed, using fallback:", err)
-      onCapture({
-        fileName,
-        fileUrl: capturedImage,
-      })
-      onClose()
+    } catch (err: any) {
+      console.warn("Camera photo upload failed:", err)
+      setCameraError("Failed to upload photo to server. Please try again.")
+      setIsUploading(false)
+      return
     } finally {
       setIsUploading(false)
     }

@@ -25,19 +25,19 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
 
     // Route-aware and role-scoped store loading
     if (pathname.startsWith("/inventory")) {
-      if (isSuper || roles.includes("inventory_admin")) {
+      if (isSuper || roles.includes("inventory")) {
         void erpStore.loadInventoryData()
       }
     } else if (pathname.startsWith("/sales")) {
-      if (isSuper || roles.includes("sales_manager") || roles.includes("hkc_docs_manager")) {
+      if (isSuper || roles.includes("sales") || roles.includes("hkc_docs")) {
         void erpStore.loadSalesData()
       }
     } else if (pathname.startsWith("/finance")) {
-      if (isSuper || roles.includes("finance_manager")) {
+      if (isSuper || roles.includes("finance")) {
         void financeStore.loadFromApi()
       }
     } else if (pathname.startsWith("/hr")) {
-      if (isSuper || roles.includes("hr_manager")) {
+      if (isSuper || roles.includes("hr")) {
         void hrStore.loadFromApi()
       }
     } else if (pathname.startsWith("/admin") || pathname === "/") {
@@ -49,10 +49,10 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
         void hrStore.loadFromApi()
       } else {
         // Single-role users: load only their assigned domain
-        if (roles.includes("inventory_admin")) void erpStore.loadInventoryData()
-        if (roles.includes("sales_manager") || roles.includes("hkc_docs_manager")) void erpStore.loadSalesData()
-        if (roles.includes("finance_manager")) void financeStore.loadFromApi()
-        if (roles.includes("hr_manager")) void hrStore.loadFromApi()
+        if (roles.includes("inventory")) void erpStore.loadInventoryData()
+        if (roles.includes("sales") || roles.includes("hkc_docs")) void erpStore.loadSalesData()
+        if (roles.includes("finance")) void financeStore.loadFromApi()
+        if (roles.includes("hr")) void hrStore.loadFromApi()
       }
     }
   }, [authenticated, user, location.pathname])
@@ -73,19 +73,19 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
     let homeRoute = "/"
     const firstRole = userRoles[0]
     switch (firstRole) {
-      case "sales_manager":
+      case "sales":
         homeRoute = "/sales"
         break
-      case "hr_manager":
+      case "hr":
         homeRoute = "/hr"
         break
-      case "inventory_admin":
+      case "inventory":
         homeRoute = "/inventory"
         break
-      case "finance_manager":
+      case "finance":
         homeRoute = "/finance"
         break
-      case "hkc_docs_manager":
+      case "hkc_docs":
         homeRoute = "/sales/hkc-docs"
         break
     }

@@ -83,12 +83,17 @@ export interface UserAccount {
 
 const roleLabels: Record<string, string> = {
   superadmin: "Super Admin",
-  sales_manager: "Sales Manager",
-  hr_manager: "HR Manager",
-  finance_manager: "Finance Manager",
-  inventory_manager: "Inventory Manager",
-  operator: "Staff Operator",
-  auditor: "Auditor",
+  sales: "Sales",
+  hr: "HR",
+  inventory: "Inventory",
+  finance: "Finance",
+  hkc_docs: "HKC Docs",
+  sales_manager: "Sales",
+  hr_manager: "HR",
+  finance_manager: "Finance",
+  inventory_manager: "Inventory",
+  inventory_admin: "Inventory",
+  hkc_docs_manager: "HKC Docs",
 }
 
 const auditLogColumns: TableColumn[] = [

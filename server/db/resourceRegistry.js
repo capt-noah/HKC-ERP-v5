@@ -13,39 +13,36 @@ export const resources = {
   store_transfers: { table: "store_transfers", module: "inventory", ...relational },
   store_transfer_items: { table: "store_transfer_items", module: "inventory", ...relational },
 
-  // Sales & Purchasing (9)
-  sales_orders: { table: "sales_orders", module: "sales", ...jsonb },
+  // Sales & Purchasing (9 Relational Tables)
+  sales_orders: { table: "sales_orders", module: "sales", ...relational },
   purchase_orders: { table: "purchase_orders", module: "sales", ...relational },
   sales_issues: { table: "sales_issues", module: "sales", ...relational },
   sales_issue_items: { table: "sales_issue_items", module: "sales", ...relational },
-  customers: { table: "customers", module: "sales", ...jsonb },
-  suppliers: { table: "suppliers", module: "sales", ...jsonb },
+  customers: { table: "customers", module: "sales", ...relational },
+  suppliers: { table: "suppliers", module: "sales", ...relational },
   processing_services: { table: "processing_services", module: "sales", ...relational },
   shipment_documents: { table: "shipment_documents", module: "sales", ...relational },
-  hkc_doc_records: { table: "hkc_doc_records", module: "sales", ...jsonb },
+  hkc_doc_records: { table: "hkc_doc_records", module: "sales", ...relational },
 
-  // Finance & GL (11)
-  chart_of_accounts: { table: "chart_of_accounts", module: "finance", ...jsonb },
+  // Finance & GL (9 Relational Tables + 1 Config Singleton)
+  chart_of_accounts: { table: "chart_of_accounts", module: "finance", ...relational },
   gl_account_mappings: { table: "gl_account_mappings", module: "finance", ...relational },
-  journal_entries: { table: "journal_entries", module: "finance", ...jsonb },
-  journal_entry_lines: { table: "journal_entry_lines", module: "finance", ...jsonb },
-  invoices: { table: "invoices", module: "finance", ...jsonb },
-  payments: { table: "payments", module: "finance", ...jsonb },
-  expenses: { table: "expenses", module: "finance", ...jsonb },
-  recurring_expense_schedules: { table: "recurring_expense_schedules", module: "finance", ...jsonb },
-  vehicles: { table: "vehicles", module: "finance", ...jsonb },
+  journal_entries: { table: "journal_entries", module: "finance", ...relational },
+  journal_entry_lines: { table: "journal_entry_lines", module: "finance", ...relational },
+  invoices: { table: "invoices", module: "finance", ...relational },
+  payments: { table: "payments", module: "finance", ...relational },
+  expenses: { table: "expenses", module: "finance", ...relational },
+  tax_rules: { table: "tax_rules", module: "finance", ...relational },
   company_settings: { table: "company_settings", module: "finance", ...jsonb },
-  tax_rules: { table: "tax_rules", module: "finance", ...jsonb },
 
-  // HR & Payroll (6)
-  employees: { table: "employees", module: "hr", ...jsonb },
-  attendance_records: { table: "attendance_records", module: "hr", ...jsonb },
-  payroll_periods: { table: "payroll_periods", module: "hr", ...jsonb },
-  payroll_records: { table: "payroll_records", module: "hr", ...jsonb },
-  leave_types: { table: "leave_types", module: "hr", ...jsonb },
-  leave_requests: { table: "leave_requests", module: "hr", ...jsonb },
+  // HR & Payroll (5 Relational Tables)
+  employees: { table: "employees", module: "hr", ...relational },
+  attendance_records: { table: "attendance_records", module: "hr", ...relational },
+  payroll_periods: { table: "payroll_periods", module: "hr", ...relational },
+  payroll_records: { table: "payroll_records", module: "hr", ...relational },
+  leave_requests: { table: "leave_requests", module: "hr", ...relational },
 
-  // Admin & Security (3)
+  // Admin & Security (3 Relational Tables)
   users: { table: "users", module: "admin", ...relational },
   user_activity_logs: { table: "user_activity_logs", module: "admin", ...relational },
   user_sessions: { table: "user_sessions", module: "admin", ...relational },

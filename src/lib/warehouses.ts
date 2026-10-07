@@ -326,7 +326,7 @@ export function getUserPermittedWarehouses(
   const list = withOperatingWarehouses(allWarehouses)
   if (!user) return list
 
-  const roles = user.roles || (user.role ? [user.role] : [])
+  const roles = user.roles || ((user as any).role ? [(user as any).role] : [])
   if (roles.includes("superadmin")) return list
 
   const userWhIds = user.warehouse_ids || []

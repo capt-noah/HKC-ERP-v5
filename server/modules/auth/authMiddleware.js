@@ -6,14 +6,14 @@ import { validateSession } from "./sessionService.js"
 const JWT_SECRET = config.jwtSecret
 
 export function normalizeRole(role) {
-  if (!role) return "viewer"
+  if (!role) return "sales"
   const clean = String(role).toLowerCase().trim()
   if (clean === "admin" || clean === "super_admin" || clean === "superadmin") return "superadmin"
-  if (clean === "sales" || clean === "sales_manager") return "sales_manager"
-  if (clean === "hr" || clean === "hr_manager") return "hr_manager"
-  if (clean === "inventory" || clean === "inventory_admin" || clean === "inventory_manager") return "inventory_admin"
-  if (clean === "finance" || clean === "finance_manager") return "finance_manager"
-  if (clean === "hkc_docs" || clean === "hkc_docs_manager" || clean === "hkcdocs" || clean === "docs_specialist" || clean === "docs") return "hkc_docs_manager"
+  if (clean === "sales" || clean === "sales_manager") return "sales"
+  if (clean === "hr" || clean === "hr_manager") return "hr"
+  if (clean === "inventory" || clean === "inventory_admin" || clean === "inventory_manager") return "inventory"
+  if (clean === "finance" || clean === "finance_manager") return "finance"
+  if (clean === "hkc_docs" || clean === "hkc_docs_manager" || clean === "hkcdocs" || clean === "docs_specialist" || clean === "docs") return "hkc_docs"
   return clean
 }
 

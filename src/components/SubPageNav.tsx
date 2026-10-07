@@ -12,11 +12,11 @@ interface SubPageNavProps {
 }
 
 const sectionRoleMapping: Record<string, Role[]> = {
-  Sales: ["superadmin", "sales_manager"],
-  "HKC Docs": ["superadmin", "hkc_docs_manager"],
-  Inventory: ["superadmin", "inventory_admin"],
-  Finance: ["superadmin", "finance_manager"],
-  HR: ["superadmin", "hr_manager"],
+  Sales: ["superadmin", "sales", "hkc_docs"],
+  "HKC Docs": ["superadmin", "sales", "hkc_docs"],
+  Inventory: ["superadmin", "inventory"],
+  Finance: ["superadmin", "finance"],
+  HR: ["superadmin", "hr"],
   Admin: ["superadmin"],
 }
 
@@ -25,7 +25,7 @@ export function SubPageNav({ items, variant = "light" }: SubPageNavProps) {
   const isDark = variant === "dark"
   const { user } = useAuthStore()
 
-  const userRoles = user?.roles || []
+  const userRoles = (user?.roles || ((user as any)?.role ? [(user as any).role] : []))
   const isSuperAdmin = userRoles.includes("superadmin")
 
   const visibleSections = navSections.filter((s) => {

@@ -115,7 +115,7 @@ export default function StockProducts() {
     return resolveWarehouseScope(userWarehouseIds, erp.getWarehouses())
   }, [userWarehouseIds, erp])
 
-  const isInventoryAdminOnly = userRoles.includes("inventory_admin") && !userRoles.includes("superadmin")
+  const isInventoryAdminOnly = userRoles.includes("inventory") && !userRoles.includes("superadmin")
 
   const allProducts = erp.getProducts()
   const products = (isInventoryAdminOnly && resolvedWarehouseIds.length > 0)

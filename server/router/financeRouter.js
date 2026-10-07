@@ -6,7 +6,7 @@ export const financeRouter = Router()
 
 financeRouter.post(
   "/payroll-records/:id/pay",
-  authorizeRoles("superadmin", "finance_manager"),
+  authorizeRoles("superadmin", "finance"),
   async (req, res, next) => {
     try {
       const result = await financeService.payPayrollRecord(req.params.id)

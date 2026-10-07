@@ -17,9 +17,9 @@ export default function FinanceOverview() {
   const isLoading = store.isLoading()
 
   useEffect(() => {
-    void store.loadFromApi(true)
-    void erpStore.loadInventoryData(true)
-    void erpStore.loadSalesData(true)
+    void store.loadFromApi(false)
+    void erpStore.loadInventoryData(false)
+    void erpStore.loadSalesData(false)
   }, [])
 
   const invoices = store.getInvoices()
@@ -28,151 +28,127 @@ export default function FinanceOverview() {
   const accounts = store.getAccounts()
   const salesIssues = erpStore.getSalesIssues()
 
-  const accountById = new Map<string, any>()
-  for (const account of accounts) {
-    if (account.id) {
-      accountById.set(account.id, account)
-      accountById.set(account.id.replace(/^ACC-/, ""), account)
-      accountById.set(`ACC-${account.id}`, account)
+  const accountById = useMemo(() => {
+    const map = new Map<string, any>()
+    for (const account of accounts) {
+      if (account.id) {
+        map.set(account.id, account)
+        map.set(account.id.replace(/^ACC-/, ""), account)
+        map.set(`ACC-${account.id}`, account)
+      }
+      if (account.code) {
+        map.set(account.code, account)
+        map.set(account.code.replace(/^ACC-/, ""), account)
+        map.set(`ACC-${account.code}`, account)
+      }
     }
-    if (account.code) {
-      accountById.set(account.code, account)
-      accountById.set(account.code.replace(/^ACC-/, ""), account)
-      accountById.set(`ACC-${account.code}`, account)
-    }
-  }
-  const entryById = new Map(journalEntries.map((entry) => [entry.id, entry]))
+    return map
+  }, [accounts])
+
+  const entryById = useMemo(() => new Map(journalEntries.map((entry) => [entry.id, entry])), [journalEntries])
 
   const rawMetrics = store.getFinancialMetrics()
 
   // Calculate robust fallback from invoices & sales issues if GL lines are not yet populated
   const hasGlMetrics = rawMetrics.totalRevenue > 0 || rawMetrics.totalCogs > 0 || rawMetrics.cashPosition !== 0
   
-  let totalRevenue = rawMetrics.totalRevenue
-  let totalCogs = rawMetrics.totalCogs
-  let grossProfit = rawMetrics.grossProfit
-  let grossMargin = rawMetrics.grossMargin
-  let cashPosition = rawMetrics.cashPosition
-  let isCashNegative = rawMetrics.isCashNegative
+  const { totalRevenue, totalCogs, grossProfit, grossMargin, cashPosition, isCashNegative } = useMemo(() => {
+    let rev = rawMetrics.totalRevenue
+    let cogs = rawMetrics.totalCogs
+    let gp = rawMetrics.grossProfit
+    let gm = rawMetrics.grossMargin
+    let cash = rawMetrics.cashPosition
+    let isNeg = rawMetrics.isCashNegative
 
-  if (!hasGlMetrics) {
-    // 1. Calculate revenue from posted sales issues / invoices
-    const activeIssues = salesIssues.filter((si) => si.status !== "Cancelled")
-    let fbRevenue = activeIssues.reduce((sum, si) => sum + Number(si.total_amount || 0), 0)
-    if (fbRevenue === 0 && invoices.length > 0) {
-      fbRevenue = invoices.filter((i) => i.status !== "Void").reduce((sum, i) => sum + Number(i.total || (i as any).total_amount || 0), 0)
+    if (!hasGlMetrics) {
+      const activeIssues = salesIssues.filter((si) => si.status !== "Cancelled")
+      let fbRevenue = activeIssues.reduce((sum, si) => sum + Number(si.total_amount || 0), 0)
+      if (fbRevenue === 0 && invoices.length > 0) {
+        fbRevenue = invoices.filter((i) => i.status !== "Void").reduce((sum, i) => sum + Number(i.total || (i as any).total_amount || 0), 0)
+      }
+
+      let fbCogs = 0
+      let fbCash = 0
+      activeIssues.forEach((si) => {
+        const entries = typeof si.account_entries === "string" ? JSON.parse(si.account_entries) : si.account_entries
+        if (entries?.cogs_lines) {
+          fbCogs += entries.cogs_lines.reduce((s: number, l: any) => s + Number(l.debit || 0), 0)
+        } else if (Array.isArray(si.items)) {
+          si.items.forEach((it: any) => {
+            fbCogs += Number(it.quantity || 0) * Number(it.unit_cost || it.cost_price || 0)
+          })
+        }
+        if (si.payment_type === "Cash" || si.payment_status === "Paid") {
+          fbCash += Number(si.total_amount || 0)
+        }
+      })
+
+      const fbGp = Math.max(0, fbRevenue - fbCogs)
+      const fbGm = fbRevenue > 0 ? (fbGp / fbRevenue) * 100 : 0
+
+      rev = fbRevenue
+      cogs = fbCogs
+      gp = fbGp
+      gm = Math.round(fbGm * 10) / 10
+      cash = fbCash
+      isNeg = cash < 0
     }
 
-    // 2. Calculate COGS from sales issue items or account_entries
-    let fbCogs = 0
-    let fbCash = 0
-    activeIssues.forEach((si) => {
-      const entries = typeof si.account_entries === "string" ? JSON.parse(si.account_entries) : si.account_entries
-      if (entries?.cogs_lines) {
-        fbCogs += entries.cogs_lines.reduce((s: number, l: any) => s + Number(l.debit || 0), 0)
-      } else if (Array.isArray(si.items)) {
-        si.items.forEach((it: any) => {
-          fbCogs += Number(it.quantity || 0) * Number(it.unit_cost || it.cost_price || 0)
+    return {
+      totalRevenue: rev,
+      totalCogs: cogs,
+      grossProfit: gp,
+      grossMargin: gm,
+      cashPosition: cash,
+      isCashNegative: isNeg,
+    }
+  }, [hasGlMetrics, rawMetrics, salesIssues, invoices])
+
+  const cashFlowData = useMemo(() => {
+    const entryYears = new Set<number>()
+    for (const entry of journalEntries) {
+      if (entry.entry_date) {
+        const y = parseInt(entry.entry_date.slice(0, 4), 10)
+        if (!isNaN(y)) entryYears.add(y)
+      }
+    }
+    for (const si of salesIssues) {
+      const d = si.sale_date || (si as any).created_at
+      if (d) {
+        const y = parseInt(String(d).slice(0, 4), 10)
+        if (!isNaN(y)) entryYears.add(y)
+      }
+    }
+    const currentYear = new Date().getFullYear()
+    if (entryYears.size === 0) entryYears.add(currentYear)
+    const sortedYears = [...entryYears].sort((a, b) => a - b)
+
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    const cashFlowByMonth = new Map<string, { monthKey: string; name: string; Revenue: number; Expenses: number; COGS: number; NetProfit: number }>()
+
+    for (const yr of sortedYears) {
+      for (let m = 1; m <= 12; m++) {
+        const monthStr = m.toString().padStart(2, "0")
+        const key = `${yr}-${monthStr}`
+        const label = sortedYears.length > 1 ? `${monthNames[m - 1]} '${yr.toString().slice(2)}` : monthNames[m - 1]
+        cashFlowByMonth.set(key, {
+          monthKey: key,
+          name: label,
+          Revenue: 0,
+          Expenses: 0,
+          COGS: 0,
+          NetProfit: 0,
         })
       }
-      if (si.payment_type === "Cash" || si.payment_status === "Paid") {
-        fbCash += Number(si.total_amount || 0)
-      }
-    })
-
-    const fbGp = Math.max(0, fbRevenue - fbCogs)
-    const fbGm = fbRevenue > 0 ? (fbGp / fbRevenue) * 100 : 0
-
-    totalRevenue = fbRevenue
-    totalCogs = fbCogs
-    grossProfit = fbGp
-    grossMargin = Math.round(fbGm * 10) / 10
-    cashPosition = fbCash
-    isCashNegative = cashPosition < 0
-  }
-
-  // Find distinct years from journal entries, sales issues, or invoices
-  const entryYears = new Set<number>()
-  for (const entry of journalEntries) {
-    if (entry.entry_date) {
-      const y = parseInt(entry.entry_date.slice(0, 4), 10)
-      if (!isNaN(y)) entryYears.add(y)
-    }
-  }
-  for (const si of salesIssues) {
-    const d = si.sale_date || (si as any).created_at
-    if (d) {
-      const y = parseInt(String(d).slice(0, 4), 10)
-      if (!isNaN(y)) entryYears.add(y)
-    }
-  }
-  const currentYear = new Date().getFullYear()
-  if (entryYears.size === 0) entryYears.add(currentYear)
-  const sortedYears = [...entryYears].sort((a, b) => a - b)
-
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-  const cashFlowByMonth = new Map<string, { monthKey: string; name: string; Revenue: number; Expenses: number; COGS: number; NetProfit: number }>()
-
-  // Initialize all 12 months for the fiscal year
-  for (const yr of sortedYears) {
-    for (let m = 1; m <= 12; m++) {
-      const monthStr = m.toString().padStart(2, "0")
-      const key = `${yr}-${monthStr}`
-      const label = sortedYears.length > 1 ? `${monthNames[m - 1]} '${yr.toString().slice(2)}` : monthNames[m - 1]
-      cashFlowByMonth.set(key, {
-        monthKey: key,
-        name: label,
-        Revenue: 0,
-        Expenses: 0,
-        COGS: 0,
-        NetProfit: 0,
-      })
-    }
-  }
-
-  // 1. Populate from GL journal lines if present
-  let hasGlChartData = false
-  for (const line of journalLines) {
-    const entry = entryById.get(line.journal_entry_id)
-    const cleanAccountId = line.account_id ? String(line.account_id).trim() : ""
-    const account = accountById.get(cleanAccountId) || accountById.get(cleanAccountId.replace(/^ACC-/, "")) || accountById.get(`ACC-${cleanAccountId}`)
-    if (!entry || !account || !entry.entry_date) continue
-    const monthKey = String(entry.entry_date).slice(0, 7)
-    let row = cashFlowByMonth.get(monthKey)
-    if (!row) {
-      const mIdx = parseInt(monthKey.slice(5, 7), 10) - 1
-      row = {
-        monthKey,
-        name: monthNames[mIdx] || monthKey,
-        Revenue: 0,
-        Expenses: 0,
-        COGS: 0,
-        NetProfit: 0,
-      }
-      cashFlowByMonth.set(monthKey, row)
     }
 
-    if (account.account_type === "Revenue" || account.code?.startsWith("4")) {
-      row.Revenue += line.credit_amount - line.debit_amount
-      hasGlChartData = true
-    } else if (account.account_type === "Expense" || account.code?.startsWith("5") || account.code?.startsWith("6") || account.code?.startsWith("7")) {
-      const amt = line.debit_amount - line.credit_amount
-      row.Expenses += amt
-      if (isCogsAccount(account)) {
-        row.COGS += amt
-      }
-      hasGlChartData = true
-    }
-    row.NetProfit = row.Revenue - row.Expenses
-  }
-
-  // 2. If GL lines are empty or not loaded, populate chart from Sales Issues
-  if (!hasGlChartData && salesIssues.length > 0) {
-    for (const si of salesIssues) {
-      if (si.status === "Cancelled") continue
-      const dateStr = si.sale_date || (si as any).created_at
-      if (!dateStr) continue
-      const monthKey = String(dateStr).slice(0, 7)
+    let hasGlChartData = false
+    for (const line of journalLines) {
+      const entry = entryById.get(line.journal_entry_id)
+      const cleanAccountId = line.account_id ? String(line.account_id).trim() : ""
+      const account = accountById.get(cleanAccountId) || accountById.get(cleanAccountId.replace(/^ACC-/, "")) || accountById.get(`ACC-${cleanAccountId}`)
+      if (!entry || !account || !entry.entry_date) continue
+      const monthKey = String(entry.entry_date).slice(0, 7)
       let row = cashFlowByMonth.get(monthKey)
       if (!row) {
         const mIdx = parseInt(monthKey.slice(5, 7), 10) - 1
@@ -187,27 +163,62 @@ export default function FinanceOverview() {
         cashFlowByMonth.set(monthKey, row)
       }
 
-      const revAmt = Number(si.total_amount || 0)
-      row.Revenue += revAmt
-
-      const entries = typeof si.account_entries === "string" ? JSON.parse(si.account_entries) : si.account_entries
-      let cogsAmt = 0
-      if (entries?.cogs_lines) {
-        cogsAmt = entries.cogs_lines.reduce((s: number, l: any) => s + Number(l.debit || 0), 0)
-      } else if (Array.isArray(si.items)) {
-        si.items.forEach((it: any) => {
-          cogsAmt += Number(it.quantity || 0) * Number(it.unit_cost || it.cost_price || 0)
-        })
+      if (account.account_type === "Revenue" || account.code?.startsWith("4")) {
+        row.Revenue += line.credit_amount - line.debit_amount
+        hasGlChartData = true
+      } else if (account.account_type === "Expense" || account.code?.startsWith("5") || account.code?.startsWith("6") || account.code?.startsWith("7")) {
+        const amt = line.debit_amount - line.credit_amount
+        row.Expenses += amt
+        if (isCogsAccount(account)) {
+          row.COGS += amt
+        }
+        hasGlChartData = true
       }
-      row.Expenses += cogsAmt
-      row.COGS += cogsAmt
       row.NetProfit = row.Revenue - row.Expenses
     }
-  }
 
-  const cashFlowData = [...cashFlowByMonth.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([, value]) => value)
+    if (!hasGlChartData && salesIssues.length > 0) {
+      for (const si of salesIssues) {
+        if (si.status === "Cancelled") continue
+        const dateStr = si.sale_date || (si as any).created_at
+        if (!dateStr) continue
+        const monthKey = String(dateStr).slice(0, 7)
+        let row = cashFlowByMonth.get(monthKey)
+        if (!row) {
+          const mIdx = parseInt(monthKey.slice(5, 7), 10) - 1
+          row = {
+            monthKey,
+            name: monthNames[mIdx] || monthKey,
+            Revenue: 0,
+            Expenses: 0,
+            COGS: 0,
+            NetProfit: 0,
+          }
+          cashFlowByMonth.set(monthKey, row)
+        }
+
+        const revAmt = Number(si.total_amount || 0)
+        row.Revenue += revAmt
+
+        const entries = typeof si.account_entries === "string" ? JSON.parse(si.account_entries) : si.account_entries
+        let cogsAmt = 0
+        if (entries?.cogs_lines) {
+          cogsAmt = entries.cogs_lines.reduce((s: number, l: any) => s + Number(l.debit || 0), 0)
+        } else if (Array.isArray(si.items)) {
+          si.items.forEach((it: any) => {
+            cogsAmt += Number(it.quantity || 0) * Number(it.unit_cost || it.cost_price || 0)
+          })
+        }
+        row.Expenses += cogsAmt
+        row.COGS += cogsAmt
+        row.NetProfit = row.Revenue - row.Expenses
+      }
+    }
+
+    return [...cashFlowByMonth.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, value]) => value)
+  }, [journalEntries, journalLines, salesIssues, accountById, entryById])
 
   // --- Items Sold Graph & Analytics State ---
   const currentMonthStr = useMemo(() => {

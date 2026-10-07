@@ -1,13 +1,13 @@
 import { Router } from "express"
 import { salesService } from "../modules/sales/salesService.js"
-import { authorizeRoles } from "../modules/auth/authMiddleware.js"
+import { authorizeRoles, normalizeRole } from "../modules/auth/authMiddleware.js"
 
 export const salesRouter = Router()
 
 // RBAC Role Guard Helpers
-const requireProcessingMutation = authorizeRoles("superadmin", "inventory_admin", "sales_manager")
-const requireShipmentDocMutation = authorizeRoles("superadmin", "hkc_docs_manager", "sales_manager")
-const requireSalesIssueMutation = authorizeRoles("superadmin", "sales_manager", "hkc_docs_manager", "inventory_admin")
+const requireProcessingMutation = authorizeRoles("superadmin", "inventory", "sales")
+const requireShipmentDocMutation = authorizeRoles("superadmin", "hkc_docs", "sales")
+const requireSalesIssueMutation = authorizeRoles("superadmin", "sales", "hkc_docs", "inventory")
 const requireSuperAdmin = authorizeRoles("superadmin")
 
 salesRouter.get(["/processing-services", "/processing_services"], async (req, res, next) => {
@@ -219,9 +219,10 @@ salesRouter.post(["/sales-issues/:id/cancel", "/sales_issues/:id/cancel"], requi
 // Superadmin approval routes for Sales Orders
 salesRouter.post(["/sales-orders/:id/approve", "/sales_orders/:id/approve"], requireSuperAdmin, async (req, res, next) => {
   try {
-    const roles = req.user?.roles || []
-    if (!roles.includes("superadmin")) {
-      return res.status(403).json({ error: "Only superadmin can approve sales orders." })
+    const roles = (req.user?.roles || (req.user?.role ? [req.user.role] : [])).map(normalizeRole)
+    const canApprove = roles.includes("superadmin")
+    if (!canApprove) {
+      return res.status(403).json({ error: "Only Super Admin can approve sales orders." })
     }
 
     const { getResource } = await import("../db/resourceRegistry.js")
@@ -232,7 +233,7 @@ salesRouter.post(["/sales-orders/:id/approve", "/sales_orders/:id/approve"], req
       return res.status(404).json({ error: `Sales Order '${req.params.id}' not found.` })
     }
 
-    const currentData = existing.body?.payload ? { ...existing.body.payload, ...existing.body } : existing.body
+    const currentData = existing.body
     const updated = {
       ...currentData,
       approvalStatus: "Approved",
@@ -250,9 +251,10 @@ salesRouter.post(["/sales-orders/:id/approve", "/sales_orders/:id/approve"], req
 
 salesRouter.post(["/sales-orders/:id/decline", "/sales_orders/:id/decline"], requireSuperAdmin, async (req, res, next) => {
   try {
-    const roles = req.user?.roles || []
-    if (!roles.includes("superadmin")) {
-      return res.status(403).json({ error: "Only superadmin can decline sales orders." })
+    const roles = (req.user?.roles || (req.user?.role ? [req.user.role] : [])).map(normalizeRole)
+    const canDecline = roles.includes("superadmin")
+    if (!canDecline) {
+      return res.status(403).json({ error: "Only Super Admin can decline sales orders." })
     }
 
     const { getResource } = await import("../db/resourceRegistry.js")
@@ -263,13 +265,13 @@ salesRouter.post(["/sales-orders/:id/decline", "/sales_orders/:id/decline"], req
       return res.status(404).json({ error: `Sales Order '${req.params.id}' not found.` })
     }
 
-    const currentData = existing.body?.payload ? { ...existing.body.payload, ...existing.body } : existing.body
+    const currentData = existing.body
     const updated = {
       ...currentData,
       approvalStatus: "Declined",
       approvedBy: req.user.fullname || req.user.username || "Super Admin",
       approvedAt: new Date().toISOString(),
-      declineReason: req.body?.reason || "Declined by Super Admin",
+      declineReason: req.body?.reason || "Declined by Executive Admin",
     }
 
     const result = await drizzleUpdateRow({ resource: getResource("sales_orders"), id: req.params.id, body: updated })

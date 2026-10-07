@@ -32,8 +32,8 @@ const hrAllPaths = [
   "/hr/payroll-records",
 ]
 
-// All HR routes are strictly confidential to superadmin and hr_manager
-hrRouter.use(hrAllPaths, authorizeRoles("superadmin", "hr_manager"))
+// All HR routes are accessible to superadmin and hr
+hrRouter.use(hrAllPaths, authorizeRoles("superadmin", "hr"))
 
 
 // ── 1. Employees ─────────────────────────────────────────────────────────────

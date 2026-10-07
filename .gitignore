@@ -25,6 +25,7 @@ dist-ssr
 *.sw?
 .bolt/config.json
 .env.example
+server/db/backups/*.sql
 
 kiro_ession.md
 TEST_CASES_AND_E2E_WORKFLOWS.md

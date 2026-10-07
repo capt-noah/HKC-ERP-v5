@@ -1,24 +1,78 @@
-import { mysqlTable, varchar, text, decimal, timestamp, json, date } from "drizzle-orm/mysql-core"
+import { mysqlTable, varchar, text, decimal, timestamp, json, date, boolean } from "drizzle-orm/mysql-core"
 import { relations } from "drizzle-orm"
 
-// Document Tables
+// Relational Master Tables
 export const customers = mysqlTable("customers", {
   id: varchar("id", { length: 191 }).primaryKey(),
-  payload: json("payload").notNull(),
+  name: varchar("name", { length: 255 }).default("").notNull(),
+  contactPerson: varchar("contact_person", { length: 191 }),
+  phone: varchar("phone", { length: 50 }),
+  email: varchar("email", { length: 191 }),
+  address: text("address"),
+  country: varchar("country", { length: 100 }).default("Ethiopia").notNull(),
+  region: varchar("region", { length: 100 }),
+  tin: varchar("tin", { length: 50 }),
+  category: varchar("category", { length: 100 }),
+  warehouseTarget: varchar("warehouse_target", { length: 100 }),
+  creditLimit: decimal("credit_limit", { precision: 18, scale: 2 }).default("0.00").notNull(),
+  tradePaperUrl: text("trade_paper_url"),
+  tradePaperFileName: varchar("trade_paper_file_name", { length: 255 }),
+  tradePaperUploadedAt: varchar("trade_paper_uploaded_at", { length: 50 }),
+  defaultTaxScheduleId: varchar("default_tax_schedule_id", { length: 100 }),
+  isGovAgent: boolean("is_gov_agent").default(false).notNull(),
+  status: varchar("status", { length: 50 }).default("Active").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
 
 export const suppliers = mysqlTable("suppliers", {
   id: varchar("id", { length: 191 }).primaryKey(),
-  payload: json("payload").notNull(),
+  name: varchar("name", { length: 255 }).default("").notNull(),
+  country: varchar("country", { length: 100 }).default("Ethiopia").notNull(),
+  city: varchar("city", { length: 100 }),
+  contactPerson: varchar("contact_person", { length: 191 }),
+  phone: varchar("phone", { length: 50 }),
+  email: varchar("email", { length: 191 }),
+  address: text("address"),
+  category: varchar("category", { length: 100 }),
+  taxId: varchar("tax_id", { length: 50 }),
+  tin: varchar("tin", { length: 50 }),
+  warehouseTarget: varchar("warehouse_target", { length: 100 }),
+  rating: varchar("rating", { length: 50 }),
+  tradePaperUrl: text("trade_paper_url"),
+  tradePaperFileName: varchar("trade_paper_file_name", { length: 255 }),
+  defaultTaxScheduleId: varchar("default_tax_schedule_id", { length: 100 }),
+  isGovAgent: boolean("is_gov_agent").default(false).notNull(),
+  status: varchar("status", { length: 50 }).default("Active").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
 
 export const salesOrders = mysqlTable("sales_orders", {
   id: varchar("id", { length: 191 }).primaryKey(),
-  payload: json("payload").notNull(),
+  orderNumber: varchar("order_number", { length: 100 }),
+  orderDate: date("order_date").notNull(),
+  customerId: varchar("customer_id", { length: 191 }),
+  customerName: varchar("customer_name", { length: 255 }).default("").notNull(),
+  customerPhone: varchar("customer_phone", { length: 50 }),
+  customerGroup: varchar("customer_group", { length: 100 }),
+  warehouseId: varchar("warehouse_id", { length: 191 }).default("WH2").notNull(),
+  warehouseName: varchar("warehouse_name", { length: 255 }),
+  stage: varchar("stage", { length: 50 }).default("Draft").notNull(),
+  amount: decimal("amount", { precision: 18, scale: 2 }).default("0.00").notNull(),
+  billedAmount: decimal("billed_amount", { precision: 18, scale: 2 }).default("0.00").notNull(),
+  deliveredAmount: decimal("delivered_amount", { precision: 18, scale: 2 }).default("0.00").notNull(),
+  billingStatus: varchar("billing_status", { length: 50 }).default("Unbilled").notNull(),
+  deliveryStatus: varchar("delivery_status", { length: 50 }).default("Undelivered").notNull(),
+  paymentType: varchar("payment_type", { length: 50 }).default("Cash").notNull(),
+  paymentTerms: varchar("payment_terms", { length: 100 }),
+  approvalStatus: varchar("approval_status", { length: 50 }).default("Pending").notNull(),
+  approvedBy: varchar("approved_by", { length: 191 }),
+  approvedAt: varchar("approved_at", { length: 50 }),
+  currency: varchar("currency", { length: 10 }).default("ETB").notNull(),
+  urgent: boolean("urgent").default(false).notNull(),
+  description: text("description"),
+  items: json("items"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })
@@ -60,7 +114,11 @@ export const purchaseOrders = mysqlTable("purchase_orders", {
 
 export const hkcDocRecords = mysqlTable("hkc_doc_records", {
   id: varchar("id", { length: 191 }).primaryKey(),
-  payload: json("payload").notNull(),
+  shipmentId: varchar("shipment_id", { length: 100 }).default("").notNull(),
+  itemsDescription: text("items_description").notNull(),
+  type: varchar("type", { length: 50 }).default("Import").notNull(),
+  recordDate: date("record_date").notNull(),
+  attachments: json("attachments"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 })

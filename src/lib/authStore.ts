@@ -1,7 +1,13 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
-export type Role = "superadmin" | "sales_manager" | "hr_manager" | "inventory_admin" | "finance_manager" | "hkc_docs_manager"
+export type Role =
+  | "superadmin"
+  | "sales"
+  | "hr"
+  | "inventory"
+  | "finance"
+  | "hkc_docs"
 
 export interface User {
   id: string
@@ -205,12 +211,12 @@ export function handleAuthExpiry() {
 export function normalizeRole(role: string): Role {
   const clean = String(role || "").toLowerCase().trim()
   if (clean === "admin" || clean === "super_admin" || clean === "superadmin") return "superadmin"
-  if (clean === "sales" || clean === "sales_manager") return "sales_manager"
-  if (clean === "hr" || clean === "hr_manager") return "hr_manager"
-  if (clean === "inventory" || clean === "inventory_admin" || clean === "inventory_manager") return "inventory_admin"
-  if (clean === "finance" || clean === "finance_manager") return "finance_manager"
-  if (clean === "hkc_docs" || clean === "hkc_docs_manager" || clean === "hkcdocs" || clean === "docs_specialist" || clean === "docs") return "hkc_docs_manager"
-  return clean as Role
+  if (clean === "sales" || clean === "sales_manager") return "sales"
+  if (clean === "hr" || clean === "hr_manager") return "hr"
+  if (clean === "inventory" || clean === "inventory_admin" || clean === "inventory_manager") return "inventory"
+  if (clean === "finance" || clean === "finance_manager") return "finance"
+  if (clean === "hkc_docs" || clean === "hkc_docs_manager" || clean === "hkcdocs" || clean === "docs_specialist" || clean === "docs") return "hkc_docs"
+  return (clean as Role) || "sales"
 }
 
 function getInitialAuthState(): { user: User | null; token: string | null; sessionExpiresAt: string | null } {

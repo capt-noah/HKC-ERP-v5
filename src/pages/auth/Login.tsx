@@ -89,15 +89,15 @@ export default function Login() {
       const primaryRole = userRoles[0]
       const getRoleHome = (role: string) => {
         switch (role) {
-          case "sales_manager":
+          case "sales":
             return "/sales"
-          case "hr_manager":
+          case "hr":
             return "/hr"
-          case "inventory_admin":
+          case "inventory":
             return "/inventory"
-          case "finance_manager":
+          case "finance":
             return "/finance"
-          case "hkc_docs_manager":
+          case "hkc_docs":
             return "/sales/hkc-docs"
           case "superadmin":
             return "/admin"

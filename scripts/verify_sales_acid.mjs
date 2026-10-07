@@ -10,13 +10,9 @@ async function runTest() {
   console.log("=== STARTING ACID SALES ENGINE VERIFICATION ===")
 
   // 1. Initial Trial Balance Check
-  const [tbInitial] = await pool.query("SELECT payload FROM journal_entry_lines")
-  let initDr = 0, initCr = 0
-  for (const r of tbInitial) {
-    const p = typeof r.payload === "string" ? JSON.parse(r.payload) : r.payload
-    initDr += Number(p?.debit_amount || p?.debit || 0)
-    initCr += Number(p?.credit_amount || p?.credit || 0)
-  }
+  const [[tbInitial]] = await pool.query("SELECT SUM(debit_amount) as total_debit, SUM(credit_amount) as total_credit FROM journal_entry_lines")
+  const initDr = Number(tbInitial.total_debit || 0)
+  const initCr = Number(tbInitial.total_credit || 0)
   const initDiff = Math.abs(initDr - initCr)
   console.log(`Initial Trial Balance: DR=${initDr.toFixed(2)}, CR=${initCr.toFixed(2)}, Diff=${initDiff.toFixed(2)}`)
   if (initDiff > 0.01) {
@@ -122,14 +118,13 @@ async function runTest() {
   console.log(`✓ Both JE-SALE and JE-COGS created (${jes.map(j => j.id).join(", ")})`)
 
   const [jels] = await pool.query(
-    "SELECT payload FROM journal_entry_lines WHERE id LIKE CONCAT(?, '%') OR id LIKE CONCAT(?, '%') OR payload->>'$.journal_entry_id' IN (?, ?)",
-    [`JE-SALE-${testIssueId}`, `JE-COGS-${testIssueId}`, `JE-SALE-${testIssueId}`, `JE-COGS-${testIssueId}`]
+    "SELECT debit_amount, credit_amount FROM journal_entry_lines WHERE journal_entry_id IN (?, ?)",
+    [`JE-SALE-${testIssueId}`, `JE-COGS-${testIssueId}`]
   )
   let postDr = 0, postCr = 0
   for (const l of jels) {
-    const p = typeof l.payload === "string" ? JSON.parse(l.payload) : l.payload
-    postDr += Number(p?.debit_amount || p?.debit || 0)
-    postCr += Number(p?.credit_amount || p?.credit || 0)
+    postDr += Number(l.debit_amount || 0)
+    postCr += Number(l.credit_amount || 0)
   }
   console.log(`✓ Posted Journal Lines sum: DR=${postDr.toFixed(2)}, CR=${postCr.toFixed(2)}, Diff=${(postDr - postCr).toFixed(2)}`)
   if (Math.abs(postDr - postCr) > 0.01) {
@@ -137,13 +132,9 @@ async function runTest() {
   }
 
   // Verify total Trial Balance remains in parity
-  const [tbAfterPost] = await pool.query("SELECT payload FROM journal_entry_lines")
-  let tbPostDr = 0, tbPostCr = 0
-  for (const r of tbAfterPost) {
-    const p = typeof r.payload === "string" ? JSON.parse(r.payload) : r.payload
-    tbPostDr += Number(p?.debit_amount || p?.debit || 0)
-    tbPostCr += Number(p?.credit_amount || p?.credit || 0)
-  }
+  const [[tbAfterPost]] = await pool.query("SELECT SUM(debit_amount) as total_debit, SUM(credit_amount) as total_credit FROM journal_entry_lines")
+  const tbPostDr = Number(tbAfterPost.total_debit || 0)
+  const tbPostCr = Number(tbAfterPost.total_credit || 0)
   console.log(`✓ Global Trial Balance after Post: DR=${tbPostDr.toFixed(2)}, CR=${tbPostCr.toFixed(2)}, Diff=${(tbPostDr - tbPostCr).toFixed(2)}`)
   if (Math.abs(tbPostDr - tbPostCr) > 0.01) {
     throw new Error(`Global Trial balance broke after posting! Diff=${tbPostDr - tbPostCr}`)
@@ -183,8 +174,8 @@ async function runTest() {
     throw new Error(`Journal entries still exist after cancellation! Count=${jesAfterCancel.length}`)
   }
   const [jelsAfterCancel] = await pool.query(
-    "SELECT payload FROM journal_entry_lines WHERE id LIKE CONCAT(?, '%') OR id LIKE CONCAT(?, '%') OR payload->>'$.journal_entry_id' IN (?, ?)",
-    [`JE-SALE-${testIssueId}`, `JE-COGS-${testIssueId}`, `JE-SALE-${testIssueId}`, `JE-COGS-${testIssueId}`]
+    "SELECT id FROM journal_entry_lines WHERE journal_entry_id IN (?, ?)",
+    [`JE-SALE-${testIssueId}`, `JE-COGS-${testIssueId}`]
   )
   if (jelsAfterCancel.length !== 0) {
     throw new Error(`Journal entry lines still exist after cancellation! Count=${jelsAfterCancel.length}`)
@@ -192,13 +183,9 @@ async function runTest() {
   console.log("✓ Journal entries and journal entry lines completely purged.")
 
   // Verify global trial balance restored to original
-  const [tbAfterCancel] = await pool.query("SELECT payload FROM journal_entry_lines")
-  let tbCancelDr = 0, tbCancelCr = 0
-  for (const r of tbAfterCancel) {
-    const p = typeof r.payload === "string" ? JSON.parse(r.payload) : r.payload
-    tbCancelDr += Number(p?.debit_amount || p?.debit || 0)
-    tbCancelCr += Number(p?.credit_amount || p?.credit || 0)
-  }
+  const [[tbAfterCancel]] = await pool.query("SELECT SUM(debit_amount) as total_debit, SUM(credit_amount) as total_credit FROM journal_entry_lines")
+  const tbCancelDr = Number(tbAfterCancel.total_debit || 0)
+  const tbCancelCr = Number(tbAfterCancel.total_credit || 0)
   console.log(`✓ Global Trial Balance after Cancel: DR=${tbCancelDr.toFixed(2)}, CR=${tbCancelCr.toFixed(2)}, Diff=${(tbCancelDr - tbCancelCr).toFixed(2)}`)
   if (Math.abs(tbCancelDr - tbCancelCr) > 0.01) {
     throw new Error(`Global Trial balance discrepancy after cancel! Diff=${tbCancelDr - tbCancelCr}`)
@@ -323,13 +310,9 @@ async function runTest() {
   }
 
   // Verify final Trial Balance
-  const [tbFinal] = await pool.query("SELECT payload FROM journal_entry_lines")
-  let finDr = 0, finCr = 0
-  for (const r of tbFinal) {
-    const p = typeof r.payload === "string" ? JSON.parse(r.payload) : r.payload
-    finDr += Number(p?.debit_amount || p?.debit || 0)
-    finCr += Number(p?.credit_amount || p?.credit || 0)
-  }
+  const [[tbFinal]] = await pool.query("SELECT SUM(debit_amount) as total_debit, SUM(credit_amount) as total_credit FROM journal_entry_lines")
+  const finDr = Number(tbFinal.total_debit || 0)
+  const finCr = Number(tbFinal.total_credit || 0)
   const finDiff = Math.abs(finDr - finCr)
   console.log(`\n=== FINAL TRIAL BALANCE: DR=${finDr.toFixed(2)}, CR=${finCr.toFixed(2)}, Difference=${finDiff.toFixed(2)} ETB ===`)
   if (finDiff > 0.01) {

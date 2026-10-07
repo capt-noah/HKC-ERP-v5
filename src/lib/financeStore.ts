@@ -637,8 +637,8 @@ class FinanceStore {
   public async loadFromApi(force = false) {
     const user = useAuthStore.getState().user
     const roles = user?.roles || []
-    const isFullFinance = roles.includes("finance_manager") || roles.includes("superadmin")
-    const isOperationalFinance = roles.some((r) => ["sales_manager", "hkc_docs_manager", "inventory_admin"].includes(r))
+    const isFullFinance = roles.some((r) => ["finance", "superadmin"].includes(r))
+    const isOperationalFinance = roles.some((r) => ["sales", "hkc_docs", "inventory"].includes(r))
     const isAuthorized = isFullFinance || isOperationalFinance
 
     if (!useAuthStore.getState().token || !isAuthorized) {
@@ -675,9 +675,9 @@ class FinanceStore {
         isFullFinance ? loadResource<JournalEntryLine>("journal_entry_lines").catch(() => []) : Promise.resolve([]),
         loadResource<Invoice>("invoices").catch(() => []),
         loadResource<Payment>("payments").catch(() => []),
-        isFullFinance ? loadResource<RecurringExpenseSchedule>("recurring_expense_schedules").catch(() => []) : Promise.resolve([]),
+        Promise.resolve([]),
         isFullFinance ? loadResource<OneOffExpense>("expenses").catch(() => []) : Promise.resolve([]),
-        isFullFinance ? loadResource<Vehicle>("vehicles").catch(() => []) : Promise.resolve([]),
+        Promise.resolve([]),
         loadResource<CompanySettings & { id?: string }>("company_settings").catch(() => []),
         loadResource<TaxRule>("tax_rules").catch(() => []),
         loadResource<GlAccountMapping>("gl_account_mappings").catch(() => []),

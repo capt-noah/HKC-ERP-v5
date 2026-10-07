@@ -108,7 +108,7 @@ export default function ProcessingServices() {
     return Array.from(set)
   }, [userWarehouseIds, erp])
 
-  const isInventoryAdminOnly = userRoles.includes("inventory_admin") && !userRoles.includes("superadmin")
+  const isInventoryAdminOnly = userRoles.includes("inventory") && !userRoles.includes("superadmin")
   const hasWH1Access = !isInventoryAdminOnly || resolvedWarehouseIds.length === 0 || resolvedWarehouseIds.some(id => isExportWarehouse(id))
 
   const [services, setServices] = useState<ProcessingServiceOrder[]>([])

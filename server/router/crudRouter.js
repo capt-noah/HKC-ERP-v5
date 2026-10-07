@@ -31,10 +31,10 @@ crudRouter.use("/:resource", (req, res, next) => {
   const mod = resource.module
   let isAllowed = false
 
-  if (mod === "inventory" && userRoles.includes("inventory_admin")) isAllowed = true
-  if (mod === "sales" && (userRoles.includes("sales_manager") || userRoles.includes("hkc_docs_manager"))) isAllowed = true
-  if (mod === "finance" && userRoles.includes("finance_manager")) isAllowed = true
-  if (mod === "hr" && userRoles.includes("hr_manager")) isAllowed = true
+  if (mod === "inventory" && userRoles.includes("inventory")) isAllowed = true
+  if (mod === "sales" && (userRoles.includes("sales") || userRoles.includes("hkc_docs"))) isAllowed = true
+  if (mod === "finance" && userRoles.includes("finance")) isAllowed = true
+  if (mod === "hr" && userRoles.includes("hr")) isAllowed = true
   if (mod === "admin" && userRoles.includes("superadmin")) isAllowed = true
 
   // Allow all authenticated users to read and update their own user profile
@@ -50,23 +50,23 @@ crudRouter.use("/:resource", (req, res, next) => {
     }
   }
 
-  // Allow sales manager and finance manager to record customer payments
-  if (req.params.resource === "payments" && userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager"].includes(r))) {
+  // Allow sales and finance to record customer payments
+  if (req.params.resource === "payments" && userRoles.some((r) => ["sales", "hkc_docs", "finance"].includes(r))) {
     isAllowed = true
   }
 
-  // Allow inventory admin, sales manager, finance manager, and admins to create and update suppliers, customers, purchase orders, warehouses, and documentation
+  // Allow inventory, sales, finance to create and update suppliers, customers, purchase orders, warehouses, and documentation
   if (
     ["suppliers", "customers", "purchase_orders", "hkc_doc_records", "shipment_documents", "warehouses"].includes(req.params.resource) &&
-    userRoles.some((r) => ["inventory_admin", "sales_manager", "hkc_docs_manager", "finance_manager", "superadmin", "admin", "system_admin", "general_manager"].includes(r))
+    userRoles.some((r) => ["inventory", "sales", "hkc_docs", "finance", "superadmin"].includes(r))
   ) {
     isAllowed = true
   }
 
-  // Allow operational roles (inventory_admin, sales_manager) to post and clean up automated stock/operational journal entries
+  // Allow operational roles (inventory, sales) to post and clean up automated stock/operational journal entries
   if (
     ["journal_entries", "journal_entry_lines"].includes(req.params.resource) &&
-    userRoles.some((r) => ["inventory_admin", "sales_manager", "hkc_docs_manager", "finance_manager", "superadmin", "admin", "system_admin", "general_manager"].includes(r))
+    userRoles.some((r) => ["inventory", "sales", "hkc_docs", "finance", "superadmin"].includes(r))
   ) {
     isAllowed = true
   }
@@ -87,14 +87,14 @@ crudRouter.use("/:resource", (req, res, next) => {
       isAllowed = true
     }
 
-    // Invoices and payments readable by sales, finance, docs, and inventory managers
+    // Invoices and payments readable by sales, finance, docs, and inventory
     if (resName === "invoices" || resName === "payments") {
-      if (userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager", "inventory_admin"].includes(r))) {
+      if (userRoles.some((r) => ["sales", "hkc_docs", "finance", "inventory"].includes(r))) {
         isAllowed = true
       }
     }
 
-    // Warehouses, products, movements, and transfers readable by sales, finance, and inventory admins
+    // Warehouses, products, movements, and transfers readable by sales, finance, and inventory
     if (
       resName === "warehouses" ||
       resName === "export_products" ||
@@ -106,19 +106,19 @@ crudRouter.use("/:resource", (req, res, next) => {
       resName === "store_transfer_items" ||
       resName === "quarantine_records"
     ) {
-      if (userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager", "inventory_admin"].includes(r))) {
+      if (userRoles.some((r) => ["sales", "hkc_docs", "finance", "inventory"].includes(r))) {
         isAllowed = true
       }
     }
 
-    // Customers and suppliers readable by sales, finance, and inventory admins
+    // Customers and suppliers readable by sales, finance, and inventory
     if (resName === "customers" || resName === "suppliers" || resName === "purchase_orders") {
-      if (userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager", "inventory_admin"].includes(r))) {
+      if (userRoles.some((r) => ["sales", "hkc_docs", "finance", "inventory"].includes(r))) {
         isAllowed = true
       }
     }
 
-    // Sales orders, sales issues, shipments, HKC compliance docs, and processing services readable by sales, docs, finance, and inventory admins
+    // Sales orders, sales issues, shipments, HKC compliance docs, and processing services readable by sales, docs, finance, and inventory
     if (
       resName === "sales_orders" ||
       resName === "sales_issues" ||
@@ -127,7 +127,7 @@ crudRouter.use("/:resource", (req, res, next) => {
       resName === "shipment_documents" ||
       resName === "hkc_doc_records"
     ) {
-      if (userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager", "inventory_admin"].includes(r))) {
+      if (userRoles.some((r) => ["sales", "hkc_docs", "finance", "inventory"].includes(r))) {
         isAllowed = true
       }
     }

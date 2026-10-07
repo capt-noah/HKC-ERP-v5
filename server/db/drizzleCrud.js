@@ -42,7 +42,7 @@ export const tableMap = {
   shipment_documents: schema.shipmentDocuments,
   hkc_doc_records: schema.hkcDocRecords,
 
-  // Finance & GL (11)
+  // Finance & GL (9 Relational Tables + 1 Config Singleton)
   company_settings: schema.companySettings,
   chart_of_accounts: schema.chartOfAccounts,
   gl_account_mappings: schema.glAccountMappings,
@@ -51,16 +51,13 @@ export const tableMap = {
   invoices: schema.invoices,
   payments: schema.payments,
   expenses: schema.expenses,
-  recurring_expense_schedules: schema.recurringExpenseSchedules,
-  vehicles: schema.vehicles,
   tax_rules: schema.taxRules,
 
-  // HR & Payroll (6)
+  // HR & Payroll (5 Relational Tables)
   employees: schema.employees,
   attendance_records: schema.attendanceRecords,
   payroll_periods: schema.payrollPeriods,
   payroll_records: schema.payrollRecords,
-  leave_types: schema.leaveTypes,
   leave_requests: schema.leaveRequests,
 
   // Admin (3)
@@ -162,10 +159,25 @@ export async function drizzleListRows({ resource, query = {} }) {
       sql += ` WHERE ${conditions.join(" AND ")}`
     }
 
-    // Try ORDER BY created_at DESC; if column doesn't exist, execute without it
+    let defaultOrder = "ORDER BY created_at DESC"
+    if (tableName === "journal_entries") {
+      defaultOrder = "ORDER BY entry_date DESC, created_at DESC"
+    } else if (tableName === "chart_of_accounts") {
+      defaultOrder = "ORDER BY code ASC"
+    } else if (tableName === "sales_orders") {
+      defaultOrder = "ORDER BY order_date DESC, created_at DESC"
+    } else if (tableName === "invoices") {
+      defaultOrder = "ORDER BY issue_date DESC, created_at DESC"
+    } else if (tableName === "hkc_doc_records") {
+      defaultOrder = "ORDER BY record_date DESC, created_at DESC"
+    } else if (tableName === "customers" || tableName === "suppliers") {
+      defaultOrder = "ORDER BY name ASC"
+    }
+
+    // Try default ORDER BY; if column doesn't exist, execute without it
     let rows
     try {
-      let fullSql = `${sql} ORDER BY created_at DESC`
+      let fullSql = `${sql} ${defaultOrder}`
       const fullParams = [...params]
       if (query.limit) {
         fullSql += ` LIMIT ?`

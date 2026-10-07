@@ -16,12 +16,12 @@ import { withOperatingWarehouses, isWarehouseInScope, getRegisteredWarehouses } 
 export function normalizeRole(r: string): Role {
   const clean = String(r || "").toLowerCase().trim()
   if (clean === "admin" || clean === "super_admin" || clean === "superadmin") return "superadmin"
-  if (clean === "sales" || clean === "sales_manager") return "sales_manager"
-  if (clean === "hr" || clean === "hr_manager") return "hr_manager"
-  if (clean === "inventory" || clean === "inventory_admin" || clean === "inventory_manager") return "inventory_admin"
-  if (clean === "finance" || clean === "finance_manager") return "finance_manager"
-  if (clean === "hkc_docs" || clean === "hkc_docs_manager" || clean === "hkcdocs" || clean === "docs_specialist" || clean === "docs") return "hkc_docs_manager"
-  return clean as Role
+  if (clean === "sales" || clean === "sales_manager") return "sales"
+  if (clean === "hr" || clean === "hr_manager") return "hr"
+  if (clean === "inventory" || clean === "inventory_admin" || clean === "inventory_manager") return "inventory"
+  if (clean === "finance" || clean === "finance_manager") return "finance"
+  if (clean === "hkc_docs" || clean === "hkc_docs_manager" || clean === "hkcdocs" || clean === "docs_specialist" || clean === "docs") return "hkc_docs"
+  return (clean as Role) || "sales"
 }
 
 export interface UserAccount {
@@ -51,13 +51,13 @@ interface Employee {
   status: string
 }
 
-const roleLabels: Record<string, string> = {
+const roleLabels: Record<Role, string> = {
   superadmin: "Super Admin",
-  sales_manager: "Sales",
-  hr_manager: "HR",
-  inventory_admin: "Inventory",
-  finance_manager: "Finance",
-  hkc_docs_manager: "HKC Docs Specialist",
+  sales: "Sales",
+  hr: "HR",
+  inventory: "Inventory",
+  finance: "Finance",
+  hkc_docs: "HKC Docs",
 }
 
 export function isWarehouseChecked(wh: Warehouse, selectedIds: string[] | undefined): boolean {

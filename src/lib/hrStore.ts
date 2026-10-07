@@ -325,7 +325,7 @@ class HRStore {
   public async loadFromApi(force = false) {
     const user = useAuthStore.getState().user
     const roles = user?.roles || []
-    const isAuthorized = roles.includes("hr_manager") || roles.includes("superadmin")
+    const isAuthorized = roles.some((r) => ["hr", "superadmin"].includes(r))
 
     if (!useAuthStore.getState().token || !isAuthorized) {
       return
@@ -341,8 +341,8 @@ class HRStore {
         leaveTypes,
         leaveRequests,
       ] = await Promise.all([
-        loadResource<LeaveType>("leave_types"),
-        loadResource<LeaveRequest>("leave_requests"),
+        Promise.resolve([]),
+        loadResource<LeaveRequest>("leave_requests").catch(() => []),
       ])
 
       // employees are intentionally NOT loaded here — they are owned exclusively
@@ -361,7 +361,6 @@ class HRStore {
   private saveToApi() {
     // employees are intentionally excluded — written only via hrApi to prevent schema collision.
     return persistResources([
-      { resource: "leave_types", items: this.leaveTypes },
       { resource: "leave_requests", items: this.leaveRequests },
     ])
   }

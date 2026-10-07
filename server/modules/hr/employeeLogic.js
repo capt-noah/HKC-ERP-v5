@@ -1,9 +1,9 @@
 import { pool } from "../../db/client.js"
-import { unwrapRow } from "../../db/dbUtils.js"
+import { getTableColumns, normalizeBodyToDbColumns, sanitizeSqlValue, unwrapRow } from "../../db/dbUtils.js"
 
 export async function listEmployees(query = {}) {
   const [rows] = await pool.query("SELECT * FROM `employees` ORDER BY created_at DESC")
-  let list = rows.map((r) => unwrapRow(r, "jsonb_document"))
+  let list = rows.map((r) => unwrapRow(r, "relational"))
 
   if (query.warehouse_id || query.warehouse) {
     const wh = String(query.warehouse_id || query.warehouse).trim()
@@ -28,28 +28,35 @@ export async function getEmployee(id) {
   const cleanId = String(id).trim()
   const [rows] = await pool.query("SELECT * FROM `employees` WHERE id = ?", [cleanId])
   if (rows.length === 0) return { status: 404, body: { error: `Employee '${cleanId}' not found.` } }
-  return { status: 200, body: unwrapRow(rows[0], "jsonb_document") }
+  return { status: 200, body: unwrapRow(rows[0], "relational") }
 }
 
 export async function createEmployee(body = {}) {
   const empId = body.id || `EMP-${Date.now()}`
   const employeeNumber = body.employee_number || `HKC-${String(Date.now()).slice(-4)}`
-  const record = {
+  const validCols = await getTableColumns("employees")
+  const rawData = {
     ...body,
     id: empId,
     employee_number: employeeNumber,
     status: body.status || "Active",
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    basic_salary: Number(body.basic_salary ?? body.salary ?? 0),
+    employment_type: body.employment_type || body.employmentType || "Permanent",
   }
+  const normalized = normalizeBodyToDbColumns(rawData, validCols)
+  const fields = Object.keys(normalized).filter(
+    (k) => k !== "created_at" && k !== "updated_at" && (!validCols || validCols.has(k))
+  )
+  const placeholders = fields.map(() => "?").join(", ")
+  const values = fields.map((k) => sanitizeSqlValue(normalized[k]))
 
   await pool.query(
-    "INSERT INTO `employees` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3))",
-    [empId, JSON.stringify(record)]
+    `INSERT INTO \`employees\` (\`${fields.join("`, `")}\`) VALUES (${placeholders})`,
+    values
   )
 
   const [rows] = await pool.query("SELECT * FROM `employees` WHERE id = ?", [empId])
-  return { status: 201, body: unwrapRow(rows[0], "jsonb_document") }
+  return { status: 201, body: unwrapRow(rows[0], "relational") }
 }
 
 export async function updateEmployee(id, updates = {}) {
@@ -57,20 +64,21 @@ export async function updateEmployee(id, updates = {}) {
   const [rows] = await pool.query("SELECT * FROM `employees` WHERE id = ?", [cleanId])
   if (rows.length === 0) return { status: 404, body: { error: `Employee '${cleanId}' not found.` } }
 
-  const current = unwrapRow(rows[0], "jsonb_document")
-  const merged = {
-    ...current,
-    ...updates,
-    id: cleanId,
-    updated_at: new Date().toISOString(),
-  }
-
-  await pool.query(
-    "UPDATE `employees` SET payload = ?, updated_at = NOW(3) WHERE id = ?",
-    [JSON.stringify(merged), cleanId]
+  const validCols = await getTableColumns("employees")
+  const normalized = normalizeBodyToDbColumns(updates, validCols)
+  const updateCols = Object.keys(normalized).filter(
+    (k) => k !== "id" && k !== "created_at" && (!validCols || validCols.has(k))
   )
 
-  return { status: 200, body: merged }
+  if (updateCols.length > 0) {
+    const setClauses = updateCols.map((c) => `\`${c}\` = ?`).join(", ")
+    const setValues = updateCols.map((k) => sanitizeSqlValue(normalized[k]))
+    setValues.push(cleanId)
+    await pool.query(`UPDATE \`employees\` SET ${setClauses}, updated_at = NOW(3) WHERE id = ?`, setValues)
+  }
+
+  const [updatedRows] = await pool.query("SELECT * FROM `employees` WHERE id = ?", [cleanId])
+  return { status: 200, body: unwrapRow(updatedRows[0], "relational") }
 }
 
 export async function deleteEmployee(id) {

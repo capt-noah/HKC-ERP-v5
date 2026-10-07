@@ -36,8 +36,6 @@ const RESOURCE_MODULE_MAP: Record<string, string> = {
   invoices: "finance",
   payments: "finance",
   expenses: "finance",
-  recurring_expense_schedules: "finance",
-  vehicles: "finance",
   company_settings: "finance",
   tax_rules: "finance",
 
@@ -45,7 +43,6 @@ const RESOURCE_MODULE_MAP: Record<string, string> = {
   attendance_records: "hr",
   payroll_periods: "hr",
   payroll_records: "hr",
-  leave_types: "hr",
   leave_requests: "hr",
 
   users: "admin",
@@ -62,14 +59,14 @@ export function evaluateRoleScoping(resourceName: string, userRoles: Role[]): "A
   const mod = RESOURCE_MODULE_MAP[resourceName]
   if (!mod) return "AUTHORIZED"
 
-  if (mod === "inventory" && userRoles.includes("inventory_admin")) return "AUTHORIZED"
-  if (mod === "sales" && (userRoles.includes("sales_manager") || userRoles.includes("hkc_docs_manager"))) return "AUTHORIZED"
-  if (mod === "finance" && userRoles.includes("finance_manager")) return "AUTHORIZED"
-  if (mod === "hr" && userRoles.includes("hr_manager")) return "AUTHORIZED"
+  if (mod === "inventory" && userRoles.includes("inventory")) return "AUTHORIZED"
+  if (mod === "sales" && (userRoles.includes("sales") || userRoles.includes("hkc_docs"))) return "AUTHORIZED"
+  if (mod === "finance" && userRoles.includes("finance")) return "AUTHORIZED"
+  if (mod === "hr" && userRoles.includes("hr")) return "AUTHORIZED"
   if (mod === "admin" && userRoles.includes("superadmin")) return "AUTHORIZED"
 
   // Special cross-module allowances:
-  const isOperationalStaff = userRoles.some((r) => ["sales_manager", "hkc_docs_manager", "finance_manager", "inventory_admin"].includes(r))
+  const isOperationalStaff = userRoles.some((r) => ["sales", "hkc_docs", "finance", "inventory"].includes(r))
   if (isOperationalStaff) {
     if (["company_settings", "tax_rules", "chart_of_accounts", "accounts", "invoices", "payments"].includes(resourceName)) {
       return "AUTHORIZED"

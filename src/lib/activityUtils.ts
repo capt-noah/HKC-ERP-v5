@@ -346,7 +346,7 @@ export function resolveActivityDetails(
     }
   }
 
-  if (rawResource === "leave_requests" || rawResource === "leave_types") {
+  if (rawResource === "leave_requests") {
     return {
       activityType: "Leave Request",
       description: resolveEmpName(`Leave request ${itemId ? `#${itemId}` : "entry"}`),

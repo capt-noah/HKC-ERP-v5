@@ -4,8 +4,8 @@ import { authorizeRoles } from "../modules/auth/authMiddleware.js"
 
 export const inventoryRouter = Router()
 
-// Enforce RBAC: Only superadmin and inventory_admin can execute mutations on inventory routes
-const requireInventoryMutation = authorizeRoles("superadmin", "inventory_admin")
+// Enforce RBAC: Only superadmin and inventory can execute mutations on inventory routes
+const requireInventoryMutation = authorizeRoles("superadmin", "inventory")
 
 
 // ── 1. Products (Strict Route Scoping for Export Commodities vs Pharmaceuticals) ────

@@ -322,15 +322,44 @@ export default function FinancialReports() {
 
   const sortedGlTransactions = glTable.sorted()
 
-  const accountsByType = {
+  const lineBalancesMap = useMemo(() => {
+    const map = new Map<string, { dr: number; cr: number }>()
+    for (const line of lines) {
+      const aId = String(line.account_id || "").trim()
+      const aCode = String((line as any).account_code || "").trim()
+      const dr = Number(line.debit_amount || (line as any).debit || 0)
+      const cr = Number(line.credit_amount || (line as any).credit || 0)
+
+      const acc = (k: string) => {
+        if (!k) return
+        const cur = map.get(k) || { dr: 0, cr: 0 }
+        cur.dr += dr
+        cur.cr += cr
+        map.set(k, cur)
+      }
+      acc(aId)
+      if (aCode && aCode !== aId) acc(aCode)
+      if (aId.startsWith("ACC-")) acc(aId.replace("ACC-", ""))
+      else acc(`ACC-${aId}`)
+    }
+    return map
+  }, [lines])
+
+  const accountBalance = (account: typeof accounts[number]) => {
+    const b = lineBalancesMap.get(account.id) || lineBalancesMap.get(account.code || "") || { dr: 0, cr: 0 }
+    return account.account_type === "Asset" || account.account_type === "Expense"
+      ? b.dr - b.cr
+      : b.cr - b.dr
+  }
+
+  const accountsByType = useMemo(() => ({
     Asset: accounts.filter((a) => a.account_type === "Asset"),
     Liability: accounts.filter((a) => a.account_type === "Liability"),
     Equity: accounts.filter((a) => a.account_type === "Equity"),
     Revenue: accounts.filter((a) => a.account_type === "Revenue"),
     Expense: accounts.filter((a) => a.account_type === "Expense"),
-  }
+  }), [accounts])
 
-  const accountBalance = (account: typeof accounts[number]) => lines.filter((line) => line.account_id === account.id).reduce((total, line) => total + (account.account_type === "Asset" || account.account_type === "Expense" ? line.debit_amount - line.credit_amount : line.credit_amount - line.debit_amount), 0)
   const totalAssets = accountsByType.Asset.reduce((s, account) => s + accountBalance(account), 0)
   const totalLiabilities = accountsByType.Liability.reduce((s, account) => s + accountBalance(account), 0)
   const totalEquity = accountsByType.Equity.reduce((s, account) => s + accountBalance(account), 0)
