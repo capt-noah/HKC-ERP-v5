@@ -63,6 +63,14 @@ crudRouter.use("/:resource", (req, res, next) => {
     isAllowed = true
   }
 
+  // Allow operational roles (inventory_admin, sales_manager) to post and clean up automated stock/operational journal entries
+  if (
+    ["journal_entries", "journal_entry_lines"].includes(req.params.resource) &&
+    userRoles.some((r) => ["inventory_admin", "sales_manager", "hkc_docs_manager", "finance_manager", "superadmin", "admin", "system_admin", "general_manager"].includes(r))
+  ) {
+    isAllowed = true
+  }
+
   // Cross-module READ permissions for ERP operational flow
   if (req.method === "GET") {
     const resName = req.params.resource

@@ -12,6 +12,7 @@ import {
   AlertOctagon,
   FileSpreadsheet,
   Lock,
+  Package,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -62,8 +63,12 @@ interface StockEditForm {
   dosage?: string
   shelfNo?: string
   category: string
+  subCategory?: string
+  storageCondition?: string
   warehouse: string
   batch: string
+  mfgDate?: string
+  manufacturingDate?: string
   expiry: string
   entryDate?: string
   leaveDate?: string
@@ -198,8 +203,6 @@ export default function StockProducts() {
   const [addNotes, setAddNotes] = useState("")
   const [isSavingAdd, setIsSavingAdd] = useState(false)
 
-  // Autocomplete state for WH1 existing items lookup
-  const [showItemSuggestions, setShowItemSuggestions] = useState(false)
   const [selectedExistingProduct, setSelectedExistingProduct] = useState<Product | null>(null)
 
   // Direct Slim Add Entry Modal
@@ -219,6 +222,8 @@ export default function StockProducts() {
   const [editSubEntryNotes, setEditSubEntryNotes] = useState("")
   const [isSavingSubEdit, setIsSavingSubEdit] = useState(false)
   const [showEditParentSupplierDropdown, setShowEditParentSupplierDropdown] = useState(false)
+  const [deletingSubEntry, setDeletingSubEntry] = useState<{ product: Product; entry: WH1Entry } | null>(null)
+  const [isDeletingSubEntry, setIsDeletingSubEntry] = useState(false)
 
   // Bin Card Movement Modal State (WH2 / WH3)
   const [binEntryModal, setBinEntryModal] = useState<{
@@ -258,8 +263,11 @@ export default function StockProducts() {
     dosage: "",
     shelfNo: "",
     category: "",
+    subCategory: "",
+    storageCondition: "",
     warehouse: "",
     batch: "",
+    mfgDate: "",
     expiry: "",
     entryDate: "",
     leaveDate: "",
@@ -271,6 +279,24 @@ export default function StockProducts() {
     approvalStatus: "Approved",
   })
   const [isSavingEdit, setIsSavingEdit] = useState(false)
+
+  // Confirmation modal state for adding parent stock item or incoming child batch
+  const [pendingAddConfirm, setPendingAddConfirm] = useState<{
+    isChild: boolean
+    addAnother: boolean
+    title: string
+    itemName: string
+    sku: string
+    warehouse: string
+    batchNo: string
+    mfgDate: string
+    expDate: string
+    quantity: number
+    cartons?: number
+    unitCost: number
+    totalValuation: number
+    unit: string
+  } | null>(null)
 
   const isWH1Form = isWH1(addWarehouse)
 
@@ -401,16 +427,6 @@ export default function StockProducts() {
     })
   }, [products, searchQuery, selectedWarehouse, expiryFilter])
 
-  // Suggested matching existing items list for WH1 & Import Warehouses auto-complete lookup
-  const stockItemSuggestions = useMemo(() => {
-    if (!addDescription || addDescription.length < 2) return []
-    const q = addDescription.toLowerCase()
-    if (isWH1Form) {
-      return products.filter((p) => isWH1(p.warehouse) && (p?.name || "").toLowerCase().includes(q))
-    }
-    return products.filter((p) => !isWH1(p.warehouse) && matchesWarehouse(p.warehouse, addWarehouse) && (p?.name || "").toLowerCase().includes(q))
-  }, [products, addDescription, isWH1Form, addWarehouse])
-
   // Table Column Definitions
   const currentProductColumns = useMemo(() => {
     const cols: TableColumn[] = [
@@ -500,8 +516,8 @@ export default function StockProducts() {
     setExpandedProductIds(next)
   }
 
-  // Handle Save product form
-  const handleSaveNewStockItem = async (addAnother = false) => {
+  // Step 1: Validate and initiate confirmation modal for saving stock item or incoming batch
+  const handleInitiateSaveNewStockItem = (addAnother = false) => {
     if (Number(addUnitPrice || 0) <= 0) {
       showToast("Cannot save item", "warning", "Cost Price per unit is mandatory and must be greater than 0 ETB.")
       return
@@ -518,6 +534,35 @@ export default function StockProducts() {
       showToast("Cannot save item", "warning", "Complete all required stock fields and resolve warnings.")
       return
     }
+
+    const isChild = Boolean(selectedExistingProduct)
+    const selectedWarehouseRecord = warehouseRecords.find((item) => (item.code || item.id) === addWarehouse || item.id === addWarehouse)
+    const targetUOM = isWH1Form ? "Quintal" : addPackagingUnit
+
+    setPendingAddConfirm({
+      isChild,
+      addAnother,
+      title: isChild
+        ? (isWH1Form ? "Confirm Export Sub-Entry Intake" : "Confirm Incoming Batch Intake")
+        : (isWH1Form ? "Confirm New Export Stock Item" : "Confirm New Stock Item Registration"),
+      itemName: isChild ? selectedExistingProduct!.name : addDescription,
+      sku: isChild ? selectedExistingProduct!.sku : `${addDescription.slice(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, "STK")}-${isWH1Form ? "WH1" : addBatchNumber}`,
+      warehouse: selectedWarehouseRecord?.name || addWarehouse,
+      batchNo: isWH1Form ? (addVoucherNo.trim() || "N/A") : (addBatchNumber.trim() || "N/A"),
+      mfgDate: isWH1Form ? (addEntryDate || "N/A") : (addMfgDate || "N/A"),
+      expDate: isWH1Form ? "N/A" : (addExpDate || "N/A"),
+      quantity: addTotalQuantity,
+      cartons: isWH1Form ? undefined : Number(addNumCartons || 0),
+      unitCost: Number(addUnitPrice || (isChild ? selectedExistingProduct?.unitCost : 0) || 0),
+      totalValuation: addTotalStockValue,
+      unit: targetUOM,
+    })
+  }
+
+  // Step 2: Commit confirmed stock intake to Inventory and General Ledger
+  const handleExecuteSaveNewStockItem = async () => {
+    if (!pendingAddConfirm) return
+    const addAnother = pendingAddConfirm.addAnother
 
     setIsSavingAdd(true)
     try {
@@ -558,7 +603,7 @@ export default function StockProducts() {
 
           // Automatically record GL stock intake in General Ledger
           try {
-            financeStore.recordStockIntake({
+            await financeStore.recordStockIntake({
               productId: selectedExistingProduct.id,
               productName: selectedExistingProduct.name,
               sku: selectedExistingProduct.sku,
@@ -599,7 +644,7 @@ export default function StockProducts() {
 
           // Automatically record GL stock intake in General Ledger
           try {
-            financeStore.recordStockIntake({
+            await financeStore.recordStockIntake({
               productId: selectedExistingProduct.id,
               productName: selectedExistingProduct.name,
               sku: selectedExistingProduct.sku,
@@ -727,6 +772,7 @@ export default function StockProducts() {
         showToast("Stock item saved", "success", `${addDescription} was saved to inventory.`)
       }
 
+      setPendingAddConfirm(null)
       if (addAnother) {
         resetAddForm()
       } else {
@@ -780,7 +826,7 @@ export default function StockProducts() {
       const effectiveCost = Number(entryObj?.unitPrice ?? prod.unitCost ?? 0)
       const recordId = rejectData.voucherNo || rejectData.entryId || `${productId}-${Date.now()}`
       try {
-        financeStore.recordStockLoss({
+        await financeStore.recordStockLoss({
           productId,
           productName: prod.name,
           lossType: "reject",
@@ -855,14 +901,38 @@ export default function StockProducts() {
     }
   }
 
-  const handleDeleteSubEntry = async (product: Product, entryId: string) => {
-    if (confirm("Are you sure you want to delete this sub-entry? This will decrease the overall product stock.")) {
-      try {
-        await erp.deleteWH1Entry(product.id, entryId)
-        showToast("Entry deleted", "info", "Sub-entry was removed from inventory.")
-      } catch (e) {
-        showToast("Delete failed", "warning", e instanceof Error ? e.message : "Failed to delete entry.")
-      }
+  const handleDeleteSubEntry = (product: Product, entryOrId: WH1Entry | string) => {
+    const foundEntry = typeof entryOrId === "string"
+      ? (product.wh1Entries || []).find((e) => e.entryId === entryOrId || e.id === entryOrId)
+      : entryOrId
+    const entry: WH1Entry = foundEntry || {
+      entryId: typeof entryOrId === "string" ? entryOrId : "",
+      entryDate: new Date().toISOString().slice(0, 10),
+      quantityReceived: 0,
+      quantityRemaining: 0,
+      unitPrice: 0,
+    }
+    setDeletingSubEntry({ product, entry })
+  }
+
+  const handleConfirmDeleteSubEntry = async () => {
+    if (!deletingSubEntry) return
+    setIsDeletingSubEntry(true)
+    try {
+      const entryId = deletingSubEntry.entry.entryId || deletingSubEntry.entry.id
+      if (!entryId) throw new Error("Entry ID is missing.")
+      await erp.deleteWH1Entry(deletingSubEntry.product.id, entryId)
+      showToast(
+        "Entry deleted",
+        "info",
+        `Sub-entry ${deletingSubEntry.entry.voucherNo ? `(Voucher: ${deletingSubEntry.entry.voucherNo})` : ""} was removed from inventory.`
+      )
+      setDeletingSubEntry(null)
+      setEditingSubEntry(null)
+    } catch (e: any) {
+      showToast("Delete failed", "warning", e instanceof Error ? e.message : "Failed to delete entry.")
+    } finally {
+      setIsDeletingSubEntry(false)
     }
   }
 
@@ -914,8 +984,11 @@ export default function StockProducts() {
       dosage: product.dosage || (product as any).strength || (product as any).dosage_form || "",
       shelfNo: product.shelfNo || (product as any).shelf_number || (product as any).shelf_no || "",
       category: product.category || "",
+      subCategory: (product as any).subCategory || (product as any).sub_category || "",
+      storageCondition: (product as any).storageCondition || (product as any).storage_condition || "",
       warehouse: resolvedWarehouse,
       batch: product.batch || (product.batches?.[0]?.batchNo || ""),
+      mfgDate: product.manufacturingDate || (product as any).mfgDate || product.batches?.[0]?.mfgDate || (product as any).mfg_date || "",
       expiry: product.expiry || (product.batches?.[0]?.expiry || ""),
       entryDate: product.entryDate || "",
       leaveDate: product.leaveDate || "",
@@ -923,7 +996,7 @@ export default function StockProducts() {
       numberOfCartons: String(product.numberOfCartons || (product as any).number_of_cartons || 0),
       unit: product.unit || (isWh1 ? "Quintal" : "Box"),
       unitCost: String(product.unitCost || 0),
-      sellingPrice: String(product.sellingPrice || 0),
+      sellingPrice: String(product.sellingPrice || product.batches?.[0]?.sellingPrice || 0),
       price: isWh1 ? String(product.unitCost || 0) : "",
       reorderLevel: String(product.reorderLevel || ""),
       approvalStatus: product.approvalStatus || "Approved",
@@ -946,6 +1019,7 @@ export default function StockProducts() {
     const dosage = isWh1 ? undefined : (editForm.dosage?.trim() || undefined)
     const shelfNo = isWh1 ? undefined : (editForm.shelfNo?.trim() || undefined)
     const batch = isWh1 ? "" : editForm.batch.trim()
+    const mfgDate = editForm.mfgDate ? editForm.mfgDate.trim() : ""
     const expiry = isWh1 ? "" : editForm.expiry
     const entryDate = isWh1 ? editForm.entryDate : undefined
     const leaveDate = (isWh1 && editForm.leaveDate) ? editForm.leaveDate : undefined
@@ -955,7 +1029,7 @@ export default function StockProducts() {
     
     const priceVal = isWh1 ? Number(editForm.price || 0) : Number(editForm.unitCost || 0)
     const unitCost = priceVal
-    const sellingPrice = priceVal
+    const sellingPrice = Number(editForm.sellingPrice || priceVal || 0)
     const reorderLevel = editForm.reorderLevel === "" ? undefined : Number(editForm.reorderLevel)
 
     if (isWh1) {
@@ -985,8 +1059,21 @@ export default function StockProducts() {
       ? editingProduct.stockBreakdown.map((item, index) => index === 0 ? { ...item, warehouse } : item)
       : [{ warehouse, qty: editingProduct.quantity }]
     const nextBatches = isWh1 ? [] : (editingProduct.batches.length
-      ? editingProduct.batches.map((item, index) => index === 0 ? { ...item, batchNo: batch, expiry: expiry || item.expiry } : item)
-      : [{ batchNo: batch || "BATCH-01", qty: editingProduct.quantity, expiry: expiry || "", status: "Released" as const }])
+      ? editingProduct.batches.map((item, index) => index === 0 ? {
+          ...item,
+          batchNo: batch,
+          mfgDate: mfgDate || item.mfgDate,
+          expiry: expiry || item.expiry,
+          sellingPrice: sellingPrice > 0 ? sellingPrice : item.sellingPrice,
+        } : item)
+      : [{
+          batchNo: batch || "BATCH-01",
+          qty: editingProduct.quantity,
+          mfgDate: mfgDate || "",
+          expiry: expiry || "",
+          sellingPrice: sellingPrice > 0 ? sellingPrice : undefined,
+          status: "Released" as const
+        }])
 
     const hasWH1Entries = isWh1 && Array.isArray(editingProduct.wh1Entries) && (editingProduct.wh1Entries || []).length > 0
     const computedTotalStockVal = hasWH1Entries
@@ -1008,6 +1095,7 @@ export default function StockProducts() {
         warehouseName: selectedWarehouseRecord?.name,
         batch,
         expiry,
+        manufacturingDate: mfgDate || undefined,
         entryDate,
         leaveDate,
         quantityPerPack,
@@ -1798,12 +1886,34 @@ export default function StockProducts() {
                         />
                       </label>
                       <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Category</span>
+                        <input 
+                          value={editForm.category || ""} 
+                          placeholder="e.g. Antibiotic / Anthelmintic" 
+                          onChange={(e) => updateEditForm({ category: e.target.value })} 
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs" 
+                        />
+                      </label>
+                      <label className="space-y-1">
                         <span className="block text-[11px] font-black uppercase text-zinc-500">Batch Number</span>
                         <input value={editForm.batch} onChange={(e) => updateEditForm({ batch: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
                       </label>
+
+                      {/* Manufacturing Date */}
+                      <label className="space-y-1">
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Manufacturing Date (MFG)</span>
+                        <input 
+                          type="date" 
+                          value={editForm.mfgDate || ""} 
+                          onChange={(e) => updateEditForm({ mfgDate: e.target.value })} 
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
+                        />
+                      </label>
+
+                      {/* Expiry Date */}
                       <label className="space-y-1">
                         <div className="flex items-center justify-between">
-                          <span className="block text-[11px] font-black uppercase text-zinc-500">Expiry Date</span>
+                          <span className="block text-[11px] font-black uppercase text-zinc-500">Expiry Date (EXP)</span>
                           {editForm.expiry && (() => {
                             const s = getExpiryStatus(editForm.expiry)
                             if (s.tier !== "UNKNOWN") {
@@ -1818,6 +1928,7 @@ export default function StockProducts() {
                         </div>
                         <input type="date" value={editForm.expiry} onChange={(e) => updateEditForm({ expiry: e.target.value })} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
                       </label>
+
                       <label className="space-y-1">
                         <span className="block text-[11px] font-black uppercase text-zinc-500">Packaging Unit</span>
                         <select 
@@ -1835,39 +1946,25 @@ export default function StockProducts() {
                           <option value="Tube">Tube</option>
                         </select>
                       </label>
+
+                      {/* Selling Price - Commercial, freely editable */}
                       <label className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="block text-[11px] font-black uppercase text-zinc-500">Quantity Per Pack (Pack Size)</span>
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
-                            <Lock className="size-2.5" /> Locked (GL)
-                          </span>
-                        </div>
+                        <span className="block text-[11px] font-black uppercase text-zinc-500">Selling Price (ETB)</span>
                         <input 
                           type="number"
-                          readOnly
-                          value={editForm.quantityPerPack || "1"} 
-                          className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100/80 px-3 text-xs font-mono text-zinc-600 cursor-not-allowed" 
-                          title="Pack size is locked to preserve General Ledger inventory valuation consistency."
+                          step="0.01"
+                          min="0"
+                          value={editForm.sellingPrice || ""} 
+                          onChange={(e) => updateEditForm({ sellingPrice: e.target.value })} 
+                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
+                          placeholder="e.g. 150.00"
                         />
                       </label>
+
+                      {/* Cost Price - Locked for GL inventory valuation consistency */}
                       <label className="space-y-1">
                         <div className="flex items-center justify-between">
-                          <span className="block text-[11px] font-black uppercase text-zinc-500">Number of Cartons</span>
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
-                            <Lock className="size-2.5" /> Locked (GL)
-                          </span>
-                        </div>
-                        <input 
-                          type="number"
-                          readOnly
-                          value={editForm.numberOfCartons || "0"} 
-                          className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100/80 px-3 text-xs font-mono text-zinc-600 cursor-not-allowed" 
-                          title="Quantity is tracked by intake movements and bin ledger. To add stock, register a new incoming batch."
-                        />
-                      </label>
-                      <label className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="block text-[11px] font-black uppercase text-zinc-500">Unit Price (ETB)</span>
+                          <span className="block text-[11px] font-black uppercase text-zinc-500">Unit Cost Price (ETB)</span>
                           <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
                             <Lock className="size-2.5" /> Locked (GL)
                           </span>
@@ -1880,17 +1977,41 @@ export default function StockProducts() {
                           title="Cost price is locked to maintain Chart of Accounts General Ledger inventory valuation consistency."
                         />
                       </label>
+
+                      {/* Quantity Per Pack - Locked */}
                       <label className="space-y-1">
-                        <span className="block text-[11px] font-black uppercase text-zinc-500">Reorder Level (Optional)</span>
+                        <div className="flex items-center justify-between">
+                          <span className="block text-[11px] font-black uppercase text-zinc-500">Quantity Per Pack (Pack Size)</span>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
+                            <Lock className="size-2.5" /> Locked (Ledger)
+                          </span>
+                        </div>
                         <input 
-                          type="number" 
-                          min="0"
-                          value={editForm.reorderLevel} 
-                          onChange={(e) => updateEditForm({ reorderLevel: e.target.value })} 
-                          className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" 
-                          placeholder="e.g. 50"
+                          type="number"
+                          readOnly
+                          value={editForm.quantityPerPack || "1"} 
+                          className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100/80 px-3 text-xs font-mono text-zinc-600 cursor-not-allowed" 
+                          title="Pack size is locked to preserve General Ledger inventory valuation consistency."
                         />
                       </label>
+
+                      {/* Number of Cartons - Locked */}
+                      <label className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="block text-[11px] font-black uppercase text-zinc-500">Number of Cartons</span>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">
+                            <Lock className="size-2.5" /> Locked (Physical Qty)
+                          </span>
+                        </div>
+                        <input 
+                          type="number"
+                          readOnly
+                          value={editForm.numberOfCartons || "0"} 
+                          className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-100/80 px-3 text-xs font-mono text-zinc-600 cursor-not-allowed" 
+                          title="Quantity is tracked by intake movements and bin ledger. To add stock, register a new incoming batch."
+                        />
+                      </label>
+
                     </>
                   ) : (
                     <>
@@ -2083,50 +2204,9 @@ export default function StockProducts() {
                         placeholder={isWH1Form ? "e.g. Sesame Seed (White)" : "e.g. Amoxicillin 500mg Capsules"}
                         value={addDescription}
                         disabled={!!selectedExistingProduct}
-                        onChange={(e) => {
-                          setAddDescription(e.target.value)
-                          setShowItemSuggestions(true)
-                        }}
+                        onChange={(e) => setAddDescription(e.target.value)}
                         className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs outline-none focus:border-emerald-500"
                       />
-
-                      {/* Auto-complete Suggestions Dropdown */}
-                      {showItemSuggestions && stockItemSuggestions.length > 0 && (
-                        <div className="absolute left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto rounded-xl border border-zinc-150 bg-white p-2 shadow-xl">
-                          {stockItemSuggestions.map((p) => {
-                            const pPackSize = Number(p.quantityPerPack || (p as any).quantity_per_pack || 0)
-                            return (
-                              <button
-                                key={p.id}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedExistingProduct(p)
-                                  setAddDescription(p.name)
-                                  setAddPackagingUnit(p.unit)
-                                  if (p.warehouse) setAddWarehouse(p.warehouse)
-                                  if (pPackSize > 0) setAddQtyPerPack(String(pPackSize))
-                                  if (p.dosage) setAddDosage(p.dosage)
-                                  if (p.shelfNo) setAddShelfNo(p.shelfNo)
-                                  const parentSupp = p.customer || p.supplierName || ""
-                                  if (parentSupp) {
-                                    setAddCustomer(parentSupp)
-                                  }
-                                  setShowItemSuggestions(false)
-                                }}
-                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-50 flex items-center justify-between text-xs font-bold"
-                              >
-                                <div>
-                                  <span className="text-zinc-900">{p.name}</span>
-                                  {pPackSize > 0 && (
-                                    <span className="ml-2 text-[10px] text-zinc-400 font-mono">({pPackSize}/pk)</span>
-                                  )}
-                                </div>
-                                <span className="text-[10px] text-zinc-400">{p.quantity} {p.unit || "units"} left</span>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      )}
                     </div>
 
                     {/* Warehouse */}
@@ -2525,7 +2605,7 @@ export default function StockProducts() {
                     <button
                       type="button"
                       disabled={!canSaveAdd || isSavingAdd}
-                      onClick={() => void handleSaveNewStockItem(true)}
+                      onClick={() => handleInitiateSaveNewStockItem(true)}
                       className="h-10 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-800 px-4 font-bold disabled:opacity-40"
                     >
                       Save & Add Another
@@ -2533,7 +2613,7 @@ export default function StockProducts() {
                     <button
                       type="button"
                       disabled={!canSaveAdd || isSavingAdd}
-                      onClick={() => void handleSaveNewStockItem(false)}
+                      onClick={() => handleInitiateSaveNewStockItem(false)}
                       className="h-10 min-w-[110px] inline-flex items-center justify-center rounded-full bg-zinc-950 hover:bg-zinc-800 text-white font-bold px-5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
                       {isSavingAdd ? <LoadingDots color="bg-white" size="sm" /> : "Save Item"}
@@ -2541,6 +2621,110 @@ export default function StockProducts() {
                   </div>
                 </div>
               </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRMATION MODAL: ADD PARENT STOCK ITEM OR INCOMING CHILD BATCH */}
+      {pendingAddConfirm && (
+        <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-zinc-200 space-y-6">
+            <div className="flex items-start gap-3">
+              <div className={`p-3 rounded-2xl ${pendingAddConfirm.isChild ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
+                <Package className="h-6 w-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                    pendingAddConfirm.isChild ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800"
+                  }`}>
+                    {pendingAddConfirm.isChild ? "Incoming Child Batch" : "New Parent Item"}
+                  </span>
+                  {pendingAddConfirm.addAnother && (
+                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-700">
+                      Add Another After
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-lg font-black text-zinc-950 truncate">
+                  {pendingAddConfirm.title}
+                </h3>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Review the stock intake details and General Ledger valuation impact before confirming.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-4 space-y-3 text-xs">
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">Item Name</span>
+                <span className="font-black text-zinc-900 text-right max-w-[240px] truncate">{pendingAddConfirm.itemName}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">SKU</span>
+                <span className="font-mono font-bold text-zinc-800">{pendingAddConfirm.sku}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">Target Warehouse</span>
+                <span className="font-bold text-zinc-800">{pendingAddConfirm.warehouse}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">Batch / Voucher No</span>
+                <span className="font-mono font-black text-zinc-900 bg-white px-2 py-0.5 rounded-md border border-zinc-200">{pendingAddConfirm.batchNo}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 py-1 border-b border-zinc-200/60">
+                <div>
+                  <span className="block font-semibold text-zinc-500 text-[11px]">Manufacturing Date</span>
+                  <span className="font-mono font-bold text-zinc-800">{pendingAddConfirm.mfgDate}</span>
+                </div>
+                <div>
+                  <span className="block font-semibold text-zinc-500 text-[11px]">Expiry Date</span>
+                  <span className="font-mono font-bold text-zinc-800">{pendingAddConfirm.expDate}</span>
+                </div>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">Intake Quantity</span>
+                <span className="font-black text-emerald-800">
+                  {pendingAddConfirm.quantity.toLocaleString()} {pendingAddConfirm.unit}
+                  {pendingAddConfirm.cartons ? ` (${pendingAddConfirm.cartons} ctns)` : ""}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">Unit Cost Price</span>
+                <span className="font-bold text-zinc-900">
+                  {pendingAddConfirm.unitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ETB
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1.5 bg-emerald-50/80 -mx-2 px-3 rounded-xl border border-emerald-200">
+                <span className="font-black text-emerald-900 text-xs">Total Stock Valuation</span>
+                <span className="font-black text-emerald-950 text-sm">
+                  {pendingAddConfirm.totalValuation.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ETB
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
+              <span className="font-black">General Ledger Impact:</span> This intake will automatically create balanced journal entries debiting Stock Valuation (Account 1400-01 / 1410-01) by {pendingAddConfirm.totalValuation.toLocaleString(undefined, { minimumFractionDigits: 2 })} ETB.
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isSavingAdd}
+                onClick={() => setPendingAddConfirm(null)}
+                className="h-10 rounded-full border border-zinc-200 px-5 font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+              >
+                Back to Edit
+              </button>
+              <button
+                type="button"
+                disabled={isSavingAdd}
+                onClick={() => void handleExecuteSaveNewStockItem()}
+                className="h-10 min-w-[140px] inline-flex items-center justify-center rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-6 shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSavingAdd ? <LoadingDots color="bg-white" size="sm" /> : "Confirm & Save"}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2567,8 +2751,7 @@ export default function StockProducts() {
                 subtitle={`Product: ${editingSubEntry.product.name}`}
                 onClose={() => setEditingSubEntry(null)}
                 onRequestDelete={() => {
-                  handleDeleteSubEntry(editingSubEntry.product, editingSubEntry.entry.entryId)
-                  setEditingSubEntry(null)
+                  handleDeleteSubEntry(editingSubEntry.product, editingSubEntry.entry)
                 }}
                 deleteLabel="Delete This Entry"
               />
@@ -2749,13 +2932,9 @@ export default function StockProducts() {
                   <button
                     type="button"
                     disabled={isSavingSubEdit}
-                    onClick={async () => {
+                    onClick={() => {
                       if (!editingSubEntry) return
-                      const subId = editingSubEntry.entry.entryId || editingSubEntry.entry.id
-                      if (subId) {
-                        await handleDeleteSubEntry(editingSubEntry.product, subId)
-                        setEditingSubEntry(null)
-                      }
+                      handleDeleteSubEntry(editingSubEntry.product, editingSubEntry.entry)
                     }}
                     className="h-9 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 px-4 text-xs font-bold transition-colors cursor-pointer"
                   >
@@ -2827,6 +3006,25 @@ export default function StockProducts() {
         description="This will permanently delete this stock product and all associated movement ledger records from the inventory registry. This action is irreversible."
         onClose={() => setDeletingProduct(null)}
         onConfirmDelete={handleDeleteProductConfirm}
+      />
+
+      {/* MODAL: DELETE WH1 SUB-ENTRY */}
+      <RecordDeleteModal
+        isOpen={!!deletingSubEntry}
+        title="Delete Sub-Entry?"
+        recordId={deletingSubEntry?.entry.voucherNo ? `Voucher: ${deletingSubEntry.entry.voucherNo}` : deletingSubEntry?.entry.entryId}
+        recordName={deletingSubEntry ? `${deletingSubEntry.product.name} — ${Number(deletingSubEntry.entry.quantityReceived || deletingSubEntry.entry.quantity || 0).toLocaleString()} ${deletingSubEntry.product.unit || "Quintal"}` : ""}
+        description={(() => {
+          if (!deletingSubEntry) return ""
+          const isOnlyEntry = (deletingSubEntry.product.wh1Entries || []).length <= 1
+          const base = "This will permanently delete this sub-entry from the warehouse movement ledger and adjust total on-hand stock."
+          return isOnlyEntry
+            ? `${base} Note: This is the only entry for this commodity. Deleting it will reduce total available stock to 0.`
+            : base
+        })()}
+        isDeleting={isDeletingSubEntry}
+        onClose={() => setDeletingSubEntry(null)}
+        onConfirmDelete={handleConfirmDeleteSubEntry}
       />
     </div>
   )

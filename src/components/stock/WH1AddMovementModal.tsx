@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react"
-import { X, ArrowDownLeft, MinusCircle, ChevronDown, CheckCircle2 } from "lucide-react"
+import { X, ArrowDownLeft, MinusCircle, ChevronDown, CheckCircle2, Package } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useErpStore, type Product, type WH1Entry } from "@/lib/erpStore"
 import { financeStore } from "@/lib/financeStore"
+import { LoadingDots } from "@/components/ui/LoadingDots"
 
 interface WH1AddMovementModalProps {
   isOpen: boolean
@@ -51,6 +52,7 @@ export default function WH1AddMovementModal({
   const { showToast } = useFeedback()
   const [activeTab, setActiveTab] = useState<"entry" | "processed" | "reject">("entry")
   const [isSaving, setIsSaving] = useState(false)
+  const [isConfirmEntryOpen, setIsConfirmEntryOpen] = useState(false)
 
   // Inbound Entry Form State
   const [voucherNo, setVoucherNo] = useState("")
@@ -141,7 +143,7 @@ export default function WH1AddMovementModal({
 
   if (!isOpen || !product) return null
 
-  const handleSaveEntrySubmit = async (e: React.FormEvent) => {
+  const handleSaveEntrySubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const rawQty = Number(quantity)
     const costPrice = Number(unitPrice)
@@ -154,6 +156,12 @@ export default function WH1AddMovementModal({
       return
     }
 
+    setIsConfirmEntryOpen(true)
+  }
+
+  const handleExecuteEntrySave = async () => {
+    const rawQty = Number(quantity)
+    const costPrice = Number(unitPrice)
     const finalQty = packagingUnit === "Ton" ? rawQty * TON_TO_QUINTAL : rawQty
 
     setIsSaving(true)
@@ -185,7 +193,7 @@ export default function WH1AddMovementModal({
 
       // Automatically post GL stock intake for inbound movement
       try {
-        financeStore.recordStockIntake({
+        await financeStore.recordStockIntake({
           productId: product.id,
           productName: product.name,
           sku: product.sku,
@@ -202,6 +210,7 @@ export default function WH1AddMovementModal({
       }
 
       showToast("Success", "success", `Inbound entry of ${finalQty.toLocaleString()} Quintals recorded.`)
+      setIsConfirmEntryOpen(false)
       onClose()
     } catch (err: any) {
       showToast("Save Error", "warning", err.message || "Failed to record inbound entry.")
@@ -299,7 +308,8 @@ export default function WH1AddMovementModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+    <>
+      <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
       <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl border border-zinc-200">
           {/* Header */}
           <div className="flex items-center justify-between pb-3 mb-4 border-b border-zinc-150">
@@ -847,5 +857,99 @@ export default function WH1AddMovementModal({
           )}
         </div>
       </div>
+
+      {/* CONFIRMATION MODAL: INCOMING EXPORT SUB-ENTRY */}
+      {isConfirmEntryOpen && (
+        <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-zinc-200 space-y-6">
+            <div className="flex items-start gap-3">
+              <div className="p-3 rounded-2xl bg-blue-50 text-blue-700 border border-blue-200">
+                <Package className="h-6 w-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                    Incoming Export Sub-Entry
+                  </span>
+                </div>
+                <h3 className="text-lg font-black text-zinc-950 truncate">
+                  Confirm Export Sub-Entry Intake
+                </h3>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Review the export stock intake details and General Ledger valuation impact before confirming.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-4 space-y-3 text-xs">
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">Item Name</span>
+                <span className="font-black text-zinc-900 text-right max-w-[240px] truncate">{product.name}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">SKU</span>
+                <span className="font-mono font-bold text-zinc-800">{product.sku}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">Voucher / GRV #</span>
+                <span className="font-mono font-black text-zinc-900 bg-white px-2 py-0.5 rounded-md border border-zinc-200">{voucherNo.trim() || "N/A"}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 py-1 border-b border-zinc-200/60">
+                <div>
+                  <span className="block font-semibold text-zinc-500 text-[11px]">Plate Number</span>
+                  <span className="font-mono font-bold text-zinc-800">{plateNumber.trim() || "N/A"}</span>
+                </div>
+                <div>
+                  <span className="block font-semibold text-zinc-500 text-[11px]">Entry Date</span>
+                  <span className="font-mono font-bold text-zinc-800">{entryDate}</span>
+                </div>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">Intake Quantity</span>
+                <span className="font-black text-emerald-800">
+                  {(packagingUnit === "Ton" ? Number(quantity || 0) * TON_TO_QUINTAL : Number(quantity || 0)).toLocaleString()} Quintals
+                  {packagingUnit === "Ton" ? ` (${Number(quantity || 0)} Tons)` : ""}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">Unit Cost Price</span>
+                <span className="font-bold text-zinc-900">
+                  {Number(unitPrice || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ETB
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1.5 bg-emerald-50/80 -mx-2 px-3 rounded-xl border border-emerald-200">
+                <span className="font-black text-emerald-900 text-xs">Total Stock Valuation</span>
+                <span className="font-black text-emerald-950 text-sm">
+                  {((packagingUnit === "Ton" ? Number(quantity || 0) * TON_TO_QUINTAL : Number(quantity || 0)) * Number(unitPrice || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ETB
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
+              <span className="font-black">General Ledger Impact:</span> This intake will automatically create balanced journal entries debiting Stock Valuation (Account 1410-01) by {((packagingUnit === "Ton" ? Number(quantity || 0) * TON_TO_QUINTAL : Number(quantity || 0)) * Number(unitPrice || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })} ETB.
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => setIsConfirmEntryOpen(false)}
+                className="h-10 rounded-full border border-zinc-200 px-5 font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+              >
+                Back to Edit
+              </button>
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => void handleExecuteEntrySave()}
+                className="h-10 min-w-[140px] inline-flex items-center justify-center rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-6 shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSaving ? <LoadingDots color="bg-white" size="sm" /> : "Confirm & Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   )
 }

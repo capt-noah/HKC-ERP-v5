@@ -1227,9 +1227,11 @@ class ErpStore {
 
     if (!isWh1 && Array.isArray(product.batches) && product.batches.length > 0) {
       const releasedQty = product.batches
-        .filter((b) => b.status === "Released")
+        .filter((b) => b.status === "Released" || (b as any).qaStatus === "Released" || (b as any).qa_status === "Released" || (!b.status && (b as any).qaStatus !== "Quarantined" && (b as any).qa_status !== "Quarantined"))
         .reduce((sum, b) => sum + Number(b.qty ?? (b as any).quantity ?? 0), 0)
-      quantity = releasedQty
+      if (releasedQty > 0 || product.batches.length > 0) {
+        quantity = releasedQty
+      }
     }
 
     let totalStockValue = Math.round(quantity * unitCost * 100) / 100
@@ -1242,7 +1244,7 @@ class ErpStore {
     } else if (!isWh1) {
       if (Array.isArray(product.batches) && product.batches.length > 0) {
         const batchSum = product.batches
-          .filter((b) => b.status !== "Quarantined")
+          .filter((b) => b.status !== "Quarantined" && (b as any).qaStatus !== "Quarantined" && (b as any).qa_status !== "Quarantined")
           .reduce(
             (sum, b) => sum + (Number(b.qty ?? (b as any).quantity ?? 0) * Number((b as any).unitPrice ?? (b as any).unit_cost ?? unitCost ?? 0)),
             0
@@ -1260,7 +1262,15 @@ class ErpStore {
         ? product.stockBreakdown
         : [{ warehouse: product.warehouse || "WH1", qty: quantity }]
 
-    const batches = Array.isArray(product.batches) ? product.batches : []
+    const batches = Array.isArray(product.batches)
+      ? product.batches.map((b) => ({
+          ...b,
+          qty: Number(b.qty ?? (b as any).quantity ?? 0),
+          batchNo: b.batchNo || (b as any).batch_no || (b as any).batchNumber || "",
+          expiry: b.expiry || (b as any).expiry_date || (b as any).expiryDate || "",
+          status: b.status || ((b as any).qaStatus === "Quarantined" || (b as any).qa_status === "Quarantined" ? ("Quarantined" as const) : ("Released" as const)),
+        }))
+      : []
     const wh1Entries = Array.isArray(product.wh1Entries) ? product.wh1Entries : []
     const binCardEntries = Array.isArray(product.binCardEntries) ? product.binCardEntries : []
 
@@ -1396,7 +1406,10 @@ class ErpStore {
     const issueQty = Number(input.quantity) || 0
     if (issueQty <= 0) throw new Error("Quarantine quantity must be greater than 0")
 
-    const prevQty = Number(prod.quantity || 0)
+    const totalBatchQty = (prod.batches || [])
+      .filter((b) => !input.batchNo || b.batchNo === input.batchNo)
+      .reduce((sum, b) => sum + Number(b.qty ?? (b as any).quantity ?? 0), 0)
+    const prevQty = Math.max(Number(prod.quantity || 0), totalBatchQty)
     if (issueQty > prevQty) {
       throw new Error(`Cannot quarantine ${issueQty} ${prod.unit || "units"}. Only ${prevQty} available in total stock.`)
     }
@@ -1415,13 +1428,14 @@ class ErpStore {
     let remainingToDeduct = issueQty
     const updatedBatches = (prod.batches || []).map((b) => {
       if (remainingToDeduct > 0 && (!input.batchNo || b.batchNo === input.batchNo)) {
-        const cur = Number(b.qty || 0)
+        const cur = Number(b.qty ?? (b as any).quantity ?? 0)
         const deduct = Math.min(cur, remainingToDeduct)
         remainingToDeduct -= deduct
         const newBatchQty = Math.max(0, cur - deduct)
         return {
           ...b,
           qty: newBatchQty,
+          quantity: newBatchQty,
           status: newBatchQty === 0 && (!input.batchNo || b.batchNo === input.batchNo) ? ("Quarantined" as const) : b.status,
         }
       }
@@ -1552,6 +1566,7 @@ class ErpStore {
       bin_card_entry_id: binEntryId,
       unit: prod.unit || "Box",
       batch_no: input.batchNo || null,
+      batch_id: targetBatch?.id || null,
     }).catch((e) => console.warn("quarantine_records API sync warning:", e))
 
     this.notify()
@@ -1651,7 +1666,10 @@ class ErpStore {
       localStorage.setItem("hkc_quarantine_records", JSON.stringify(this.quarantineRecords))
     } catch {}
 
-    await deleteResource("stock_movements", id).catch(() => {})
+    await Promise.all([
+      deleteResource("quarantine_records", id).catch(() => {}),
+      deleteResource("stock_movements", id).catch(() => {}),
+    ])
     this.notify()
   }
 
@@ -2284,11 +2302,24 @@ class ErpStore {
     const isExport = product ? isExportWarehouse(product.warehouse, this.warehouses) : false
     const targetTable = isExport ? "export_products" : "pharma_products"
 
-    const removedMovements = this.stockMovements.filter((movement) => movement.productId === id || movement.productName === product?.name)
-    await Promise.all([
-      deleteResource(targetTable, id),
-      ...removedMovements.map((movement) => deleteResource("stock_movements", movement.id)),
-    ])
+    // The backend deleteProduct transaction atomically cascades deletion of export_warehouse_movements,
+    // pharma_product_batches, quarantine_records, store_transfer_items, and stock_movements.
+    // Deleting resources concurrently from frontend triggers MySQL InnoDB deadlocks and 404s.
+    await deleteResource(targetTable, id)
+
+    // Cascade deletion of all inventory intake journal entries & lines from General Ledger & COA
+    try {
+      await financeStore.deleteStockTrackingEntries({
+        productId: id,
+        productName: product?.name,
+        sku: product?.sku,
+        batchNo: product?.batch,
+        isProductDeletion: true,
+      })
+    } catch (finErr) {
+      console.warn("Could not delete stock tracking entries from finance:", finErr)
+    }
+
     const nextProducts = this.products.filter((item) => item.id !== id)
     const nextMovements = this.stockMovements.filter((movement) => movement.productId !== id && movement.productName !== product?.name)
     this.products = nextProducts
@@ -2314,6 +2345,32 @@ class ErpStore {
       updatedAt: new Date().toISOString(),
     })
     const savedProduct = await updateResource<Product>(targetTable, id, updatedProduct)
+
+    // Synchronize batch dates to pharma_product_batches in MySQL so reload never reverts dates
+    if (!isExport) {
+      const targetMfg = (partial as any).mfgDate || partial.manufacturingDate || currentProduct.manufacturingDate || (currentProduct as any).mfgDate
+      const targetExp = (partial as any).expiryDate || partial.expiry || currentProduct.expiry
+      const targetBatchNo = partial.batch || (partial as any).batchNo || currentProduct.batch
+
+      const batchesToSync = partial.batches || currentProduct.batches || []
+      for (const b of batchesToSync) {
+        if (b.id) {
+          try {
+            const batchQty = Number(b.qty ?? (b as any).quantity ?? 0)
+            const qaStatus = b.status || (b as any).qaStatus || (b as any).qa_status || (batchQty === 0 ? "Quarantined" : "Released")
+            await updateResource("pharma_product_batches", b.id, {
+              batch_no: b.batchNo || targetBatchNo,
+              mfg_date: b.mfgDate || targetMfg,
+              expiry_date: b.expiry || targetExp,
+              quantity: batchQty,
+              qa_status: qaStatus,
+            } as any)
+          } catch (bErr) {
+            console.warn("Could not sync pharma_product_batches in updateProductDetails:", bErr)
+          }
+        }
+      }
+    }
 
     // Crucial: Merge saved product from MySQL with current child collections to avoid erasing relational arrays in client memory
     const mergedProduct = this.withInventoryValue({
@@ -2809,6 +2866,7 @@ class ErpStore {
     if (!prod) throw new Error("Product not found")
 
     const currentEntries = prod.wh1Entries || []
+    const targetEntry = currentEntries.find((e) => e.entryId === entryId || e.id === entryId)
     const updatedEntries = currentEntries.filter((e) => e.entryId !== entryId && e.id !== entryId)
     const updatedBinEntries = (prod.binCardEntries || []).filter((b) => b.id !== entryId)
 
@@ -2818,6 +2876,7 @@ class ErpStore {
 
     const updatedBreakdown = [{ warehouse: prod.warehouse, qty: nextQty }]
     const updatedBatches = [{ batchNo: prod.batch || "BATCH-WH1", qty: nextQty, expiry: "", status: "Released" as const }]
+    const nextStatus = nextQty > 0 ? (prod.status === "Out of Stock" ? "In Stock" : prod.status) : "Out of Stock"
 
     await this.updateProductDetails(productId, {
       quantity: nextQty,
@@ -2825,6 +2884,7 @@ class ErpStore {
       unitCost: weightedCost,
       sellingPrice: weightedCost,
       totalStockValue: nextVal,
+      status: nextStatus,
       stockBreakdown: updatedBreakdown,
       batches: updatedBatches,
       wh1Entries: updatedEntries,
@@ -2835,6 +2895,16 @@ class ErpStore {
       await deleteResource("export_warehouse_movements", entryId)
     } catch (e) {
       console.warn("Could not delete from export_warehouse_movements:", e)
+    }
+
+    try {
+      await financeStore.deleteStockTrackingEntries({
+        entryId,
+        batchNo: (targetEntry as any)?.batchNo || targetEntry?.voucherNo || undefined,
+        isChild: true,
+      })
+    } catch (finErr) {
+      console.warn("Could not delete stock tracking entries for WH1 entry:", finErr)
     }
 
     this.notify()
@@ -2917,8 +2987,16 @@ class ErpStore {
     let latestExpiry = ""
 
     const recalculatedEntries = sorted.map((entry) => {
-      const inQty = Number(entry.qtyReceived || 0)
-      const outQty = Number(entry.qtyIssued || 0)
+      const isEntry = entry.type === "entry" || (entry as any).movement_type === "RECEIPT" || (entry as any).movementType === "RECEIPT"
+      const isQuarantineOrLeave = entry.type === "quarantine" || entry.type === "leave" || entry.type === "reject" || (entry as any).movement_type === "QUARANTINE" || (entry as any).movement_type === "ISSUE"
+
+      const inQty = entry.qtyReceived !== undefined
+        ? Number(entry.qtyReceived || 0)
+        : (isEntry ? Number((entry as any).quantity ?? (entry as any).qty ?? 0) : 0)
+      const outQty = entry.qtyIssued !== undefined
+        ? Number(entry.qtyIssued || 0)
+        : (isQuarantineOrLeave ? Number((entry as any).quantity ?? (entry as any).qty ?? 0) : 0)
+
       totalReceived += inQty
       totalIssued += outQty
       currentBalance += inQty - outQty
@@ -2926,6 +3004,8 @@ class ErpStore {
       if (entry.expiryDate) latestExpiry = entry.expiryDate
       return {
         ...entry,
+        qtyReceived: inQty,
+        qtyIssued: outQty,
         balance: Math.max(0, currentBalance),
       }
     })
@@ -3227,6 +3307,7 @@ class ErpStore {
     if (!prod) throw new Error("Product not found")
 
     const currentEntries = prod.binCardEntries || []
+    const targetEntry = currentEntries.find((e) => e.id === entryId)
     const rawUpdated = currentEntries.filter((e) => e.id !== entryId)
 
     const { recalculatedEntries, totalQuantity, latestBatch, latestExpiry } = this.recalculateBinCardLedger(rawUpdated)
@@ -3235,27 +3316,69 @@ class ErpStore {
     const updatedBreakdown = [{ warehouse: prod.warehouse, qty: totalQuantity }]
     const packSize = Number(prod.quantityPerPack || 1)
     const nextCartons = packSize > 0 ? Math.floor(totalQuantity / packSize) : (prod.numberOfCartons || 0)
+    const nextStatus = totalQuantity > 0 ? (prod.status === "Out of Stock" ? "In Stock" : prod.status) : "Out of Stock"
 
     const isExport = isExportWarehouse(prod.warehouse, this.warehouses)
+    let updatedBatches = [...(prod.batches || [])]
+
     if (!isExport) {
-      deleteResource("stock_movements", entryId).catch(() => {})
-      this.stockMovements = this.stockMovements.filter((m) => m.id !== entryId && m.reference !== entryId)
-      if (prod.batches?.[0]?.id) {
-        updateResource("pharma_product_batches", prod.batches[0].id, {
-          quantity: totalQuantity,
-        } as any).catch(() => {})
+      // 1. Stock movements cleanup
+      const matchingMov = this.stockMovements.find((m) => m.id === entryId || m.reference === entryId)
+      if (matchingMov) {
+        deleteResource("stock_movements", matchingMov.id).catch(() => {})
+        this.stockMovements = this.stockMovements.filter((m) => m.id !== matchingMov.id)
+      } else {
+        deleteResource("stock_movements", entryId).catch(() => {})
+        this.stockMovements = this.stockMovements.filter((m) => m.id !== entryId && m.reference !== entryId)
+      }
+
+      // 2. Batches lot synchronization
+      if (rawUpdated.length === 0) {
+        // All child entries deleted: zero out all batches in DB
+        for (const b of (prod.batches || [])) {
+          if (b.id) {
+            updateResource("pharma_product_batches", b.id, { quantity: 0 } as any).catch(() => {})
+          }
+        }
+        updatedBatches = updatedBatches.map((b) => ({ ...b, qty: 0 }))
+      } else if (targetEntry?.batchNo) {
+        // Deduct from the matching batch
+        const qtyReceived = Number(targetEntry.qtyReceived || 0)
+        updatedBatches = updatedBatches.map((b) => {
+          if (b.batchNo === targetEntry.batchNo) {
+            const remaining = Math.max(0, Number(b.qty || 0) - qtyReceived)
+            if (b.id) {
+              if (remaining === 0 && (prod.batches || []).length > 1) {
+                deleteResource("pharma_product_batches", b.id).catch(() => {})
+              } else {
+                updateResource("pharma_product_batches", b.id, { quantity: remaining } as any).catch(() => {})
+              }
+            }
+            return { ...b, qty: remaining }
+          }
+          return b
+        })
       }
     } else {
       deleteResource("export_warehouse_movements", entryId).catch(() => {})
     }
 
-    const updatedBatches = (prod.batches || []).map((b, i) => i === 0 ? { ...b, qty: totalQuantity } : b)
+    try {
+      await financeStore.deleteStockTrackingEntries({
+        entryId,
+        batchNo: targetEntry?.batchNo,
+        isChild: true,
+      })
+    } catch (finErr) {
+      console.warn("Could not delete stock tracking entries for bin card entry:", finErr)
+    }
 
     return await this.updateProductDetails(productId, {
       quantity: totalQuantity,
       totalQuantity: totalQuantity + (prod.quantitySold || 0),
       numberOfCartons: nextCartons,
       totalStockValue: nextVal,
+      status: nextStatus,
       batch: latestBatch || prod.batch,
       expiry: latestExpiry || prod.expiry,
       stockBreakdown: updatedBreakdown,

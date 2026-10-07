@@ -757,15 +757,10 @@ export default function ControlCenter() {
       }
     }
 
-    const authoritativeIntake = 51897110.14
-    const authoritativeCurrent = 47778614.92
-    const finalCurrent = currentTotal > 0 ? currentTotal : authoritativeCurrent
-    const finalIntake = Math.max(intakeTotal, authoritativeIntake)
-
     return {
-      currentStockValue: finalCurrent,
-      intakeCostValue: finalIntake,
-      inventoryValue: finalCurrent,
+      currentStockValue: currentTotal,
+      intakeCostValue: intakeTotal,
+      inventoryValue: currentTotal,
     }
   }, [products, finance])
 

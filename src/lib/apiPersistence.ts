@@ -103,19 +103,50 @@ export async function loadResource<T>(resource: string): Promise<T[]> {
 
 export async function replaceResource<T extends Identified>(resource: string, items: T[]) {
   const authHeaders = getAuthHeaders()
-  const response = await fetch(`${API_BASE}/api/${resource}`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders,
-    },
-    body: JSON.stringify(items.map((item, index) => ({ ...item, id: itemId(item, index) }))),
-  })
-  const body = await parseResponse(response)
+  if (!items || items.length === 0) {
+    const response = await fetch(`${API_BASE}/api/${resource}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders,
+      },
+      body: JSON.stringify([]),
+    })
+    const body = await parseResponse(response)
+    if (!response.ok) {
+      if (checkAuthResponse(response, body)) return
+      throw new Error(errorMessage(body, `Failed to save ${resource}.`))
+    }
+    return
+  }
 
-  if (!response.ok) {
-    if (checkAuthResponse(response, body)) return
-    throw new Error(errorMessage(body, `Failed to save ${resource}.`))
+  // ModSecurity WAF limit is 1,000 JSON keys per payload.
+  // With ~15 keys per item, CHUNK_SIZE = 25 results in ~375 keys per request, safely under the limit.
+  const CHUNK_SIZE = 25
+  for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+    const chunk = items.slice(i, i + CHUNK_SIZE)
+    const payload = chunk.map((item, index) => {
+      const rowId = itemId(item, i + index)
+      const clean: Record<string, any> = { ...item, id: rowId }
+      // Prune undefined properties to minimize payload key count
+      Object.keys(clean).forEach((k) => clean[k] === undefined && delete clean[k])
+      return clean
+    })
+
+    const response = await fetch(`${API_BASE}/api/${resource}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders,
+      },
+      body: JSON.stringify(payload),
+    })
+    const body = await parseResponse(response)
+
+    if (!response.ok) {
+      if (checkAuthResponse(response, body)) return
+      throw new Error(errorMessage(body, `Failed to save ${resource} (batch ${Math.floor(i / CHUNK_SIZE) + 1}).`))
+    }
   }
 }
 

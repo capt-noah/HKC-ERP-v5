@@ -117,16 +117,20 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
     return rawWhs.filter((w) => isPharmaWarehouse(w, rawWhs))
   }, [erp])
 
+  // All Quarantine records & products
+  const allQuarantineRecords = erp.getQuarantineRecords()
+  const allProducts = erp.getProducts()
+
   // Products available in the selected add modal warehouse
   const addWarehouseProducts = useMemo(() => {
-    return erp.getProducts().filter((p) => {
+    return allProducts.filter((p) => {
       const matchMain = matchesWarehouse(p.warehouse, addWarehouse)
       const matchBreakdown = (p.stockBreakdown || []).some(
         (sb) => matchesWarehouse(sb.warehouse, addWarehouse) && Number(sb.qty || 0) > 0
       )
       return matchMain || matchBreakdown
     })
-  }, [erp, addWarehouse])
+  }, [allProducts, addWarehouse])
 
   // Selected product & available batches in add modal
   const selectedProduct = useMemo(() => {
@@ -135,7 +139,7 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
 
   const availableBatches = useMemo(() => {
     if (!selectedProduct) return []
-    return (selectedProduct.batches || []).filter((b) => Number(b.qty || 0) > 0)
+    return (selectedProduct.batches || []).filter((b) => Number(b.qty ?? (b as any).quantity ?? 0) > 0)
   }, [selectedProduct])
 
   const selectedBatchInfo = useMemo(() => {
@@ -143,14 +147,13 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
   }, [availableBatches, addBatchNo])
 
   const maxAvailableQty = useMemo(() => {
-    if (selectedBatchInfo) return Number(selectedBatchInfo.qty || 0)
-    if (selectedProduct) return Number(selectedProduct.quantity || 0)
+    if (selectedBatchInfo) return Number(selectedBatchInfo.qty ?? (selectedBatchInfo as any).quantity ?? 0)
+    if (selectedProduct) {
+      const totalBatch = (selectedProduct.batches || []).reduce((sum, b) => sum + Number(b.qty ?? (b as any).quantity ?? 0), 0)
+      return Math.max(Number(selectedProduct.quantity || 0), totalBatch)
+    }
     return 0
   }, [selectedBatchInfo, selectedProduct])
-
-  // All Quarantine records
-  const allQuarantineRecords = erp.getQuarantineRecords()
-  const allProducts = erp.getProducts()
 
   const filteredRecords = useMemo(() => {
     return allQuarantineRecords.filter((rec) => {
@@ -294,9 +297,17 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
 
       // Post GL loss entry for quarantine
       const targetBatch = (selectedProduct.batches || []).find((b) => b.batchNo === addBatchNo)
-      const batchUnitCost = Number((targetBatch as any)?.unitPrice ?? (targetBatch as any)?.costPrice ?? selectedProduct.unitCost ?? 0)
+      const rawCost = Number(
+        (targetBatch as any)?.unitPrice ??
+        (targetBatch as any)?.costPrice ??
+        (targetBatch as any)?.unit_cost ??
+        selectedProduct.unitCost ??
+        (selectedProduct as any)?.unit_cost ??
+        0
+      )
+      const batchUnitCost = rawCost > 0 ? rawCost : 1
       try {
-        financeStore.recordStockLoss({
+        const lossRes = await financeStore.recordStockLoss({
           productId: selectedProduct.id,
           productName: selectedProduct.name,
           lossType: "quarantine",
@@ -309,8 +320,13 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
           batchNo: addBatchNo,
           reason: addReason.trim() || "Broken / Damaged Medicine",
         })
-      } catch (finErr) {
+        if (lossRes && !lossRes.success) {
+          console.warn("Failed to record quarantine loss to GL:", lossRes.error)
+          showToast("GL Accounting Warning", "warning", `Stock quarantined, but GL journal entry failed: ${lossRes.error}`)
+        }
+      } catch (finErr: any) {
         console.warn("Failed to record quarantine loss to GL:", finErr)
+        showToast("GL Accounting Warning", "warning", `Stock quarantined, but GL entry failed: ${finErr.message || "Unknown error"}`)
       }
 
       showToast(
@@ -359,7 +375,7 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
     try {
       await erp.deleteQuarantineRecord(deletingRecord.id)
       try {
-        financeStore.reverseStockLoss("quarantine", deletingRecord.id)
+        await financeStore.reverseStockLoss("quarantine", deletingRecord.id)
       } catch (finErr) {
         console.warn("Failed to reverse quarantine loss in GL:", finErr)
       }

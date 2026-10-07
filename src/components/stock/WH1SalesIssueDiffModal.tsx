@@ -91,7 +91,7 @@ export default function WH1SalesIssueDiffModal({
       await onSaveDifference(product.id, row.id, diffVal, notes.trim() || undefined)
       if (diffVal > 0) {
         try {
-          financeStore.recordStockLoss({
+          await financeStore.recordStockLoss({
             productId: product.id,
             productName: product.name,
             lossType: "diff",
@@ -108,7 +108,7 @@ export default function WH1SalesIssueDiffModal({
         }
       } else {
         try {
-          financeStore.reverseStockLoss("diff", row.id)
+          await financeStore.reverseStockLoss("diff", row.id)
         } catch (finErr) {
           console.warn("Failed to reverse cleaning diff GL loss:", finErr)
         }

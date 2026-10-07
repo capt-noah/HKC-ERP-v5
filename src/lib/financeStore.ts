@@ -143,7 +143,9 @@ export interface Invoice {
   purchase_order_id?: string
   fs_no?: string
   voucher_no?: string
+  customer_id?: string
   customer_name: string
+  supplier_id?: string
   supplier_name?: string
   issue_date: string
   due_date: string
@@ -223,6 +225,8 @@ export interface Payment {
   payment_advice_url?: string
   payment_advice_filename?: string
   installment_no?: number
+  warehouse_id?: string | null
+  ar_account_code?: string | null
   notes?: string
 }
 
@@ -1799,7 +1803,8 @@ class FinanceStore {
           fallbackCode = commoditySet.revenueCode
         }
       }
-    } else if (ruleKey === "inventory_stock_pharma") {
+    } else if (ruleKey === "inventory_stock_pharma" || ruleKey === "inventory_pharma_stock") {
+      targetRuleKey = "inventory_pharma_stock"
       if (isExport) {
         const customMatch = itemName ? this.glMappings.find(
           (m) => (m.category === "Inventory & COGS" || m.category === "Inventory") &&
@@ -3531,24 +3536,119 @@ class FinanceStore {
   }
 
   // --- Delete Journal Entry Action ---
-  public deleteJournalEntry(entryId: string): { success: boolean } {
+  public async deleteJournalEntry(entryId: string): Promise<{ success: boolean }> {
+    const entryLines = this.lines.filter((l) => l.journal_entry_id === entryId)
     this.entries = this.entries.filter((e) => e.id !== entryId)
     this.lines = this.lines.filter((l) => l.journal_entry_id !== entryId)
     this.notify()
+
+    try {
+      await deleteResource("journal_entries", entryId)
+      for (const line of entryLines) {
+        await deleteResource("journal_entry_lines", line.id)
+      }
+    } catch (err) {
+      console.warn(`[FinanceStore] Could not delete journal entry ${entryId} from backend:`, err)
+    }
+
     return { success: true }
   }
 
-  public deleteJournalEntriesBySource(sourceType: string, sourceId: string): { success: boolean } {
+  public async deleteJournalEntriesBySource(sourceType: string, sourceId: string): Promise<{ success: boolean }> {
     const matchingEntries = this.entries.filter((e) => e.source_type === sourceType && e.source_id === sourceId)
     const matchingIds = new Set(matchingEntries.map((e) => e.id))
+    const linesToDelete = this.lines.filter((l) => matchingIds.has(l.journal_entry_id))
+
     this.entries = this.entries.filter((e) => !matchingIds.has(e.id))
     this.lines = this.lines.filter((l) => !matchingIds.has(l.journal_entry_id))
     this.notify()
+
+    try {
+      for (const entry of matchingEntries) {
+        await deleteResource("journal_entries", entry.id)
+      }
+      for (const line of linesToDelete) {
+        await deleteResource("journal_entry_lines", line.id)
+      }
+    } catch (err) {
+      console.warn(`[FinanceStore] Could not delete journal entries for source ${sourceId}:`, err)
+    }
+
     return { success: true }
   }
 
+  /**
+   * Permanently purges all inventory valuation journal entries and lines associated with a deleted product, batch, or entry.
+   * This automatically deducts the valuation from the Stock Asset COA account (1400-01 / 1410-01) and balances Trial Balance.
+   */
+  public async deleteStockTrackingEntries(params: {
+    productId?: string
+    productName?: string
+    sku?: string
+    batchNo?: string
+    entryId?: string
+    isChild?: boolean
+    isProductDeletion?: boolean
+  }): Promise<{ success: boolean; deletedCount: number }> {
+    const { productId, productName, sku, batchNo, entryId, isChild, isProductDeletion } = params
+
+    // Target ONLY Inventory-type entries to ensure sales and customer receivables remain completely untouched
+    const matchingEntries = this.entries.filter((e) => {
+      if (e.source_type !== "Inventory") return false
+
+      const src = e.source_id || ""
+      const id = e.id || ""
+      const desc = e.description || ""
+
+      // Child / single-entry deletion: match ONLY this entry / batch
+      if (!isProductDeletion && (isChild || entryId || batchNo)) {
+        if (entryId && (src.includes(entryId) || id.includes(entryId) || desc.includes(entryId))) return true
+        if (batchNo && (src.includes(batchNo) || id.includes(batchNo) || desc.includes(batchNo))) return true
+        return false
+      }
+
+      // Parent product deletion: match product ID, SKU, product name, or batches
+      if (entryId && (src.includes(entryId) || id.includes(entryId) || desc.includes(entryId))) return true
+      if (batchNo && (src.includes(batchNo) || id.includes(batchNo) || desc.includes(batchNo))) return true
+      if (productId && (src.includes(productId) || id.includes(productId))) return true
+      if (sku && (src.includes(sku) || desc.includes(sku))) return true
+      if (productName && desc.toLowerCase().includes(productName.toLowerCase())) {
+        if (batchNo && !desc.includes(batchNo)) return false
+        return true
+      }
+
+      return false
+    })
+
+    if (matchingEntries.length === 0) {
+      return { success: true, deletedCount: 0 }
+    }
+
+    const matchingIds = new Set(matchingEntries.map((e) => e.id))
+    const linesToDelete = this.lines.filter((l) => matchingIds.has(l.journal_entry_id))
+
+    // Remove from in-memory state immediately so UI and COA balances update in real-time
+    this.entries = this.entries.filter((e) => !matchingIds.has(e.id))
+    this.lines = this.lines.filter((l) => !matchingIds.has(l.journal_entry_id))
+    this.notify()
+
+    // Persist deletions to MySQL
+    try {
+      for (const entry of matchingEntries) {
+        await deleteResource("journal_entries", entry.id)
+      }
+      for (const line of linesToDelete) {
+        await deleteResource("journal_entry_lines", line.id)
+      }
+    } catch (err) {
+      console.warn("[FinanceStore] Error deleting stock journal tracing records from backend:", err)
+    }
+
+    return { success: true, deletedCount: matchingEntries.length }
+  }
+
   // --- Initial & Batch Stock Intake GL Valuation ---
-  public recordStockIntake(params: {
+  public async recordStockIntake(params: {
     productId: string
     productName: string
     sku?: string
@@ -3560,7 +3660,7 @@ class FinanceStore {
     entryId?: string
     batchNo?: string
     isChild?: boolean
-  }): { success: boolean; error?: string; entry?: JournalEntry } {
+  }): Promise<{ success: boolean; error?: string; entry?: JournalEntry }> {
     const qty = Number(params.quantity || 0)
     const cost = Number(params.unitCost || 0)
     if (qty <= 0 || cost <= 0) {
@@ -3603,7 +3703,7 @@ class FinanceStore {
     const entryDate = params.entryDate || new Date().toISOString().split("T")[0]
     const sourceId = `STK-IN-${params.entryId || params.batchNo || params.sku || params.productId}`
 
-    return this.postJournalEntry(
+    const postRes = this.postJournalEntry(
       {
         entry_date: entryDate,
         description: desc,
@@ -3629,9 +3729,23 @@ class FinanceStore {
         },
       ]
     )
+
+    if (postRes.success && postRes.entry) {
+      try {
+        await createResource("journal_entries", postRes.entry)
+        const linesToPersist = this.lines.filter((l) => l.journal_entry_id === postRes.entry!.id)
+        for (const line of linesToPersist) {
+          await createResource("journal_entry_lines", line)
+        }
+      } catch (err) {
+        console.warn("[FinanceStore] Could not persist stock intake journal entry to MySQL:", err)
+      }
+    }
+
+    return postRes
   }
 
-  public recordInitialStockIntake(params: {
+  public async recordInitialStockIntake(params: {
     productId: string
     productName: string
     sku?: string
@@ -3640,12 +3754,13 @@ class FinanceStore {
     unitCost: number
     unit?: string
     entryDate?: string
-  }): { success: boolean; error?: string; entry?: JournalEntry } {
+    batchNo?: string
+  }): Promise<{ success: boolean; error?: string; entry?: JournalEntry }> {
     return this.recordStockIntake(params)
   }
 
   // --- Inventory Loss & Shrinkage GL Accounting (Quarantine, Rejection, Diff) ---
-  public recordStockLoss(params: {
+  public async recordStockLoss(params: {
     productId: string
     productName: string
     lossType: "quarantine" | "reject" | "diff"
@@ -3657,7 +3772,7 @@ class FinanceStore {
     lossDate?: string
     reason?: string
     batchNo?: string
-  }): { success: boolean; error?: string; entry?: JournalEntry } {
+  }): Promise<{ success: boolean; error?: string; entry?: JournalEntry }> {
     const qty = Number(params.quantity || 0)
     const cost = Number(params.unitCost || 0)
     if (qty <= 0 || cost <= 0) {
@@ -3679,7 +3794,7 @@ class FinanceStore {
       stockAccCode = commSet.inventoryCode
     }
     const stockAcc = this.getMappedAccount(
-      isExport ? "inventory_stock_in_hand" : "inventory_stock_pharma",
+      isExport ? "inventory_stock_in_hand" : "inventory_pharma_stock",
       stockAccCode,
       { warehouseId: params.warehouseId, itemName: params.productName }
     )
@@ -3705,7 +3820,7 @@ class FinanceStore {
     const entryDate = params.lossDate || new Date().toISOString().split("T")[0]
     const sourceId = `STK-LOSS-${params.lossType.toUpperCase()}-${params.recordId}`
 
-    return this.postJournalEntry(
+    const postRes = this.postJournalEntry(
       {
         entry_date: entryDate,
         description: desc,
@@ -3731,12 +3846,27 @@ class FinanceStore {
         },
       ]
     )
+
+    if (postRes.success && postRes.entry) {
+      try {
+        await createResource("journal_entries", postRes.entry)
+        const linesToPersist = this.lines.filter((l) => l.journal_entry_id === postRes.entry!.id)
+        for (const line of linesToPersist) {
+          await createResource("journal_entry_lines", line)
+        }
+      } catch (err: any) {
+        console.warn("[FinanceStore] Could not persist stock loss journal entry to MySQL:", err)
+        return { success: false, error: err.message || "Failed to persist journal entry to database", entry: postRes.entry }
+      }
+    }
+
+    return postRes
   }
 
-  public reverseStockLoss(
+  public async reverseStockLoss(
     lossType: "quarantine" | "reject" | "diff",
     recordId: string
-  ): { success: boolean } {
+  ): Promise<{ success: boolean }> {
     const sourceId = `STK-LOSS-${lossType.toUpperCase()}-${recordId}`
     return this.deleteJournalEntriesBySource("Inventory", sourceId)
   }
@@ -4473,7 +4603,7 @@ class FinanceStore {
   }
 
   public recordPayment(paymentData: {
-    linked_invoice_id: string | null
+    linked_invoice_id?: string | null
     sales_issue_id?: string | null
     sales_order_id?: string | null
     purchase_order_id?: string | null
@@ -4486,6 +4616,8 @@ class FinanceStore {
     date: string
     method?: string
     bank_account_code?: string
+    ar_account_code?: string
+    warehouse_id?: string
     reference: string
     payment_advice_url?: string
     payment_advice_filename?: string
@@ -4502,7 +4634,7 @@ class FinanceStore {
     const newPayment: Payment = {
       id: payId,
       direction: isAP ? "Made" : (paymentData.direction || "Received"),
-      linked_invoice_id: paymentData.linked_invoice_id,
+      linked_invoice_id: paymentData.linked_invoice_id || null,
       sales_issue_id: paymentData.sales_issue_id || null,
       sales_order_id: paymentData.sales_order_id || null,
       purchase_order_id: paymentData.purchase_order_id || null,
@@ -4519,6 +4651,8 @@ class FinanceStore {
       payment_advice_url: paymentData.payment_advice_url,
       payment_advice_filename: paymentData.payment_advice_filename,
       installment_no: installmentNo,
+      warehouse_id: paymentData.warehouse_id || null,
+      ar_account_code: paymentData.ar_account_code || null,
       notes: paymentData.notes,
     }
 
@@ -4572,7 +4706,7 @@ class FinanceStore {
       const bankAccId = bankAcc.id
 
       if (isAP) {
-        // Accounts Payable disbursement: Debit AP (2100-06), Credit Bank (1000)
+        // Accounts Payable disbursement: Debit AP (2100-06), Credit Bank (1000s)
         const apAcc = this.getMappedAccount("supplier_payment_ap", "2100-06")
         const apAccId = apAcc.id
 
@@ -4599,29 +4733,101 @@ class FinanceStore {
           ]
         )
       } else {
-        // Accounts Receivable collection: Debit Bank (1000), Credit AR (1300-01 for Export/Processing, 1300-03 for Pharma)
-        const isExportInv =
-          (updatedInv?.warehouse_id && (
-            String(updatedInv.warehouse_id).toUpperCase().startsWith("WH1") ||
-            String(updatedInv.warehouse_id).toUpperCase().includes("EXP") ||
-            String(updatedInv.warehouse_id).toUpperCase().includes("PROCESSING")
+        // Accounts Receivable collection: Debit Bank (1000s), Credit AR (1300-01 for Export, 1300-03 for Domestic/Import Vet)
+        let resolvedArCode = paymentData.ar_account_code
+
+        // Tier 2: Check original journal entries for this sales transaction to find what AR account was originally debited
+        if (!resolvedArCode) {
+          const matchingKeys = [
+            paymentData.sales_issue_id,
+            paymentData.linked_invoice_id,
+            paymentData.sales_order_id,
+            paymentData.sales_issue_id ? `JE-SALE-${paymentData.sales_issue_id}` : null,
+            paymentData.linked_invoice_id ? `JE-SALE-${paymentData.linked_invoice_id}` : null,
+          ].filter(Boolean) as string[]
+
+          const matchingEntryIds = new Set<string>()
+          for (const entry of this.entries) {
+            for (const key of matchingKeys) {
+              if (
+                entry.id === key ||
+                entry.source_id === key ||
+                (entry.source_id && entry.source_id.includes(key)) ||
+                (entry.id && entry.id.includes(key))
+              ) {
+                matchingEntryIds.add(entry.id)
+              }
+            }
+          }
+
+          const debitedArLine = this.lines.find((line) => {
+            const matchesId = matchingEntryIds.has(line.journal_entry_id) || matchingKeys.some((k) => line.journal_entry_id.includes(k))
+            if (!matchesId) return false
+            const acc = this.accounts.find((a) => a.id === line.account_id || a.code === line.account_id)
+            const code = acc?.code || line.account_id
+            return (code.startsWith("1300-") || code.startsWith("1320-")) && Number(line.debit_amount) > 0
+          })
+          if (debitedArLine) {
+            const acc = this.accounts.find((a) => a.id === debitedArLine.account_id || a.code === debitedArLine.account_id)
+            resolvedArCode = acc?.code || debitedArLine.account_id
+          }
+        }
+
+        // Tier 3: Warehouse Check across paymentData, updatedInv, linked sales issue, and linked sales order
+        let effectiveWh = paymentData.warehouse_id || updatedInv?.warehouse_id || null
+        if (!effectiveWh && paymentData.sales_issue_id) {
+          const si = (erpStore.getSalesIssues() || []).find((s: any) => s.id === paymentData.sales_issue_id || s.fs_no === paymentData.sales_issue_id)
+          if (si?.warehouse_id) effectiveWh = si.warehouse_id
+        }
+        if (!effectiveWh && paymentData.sales_order_id) {
+          const so = (erpStore.getSalesOrders() || []).find((s: any) => s.id === paymentData.sales_order_id)
+          if (so?.warehouse) effectiveWh = so.warehouse
+        }
+
+        const isExportScope =
+          Boolean(resolvedArCode === "1300-01" || resolvedArCode === "1300-02") ||
+          (effectiveWh && (
+            String(effectiveWh).toUpperCase().startsWith("WH1") ||
+            String(effectiveWh).toUpperCase().includes("EXP") ||
+            String(effectiveWh).toUpperCase().includes("PROCESSING")
           )) ||
           (paymentData.sales_issue_id && (
             String(paymentData.sales_issue_id).toUpperCase().includes("EXP") ||
             String(paymentData.sales_issue_id).toUpperCase().includes("PROCESSING")
           ))
 
-        const arAcc = this.getMappedAccount(
-          isExportInv ? "sales_credit_ar_export" : "sales_credit_ar",
-          isExportInv ? "1300-01" : "1300-03",
-          { warehouseId: updatedInv?.warehouse_id }
-        )
+        // Tier 4: Commodity check if still not resolved
+        if (!resolvedArCode) {
+          resolvedArCode = isExportScope ? "1300-01" : "1300-03"
+        }
+
+        newPayment.ar_account_code = resolvedArCode
+        newPayment.warehouse_id = effectiveWh
+
+        const arAcc =
+          this.accounts.find((a) => a.code === resolvedArCode || a.id === resolvedArCode) ||
+          this.getMappedAccount(
+            isExportScope ? "sales_credit_ar_export" : "sales_credit_ar",
+            resolvedArCode,
+            { warehouseId: effectiveWh || undefined }
+          )
         const arAccId = arAcc.id
+
+        // Format clean reference in description
+        const invoiceRefDesc = paymentData.linked_invoice_id
+          ? `Invoice ${paymentData.linked_invoice_id}`
+          : paymentData.sales_issue_id
+            ? `Sales Issue ${paymentData.sales_issue_id}`
+            : paymentData.sales_order_id
+              ? `Sales Order ${paymentData.sales_order_id}`
+              : `Customer ${partyName}`
+
+        const customerPartyId = paymentData.customer_id || (partyName ? `CUST-${partyName.replace(/\s+/g, "").toUpperCase()}` : "CUST-DEFAULT")
 
         this.postJournalEntry(
           {
             entry_date: paymentData.date,
-            description: `Credit payment installment #${installmentNo} (${paymentData.reference}) for Invoice ${paymentData.linked_invoice_id} [Bank: ${bankAcc?.name || bankCode}]`,
+            description: `Credit payment installment #${installmentNo} (${paymentData.reference}) for ${invoiceRefDesc} [Bank: ${bankAcc?.name || bankCode}]`,
             source_type: "Payment",
             source_id: payId,
             created_by: "Cashier",
@@ -4635,7 +4841,7 @@ class FinanceStore {
               debit_amount: 0,
               credit_amount: paymentData.amount,
               party_type: "Customer",
-              party_id: `CUST-${partyName.replace(/\s+/g, "").toUpperCase()}`,
+              party_id: customerPartyId,
               party_name: partyName,
             },
           ]

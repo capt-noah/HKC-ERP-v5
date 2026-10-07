@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { ChevronDown, Lock } from "lucide-react"
+import { ChevronDown, Lock, Package } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
@@ -41,6 +41,7 @@ export default function StockBinEntryModal({
   const [remark, setRemark] = useState("")
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false)
 
   useEffect(() => {
     if (entry) {
@@ -107,7 +108,7 @@ export default function StockBinEntryModal({
 
   if (!isOpen || !product) return null
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const qtyNum = Number(quantity)
     if (!date || !batchNo.trim() || !Number.isFinite(qtyNum) || qtyNum <= 0) {
@@ -117,12 +118,26 @@ export default function StockBinEntryModal({
 
     const isRec = movementType === "received"
     const effectiveUnitPrice = unitPrice ? Number(unitPrice) : (product?.unitCost !== undefined ? Number(product.unitCost) : undefined)
-    const effectiveSellingPrice = sellingPrice ? Number(sellingPrice) : (product?.sellingPrice !== undefined ? Number(product.sellingPrice) : undefined)
 
     if (isRec && (!effectiveUnitPrice || effectiveUnitPrice <= 0)) {
       showToast("Validation Error", "warning", "Cost Price is mandatory and must be greater than 0 ETB.")
       return
     }
+
+    // If it's a new inbound receipt, prompt confirmation before saving
+    if (!isEditing && isRec) {
+      setIsConfirmModalOpen(true)
+      return
+    }
+
+    void handleExecuteSave()
+  }
+
+  const handleExecuteSave = async () => {
+    const qtyNum = Number(quantity)
+    const isRec = movementType === "received"
+    const effectiveUnitPrice = unitPrice ? Number(unitPrice) : (product?.unitCost !== undefined ? Number(product.unitCost) : undefined)
+    const effectiveSellingPrice = sellingPrice ? Number(sellingPrice) : (product?.sellingPrice !== undefined ? Number(product.sellingPrice) : undefined)
 
     setIsSaving(true)
     try {
@@ -145,7 +160,7 @@ export default function StockBinEntryModal({
       // Automatically post GL stock intake for new inbound receipts
       if (!isEditing && isRec && effectiveUnitPrice && effectiveUnitPrice > 0) {
         try {
-          financeStore.recordStockIntake({
+          await financeStore.recordStockIntake({
             productId: product.id,
             productName: product.name,
             sku: product.sku,
@@ -163,6 +178,7 @@ export default function StockBinEntryModal({
       }
 
       showToast("Success", "success", isEditing ? "Movement entry updated." : "Stock movement entry recorded.")
+      setIsConfirmModalOpen(false)
       onClose()
     } catch (err: any) {
       showToast("Save Error", "warning", err.message || "Failed to save entry.")
@@ -507,6 +523,98 @@ export default function StockBinEntryModal({
           </form>
         </div>
       </div>
+
+      {/* CONFIRMATION MODAL: INBOUND RECEIPT / INCOMING CHILD BATCH */}
+      {isConfirmModalOpen && (
+        <div className="fixed inset-0 z-[160] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-zinc-200 space-y-6">
+            <div className="flex items-start gap-3">
+              <div className="p-3 rounded-2xl bg-blue-50 text-blue-700 border border-blue-200">
+                <Package className="h-6 w-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                    Incoming Child Batch
+                  </span>
+                </div>
+                <h3 className="text-lg font-black text-zinc-950 truncate">
+                  Confirm Inbound Stock Receipt
+                </h3>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  Review the stock intake details and General Ledger valuation impact before confirming.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-4 space-y-3 text-xs">
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">Item Name</span>
+                <span className="font-black text-zinc-900 text-right max-w-[240px] truncate">{product.name}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">SKU</span>
+                <span className="font-mono font-bold text-zinc-800">{product.sku}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">Batch Number</span>
+                <span className="font-mono font-black text-zinc-900 bg-white px-2 py-0.5 rounded-md border border-zinc-200">{batchNo.trim().toUpperCase()}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 py-1 border-b border-zinc-200/60">
+                <div>
+                  <span className="block font-semibold text-zinc-500 text-[11px]">Manufacturing Date</span>
+                  <span className="font-mono font-bold text-zinc-800">{mfgDate || "N/A"}</span>
+                </div>
+                <div>
+                  <span className="block font-semibold text-zinc-500 text-[11px]">Expiry Date</span>
+                  <span className="font-mono font-bold text-zinc-800">{expiryDate || "N/A"}</span>
+                </div>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">Intake Quantity</span>
+                <span className="font-black text-emerald-800">
+                  {Number(quantity).toLocaleString()} {product.unit || "Units"}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">Unit Cost Price</span>
+                <span className="font-bold text-zinc-900">
+                  {Number(unitPrice || product.unitCost || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ETB
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1.5 bg-emerald-50/80 -mx-2 px-3 rounded-xl border border-emerald-200">
+                <span className="font-black text-emerald-900 text-xs">Total Stock Valuation</span>
+                <span className="font-black text-emerald-950 text-sm">
+                  {(Number(quantity) * Number(unitPrice || product.unitCost || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ETB
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
+              <span className="font-black">General Ledger Impact:</span> This intake will automatically create balanced journal entries debiting Stock Valuation (Account 1400-01 / 1410-01) by {(Number(quantity) * Number(unitPrice || product.unitCost || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })} ETB.
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => setIsConfirmModalOpen(false)}
+                className="h-10 rounded-full border border-zinc-200 px-5 font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+              >
+                Back to Edit
+              </button>
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => void handleExecuteSave()}
+                className="h-10 min-w-[140px] inline-flex items-center justify-center rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold px-6 shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSaving ? <LoadingDots color="bg-white" size="sm" /> : "Confirm & Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isDeleteModalOpen && (
         <RecordDeleteModal

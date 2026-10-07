@@ -111,6 +111,70 @@ function hydrateExportProduct(productRow, movements = []) {
   return unwrapped
 }
 
+function hydratePharmaProduct(productRow, batches = [], movements = []) {
+  const unwrapped = unwrapRow(productRow, "relational")
+
+  unwrapped.batches = batches.map((b) => {
+    const r = unwrapRow(b, "relational")
+    const qty = Number(r.quantity ?? r.qty ?? 0)
+    const unitPrice = Number(r.unitCost ?? r.unit_cost ?? r.unitPrice ?? r.unit_price ?? unwrapped.unitCost ?? unwrapped.unit_cost ?? 0)
+    const sellingPrice = (r.sellingPrice != null || r.selling_price != null)
+      ? Number(r.sellingPrice ?? r.selling_price)
+      : (unwrapped.sellingPrice != null ? Number(unwrapped.sellingPrice) : undefined)
+    const qaStatus = r.qaStatus || r.qa_status || "Released"
+
+    return {
+      id: r.id,
+      batchNo: r.batchNo || r.batch_no || "BATCH-001",
+      qty,
+      quantity: qty,
+      expiry: r.expiryDate || r.expiry_date || r.expiry || "",
+      expiryDate: r.expiryDate || r.expiry_date || r.expiry || "",
+      mfgDate: r.mfgDate || r.mfg_date || "",
+      unitPrice,
+      unitCost: unitPrice,
+      sellingPrice,
+      status: qaStatus === "Quarantined" ? "Quarantined" : "Released",
+      qaStatus,
+      location: r.location || null,
+      notes: r.notes || null,
+      createdAt: r.createdAt || r.created_at,
+    }
+  })
+
+  unwrapped.binCardEntries = movements.map((m) => {
+    const r = unwrapRow(m, "relational")
+    const mType = String(r.movementType || r.movement_type || r.type || "").toUpperCase()
+    const isReceipt = mType === "RECEIPT" || mType === "INBOUND" || mType === "ADJUSTMENT_IN" || mType === "ENTRY"
+    const isQuarantine = mType === "QUARANTINE"
+    const isTransfer = mType === "TRANSFER"
+    const qty = Number(r.quantity ?? r.qty ?? r.qtyReceived ?? r.qtyIssued ?? 0)
+
+    const qtyReceived = r.qtyReceived !== undefined ? Number(r.qtyReceived) : (isReceipt ? qty : 0)
+    const qtyIssued = r.qtyIssued !== undefined ? Number(r.qtyIssued) : (!isReceipt ? qty : 0)
+
+    return {
+      id: r.id,
+      type: isQuarantine ? "quarantine" : isTransfer ? "transfer_out" : isReceipt ? "entry" : "leave",
+      date: r.movementDate || r.movement_date || r.date || getLocalDateString(),
+      batchNo: r.batchNo || r.batch_no || "",
+      qtyReceived,
+      qtyIssued,
+      balance: Number(r.balanceAfter ?? r.balance_after ?? unwrapped.quantity ?? 0),
+      expiryDate: r.expiryDate || r.expiry_date || "",
+      party: r.party || (isReceipt ? "Supplier Arrival" : isQuarantine ? "Quarantine Hold" : "Customer Dispatch"),
+      unitPrice: Number(r.unitCost ?? r.unit_cost ?? r.unitPrice ?? r.unit_price ?? unwrapped.unitCost ?? unwrapped.unit_cost ?? 0),
+      sellingPrice: (r.sellingPrice != null || r.selling_price != null) ? Number(r.sellingPrice ?? r.selling_price) : undefined,
+      remark: r.notes || r.reason || (isReceipt ? "Stock Receipt" : isQuarantine ? "Quarantine Hold" : "Stock Issue"),
+      createdAt: r.createdAt || r.created_at,
+    }
+  })
+
+  unwrapped.isExport = false
+  unwrapped.warehouseType = "PHARMA_WH"
+  return unwrapped
+}
+
 export async function getProduct(id) {
   const cleanId = String(id).trim()
   
@@ -127,7 +191,6 @@ export async function getProduct(id) {
   // 2. Try pharma_products
   const [phmRows] = await pool.query("SELECT * FROM `pharma_products` WHERE id = ?", [cleanId])
   if (phmRows.length > 0) {
-    const prod = unwrapRow(phmRows[0], "relational")
     const [batches] = await pool.query(
       "SELECT * FROM `pharma_product_batches` WHERE product_id = ? ORDER BY created_at ASC",
       [cleanId]
@@ -136,11 +199,7 @@ export async function getProduct(id) {
       "SELECT * FROM `stock_movements` WHERE product_id = ? ORDER BY created_at ASC",
       [cleanId]
     )
-    prod.batches = batches.map((b) => unwrapRow(b, "relational"))
-    prod.binCardEntries = movements.map((m) => unwrapRow(m, "relational"))
-    prod.isExport = false
-    prod.warehouseType = "PHARMA_WH"
-    return { status: 200, body: prod }
+    return { status: 200, body: hydratePharmaProduct(phmRows[0], batches, movements) }
   }
 
   return { status: 404, body: { error: `Product '${cleanId}' not found.` } }
@@ -324,17 +383,10 @@ export async function createProduct(body = {}) {
         "SELECT * FROM `stock_movements` WHERE product_id = ? ORDER BY created_at ASC",
         [prodId]
       )
-      unwrapped.batches = batches.map((b) => unwrapRow(b, "relational"))
-      unwrapped.binCardEntries = movements.map((m) => unwrapRow(m, "relational"))
-    }
-
-    return {
-      status: 201,
-      body: {
-        ...unwrapped,
-        isExport,
-        warehouseType: isExport ? "EXPORT_WH" : "PHARMA_WH",
-      },
+      return {
+        status: 201,
+        body: hydratePharmaProduct(createdRows[0], batches, movements),
+      }
     }
   })
 }
@@ -493,7 +545,6 @@ export async function updateProduct(id, updates = {}) {
         body: hydrateExportProduct(updatedRows[0], movements),
       }
     } else {
-      const unwrapped = unwrapRow(updatedRows[0], "relational")
       const [batches] = await conn.query(
         "SELECT * FROM `pharma_product_batches` WHERE product_id = ? ORDER BY created_at ASC",
         [cleanId]
@@ -502,15 +553,9 @@ export async function updateProduct(id, updates = {}) {
         "SELECT * FROM `stock_movements` WHERE product_id = ? ORDER BY created_at ASC",
         [cleanId]
       )
-      unwrapped.batches = batches.map((b) => unwrapRow(b, "relational"))
-      unwrapped.binCardEntries = movements.map((m) => unwrapRow(m, "relational"))
       return {
         status: 200,
-        body: {
-          ...unwrapped,
-          isExport: false,
-          warehouseType: "PHARMA_WH",
-        },
+        body: hydratePharmaProduct(updatedRows[0], batches, movements),
       }
     }
   })

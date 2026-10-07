@@ -36,6 +36,7 @@ import {
   fetchTradeAndAdviceDocs,
 } from "@/lib/tradeDocumentService"
 import { uploadFile } from "@/lib/fileUpload"
+import { updateSalesIssue } from "@/lib/salesIssuesApi"
 
 export type InvoiceAttachment = ShipmentDocAttachment
 
@@ -398,8 +399,10 @@ export default function Invoices() {
           sales_issue_id: editingInvoice.sales_issue_id,
           sales_order_id: editingInvoice.sales_order_id,
           purchase_order_id: editingInvoice.purchase_order_id,
+          customer_id: isPurchase ? undefined : editingInvoice.customer_id,
           customer_name: isPurchase ? undefined : (editCustName || editingInvoice.customer_name),
           supplier_name: isPurchase ? (editCustName || editingInvoice.supplier_name || editingInvoice.customer_name) : undefined,
+          warehouse_id: editingInvoice.warehouse_id,
           amount: numPay,
           currency: editingInvoice.currency,
           date: editPayDate,
@@ -431,6 +434,41 @@ export default function Invoices() {
 
         const newPaid = Number((alreadyPaid + numPay).toFixed(2))
         const newDue = Number(Math.max(0, totalVal - newPaid).toFixed(2))
+
+        // Cross-sync with Sales Issue in DB if linked
+        if (editingInvoice.sales_issue_id) {
+          try {
+            updateSalesIssue(editingInvoice.sales_issue_id, {
+              amount_paid: newPaid,
+              balance_due: newDue,
+              settlement_status: newDue <= 0 ? "Fully Settled" : "Ongoing",
+              payment_status: newDue <= 0 ? "Paid" : "Partially Paid",
+            } as any).catch((err) => console.warn("Notice: sync sales issue payment:", err))
+          } catch (siErr) {
+            console.warn("Notice: sync sales issue payment:", siErr)
+          }
+        }
+
+        // Cross-sync with Sales Order in ERP Store if linked
+        if (editingInvoice.sales_order_id) {
+          try {
+            const soList = erpStore.getSalesOrders() || []
+            const matchedSo = soList.find((s) => s.id === editingInvoice.sales_order_id)
+            if (matchedSo) {
+              const soTotal = Number(matchedSo.amount || 0)
+              const soPaid = Number(((matchedSo.paidAmount || 0) + numPay).toFixed(2))
+              const soDue = Number(Math.max(0, soTotal - soPaid).toFixed(2))
+              erpStore.updateSalesOrder({
+                ...matchedSo,
+                paidAmount: soPaid,
+                remainingBalance: soDue,
+                settlementStatus: soDue <= 0 ? "Fully Settled" : (soPaid > 0 ? "Ongoing" : "Unpaid"),
+              })
+            }
+          } catch (soErr) {
+            console.warn("Notice: sync sales order payment:", soErr)
+          }
+        }
         showToast(
           "Payment Recorded",
           "success",
