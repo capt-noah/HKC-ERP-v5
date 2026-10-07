@@ -114,8 +114,13 @@ export const PeachtreeBeginningBalancesModal: React.FC<PeachtreeBeginningBalance
       }
       setBalanceMap(initialMap)
     } else {
-      // Automatically load actual debit and credit balances from current ledger journal lines!
-      populateFromActualLedger()
+      // Clean blank slate for beginning cutover balances
+      const initialMap: Record<string, { debit: string; credit: string }> = {}
+      for (const acc of accounts) {
+        if (acc.is_group) continue
+        initialMap[acc.id] = { debit: "", credit: "" }
+      }
+      setBalanceMap(initialMap)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
@@ -285,14 +290,22 @@ export const PeachtreeBeginningBalancesModal: React.FC<PeachtreeBeginningBalance
     e.target.value = ""
   }
 
-  // Re-sync / Load Current Ledger Handler
+  // Re-sync / Load Current Ledger Handler with explicit confirmation
   const handleLoadCurrentLedger = () => {
-    const count = populateFromActualLedger()
-    showToast(
-      "Ledger Balances Loaded",
-      "info",
-      `Populated ${count} active account balances from current General Ledger postings.`
-    )
+    confirm({
+      title: "Snapshot Current Ledger as Beginning Balances?",
+      message: "This will load current general ledger operational totals into this cutover table. Use this only if you intend to establish beginning balances based on existing transactions. Continue?",
+      confirmLabel: "Snapshot Balances",
+      cancelLabel: "Cancel",
+      onConfirm: () => {
+        const count = populateFromActualLedger()
+        showToast(
+          "Ledger Balances Loaded",
+          "info",
+          `Populated ${count} active account balances from current General Ledger postings.`
+        )
+      },
+    })
   }
 
   // Template Download Handler

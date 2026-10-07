@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { createResource, deleteResource, loadResource, persistResources, updateResource, postInvoiceGLDistribution, postBeginningBalances } from "./apiPersistence"
-import { useAuthStore } from "./authStore"
+import { useAuthStore, normalizeRole } from "./authStore"
 import { erpStore, type PurchaseOrder } from "./erpStore"
 import { validateJournalVoucher } from "../core/finance/ledgerEngine"
 import { sortNewestFirst } from "./utils"
@@ -606,6 +606,7 @@ class FinanceStore {
   private _loadError: string | null = null
   private _isLoaded = false
   private _loadInProgress = false
+  private _persistDebounceTimer: any = null
 
   constructor() {
     // Eager constructor load removed to prevent firing 19+ requests on import/startup
@@ -636,7 +637,8 @@ class FinanceStore {
 
   public async loadFromApi(force = false) {
     const user = useAuthStore.getState().user
-    const roles = user?.roles || []
+    const rawRoles = user?.roles || ((user as any)?.role ? [(user as any).role] : [])
+    const roles = rawRoles.map(normalizeRole)
     const isFullFinance = roles.some((r) => ["finance", "superadmin"].includes(r))
     const isOperationalFinance = roles.some((r) => ["sales", "hkc_docs", "inventory"].includes(r))
     const isAuthorized = isFullFinance || isOperationalFinance
@@ -1709,12 +1711,20 @@ class FinanceStore {
       { resource: "journal_entry_lines", items: this.lines },
       { resource: "invoices", items: this.invoices },
       { resource: "payments", items: this.payments },
-      { resource: "recurring_expense_schedules", items: this.recurringSchedules },
       { resource: "expenses", items: this.expenses },
-      { resource: "vehicles", items: this.vehicles },
       { resource: "company_settings", items: [{ id: "default", ...this.companySettings }] },
       { resource: "tax_rules", items: this.taxRules },
     ])
+  }
+
+  public async flushPersistence(): Promise<void> {
+    if (this._persistDebounceTimer) {
+      clearTimeout(this._persistDebounceTimer)
+      this._persistDebounceTimer = null
+    }
+    await this.saveToApi().catch((error) => {
+      console.error("[FinanceStore] Failed to flush finance data to Database:", error)
+    })
   }
 
   public async reloadFromApi() {
@@ -1740,9 +1750,15 @@ class FinanceStore {
 
   private notify(persist = true) {
     if (persist) {
-      void this.saveToApi().catch((error) => {
-        console.error("Failed to persist finance data to Database.", error)
-      })
+      if (this._persistDebounceTimer) {
+        clearTimeout(this._persistDebounceTimer)
+      }
+      this._persistDebounceTimer = setTimeout(() => {
+        this._persistDebounceTimer = null
+        void this.saveToApi().catch((error) => {
+          console.error("Failed to persist finance data to Database.", error)
+        })
+      }, 350)
     }
     this.listeners.forEach((l) => l())
   }
@@ -3783,18 +3799,6 @@ class FinanceStore {
       ]
     )
 
-    if (postRes.success && postRes.entry) {
-      try {
-        await createResource("journal_entries", postRes.entry)
-        const linesToPersist = this.lines.filter((l) => l.journal_entry_id === postRes.entry!.id)
-        for (const line of linesToPersist) {
-          await createResource("journal_entry_lines", line)
-        }
-      } catch (err) {
-        console.warn("[FinanceStore] Could not persist stock intake journal entry to MySQL:", err)
-      }
-    }
-
     return postRes
   }
 
@@ -3899,19 +3903,6 @@ class FinanceStore {
         },
       ]
     )
-
-    if (postRes.success && postRes.entry) {
-      try {
-        await createResource("journal_entries", postRes.entry)
-        const linesToPersist = this.lines.filter((l) => l.journal_entry_id === postRes.entry!.id)
-        for (const line of linesToPersist) {
-          await createResource("journal_entry_lines", line)
-        }
-      } catch (err: any) {
-        console.warn("[FinanceStore] Could not persist stock loss journal entry to MySQL:", err)
-        return { success: false, error: err.message || "Failed to persist journal entry to database", entry: postRes.entry }
-      }
-    }
 
     return postRes
   }

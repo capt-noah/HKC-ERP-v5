@@ -689,7 +689,7 @@ export default function ControlCenter() {
         return emptyHRData
       }),
       erp.loadFromApi("all").catch((e) => console.warn("Failed to load ERP data:", e)),
-      finance.loadFromApi(false).catch((e) => console.warn("Failed to load Finance data:", e)),
+      finance.loadFromApi(true).catch((e) => console.warn("Failed to load Finance data:", e)),
     ])
       .then(([hr]) => {
         if (!cancelled) setHrData(hr)

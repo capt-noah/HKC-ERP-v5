@@ -14,15 +14,12 @@ import {
   ExternalLink,
   Clock,
   AlertCircle,
-  Receipt,
-  Upload,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore, getTradeLicenseStatus, type SalesOrder, type Quotation, type SalesOrderItem, type Customer, type Product } from "@/lib/erpStore"
 import { useFinanceStore, calculateMultiTax, resolveAutoTaxScheduleId } from "@/lib/financeStore"
-import { updateSalesIssue } from "@/lib/salesIssuesApi"
 import { useAuthStore } from "@/lib/authStore"
 import { withOperatingWarehouses, isWH1, matchesWarehouse, getUserPermittedWarehouses, resolveWarehouseFullName } from "@/lib/warehouses"
 import { useFeedback } from "@/context/FeedbackContext"
@@ -207,24 +204,7 @@ export default function SalesOrders() {
   const taxRules = financeStore.getTaxRules()
   const taxSchedules = financeStore.getTaxSchedules()
 
-  // Payment installment modal state
-  const [payingOrder, setPayingOrder] = useState<SalesOrder | null>(null)
-  const [payAmount, setPayAmount] = useState("")
-  const [payDate, setPayDate] = useState(getLocalDateString())
-  const [payBank, setPayBank] = useState("1000-02-26")
-  const [payRef, setPayRef] = useState("")
-  const [payNotes, setPayNotes] = useState("")
-  const [payAdviceFile, setPayAdviceFile] = useState<File | null>(null)
-  const [stagedSlipName, setStagedSlipName] = useState("")
-  const [stagedSlipUrl, setStagedSlipUrl] = useState("")
-  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false)
 
-  const bankAccounts = useMemo(() => {
-    return financeStore.getAccounts().filter((a) => {
-      const c = a.code || ""
-      return c.startsWith("1000-02") || c.startsWith("1000-01") || a.peachtree_type === "Cash"
-    })
-  }, [financeStore])
 
   // Billing form state
   const [selectedTaxScheduleId, setSelectedTaxScheduleId] = useState<string>("SCH-DOM-VAT")
@@ -780,128 +760,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     }
   }
 
-  // Open Payment Modal for Credit Sales Order
-  const handleOpenPaymentModal = (so: SalesOrder) => {
-    setPayingOrder(so)
-    const totalAmt = Number(so.amount || 0)
-    const paidAmt = Number(so.paidAmount || 0)
-    const dueAmt = Number(Math.max(0, totalAmt - paidAmt).toFixed(2))
-    setPayAmount(String(dueAmt))
-    setPayDate(getLocalDateString())
-    setPayBank("1000-02-26")
-    setPayRef(`DEP-${Date.now().toString().slice(-4)}`)
-    setPayNotes(`Payment receipt for Sales Order ${so.id}`)
-    setPayAdviceFile(null)
-    setStagedSlipName("")
-    setStagedSlipUrl("")
-  }
 
-  // Handle Payment Submit for Credit Sales Order
-  const handleRecordOrderPaymentSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!payingOrder || isSubmittingPayment) return
-    const numAmount = parseFloat(payAmount)
-    const totalVal = Number(payingOrder.amount || 0)
-    const alreadyPaid = Number(payingOrder.paidAmount || 0)
-    const dueAmt = Number(Math.max(0, totalVal - alreadyPaid).toFixed(2))
-
-    if (isNaN(numAmount) || numAmount <= 0) {
-      showToast("Invalid Amount", "warning", "Please enter a valid installment amount greater than 0.")
-      return
-    }
-    if (numAmount > dueAmt) {
-      showToast("Amount Exceeds Balance", "warning", `Installment amount cannot exceed the remaining balance of ETB ${dueAmt.toLocaleString()}.`)
-      return
-    }
-
-    setIsSubmittingPayment(true)
-    try {
-      let finalSlipUrl = stagedSlipUrl
-      let finalSlipName = stagedSlipName
-
-      if (payAdviceFile) {
-        try {
-          const upRes = await uploadFile(payAdviceFile)
-          finalSlipUrl = upRes.url
-          finalSlipName = upRes.filename || upRes.originalName || payAdviceFile.name
-          await savePaymentAdvice({
-            salesOrderId: payingOrder.id,
-            fileName: finalSlipName,
-            fileUrl: finalSlipUrl,
-            uploadedBy: "Cashier",
-          })
-        } catch (err) {
-          console.warn("Advice upload note:", err)
-        }
-      }
-
-      // Record payment in Finance Store (auto posts double entry journal: Dr Bank, Cr AR)
-      const isWh1Order = isWH1(payingOrder.warehouse, warehouses)
-      financeStore.recordPayment({
-        linked_invoice_id: null,
-        sales_order_id: payingOrder.id,
-        customer_name: payingOrder.customer,
-        warehouse_id: payingOrder.warehouse,
-        ar_account_code: isWh1Order ? "1300-01" : "1300-03",
-        amount: numAmount,
-        currency: payingOrder.currency || "ETB",
-        date: payDate,
-        method: "Bank Deposit",
-        bank_account_code: payBank,
-        reference: payRef || `DEP-${Date.now().toString().slice(-4)}`,
-        payment_advice_url: finalSlipUrl || undefined,
-        payment_advice_filename: finalSlipName || undefined,
-        notes: payNotes,
-        direction: "Received",
-      })
-
-      const newPaid = Number((alreadyPaid + numAmount).toFixed(2))
-      const newDue = Number(Math.max(0, totalVal - newPaid).toFixed(2))
-      const newSettlement = newDue <= 0 ? "Fully Settled" : "Ongoing"
-
-      // Update Sales Order in ERP Store
-      erp.updateSalesOrder({
-        ...payingOrder,
-        paidAmount: newPaid,
-        remainingBalance: newDue,
-        settlementStatus: newSettlement,
-      })
-
-      // Cross-sync with any linked sales issues in DB
-      try {
-        const issues = erp.getSalesIssues() || []
-        const linkedIssues = issues.filter((si: any) =>
-          si.sales_order_id === payingOrder.id ||
-          (si.reference_no && (si.reference_no.includes(payingOrder.id) || si.reference_no === payingOrder.id))
-        )
-        for (const li of linkedIssues) {
-          const liTotal = Number(li.total_amount || 0)
-          const liPaid = Number(((li.amount_paid || 0) + numAmount).toFixed(2))
-          const liDue = Number(Math.max(0, liTotal - liPaid).toFixed(2))
-          await updateSalesIssue(li.id, {
-            items: li.items || [],
-            amount_paid: liPaid,
-            balance_due: liDue,
-            settlement_status: liDue <= 0 ? "Fully Settled" : "Ongoing",
-            payment_status: liDue <= 0 ? "Paid" : "Partially Paid",
-          } as any)
-        }
-      } catch (err) {
-        console.warn("Linked issue sync notice:", err)
-      }
-
-      showToast(
-        "Payment Recorded",
-        "success",
-        `Payment of ETB ${numAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} recorded for ${payingOrder.id}. Remaining due: ETB ${newDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}.`
-      )
-      setPayingOrder(null)
-    } catch (err: any) {
-      showToast("Payment Failed", "warning", err?.message || "Failed to record payment.")
-    } finally {
-      setIsSubmittingPayment(false)
-    }
-  }
 
   // Handle Create Sales Order
   const handleCreateOrder = async (e: React.FormEvent) => {
@@ -1435,15 +1294,6 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
               <td style={{ width: `${colWidths._actions}px` }} className="py-4 px-4 text-center whitespace-nowrap overflow-hidden">
                 <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                  {so.paymentType === "Credit" && (Number(so.remainingBalance ?? (Number(so.amount || 0) - Number(so.paidAmount || 0))) > 0) && (
-                    <button 
-                      onClick={() => handleOpenPaymentModal(so)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-[11px] transition-all border border-emerald-200 active:scale-95 shadow-2xs cursor-pointer"
-                      title="Record Customer Payment Installment"
-                    >
-                      <Receipt className="size-3 text-emerald-700" /> Pay
-                    </button>
-                  )}
                   <button 
                     onClick={() => handleOpenEditModal(so)}
                     className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 text-zinc-900 font-extrabold text-[11px] transition-all border border-zinc-200/80 active:scale-95 shadow-2xs"
@@ -2838,194 +2688,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           </div>
         )}
 
-      {/* MODAL: RECORD CUSTOMER PAYMENT FOR CREDIT SALES ORDER */}
-      {payingOrder && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto no-scrollbar rounded-3xl bg-white p-6 shadow-2xl border border-zinc-200">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-zinc-100 pb-3 mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="size-9 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
-                  <Receipt className="size-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-black text-zinc-900">Record Payment Installment</h3>
-                  <p className="text-xs text-zinc-500">{payingOrder.id} • {payingOrder.customer}</p>
-                </div>
-              </div>
-              <button 
-                type="button" 
-                onClick={() => setPayingOrder(null)} 
-                className="text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
-              >
-                <X className="size-5" />
-              </button>
-            </div>
 
-            {/* Financial State KPI Header */}
-            {(() => {
-              const totalAmt = Number(payingOrder.amount || 0)
-              const paidAmt = Number(payingOrder.paidAmount || 0)
-              const dueAmt = Number(Math.max(0, totalAmt - paidAmt).toFixed(2))
-              const currentInputAmt = parseFloat(payAmount) || 0
-              const newRemaining = Number(Math.max(0, dueAmt - currentInputAmt).toFixed(2))
-              const newPct = totalAmt > 0 ? Math.min(100, Math.round(((paidAmt + currentInputAmt) / totalAmt) * 100)) : 0
-
-              return (
-                <form onSubmit={handleRecordOrderPaymentSubmit} className="space-y-4 text-xs">
-                  <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-2.5">
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div className="p-2.5 rounded-xl bg-white border border-zinc-200">
-                        <span className="text-[10px] font-bold text-zinc-400 uppercase block">Total Amount</span>
-                        <span className="font-mono text-xs font-black text-zinc-900">ETB {totalAmt.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-white border border-zinc-200">
-                        <span className="text-[10px] font-bold text-emerald-600 uppercase block">Already Paid</span>
-                        <span className="font-mono text-xs font-black text-emerald-700">ETB {paidAmt.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="p-2.5 rounded-xl bg-white border border-zinc-200">
-                        <span className="text-[10px] font-bold text-rose-600 uppercase block">Current Due</span>
-                        <span className="font-mono text-xs font-black text-rose-700">ETB {dueAmt.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
-                      </div>
-                    </div>
-
-                    {/* Live Balance Readout */}
-                    <div className="pt-2 border-t border-zinc-200 flex items-center justify-between text-xs font-bold">
-                      <span className="text-zinc-600">Remaining after this payment:</span>
-                      <span className={`font-mono text-sm font-black ${newRemaining <= 0 ? "text-emerald-700" : "text-zinc-900"}`}>
-                        ETB {newRemaining.toLocaleString("en-US", { minimumFractionDigits: 2 })} ({newPct}%)
-                      </span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <label className="font-bold text-zinc-700">Installment Amount (ETB) *</label>
-                      <button
-                        type="button"
-                        onClick={() => setPayAmount(String(dueAmt))}
-                        className="text-[11px] font-black text-emerald-700 hover:underline cursor-pointer"
-                      >
-                        Pay Full Remaining (ETB {dueAmt.toLocaleString("en-US", { minimumFractionDigits: 2 })})
-                      </button>
-                    </div>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      max={dueAmt}
-                      value={payAmount}
-                      onChange={(e) => setPayAmount(e.target.value)}
-                      required
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-mono text-sm font-black text-zinc-900 outline-none"
-                      placeholder="e.g. 50000"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="font-bold text-zinc-700 mb-1 block">Payment Date</label>
-                      <input
-                        type="date"
-                        value={payDate}
-                        onChange={(e) => setPayDate(e.target.value)}
-                        required
-                        className="w-full p-2 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-bold text-zinc-700 mb-1 block">Deposit Bank Account</label>
-                      <select
-                        value={payBank}
-                        onChange={(e) => setPayBank(e.target.value)}
-                        className="w-full p-2 rounded-xl border border-zinc-200 bg-zinc-50 font-semibold cursor-pointer"
-                      >
-                        {bankAccounts.map((a) => (
-                          <option key={a.id} value={a.code}>
-                            {a.code} - {a.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">Bank Transaction / Slip Reference No *</label>
-                    <input
-                      type="text"
-                      value={payRef}
-                      onChange={(e) => setPayRef(e.target.value)}
-                      required
-                      placeholder="e.g. CBE-TXN-9842187"
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-mono font-bold"
-                    />
-                  </div>
-
-                  {/* Payment Advice Receipt Attachment */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="font-bold text-zinc-700">Attach Payment Advice / Deposit Slip</label>
-                      {payAdviceFile && (
-                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                          {payAdviceFile.name}
-                        </span>
-                      )}
-                    </div>
-                    <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
-                      payAdviceFile
-                        ? "border-emerald-400 bg-emerald-50/40 hover:bg-emerald-50/70"
-                        : "border-zinc-300 bg-zinc-50/50 hover:bg-zinc-100"
-                    }`}>
-                      <Upload className={`size-4 mb-1 ${payAdviceFile ? "text-emerald-600" : "text-zinc-500"}`} />
-                      <span className="text-[11px] font-bold text-zinc-600">
-                        {payAdviceFile ? "Replace Deposit Slip" : "Click to upload deposit slip / bank receipt"}
-                      </span>
-                      <input
-                        type="file"
-                        className="hidden"
-                        accept="image/*,application/pdf"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0]
-                          if (file) setPayAdviceFile(file)
-                        }}
-                      />
-                    </label>
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-zinc-700 mb-1 block">Notes / Remarks</label>
-                    <input
-                      type="text"
-                      value={payNotes}
-                      onChange={(e) => setPayNotes(e.target.value)}
-                      placeholder="Optional notes or details..."
-                      className="w-full p-2.5 rounded-xl border border-zinc-200 bg-zinc-50 font-medium"
-                    />
-                  </div>
-
-                  {/* Footer Actions */}
-                  <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-100">
-                    <button
-                      type="button"
-                      onClick={() => setPayingOrder(null)}
-                      className="px-4 py-2 rounded-full border border-zinc-200 text-zinc-700 hover:bg-zinc-50 font-bold cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isSubmittingPayment}
-                      className="px-5 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-black shadow-md shadow-emerald-900/15 cursor-pointer disabled:opacity-50 transition-all active:scale-95 flex items-center gap-1.5"
-                    >
-                      {isSubmittingPayment ? <LoadingDots color="bg-white" size="sm" /> : <><CheckCircle2 className="size-3.5" /> Confirm Payment</>}
-                    </button>
-                  </div>
-                </form>
-              )
-            })()}
-          </div>
-        </div>
-      )}
 
       {/* REUSABLE DELETE CONFIRMATION MODAL */}
       <RecordDeleteModal

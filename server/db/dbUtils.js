@@ -116,6 +116,8 @@ export function normalizeBodyToDbColumns(body, validCols) {
     completedDate: "completed_date",
     requestedBy: "requested_by",
     approvedBy: "approved_by",
+    approvedAt: "approved_at",
+    declineReason: "decline_reason",
     voucherNo: "voucher_no",
     plateNumber: "plate_number",
     grossQuantity: "gross_quantity",
@@ -250,8 +252,12 @@ export function normalizeBodyToDbColumns(body, validCols) {
         dbCol = "rate_percent"
       }
     }
-    // If the explicit direct column was already provided in body, do not let an alias override it
+    // If the explicit direct column was already provided in body, do not let a different alias override it,
+    // but DO allow the exact canonical camelCase equivalent to update it.
     if (key !== dbCol && body[dbCol] !== undefined && normalized[dbCol] !== undefined) {
+      if (camelToSnake[key] === dbCol && value !== undefined && value !== null && value !== "") {
+        normalized[dbCol] = value
+      }
       continue
     }
     if (!validCols || validCols.has(dbCol)) {

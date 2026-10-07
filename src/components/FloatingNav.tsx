@@ -93,7 +93,10 @@ export function FloatingNav({
   // Dynamic notifications for Super Admin (e.g. pending sales orders)
   const notifications = useMemo(() => {
     if (!isSuperAdmin) return []
-    const pendingOrders = salesOrders.filter((so) => (so.approvalStatus || "Pending") === "Pending")
+    const pendingOrders = salesOrders.filter((so) => {
+      const st = so.approvalStatus || (so as any).approval_status || "Pending"
+      return st === "Pending"
+    })
     return pendingOrders
       .filter((so) => !dismissedNotificationIds.includes(so.id))
       .map((so) => ({

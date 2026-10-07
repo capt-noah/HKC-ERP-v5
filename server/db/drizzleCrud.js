@@ -402,10 +402,14 @@ export async function drizzleCreateRow({ resource, body }) {
       }
       const values = fields.map((k) => sanitizeSqlValue(normalizedBody[k]))
       const placeholders = fields.map(() => "?").join(", ")
-      const colNames = fields.map((f) => `\`${f}\``).join(", ")
+      const updateSet = fields
+        .filter((k) => k !== "id")
+        .map((f) => `\`${f}\` = VALUES(\`${f}\`)`)
+        .join(", ")
 
       await pool.query(
-        `INSERT INTO \`${tableName}\` (${colNames}) VALUES (${placeholders})`,
+        `INSERT INTO \`${tableName}\` (${colNames}) VALUES (${placeholders})
+         ${updateSet ? `ON DUPLICATE KEY UPDATE ${updateSet}` : ""}`,
         values
       )
       if (tableName === "warehouses") {

@@ -3483,13 +3483,18 @@ class ErpStore {
     const existing = this.salesOrders.find((so) => so.id === soId)
     if (!existing) return null
 
+    const nowIso = new Date().toISOString()
     const updated: SalesOrder = {
       ...existing,
       approvalStatus: "Approved",
       approvedBy: approverName,
-      approvedAt: new Date().toISOString(),
+      approvedAt: nowIso,
       declineReason: undefined,
-    }
+      approval_status: "Approved",
+      approved_by: approverName,
+      approved_at: nowIso,
+      decline_reason: undefined,
+    } as any
 
     this.salesOrders = this.salesOrders.map((so) => (so.id === soId ? updated : so))
     this.notify()
@@ -3505,7 +3510,7 @@ class ErpStore {
         action: "Approve",
         resource: "sales_orders",
         details: { orderId: soId, customer: existing.customer, amount: existing.amount },
-        created_at: new Date().toISOString(),
+        created_at: nowIso,
       }).catch(() => {})
     } catch (err) {
       console.error("Failed to persist approved Sales Order to DB:", err)
@@ -3518,13 +3523,19 @@ class ErpStore {
     const existing = this.salesOrders.find((so) => so.id === soId)
     if (!existing) return null
 
+    const nowIso = new Date().toISOString()
+    const declineText = reason || "Declined by Super Admin"
     const updated: SalesOrder = {
       ...existing,
       approvalStatus: "Declined",
       approvedBy: declinerName,
-      approvedAt: new Date().toISOString(),
-      declineReason: reason || "Declined by Super Admin",
-    }
+      approvedAt: nowIso,
+      declineReason: declineText,
+      approval_status: "Declined",
+      approved_by: declinerName,
+      approved_at: nowIso,
+      decline_reason: declineText,
+    } as any
 
     this.salesOrders = this.salesOrders.map((so) => (so.id === soId ? updated : so))
     this.notify()

@@ -43,6 +43,7 @@ import PeachtreeBeginningBalancesModal from "@/components/finance/PeachtreeBegin
 import { PeachtreePeriodClosingModal } from "@/components/finance/PeachtreePeriodClosingModal"
 import TransactionMappingMatrix from "@/components/finance/TransactionMappingMatrix"
 import FiscalPeriodsTab from "@/components/finance/FiscalPeriodsTab"
+import { COAAccountSelector } from "@/components/finance/COAAccountSelector"
 
 export default function Ledger() {
   const { showToast } = useFeedback()
@@ -155,6 +156,15 @@ export default function Ledger() {
   const [isSubmittingAccount, setIsSubmittingAccount] = useState(false)
   const [showBeginningBalancesModal, setShowBeginningBalancesModal] = useState(false)
   const [showPeriodClosingModal, setShowPeriodClosingModal] = useState(false)
+  
+  // Reallocation / Account Balance Transfer Modal state
+  const [showTransferModal, setShowTransferModal] = useState(false)
+  const [transferFromAccId, setTransferFromAccId] = useState("")
+  const [transferToAccId, setTransferToAccId] = useState("")
+  const [transferAmount, setTransferAmount] = useState("")
+  const [transferDate, setTransferDate] = useState(new Date().toISOString().split("T")[0])
+  const [transferNotes, setTransferNotes] = useState("")
+  const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false)
   const [reversalTarget, setReversalTarget] = useState<{
     entryId: string
     lineId?: string
@@ -278,6 +288,80 @@ export default function Ledger() {
       showToast("Reversal Failed", "warning", res.error || "Could not reverse entry.")
     }
     setReversalTarget(null)
+  }
+
+  const handleExecuteTransfer = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!transferFromAccId || !transferToAccId) {
+      showToast("Selection Error", "warning", "Please select both Source (Credit) and Destination (Debit) accounts.")
+      return
+    }
+    if (transferFromAccId === transferToAccId) {
+      showToast("Identical Accounts", "warning", "Source and Destination accounts must be different.")
+      return
+    }
+    const amt = parseFloat(transferAmount)
+    if (isNaN(amt) || amt <= 0) {
+      showToast("Invalid Amount", "warning", "Please enter a valid transfer amount greater than 0.")
+      return
+    }
+
+    const fromAcc = accounts.find((a) => a.id === transferFromAccId)
+    const toAcc = accounts.find((a) => a.id === transferToAccId)
+    if (!fromAcc || !toAcc) {
+      showToast("Account Error", "warning", "Selected accounts could not be resolved.")
+      return
+    }
+
+    setIsSubmittingTransfer(true)
+    try {
+      const desc = transferNotes.trim() || `Reallocation Transfer: ${fromAcc.code} (${fromAcc.name}) -> ${toAcc.code} (${toAcc.name})`
+      const result = store.postJournalEntry(
+        {
+          entry_date: transferDate,
+          description: desc,
+          source_type: "Manual Adjustment",
+          source_id: `REALLOC-${Date.now()}`,
+          created_by: "Senior Accountant",
+          currency: "ETB",
+          exchange_rate: 1.0,
+          is_reversal_of: null,
+        },
+        [
+          {
+            account_id: toAcc.id,
+            debit_amount: amt,
+            credit_amount: 0,
+          },
+          {
+            account_id: fromAcc.id,
+            debit_amount: 0,
+            credit_amount: amt,
+          },
+        ]
+      )
+
+      if (!result.success) {
+        showToast("Reallocation Failed", "warning", result.error || "Failed to post reallocation entry.")
+        return
+      }
+
+      await store.flushPersistence()
+      showToast(
+        "Reallocation Posted",
+        "success",
+        `Successfully transferred ETB ${amt.toLocaleString("en-US", { minimumFractionDigits: 2 })} from ${fromAcc.code} to ${toAcc.code}.`
+      )
+      setShowTransferModal(false)
+      setTransferAmount("")
+      setTransferNotes("")
+      setTransferFromAccId("")
+      setTransferToAccId("")
+    } catch (err: any) {
+      showToast("Error", "warning", err.message || "Failed to execute reallocation.")
+    } finally {
+      setIsSubmittingTransfer(false)
+    }
   }
 
   const handleCreateAccount = async (e: React.FormEvent) => {
@@ -1395,10 +1479,24 @@ export default function Ledger() {
                   <button
                     onClick={() => setShowBeginningBalancesModal(true)}
                     className="flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-md shadow-emerald-900/15 transition-all cursor-pointer active:scale-95"
-                    title="Maintain Chart of Accounts balances & historical cutover values"
+                    title="Maintain Chart of Accounts beginning balances & historical cutover values"
                   >
                     <Scale className="size-3.5" />
                     <span>Maintain COA</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setTransferDate(new Date().toISOString().split("T")[0])
+                      setTransferAmount("")
+                      setTransferNotes("")
+                      setShowTransferModal(true)
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-md shadow-blue-900/15 transition-all cursor-pointer active:scale-95"
+                    title="Transfer or reallocate balance between two accounts (Credit Source, Debit Destination)"
+                  >
+                    <ArrowLeftRight className="size-3.5" />
+                    <span>Reallocate / Transfer</span>
                   </button>
 
                   <button
@@ -2180,6 +2278,153 @@ export default function Ledger() {
           isOpen={showPeriodClosingModal}
           onClose={() => setShowPeriodClosingModal(false)}
         />
+
+        {/* MODAL 7: Account Reallocation / Balance Transfer Modal */}
+        {showTransferModal && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <div className="relative w-full max-w-xl bg-white dark:bg-zinc-950 rounded-3xl overflow-hidden shadow-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col">
+              {/* Header */}
+              <div className="flex items-center justify-between p-5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-2xl bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+                    <ArrowLeftRight className="size-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-zinc-900 dark:text-zinc-100">
+                      Reallocate / Transfer Account Balance
+                    </h3>
+                    <p className="text-xs text-zinc-500">
+                      Transfer amounts between accounts with automatic debit/credit balancing
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowTransferModal(false)}
+                  className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+
+              {/* Form Body */}
+              <form onSubmit={handleExecuteTransfer} className="p-6 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* From Account (Credit) */}
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                      From Account <span className="text-rose-500 font-black">(Credit)</span>
+                    </label>
+                    <COAAccountSelector
+                      value={transferFromAccId}
+                      onChange={(acc) => setTransferFromAccId(acc.id)}
+                      placeholder="Select source account..."
+                    />
+                    <span className="text-[10px] text-zinc-400 mt-1 block">Account to decrease / credit</span>
+                  </div>
+
+                  {/* To Account (Debit) */}
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                      To Account <span className="text-emerald-500 font-black">(Debit)</span>
+                    </label>
+                    <COAAccountSelector
+                      value={transferToAccId}
+                      onChange={(acc) => setTransferToAccId(acc.id)}
+                      placeholder="Select destination account..."
+                    />
+                    <span className="text-[10px] text-zinc-400 mt-1 block">Account to increase / debit</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Amount */}
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                      Amount (ETB)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      placeholder="0.00"
+                      value={transferAmount}
+                      onChange={(e) => setTransferAmount(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-sm font-mono font-bold text-zinc-900 dark:text-zinc-100 outline-none focus:border-blue-500"
+                    />
+                  </div>
+
+                  {/* Date */}
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                      Transfer Date
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={transferDate}
+                      onChange={(e) => setTransferDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-bold text-zinc-900 dark:text-zinc-100 outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Notes / Reason */}
+                <div>
+                  <label className="block text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                    Description / Reallocation Reason
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Reallocate marketing budget to operations"
+                    value={transferNotes}
+                    onChange={(e) => setTransferNotes(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-medium text-zinc-900 dark:text-zinc-100 outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                {/* Accounting Preview Pill */}
+                <div className="p-3.5 rounded-2xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200/60 dark:border-blue-800/60 text-xs space-y-1">
+                  <div className="font-bold text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
+                    <CheckCircle2 className="size-3.5 text-blue-600" />
+                    Double-Entry Impact Summary:
+                  </div>
+                  <p className="text-[11px] text-blue-800 dark:text-blue-300">
+                    Will post a balancing General Ledger Journal Entry crediting{" "}
+                    <span className="font-mono font-bold">
+                      {accounts.find((a) => a.id === transferFromAccId)?.code || "Source"}
+                    </span>{" "}
+                    and debiting{" "}
+                    <span className="font-mono font-bold">
+                      {accounts.find((a) => a.id === transferToAccId)?.code || "Destination"}
+                    </span>{" "}
+                    by ETB {parseFloat(transferAmount) > 0 ? parseFloat(transferAmount).toLocaleString("en-US", { minimumFractionDigits: 2 }) : "0.00"}.
+                  </p>
+                </div>
+
+                {/* Footer Buttons */}
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-200 dark:border-zinc-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowTransferModal(false)}
+                    className="px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 text-zinc-700 dark:text-zinc-300 font-bold text-xs transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingTransfer || !transferFromAccId || !transferToAccId || !transferAmount || parseFloat(transferAmount) <= 0}
+                    className="inline-flex items-center gap-1.5 px-6 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black text-xs transition-all shadow-md active:scale-95 cursor-pointer"
+                  >
+                    <ArrowLeftRight className="size-3.5" />
+                    {isSubmittingTransfer ? "Posting..." : "Post Reallocation"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>
