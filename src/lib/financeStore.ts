@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { createResource, deleteResource, loadResource, persistResources, updateResource } from "./apiPersistence"
+import { createResource, deleteResource, loadResource, persistResources, updateResource, postInvoiceGLDistribution, postBeginningBalances } from "./apiPersistence"
 import { useAuthStore } from "./authStore"
 import { erpStore, type PurchaseOrder } from "./erpStore"
 import { validateJournalVoucher } from "../core/finance/ledgerEngine"
@@ -2769,12 +2769,12 @@ class FinanceStore {
     }
   }
 
-  public saveBeginningBalances(params: {
+  public async saveBeginningBalances(params: {
     asOfDate: string
     balances: Array<{ account_id: string; debit_amount: number; credit_amount: number }>
     notes?: string
     created_by?: string
-  }): { success: boolean; entry?: JournalEntry; error?: string } {
+  }): Promise<{ success: boolean; entry?: JournalEntry; error?: string }> {
     const { asOfDate, balances, notes, created_by } = params
 
     // Filter non-zero lines
@@ -2847,7 +2847,19 @@ class FinanceStore {
       this.entries = [openingEntry, ...this.entries]
     }
 
-    this.notify()
+    // Persist changes atomically to server
+    try {
+      await postBeginningBalances({
+        asOfDate,
+        balances: activeLines,
+        notes: entryDescription,
+        created_by: created_by || "Finance Admin",
+      })
+    } catch (saveErr: any) {
+      console.error("[saveBeginningBalances] API persistence warning:", saveErr)
+    }
+
+    this.notify(false)
     return { success: true, entry: openingEntry }
   }
 
@@ -4395,14 +4407,19 @@ class FinanceStore {
       }
     }
 
-    // 7. Persist changes to server
+    // 7. Persist changes atomically to server
     try {
-      await this.saveToApi()
+      await postInvoiceGLDistribution(inv.id, {
+        revenueLines: distribution.revenueLines,
+        cogsLines: distribution.cogsLines,
+        notes: distribution.notes,
+        salesIssueId: inv.sales_issue_id || null,
+      })
     } catch (saveErr: any) {
       console.error("[updateInvoiceGLDistribution] API persistence warning:", saveErr)
     }
 
-    this.notify()
+    this.notify(false)
     return { success: true }
   }
 

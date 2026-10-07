@@ -227,3 +227,40 @@ export async function updateExportMovementDifference(movementId: string, differe
 export function persistResources(resources: Array<{ resource: string; items: Identified[] }>) {
   return Promise.all(resources.map(({ resource, items }) => replaceResource(resource, items))).then(() => undefined)
 }
+
+export async function postInvoiceGLDistribution(invoiceId: string, payload: any) {
+  const authHeaders = getAuthHeaders()
+  const response = await fetch(`${API_BASE}/api/finance/invoices/${encodeURIComponent(invoiceId)}/gl-distribution`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders,
+    },
+    body: JSON.stringify(payload),
+  })
+  const body = await parseResponse(response)
+  if (!response.ok) {
+    if (checkAuthResponse(response, body)) throw new Error("Session expired.")
+    throw new Error(errorMessage(body, "Failed to update GL distribution."))
+  }
+  return body
+}
+
+export async function postBeginningBalances(payload: any) {
+  const authHeaders = getAuthHeaders()
+  const response = await fetch(`${API_BASE}/api/finance/beginning-balances`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders,
+    },
+    body: JSON.stringify(payload),
+  })
+  const body = await parseResponse(response)
+  if (!response.ok) {
+    if (checkAuthResponse(response, body)) throw new Error("Session expired.")
+    throw new Error(errorMessage(body, "Failed to save beginning balances."))
+  }
+  return body
+}
+

@@ -347,7 +347,7 @@ export const PeachtreeBeginningBalancesModal: React.FC<PeachtreeBeginningBalance
         })
         .filter((b) => b.debit_amount > 0 || b.credit_amount > 0)
 
-      const result = store.saveBeginningBalances({
+      const result = await store.saveBeginningBalances({
         asOfDate,
         balances: payloadBalances,
         notes: notes.trim(),

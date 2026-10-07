@@ -377,8 +377,19 @@ export default function ControlCenter() {
     fetchSalesIssuesData()
   }, [])
 
+  const [financeVersion, setFinanceVersion] = useState<number>(0)
+
+  useEffect(() => {
+    const unsub = finance.subscribe(() => {
+      setFinanceVersion((v) => v + 1)
+    })
+    return () => {
+      unsub()
+    }
+  }, [])
+
   const financeStore = finance
-  const invoices = financeStore.getInvoices()
+  const invoices = useMemo(() => financeStore.getInvoices(), [financeStore, financeVersion])
 
   // Unsettled Invoices & Outstanding Customer Receivables Computation
   interface ReceivableItem {
@@ -830,6 +841,7 @@ export default function ControlCenter() {
 
   const { postedRevenue, totalCogs, grossProfit, grossMargin, netProfit, netMargin } = useMemo(() => {
     const glMetrics = finance.getFinancialMetrics()
+    const prodMap = new Map(products.map((p) => [p.id, p]))
 
     const activeIssues = salesIssues.filter((si) => si.status !== "Cancelled")
     let localSalesIssueCogs = 0
@@ -839,7 +851,14 @@ export default function ControlCenter() {
       if (Array.isArray(si.items)) {
         si.items.forEach((item) => {
           const qty = Number(item.quantity || 0)
-          const cost = Number((item as any).unit_cost || (item as any).cost_price || 0)
+          const prod = prodMap.get((item as any).product_id)
+          const cost = Number(
+            (item as any).unit_cost ??
+            (item as any).cost_price ??
+            (item as any).unitCost ??
+            prod?.unitCost ??
+            0
+          )
           localSalesIssueCogs += qty * cost
         })
       }
@@ -862,7 +881,7 @@ export default function ControlCenter() {
       netProfit: Math.round(np * 100) / 100,
       netMargin: Math.round(nm * 10) / 10,
     }
-  }, [salesIssues, finance])
+  }, [salesIssues, finance, financeVersion, products])
 
   // Chart Data Preparation (Revenue & Sales Pipeline)
   const revenueChartData = useMemo(() => {
@@ -922,7 +941,7 @@ export default function ControlCenter() {
       revenue: Math.max(0, monthlyMap[month].revenue),
       orders: Math.max(0, monthlyMap[month].orders),
     }))
-  }, [salesIssues, erp, finance])
+  }, [salesIssues, erp, finance, financeVersion])
 
   // Chart Data Preparation (Profit Analytics: Revenue, COGS, Gross Profit & Net Profit)
   const profitChartData = useMemo(() => {
@@ -962,6 +981,7 @@ export default function ControlCenter() {
     // Fallback to Sales Issues if GL lines are empty
     const hasGlData = Object.values(monthlyMap).some((m) => m.revenue > 0 || m.cogs > 0)
     if (!hasGlData && salesIssues.length > 0) {
+      const prodMap = new Map(products.map((p) => [p.id, p]))
       salesIssues.forEach((si) => {
         if (si.status === "Cancelled") return
         const dateStr = si.sale_date || (si as any).created_at
@@ -972,7 +992,14 @@ export default function ControlCenter() {
           if (Array.isArray(si.items)) {
             si.items.forEach((item) => {
               const qty = Number(item.quantity || 0)
-              const cost = Number((item as any).unit_cost || (item as any).cost_price || 0)
+              const prod = prodMap.get((item as any).product_id)
+              const cost = Number(
+                (item as any).unit_cost ??
+                (item as any).cost_price ??
+                (item as any).unitCost ??
+                prod?.unitCost ??
+                0
+              )
               monthlyMap[monthLabel].cogs += qty * cost
             })
           }
@@ -997,7 +1024,7 @@ export default function ControlCenter() {
         margin,
       }
     })
-  }, [salesIssues, finance])
+  }, [salesIssues, finance, financeVersion, products])
 
   // Stock Valuation Breakdown by Commodity / Category
   const inventoryCategoryData = useMemo(() => {

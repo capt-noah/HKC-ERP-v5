@@ -9,6 +9,8 @@ import {
   parseJsonField,
 } from "./dbUtils.js"
 import { inventoryService } from "../modules/inventory/inventoryService.js"
+import { salesService } from "../modules/sales/salesService.js"
+import { withTransaction } from "./transactionHelper.js"
 import { getDefaultWarehouseForType, invalidateWarehouseCache } from "../utils/warehouseUtils.js"
 
 export {
@@ -602,6 +604,49 @@ export async function drizzleDeleteRow({ resource, id }) {
   }
   if (tableName === "store_transfers") {
     return await inventoryService.deleteTransfer(cleanId)
+  }
+  if (tableName === "sales_issues") {
+    return await salesService.delete(cleanId)
+  }
+  if (tableName === "invoices") {
+    return await withTransaction(async (conn) => {
+      const [invRows] = await conn.query(
+        "SELECT * FROM invoices WHERE id = ? OR invoice_number = ? LIMIT 1",
+        [cleanId, cleanId]
+      )
+      const inv = invRows[0]
+      if (!inv) {
+        return { status: 404, body: { error: `Invoice ${cleanId} not found` } }
+      }
+      const linkedJeIds = [
+        `JE-SALE-${inv.id}`,
+        `JE-SALE-${inv.invoice_number}`,
+        `JE-COGS-${inv.id}`,
+        `JE-COGS-${inv.invoice_number}`,
+        `JE-PO-${inv.id}`,
+        `JE-PO-${inv.invoice_number}`,
+      ]
+      if (inv.sales_issue_id) {
+        linkedJeIds.push(`JE-SALE-${inv.sales_issue_id}`)
+        linkedJeIds.push(`JE-COGS-${inv.sales_issue_id}`)
+      }
+      if (inv.purchase_order_id) {
+        linkedJeIds.push(`JE-PO-${inv.purchase_order_id}`)
+      }
+
+      await conn.query("DELETE FROM journal_entry_lines WHERE journal_entry_id IN (?)", [linkedJeIds])
+      await conn.query(
+        "DELETE FROM journal_entries WHERE id IN (?) OR source_id = ? OR source_id = ?",
+        [linkedJeIds, inv.id, inv.invoice_number]
+      )
+
+      if (inv.sales_issue_id) {
+        await conn.query("UPDATE sales_issues SET invoice_id = NULL, payment_status = 'Unpaid' WHERE id = ?", [inv.sales_issue_id])
+      }
+
+      await conn.query("DELETE FROM invoices WHERE id = ?", [inv.id])
+      return { status: 200, body: { ok: true, deletedId: id } }
+    })
   }
 
   try {

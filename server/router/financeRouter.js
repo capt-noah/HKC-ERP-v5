@@ -16,3 +16,30 @@ financeRouter.post(
     }
   }
 )
+
+financeRouter.post(
+  ["/finance/invoices/:id/gl-distribution", "/invoices/:id/gl-distribution"],
+  authorizeRoles("superadmin", "finance", "admin"),
+  async (req, res, next) => {
+    try {
+      const result = await financeService.syncInvoiceGLDistribution(req.params.id, req.body)
+      res.status(result.status).json(result.body)
+    } catch (err) {
+      next(err)
+    }
+  }
+)
+
+financeRouter.post(
+  ["/finance/beginning-balances", "/beginning-balances"],
+  authorizeRoles("superadmin", "finance", "admin"),
+  async (req, res, next) => {
+    try {
+      const result = await financeService.saveBeginningBalances(req.body)
+      res.status(result.status).json(result.body)
+    } catch (err) {
+      next(err)
+    }
+  }
+)
+

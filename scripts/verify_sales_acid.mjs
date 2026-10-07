@@ -8,7 +8,9 @@ import {
 
 async function runTest() {
   console.log("=== STARTING ACID SALES ENGINE VERIFICATION ===")
+  const trackedIssues = new Set()
 
+  try {
   // 1. Initial Trial Balance Check
   const [[tbInitial]] = await pool.query("SELECT SUM(debit_amount) as total_debit, SUM(credit_amount) as total_credit FROM journal_entry_lines")
   const initDr = Number(tbInitial.total_debit || 0)
@@ -41,6 +43,7 @@ async function runTest() {
   console.log(`Testing with Product '${testBatch.product_name}' (${prodId}), Batch '${testBatch.batch_no}' (${batchId}): BatchQty=${initialBatchQty}, ProdQty=${initialProdQty}`)
 
   const testIssueId = `TEST-ACID-SI-${Date.now()}`
+  trackedIssues.add(testIssueId)
   const testQty = 5
   const testPrice = 250
   const testSubtotal = testQty * testPrice // 1250 ETB
@@ -209,6 +212,7 @@ async function runTest() {
   // 7. Test: Direct Post and Delete
   console.log("\n--- TEST STEP 5: CREATE POSTED -> DIRECT DELETE ATOMICTY ---")
   const testIssue2 = `TEST-DIRECT-DEL-${Date.now()}`
+  trackedIssues.add(testIssue2)
   await createSalesIssue({
     id: testIssue2,
     fs_no: testIssue2,
@@ -265,6 +269,7 @@ async function runTest() {
     const grv = grvs[0]
     const initGrvNet = Number(grv.net_quantity)
     const expIssueId = `TEST-WH1-SI-${Date.now()}`
+    trackedIssues.add(expIssueId)
     const expQty = 5
     const expPrice = 12000
 
@@ -320,6 +325,12 @@ async function runTest() {
   }
 
   console.log("\n🎉 ALL ACID SALES TRANSACTIONS PASSED WITH 100% SUCCESS! ZERO ORPHANED RECORDS, ZERO TRIAL BALANCE DISCREPANCY!")
+  } finally {
+    for (const id of trackedIssues) {
+      await pool.query("DELETE FROM sales_issue_items WHERE sales_issue_id = ?", [id]).catch(() => {})
+      await pool.query("DELETE FROM sales_issues WHERE id = ?", [id]).catch(() => {})
+    }
+  }
   process.exit(0)
 }
 
