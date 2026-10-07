@@ -3364,9 +3364,11 @@ class ErpStore {
     }
 
     try {
+      const matchingBatch = (prod.batches || []).find((b) => b.batchNo === targetEntry?.batchNo)
       await financeStore.deleteStockTrackingEntries({
         entryId,
         batchNo: targetEntry?.batchNo,
+        batchId: matchingBatch?.id,
         isChild: true,
       })
     } catch (finErr) {
@@ -3862,61 +3864,111 @@ class ErpStore {
   }
 
   // --- Actions: Customers ---
-  public async addCustomer(customer: Customer) {
+  public async addCustomer(customer: Customer): Promise<Customer> {
     const existing = this.customers.find((c) => c.id === customer.id || (c.name && c.name.toLowerCase() === customer.name.toLowerCase()))
     if (existing) {
       await this.updateCustomer(existing.id, customer)
-      return existing
+      return { ...existing, ...customer }
     }
     this.customers.unshift(customer)
     try {
       await createResource("customers", customer)
     } catch (err) {
       console.error("Failed to persist new Customer:", err)
+      this.customers = this.customers.filter((c) => c.id !== customer.id)
+      this.notify()
+      throw err
     }
     this.notify()
     return customer
   }
 
-  public async updateCustomer(id: string, updates: Partial<Customer>) {
-    this.customers = this.customers.map((c) => (c.id === id ? { ...c, ...updates } : c))
+  public async updateCustomer(id: string, updates: Partial<Customer>): Promise<Customer | undefined> {
+    let updatedCustomer: Customer | undefined
+    this.customers = this.customers.map((c) => {
+      if (c.id === id) {
+        updatedCustomer = { ...c, ...updates }
+        return updatedCustomer
+      }
+      return c
+    })
     try {
-      await updateResource("customers", id, updates)
+      const payloadToSend = updatedCustomer || updates
+      await updateResource("customers", id, payloadToSend)
     } catch (err) {
       console.error("Failed to update Customer:", err)
+      throw err
     }
     this.notify()
+    return updatedCustomer
   }
 
-  public deleteCustomer(id: string) {
+  public async deleteCustomer(id: string): Promise<void> {
+    const previous = [...this.customers]
     this.customers = this.customers.filter((c) => c.id !== id)
-    deleteResource("customers", id).catch((err) => console.error("Failed to delete Customer:", err))
     this.notify()
+    try {
+      await deleteResource("customers", id)
+    } catch (err) {
+      console.error("Failed to delete Customer:", err)
+      this.customers = previous
+      this.notify()
+      throw err
+    }
   }
 
   // --- Actions: Suppliers ---
-  public addSupplier(supplier: Supplier) {
+  public async addSupplier(supplier: Supplier): Promise<Supplier> {
     const existing = this.suppliers.find((s) => s.id === supplier.id || ((s.name || "").toLowerCase() === (supplier.name || "").toLowerCase()))
     if (existing) {
-      this.updateSupplier(existing.id, supplier)
-      return existing
+      await this.updateSupplier(existing.id, supplier)
+      return { ...existing, ...supplier }
     }
     this.suppliers.unshift(supplier)
-    createResource("suppliers", supplier).catch((err) => console.error("Failed to persist new Supplier:", err))
+    try {
+      await createResource("suppliers", supplier)
+    } catch (err) {
+      console.error("Failed to persist new Supplier:", err)
+      this.suppliers = this.suppliers.filter((s) => s.id !== supplier.id)
+      this.notify()
+      throw err
+    }
     this.notify()
     return supplier
   }
 
-  public updateSupplier(id: string, updates: Partial<Supplier>) {
-    this.suppliers = this.suppliers.map((s) => (s.id === id ? { ...s, ...updates } : s))
-    updateResource("suppliers", id, updates).catch((err) => console.error("Failed to update Supplier:", err))
+  public async updateSupplier(id: string, updates: Partial<Supplier>): Promise<Supplier | undefined> {
+    let updatedSupplier: Supplier | undefined
+    this.suppliers = this.suppliers.map((s) => {
+      if (s.id === id) {
+        updatedSupplier = { ...s, ...updates }
+        return updatedSupplier
+      }
+      return s
+    })
+    try {
+      const payloadToSend = updatedSupplier || updates
+      await updateResource("suppliers", id, payloadToSend)
+    } catch (err) {
+      console.error("Failed to update Supplier:", err)
+      throw err
+    }
     this.notify()
+    return updatedSupplier
   }
 
-  public deleteSupplier(id: string) {
+  public async deleteSupplier(id: string): Promise<void> {
+    const previous = [...this.suppliers]
     this.suppliers = this.suppliers.filter((s) => s.id !== id)
-    deleteResource("suppliers", id).catch((err) => console.error("Failed to delete Supplier:", err))
     this.notify()
+    try {
+      await deleteResource("suppliers", id)
+    } catch (err) {
+      console.error("Failed to delete Supplier:", err)
+      this.suppliers = previous
+      this.notify()
+      throw err
+    }
   }
 
   // Actions - Purchase Orders

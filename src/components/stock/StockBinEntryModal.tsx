@@ -157,6 +157,30 @@ export default function StockBinEntryModal({
 
       await onSave(product.id, entryPayload, entry?.id)
 
+      // Auto-save supplier to Supplier Registry if inbound and newly provided party
+      if (isRec && party.trim()) {
+        const partyName = party.trim()
+        const ignoredParties = ["Stock Receipt", "Stock Inbound", "Initial Deposit", "Quarantine Hold", "HKC Intake", "Customer Dispatch"]
+        if (!ignoredParties.includes(partyName)) {
+          const existingSupp = erp.getSuppliers().find((s) => (s?.name || "").toLowerCase() === partyName.toLowerCase())
+          if (!existingSupp) {
+            try {
+              await erp.addSupplier({
+                id: `SUP-${Date.now()}`,
+                name: partyName,
+                country: "Ethiopia",
+                city: "Addis Ababa",
+                category: "Pharmaceutical Manufacturer / Importer",
+                warehouseTarget: product?.warehouse || "WH2",
+                status: "Active",
+              })
+            } catch (suppErr) {
+              console.warn("Failed to auto-register supplier from bin card entry:", suppErr)
+            }
+          }
+        }
+      }
+
       // Automatically post GL stock intake for new inbound receipts
       if (!isEditing && isRec && effectiveUnitPrice && effectiveUnitPrice > 0) {
         try {

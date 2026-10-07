@@ -185,7 +185,7 @@ export default function StockProducts() {
   const [addVoucherNo, setAddVoucherNo] = useState("")
   const [addCustomer, setAddCustomer] = useState("")
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
-  const [saveSupplierToRegistry, setSaveSupplierToRegistry] = useState(false)
+  const [saveSupplierToRegistry, setSaveSupplierToRegistry] = useState(true)
   const [addPlateNumber, setAddPlateNumber] = useState("")
   const [addDosage, setAddDosage] = useState("")
   const [addShelfNo, setAddShelfNo] = useState("")
@@ -356,7 +356,7 @@ export default function StockProducts() {
     setAddVoucherNo("")
     setAddCustomer("")
     setShowSupplierDropdown(false)
-    setSaveSupplierToRegistry(false)
+    setSaveSupplierToRegistry(true)
     setAddPlateNumber("")
     setAddDosage("")
     setAddShelfNo("")
@@ -566,14 +566,17 @@ export default function StockProducts() {
 
     setIsSavingAdd(true)
     try {
-      if (isWH1Form && saveSupplierToRegistry && addCustomer.trim()) {
+      if (saveSupplierToRegistry && addCustomer.trim()) {
         const suppName = addCustomer.trim()
         const existingSupp = erp.getSuppliers().find((s) => (s?.name || "").toLowerCase() === suppName.toLowerCase())
         if (!existingSupp) {
-          erp.addSupplier({
+          await erp.addSupplier({
             id: `SUP-${Date.now()}`,
             name: suppName,
             country: "Ethiopia",
+            city: "Addis Ababa",
+            category: isWH1Form ? "Agricultural Producer / Union" : "Pharmaceutical Manufacturer / Importer",
+            warehouseTarget: addWarehouse,
             status: "Active",
           })
         }

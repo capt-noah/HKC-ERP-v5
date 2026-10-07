@@ -323,15 +323,57 @@ export async function drizzleCreateRow({ resource, body }) {
               return { status: 200, body: merged }
             }
           }
+        } else if (id) {
+          // If candidate name is empty but an ID is provided, merge with existing record by ID
+          const [idRows] = await pool.query(`SELECT id, payload FROM \`${tableName}\` WHERE id = ?`, [id])
+          if (idRows.length > 0) {
+            let rowPayload = idRows[0].payload
+            if (typeof rowPayload === "string") {
+              try { rowPayload = JSON.parse(rowPayload) } catch {}
+            }
+            const merged = { ...(rowPayload || {}), ...payloadData, id }
+            await pool.query(
+              `UPDATE \`${tableName}\` SET payload = ?, updated_at = NOW(3) WHERE id = ?`,
+              [JSON.stringify(merged), id]
+            )
+            return { status: 200, body: merged }
+          }
         }
       }
 
       const payloadString = JSON.stringify({ id, ...payloadData })
-      await pool.query(
-        `INSERT INTO \`${tableName}\` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3))
-         ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)`,
-        [id, payloadString]
-      )
+      const validCols = await getTableColumns(tableName)
+      const explicitCols = []
+      const explicitVals = []
+      const updateClauses = [`payload = VALUES(payload)`, `updated_at = NOW(3)`]
+
+      if (validCols) {
+        for (const col of validCols) {
+          if (col !== "id" && col !== "payload" && col !== "created_at" && col !== "updated_at") {
+            if (payloadData[col] !== undefined) {
+              explicitCols.push(`\`${col}\``)
+              explicitVals.push(sanitizeSqlValue(payloadData[col]))
+              updateClauses.push(`\`${col}\` = VALUES(\`${col}\`)`)
+            }
+          }
+        }
+      }
+
+      if (explicitCols.length > 0) {
+        const colList = ["id", "payload", ...explicitCols, "created_at", "updated_at"].join(", ")
+        const placeholders = ["?", "?", ...explicitCols.map(() => "?"), "NOW(3)", "NOW(3)"].join(", ")
+        await pool.query(
+          `INSERT INTO \`${tableName}\` (${colList}) VALUES (${placeholders})
+           ON DUPLICATE KEY UPDATE ${updateClauses.join(", ")}`,
+          [id, payloadString, ...explicitVals]
+        )
+      } else {
+        await pool.query(
+          `INSERT INTO \`${tableName}\` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3))
+           ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)`,
+          [id, payloadString]
+        )
+      }
       return { status: 200, body: { id, ...payloadData } }
     } else {
       const validCols = await getTableColumns(tableName)
@@ -415,17 +457,49 @@ export async function drizzleUpdateRow({ resource, id, body }) {
       const mergedPayload = { ...existingPayload, ...rawUpdate, id: targetId }
       const payloadString = JSON.stringify(mergedPayload)
 
+      const validCols = await getTableColumns(tableName)
+      const explicitSetClauses = []
+      const explicitVals = []
+      const explicitInsertCols = []
+      const explicitInsertVals = []
+      const explicitUpdateClauses = [`payload = VALUES(payload)`, `updated_at = NOW(3)`]
+
+      if (validCols) {
+        for (const col of validCols) {
+          if (col !== "id" && col !== "payload" && col !== "created_at" && col !== "updated_at") {
+            if (mergedPayload[col] !== undefined) {
+              explicitSetClauses.push(`\`${col}\` = ?`)
+              explicitVals.push(sanitizeSqlValue(mergedPayload[col]))
+              explicitInsertCols.push(`\`${col}\``)
+              explicitInsertVals.push(sanitizeSqlValue(mergedPayload[col]))
+              explicitUpdateClauses.push(`\`${col}\` = VALUES(\`${col}\`)`)
+            }
+          }
+        }
+      }
+
+      const setList = [`payload = ?`, ...explicitSetClauses, `updated_at = NOW(3)`].join(", ")
       const [updateResult] = await pool.query(
-        `UPDATE \`${tableName}\` SET payload = ?, updated_at = NOW(3) WHERE id = ?`,
-        [payloadString, String(targetId)]
+        `UPDATE \`${tableName}\` SET ${setList} WHERE id = ?`,
+        [payloadString, ...explicitVals, String(targetId)]
       )
 
       if (updateResult.affectedRows === 0) {
-        await pool.query(
-          `INSERT INTO \`${tableName}\` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3))
-           ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)`,
-          [String(targetId), payloadString]
-        )
+        if (explicitInsertCols.length > 0) {
+          const colList = ["id", "payload", ...explicitInsertCols, "created_at", "updated_at"].join(", ")
+          const placeholders = ["?", "?", ...explicitInsertCols.map(() => "?"), "NOW(3)", "NOW(3)"].join(", ")
+          await pool.query(
+            `INSERT INTO \`${tableName}\` (${colList}) VALUES (${placeholders})
+             ON DUPLICATE KEY UPDATE ${explicitUpdateClauses.join(", ")}`,
+            [String(targetId), payloadString, ...explicitInsertVals]
+          )
+        } else {
+          await pool.query(
+            `INSERT INTO \`${tableName}\` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3))
+             ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)`,
+            [String(targetId), payloadString]
+          )
+        }
       }
 
       return { status: 200, body: mergedPayload }

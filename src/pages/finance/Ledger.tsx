@@ -152,6 +152,7 @@ export default function Ledger() {
   const [editAccIsActive, setEditAccIsActive] = useState(true)
   const [editMenuOpen, setEditMenuOpen] = useState(false)
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false)
+  const [isSubmittingAccount, setIsSubmittingAccount] = useState(false)
   const [showBeginningBalancesModal, setShowBeginningBalancesModal] = useState(false)
   const [showPeriodClosingModal, setShowPeriodClosingModal] = useState(false)
   const [reversalTarget, setReversalTarget] = useState<{
@@ -279,60 +280,74 @@ export default function Ledger() {
     setReversalTarget(null)
   }
 
-  const handleCreateAccount = (e: React.FormEvent) => {
+  const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newAccCode.trim() || !newAccName.trim()) {
       showToast("Validation Error", "warning", "Code and Name are required.")
       return
     }
-    const res = store.addAccount({
-      code: newAccCode,
-      name: newAccName,
-      account_type: newAccType,
-      parent_account_id: newAccParent || null,
-      is_active: true,
-      is_group: newAccIsGroup,
-    })
-    if (res.success) {
-      setShowAddAccountModal(false)
-      setNewAccCode("")
-      setNewAccName("")
-      setNewAccParent("")
-      setNewAccIsGroup(false)
-      showToast("Account Created", "success", `Account ${newAccCode} - ${newAccName} added to Chart of Accounts.`)
-    } else {
-      showToast("Account Creation Failed", "warning", res.error || "Could not create account.")
+    setIsSubmittingAccount(true)
+    try {
+      const res = await store.addAccount({
+        code: newAccCode.trim(),
+        name: newAccName.trim(),
+        account_type: newAccType,
+        parent_account_id: newAccParent || null,
+        is_active: true,
+        is_group: newAccIsGroup,
+      })
+      if (res.success) {
+        setShowAddAccountModal(false)
+        setNewAccCode("")
+        setNewAccName("")
+        setNewAccParent("")
+        setNewAccIsGroup(false)
+        showToast("Account Created", "success", `Account ${newAccCode.trim()} - ${newAccName.trim()} added to Chart of Accounts.`)
+      } else {
+        showToast("Account Creation Failed", "warning", res.error || "Could not create account.")
+      }
+    } catch (err: any) {
+      showToast("Account Creation Failed", "warning", err.message || "Could not create account.")
+    } finally {
+      setIsSubmittingAccount(false)
     }
   }
 
-  const handleCreateChildAccount = (e: React.FormEvent) => {
+  const handleCreateChildAccount = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newAccCode.trim() || !newAccName.trim()) {
       showToast("Validation Error", "warning", "Account Code and Name are required.")
       return
     }
-    const res = store.addAccount({
-      code: newAccCode.trim(),
-      name: newAccName.trim(),
-      account_type: newAccType,
-      parent_account_id: childParentAccount?.id || newAccParent || null,
-      is_active: true,
-      is_group: newAccIsGroup,
-    })
-    if (res.success) {
-      setShowAddChildModal(false)
-      setChildParentAccount(null)
-      setNewAccCode("")
-      setNewAccName("")
-      setNewAccParent("")
-      setNewAccIsGroup(false)
-      showToast("Sub-Account Created", "success", `Sub-Account ${newAccCode} - ${newAccName} added to Chart of Accounts.`)
-    } else {
-      showToast("Sub-Account Creation Failed", "warning", res.error || "Could not create sub-account.")
+    setIsSubmittingAccount(true)
+    try {
+      const res = await store.addAccount({
+        code: newAccCode.trim(),
+        name: newAccName.trim(),
+        account_type: newAccType,
+        parent_account_id: childParentAccount?.id || newAccParent || null,
+        is_active: true,
+        is_group: newAccIsGroup,
+      })
+      if (res.success) {
+        setShowAddChildModal(false)
+        setChildParentAccount(null)
+        setNewAccCode("")
+        setNewAccName("")
+        setNewAccParent("")
+        setNewAccIsGroup(false)
+        showToast("Sub-Account Created", "success", `Sub-Account ${newAccCode.trim()} - ${newAccName.trim()} added to Chart of Accounts.`)
+      } else {
+        showToast("Sub-Account Creation Failed", "warning", res.error || "Could not create sub-account.")
+      }
+    } catch (err: any) {
+      showToast("Sub-Account Creation Failed", "warning", err.message || "Could not create sub-account.")
+    } finally {
+      setIsSubmittingAccount(false)
     }
   }
 
-  const handleUpdateAccountSubmit = (e: React.FormEvent) => {
+  const handleUpdateAccountSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingAccount) return
     if (!editAccCode.trim() || !editAccName.trim()) {
@@ -340,36 +355,51 @@ export default function Ledger() {
       return
     }
 
-    const res = store.updateAccount(editingAccount.id, {
-      code: editAccCode,
-      name: editAccName,
-      account_type: editAccType,
-      parent_account_id: editAccParent || null,
-      is_group: editAccIsGroup,
-      is_active: editAccIsActive,
-    })
+    setIsSubmittingAccount(true)
+    try {
+      const res = await store.updateAccount(editingAccount.id, {
+        code: editAccCode.trim(),
+        name: editAccName.trim(),
+        account_type: editAccType,
+        parent_account_id: editAccParent || null,
+        is_group: editAccIsGroup,
+        is_active: editAccIsActive,
+      })
 
-    if (res.success) {
-      setShowEditAccountModal(false)
-      setEditingAccount(null)
-      showToast("Account Updated", "success", `Account ${editAccCode} - ${editAccName} successfully updated.`)
-    } else {
-      showToast("Account Update Failed", "warning", res.error || "Could not update account.")
+      if (res.success) {
+        setShowEditAccountModal(false)
+        setEditingAccount(null)
+        showToast("Account Updated", "success", `Account ${editAccCode.trim()} - ${editAccName.trim()} successfully updated.`)
+      } else {
+        showToast("Account Update Failed", "warning", res.error || "Could not update account.")
+      }
+    } catch (err: any) {
+      showToast("Account Update Failed", "warning", err.message || "Could not update account.")
+    } finally {
+      setIsSubmittingAccount(false)
     }
   }
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!editingAccount) return
-    const res = store.deleteAccount(editingAccount.id)
-    if (res.success) {
+    setIsSubmittingAccount(true)
+    try {
+      const res = await store.deleteAccount(editingAccount.id)
+      if (res.success) {
+        setShowDeleteConfirmModal(false)
+        setShowEditAccountModal(false)
+        setEditingAccount(null)
+        setEditMenuOpen(false)
+        showToast("Account Deleted", "success", `Account ${editingAccount.code} has been deleted.`)
+      } else {
+        setShowDeleteConfirmModal(false)
+        showToast("Account Deletion Failed", "warning", res.error || "Could not delete account.")
+      }
+    } catch (err: any) {
       setShowDeleteConfirmModal(false)
-      setShowEditAccountModal(false)
-      setEditingAccount(null)
-      setEditMenuOpen(false)
-      showToast("Account Deleted", "success", `Account ${editingAccount.code} has been deleted.`)
-    } else {
-      setShowDeleteConfirmModal(false)
-      showToast("Account Deletion Failed", "warning", res.error || "Could not delete account with active transactions.")
+      showToast("Account Deletion Failed", "warning", err.message || "Could not delete account.")
+    } finally {
+      setIsSubmittingAccount(false)
     }
   }
 
@@ -1658,16 +1688,18 @@ export default function Ledger() {
                   <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100">
                     <button
                       type="button"
+                      disabled={isSubmittingAccount}
                       onClick={() => setShowAddChildModal(false)}
-                      className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold"
+                      className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold disabled:opacity-50"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 transition-all shadow-sm"
+                      disabled={isSubmittingAccount}
+                      className="px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 transition-all shadow-sm disabled:opacity-50"
                     >
-                      Create Sub-Account
+                      {isSubmittingAccount ? "Creating..." : "Create Sub-Account"}
                     </button>
                   </div>
                 </form>
@@ -1777,16 +1809,18 @@ export default function Ledger() {
                   <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100">
                     <button
                       type="button"
+                      disabled={isSubmittingAccount}
                       onClick={() => setShowAddAccountModal(false)}
-                      className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold"
+                      className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold disabled:opacity-50"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 transition-all shadow-sm"
+                      disabled={isSubmittingAccount}
+                      className="px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 transition-all shadow-sm disabled:opacity-50"
                     >
-                      Create Account Node
+                      {isSubmittingAccount ? "Creating..." : "Create Account Node"}
                     </button>
                   </div>
                 </form>
@@ -1953,16 +1987,18 @@ export default function Ledger() {
                   <div className="flex justify-end gap-2 pt-3 border-t border-zinc-100">
                     <button
                       type="button"
+                      disabled={isSubmittingAccount}
                       onClick={() => setShowEditAccountModal(false)}
-                      className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold"
+                      className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold disabled:opacity-50"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 transition-all shadow-sm"
+                      disabled={isSubmittingAccount}
+                      className="px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 transition-all shadow-sm disabled:opacity-50"
                     >
-                      Save Changes
+                      {isSubmittingAccount ? "Saving..." : "Save Changes"}
                     </button>
                   </div>
                 </form>
@@ -1988,17 +2024,19 @@ export default function Ledger() {
               <div className="flex justify-center gap-2.5">
                 <button
                   type="button"
+                  disabled={isSubmittingAccount}
                   onClick={() => setShowDeleteConfirmModal(false)}
-                  className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold text-xs"
+                  className="px-4 py-2 rounded-full bg-zinc-100 text-zinc-700 font-bold text-xs disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
+                  disabled={isSubmittingAccount}
                   onClick={handleConfirmDelete}
-                  className="px-5 py-2 rounded-full bg-rose-600 text-white font-bold text-xs hover:bg-rose-700 transition-all shadow-sm"
+                  className="px-5 py-2 rounded-full bg-rose-600 text-white font-bold text-xs hover:bg-rose-700 transition-all shadow-sm disabled:opacity-50"
                 >
-                  Confirm Delete
+                  {isSubmittingAccount ? "Deleting..." : "Confirm Delete"}
                 </button>
               </div>
             </div>

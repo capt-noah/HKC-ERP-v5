@@ -58,7 +58,7 @@ export default function WH1AddMovementModal({
   const [voucherNo, setVoucherNo] = useState("")
   const [customer, setCustomer] = useState("")
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
-  const [saveSupplierToRegistry, setSaveSupplierToRegistry] = useState(false)
+  const [saveSupplierToRegistry, setSaveSupplierToRegistry] = useState(true)
   const [plateNumber, setPlateNumber] = useState("")
   const [packagingUnit, setPackagingUnit] = useState("Quintal")
   const [quantity, setQuantity] = useState("")
@@ -96,7 +96,7 @@ export default function WH1AddMovementModal({
       setVoucherNo("")
       setCustomer(parentSupplier)
       setShowSupplierDropdown(false)
-      setSaveSupplierToRegistry(false)
+      setSaveSupplierToRegistry(true)
       setPlateNumber(product.plateNumber || "")
       setPackagingUnit(product.unit || "Quintal")
       setQuantity("")
@@ -170,10 +170,13 @@ export default function WH1AddMovementModal({
         const suppName = customer.trim()
         const existingSupp = erp.getSuppliers().find((s) => (s?.name || "").toLowerCase() === suppName.toLowerCase())
         if (!existingSupp) {
-          erp.addSupplier({
+          await erp.addSupplier({
             id: `SUP-${Date.now()}`,
             name: suppName,
             country: "Ethiopia",
+            city: "Addis Ababa",
+            category: "Agricultural Producer / Union",
+            warehouseTarget: "WH1-AGRI-EXP",
             status: "Active",
           })
         }

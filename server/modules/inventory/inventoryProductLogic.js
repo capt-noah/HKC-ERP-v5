@@ -565,6 +565,52 @@ export async function deleteProduct(id) {
   const cleanId = String(id).trim()
 
   return await withTransaction(async (conn) => {
+    // 0. Query product info & batch IDs to cascade accounting cleanup
+    const [pRows] = await conn.query("SELECT id, name, sku FROM pharma_products WHERE id = ?", [cleanId])
+    const [expRows] = await conn.query("SELECT id, name, sku FROM export_products WHERE id = ?", [cleanId])
+    const product = pRows[0] || expRows[0]
+
+    const [bRows] = await conn.query("SELECT id, batch_no FROM pharma_product_batches WHERE product_id = ?", [cleanId])
+    const batchIds = bRows.map((b) => b.id).filter(Boolean)
+    const batchNos = bRows.map((b) => b.batch_no).filter(Boolean)
+
+    // Collect all candidate journal entry IDs linked to this product or its batches
+    const jeIdSet = new Set()
+    
+    // Check journal entries matching product ID or batch IDs in source_id or id
+    const candidateSourceIds = [cleanId, ...batchIds]
+    if (product?.sku) candidateSourceIds.push(`STK-IN-${product.sku}`)
+    
+    for (const sid of candidateSourceIds) {
+      const [jes] = await conn.query("SELECT id FROM journal_entries WHERE source_id = ? OR id LIKE ?", [sid, `%${sid}%`])
+      jes.forEach((j) => jeIdSet.add(j.id))
+    }
+
+    // Check by batch IDs in journal_entries
+    for (const bId of batchIds) {
+      const [jes] = await conn.query("SELECT id FROM journal_entries WHERE id = ? OR id = ? OR source_id = ?", [
+        `JE-INTAKE-${bId}`,
+        bId,
+        bId,
+      ])
+      jes.forEach((j) => jeIdSet.add(j.id))
+    }
+
+    // Also check description for exact SKU if available
+    if (product?.sku) {
+      const [jes] = await conn.query("SELECT id FROM journal_entries WHERE description LIKE ?", [`%${product.sku}%`])
+      jes.forEach((j) => jeIdSet.add(j.id))
+    }
+
+    // Cascade delete journal_entry_lines and journal_entries
+    const jeIdsToDelete = Array.from(jeIdSet)
+    if (jeIdsToDelete.length > 0) {
+      for (const jeId of jeIdsToDelete) {
+        await conn.query("DELETE FROM journal_entry_lines WHERE journal_entry_id = ?", [jeId])
+        await conn.query("DELETE FROM journal_entries WHERE id = ?", [jeId])
+      }
+    }
+
     // 1. Clean up export movements if export product
     await conn.query("DELETE FROM export_warehouse_movements WHERE product_id = ?", [cleanId])
     await conn.query("DELETE FROM export_products WHERE id = ?", [cleanId])
@@ -576,6 +622,13 @@ export async function deleteProduct(id) {
     await conn.query("DELETE FROM pharma_product_batches WHERE product_id = ?", [cleanId])
     await conn.query("DELETE FROM pharma_products WHERE id = ?", [cleanId])
 
-    return { status: 200, body: { success: true, message: `Product ${cleanId} deleted cleanly.` } }
+    return {
+      status: 200,
+      body: {
+        success: true,
+        message: `Product ${cleanId} and all associated batches, movements, and accounting entries deleted cleanly.`,
+        deletedJournalEntries: jeIdsToDelete.length,
+      },
+    }
   })
 }

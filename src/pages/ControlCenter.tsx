@@ -786,16 +786,25 @@ export default function ControlCenter() {
         }
         return sum + (Number(prod.quantity || 0) * defaultSellingPrice)
       } else {
-        const binEntries = prod.binCardEntries || []
-        const pharmaTotalReceived = binEntries.reduce((s, e) => s + Number(e.qtyReceived || 0), 0)
-        const pharmaTotalIssued = binEntries.reduce((s, e) => s + Number(e.qtyIssued || 0), 0)
-        const currentQty = binEntries.length > 0
-          ? Math.max(0, pharmaTotalReceived - pharmaTotalIssued)
-          : (Array.isArray(prod.batches) && prod.batches.length > 0)
-            ? prod.batches.reduce((s, b) => s + Number(b.qty ?? (b as any).quantity ?? 0), 0)
+        const batches = Array.isArray(prod.batches) ? prod.batches : []
+        if (batches.length > 0) {
+          const batchSaleVal = batches
+            .filter((b: any) => b.status === "Released" || (b as any).qa_status !== "Quarantined")
+            .reduce((s: number, b: any) => {
+              const bQty = Number(b.qty ?? (b as any).quantity ?? 0)
+              const bPrice = Number(b.selling_price ?? (b as any).sellingPrice ?? defaultSellingPrice)
+              return s + (bQty * bPrice)
+            }, 0)
+          return sum + batchSaleVal
+        } else {
+          const binEntries = prod.binCardEntries || []
+          const pharmaTotalReceived = binEntries.reduce((s, e) => s + Number(e.qtyReceived || 0), 0)
+          const pharmaTotalIssued = binEntries.reduce((s, e) => s + Number(e.qtyIssued || 0), 0)
+          const currentQty = binEntries.length > 0
+            ? Math.max(0, pharmaTotalReceived - pharmaTotalIssued)
             : Number(prod.quantity || 0)
-
-        return sum + (currentQty * defaultSellingPrice)
+          return sum + (currentQty * defaultSellingPrice)
+        }
       }
     }, 0)
   }, [products])

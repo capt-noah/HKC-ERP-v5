@@ -982,14 +982,6 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     setIsSubmittingOrder(true)
 
     try {
-      if (selectedCust && (stagedTradePaperUrl !== (selectedCust.tradePaperUrl || "") || stagedTradePaperName !== (selectedCust.tradePaperFileName || ""))) {
-        await erp.updateCustomer(selectedCust.id, {
-          tradePaperFileName: stagedTradePaperName || selectedCust.tradePaperFileName,
-          tradePaperUrl: stagedTradePaperUrl || selectedCust.tradePaperUrl,
-          tradePaperUploadedAt: new Date().toISOString(),
-        })
-      }
-
       if (!selectedCust) {
         const newCustId = `CUST-${Date.now().toString().slice(-4)}`
         selectedCust = {
@@ -1006,18 +998,27 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           warehouseTarget: targetWh,
           tradePaperFileName: stagedTradePaperName || (isWh1Order ? "Bank Permit.pdf" : "Trade License.pdf"),
           tradePaperUrl: stagedTradePaperUrl,
-          tradePaperUploadedAt: new Date().toISOString(),
+          tradePaperUploadedAt: stagedTradePaperUrl ? new Date().toISOString() : undefined,
+          status: "Active",
         }
         if (saveCustomerToRegistry) {
           await erp.addCustomer(selectedCust)
         }
       } else if (saveCustomerToRegistry) {
         const custUpdates: Partial<Customer> = {}
-        if (custTin.trim() && !selectedCust.tin) custUpdates.tin = custTin.trim()
-        if (custPhone.trim() && !selectedCust.phone) custUpdates.phone = custPhone.trim()
-        if (targetWh && !selectedCust.warehouseTarget) custUpdates.warehouseTarget = targetWh
+        if (custPhone.trim() && custPhone.trim() !== selectedCust.phone) custUpdates.phone = custPhone.trim()
+        if (custTin.trim() && custTin.trim() !== selectedCust.tin) custUpdates.tin = custTin.trim()
+        if (custAddress.trim() && custAddress.trim() !== selectedCust.address) custUpdates.address = custAddress.trim()
+        if (custEmail.trim() && custEmail.trim() !== selectedCust.email) custUpdates.email = custEmail.trim()
+        if (targetWh && targetWh !== selectedCust.warehouseTarget) custUpdates.warehouseTarget = targetWh
+        if (stagedTradePaperUrl && stagedTradePaperUrl !== selectedCust.tradePaperUrl) {
+          custUpdates.tradePaperFileName = stagedTradePaperName || selectedCust.tradePaperFileName
+          custUpdates.tradePaperUrl = stagedTradePaperUrl
+          custUpdates.tradePaperUploadedAt = new Date().toISOString()
+        }
         if (Object.keys(custUpdates).length > 0) {
           await erp.updateCustomer(selectedCust.id, custUpdates)
+          selectedCust = { ...selectedCust, ...custUpdates }
         }
       }
 

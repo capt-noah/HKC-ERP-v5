@@ -76,6 +76,9 @@ export interface JournalEntry {
     | "Round Off"
     | "Reversal"
     | "Inventory"
+    | "Inventory Intake"
+    | "Stock Intake"
+    | "Quarantine Loss"
   source_id: string | null
   created_by: string
   currency: string
@@ -2426,53 +2429,79 @@ class FinanceStore {
     })
   }
 
-  public addAccount(account: Omit<AccountItem, "id">): { success: boolean; error?: string; account?: AccountItem } {
-    if (this.accounts.some((a) => (a.code || "").toLowerCase() === (account.code || "").toLowerCase())) {
-      return { success: false, error: `Account code "${account.code}" already exists in Chart of Accounts.` }
+  public async addAccount(account: Omit<AccountItem, "id">): Promise<{ success: boolean; error?: string; account?: AccountItem }> {
+    const cleanCode = (account.code || "").trim()
+    const cleanName = (account.name || "").trim()
+
+    if (!cleanCode || !cleanName) {
+      return { success: false, error: "Account code and name are required." }
+    }
+
+    if (this.accounts.some((a) => (a.code || "").toLowerCase() === cleanCode.toLowerCase() || a.id === cleanCode)) {
+      return { success: false, error: `Account code "${cleanCode}" already exists in Chart of Accounts.` }
     }
 
     let normalizedParentId: string | null = null
+    let parentToUpdate: AccountItem | null = null
+
     if (account.parent_account_id) {
       const parentAcc = this.accounts.find(
-        (a) => a.id === account.parent_account_id || a.code === account.parent_account_id || `ACC-${a.code}` === account.parent_account_id
+        (a) => a.id === account.parent_account_id || a.code === account.parent_account_id || (a.code && `ACC-${a.code}` === account.parent_account_id)
       )
       if (parentAcc) {
-        normalizedParentId = parentAcc.id
+        normalizedParentId = parentAcc.code || parentAcc.id
         if (!parentAcc.is_group) {
-          this.accounts = this.accounts.map((a) => (a.id === parentAcc.id ? { ...a, is_group: true } : a))
+          parentToUpdate = { ...parentAcc, is_group: true }
+          this.accounts = this.accounts.map((a) => (a.id === parentAcc.id ? parentToUpdate! : a))
         }
       } else {
-        normalizedParentId = account.parent_account_id.startsWith("ACC-")
-          ? account.parent_account_id
-          : `ACC-${account.parent_account_id}`
+        normalizedParentId = account.parent_account_id
       }
     }
 
     const newAcc: AccountItem = {
       ...account,
-      id: `ACC-${account.code}`,
+      id: cleanCode,
+      code: cleanCode,
+      name: cleanName,
       parent_account_id: normalizedParentId,
+      is_active: account.is_active !== false,
+      is_group: !!account.is_group,
     }
+
     this.accounts = [newAcc, ...this.accounts]
-    void createResource("chart_of_accounts", newAcc).catch((err) =>
-      console.error("[FinanceStore] Failed to create account in database:", err)
-    )
     this.notify()
-    return { success: true, account: newAcc }
+
+    try {
+      if (parentToUpdate) {
+        await updateResource<AccountItem>("chart_of_accounts", parentToUpdate.id, { is_group: true }).catch((err) =>
+          console.warn("[FinanceStore] Failed to update parent is_group flag:", err)
+        )
+      }
+      await createResource("chart_of_accounts", newAcc)
+      return { success: true, account: newAcc }
+    } catch (err: any) {
+      console.error("[FinanceStore] Failed to create account in database:", err)
+      this.accounts = this.accounts.filter((a) => a.id !== newAcc.id)
+      this.notify()
+      return { success: false, error: err?.message || "Failed to save account to database." }
+    }
   }
 
-  public toggleAccountActive(id: string) {
+  public async toggleAccountActive(id: string): Promise<void> {
     const target = this.accounts.find((acc) => acc.id === id || acc.code === id)
     if (target) {
       const nextActive = !target.is_active
-      void updateResource<AccountItem>("chart_of_accounts", target.id || `ACC-${target.code}`, { is_active: nextActive }).catch((err) =>
-        console.error("[FinanceStore] Failed to update account active status:", err)
+      this.accounts = this.accounts.map((acc) =>
+        acc.id === target.id || acc.code === target.code ? { ...acc, is_active: nextActive } : acc
       )
+      this.notify()
+      try {
+        await updateResource<AccountItem>("chart_of_accounts", target.id, { is_active: nextActive })
+      } catch (err) {
+        console.error("[FinanceStore] Failed to update account active status:", err)
+      }
     }
-    this.accounts = this.accounts.map((acc) =>
-      acc.id === id || acc.code === id ? { ...acc, is_active: !acc.is_active } : acc
-    )
-    this.notify()
   }
 
   public toggleLockPeriod(periodId: string) {
@@ -3586,29 +3615,39 @@ class FinanceStore {
     productName?: string
     sku?: string
     batchNo?: string
+    batchId?: string
     entryId?: string
     isChild?: boolean
     isProductDeletion?: boolean
   }): Promise<{ success: boolean; deletedCount: number }> {
-    const { productId, productName, sku, batchNo, entryId, isChild, isProductDeletion } = params
+    const { productId, productName, sku, batchNo, batchId, entryId, isChild, isProductDeletion } = params
 
-    // Target ONLY Inventory-type entries to ensure sales and customer receivables remain completely untouched
+    // Target Inventory & Intake type entries to ensure sales and customer receivables remain completely untouched
     const matchingEntries = this.entries.filter((e) => {
-      if (e.source_type !== "Inventory") return false
+      const isInv =
+        e.source_type === "Inventory" ||
+        e.source_type === "Inventory Intake" ||
+        e.source_type === "Stock Intake" ||
+        e.source_type === "Quarantine Loss" ||
+        (e.id && e.id.startsWith("JE-INTAKE")) ||
+        (e.id && e.id.startsWith("JE-2026-"))
+      if (!isInv) return false
 
       const src = e.source_id || ""
       const id = e.id || ""
       const desc = e.description || ""
 
+      // Direct ID matches
+      if (batchId && (src.includes(batchId) || id.includes(batchId) || desc.includes(batchId))) return true
+      if (entryId && (src.includes(entryId) || id.includes(entryId) || desc.includes(entryId))) return true
+
       // Child / single-entry deletion: match ONLY this entry / batch
-      if (!isProductDeletion && (isChild || entryId || batchNo)) {
-        if (entryId && (src.includes(entryId) || id.includes(entryId) || desc.includes(entryId))) return true
+      if (!isProductDeletion && (isChild || entryId || batchNo || batchId)) {
         if (batchNo && (src.includes(batchNo) || id.includes(batchNo) || desc.includes(batchNo))) return true
         return false
       }
 
       // Parent product deletion: match product ID, SKU, product name, or batches
-      if (entryId && (src.includes(entryId) || id.includes(entryId) || desc.includes(entryId))) return true
       if (batchNo && (src.includes(batchNo) || id.includes(batchNo) || desc.includes(batchNo))) return true
       if (productId && (src.includes(productId) || id.includes(productId))) return true
       if (sku && (src.includes(sku) || desc.includes(sku))) return true
@@ -5431,67 +5470,131 @@ class FinanceStore {
   }
 
   // --- Account Updates ---
-  public updateAccount(id: string, updated: Partial<AccountItem>): { success: boolean; error?: string } {
-    const accIndex = this.accounts.findIndex((a) => a.id === id || a.code === id)
-    if (accIndex === -1) return { success: false, error: "Account not found." }
+  public async updateAccount(id: string, updated: Partial<AccountItem>): Promise<{ success: boolean; error?: string; account?: AccountItem }> {
+    const existing = this.accounts.find((a) => a.id === id || a.code === id)
+    if (!existing) return { success: false, error: "Account not found." }
+
+    const oldCode = existing.code || existing.id
+    const newCode = updated.code ? updated.code.trim() : oldCode
 
     // If changing code, verify uniqueness
-    if (updated.code && updated.code.toLowerCase() !== (this.accounts[accIndex].code || "").toLowerCase()) {
-      if (this.accounts.some((a) => (a.code || "").toLowerCase() === updated.code?.toLowerCase() && a.id !== id && a.code !== id)) {
-        return { success: false, error: `Account code "${updated.code}" already exists.` }
+    if (newCode.toLowerCase() !== oldCode.toLowerCase()) {
+      if (this.accounts.some((a) => ((a.code || "").toLowerCase() === newCode.toLowerCase() || a.id === newCode) && a.id !== existing.id)) {
+        return { success: false, error: `Account code "${newCode}" already exists.` }
       }
     }
 
     let normalizedParentId = updated.parent_account_id
+    let parentToUpdate: AccountItem | null = null
+
     if (updated.parent_account_id !== undefined) {
       if (updated.parent_account_id) {
         const parentAcc = this.accounts.find(
-          (a) => a.id === updated.parent_account_id || a.code === updated.parent_account_id || `ACC-${a.code}` === updated.parent_account_id
+          (a) => a.id === updated.parent_account_id || a.code === updated.parent_account_id || (a.code && `ACC-${a.code}` === updated.parent_account_id)
         )
         if (parentAcc) {
-          normalizedParentId = parentAcc.id
+          normalizedParentId = parentAcc.code || parentAcc.id
           if (!parentAcc.is_group) {
-            this.accounts = this.accounts.map((a) => (a.id === parentAcc.id ? { ...a, is_group: true } : a))
+            parentToUpdate = { ...parentAcc, is_group: true }
+            this.accounts = this.accounts.map((a) => (a.id === parentAcc.id ? parentToUpdate! : a))
           }
         } else {
-          normalizedParentId = updated.parent_account_id.startsWith("ACC-")
-            ? updated.parent_account_id
-            : `ACC-${updated.parent_account_id}`
+          normalizedParentId = updated.parent_account_id
         }
       } else {
         normalizedParentId = null
       }
     }
 
-    this.accounts = this.accounts.map((a) =>
-      a.id === id || a.code === id
-        ? {
-            ...a,
-            ...updated,
-            ...(normalizedParentId !== undefined ? { parent_account_id: normalizedParentId } : {}),
-            ...(updated.code ? { id: `ACC-${updated.code}` } : {}),
-          }
-        : a
-    )
+    const mergedAccount: AccountItem = {
+      ...existing,
+      ...updated,
+      id: newCode,
+      code: newCode,
+      name: updated.name !== undefined ? updated.name.trim() : existing.name,
+      ...(normalizedParentId !== undefined ? { parent_account_id: normalizedParentId } : {}),
+      is_group: updated.is_group !== undefined ? !!updated.is_group : existing.is_group,
+      is_active: updated.is_active !== undefined ? !!updated.is_active : existing.is_active,
+    }
+
+    // If code changed, cascade update parent_account_id on all child accounts
+    const childAccountsToUpdate: AccountItem[] = []
+    if (newCode !== oldCode) {
+      this.accounts = this.accounts.map((a) => {
+        if (a.parent_account_id === oldCode || a.parent_account_id === existing.id) {
+          const childUpdated = { ...a, parent_account_id: newCode }
+          childAccountsToUpdate.push(childUpdated)
+          return childUpdated
+        }
+        return a
+      })
+    }
+
+    const previousAccounts = [...this.accounts]
+    this.accounts = this.accounts.map((a) => (a.id === existing.id || a.code === existing.code ? mergedAccount : a))
     this.notify()
-    return { success: true }
+
+    try {
+      if (parentToUpdate) {
+        await updateResource<AccountItem>("chart_of_accounts", parentToUpdate.id, { is_group: true }).catch((err) =>
+          console.warn("[FinanceStore] Failed to update parent is_group flag:", err)
+        )
+      }
+
+      // Update the target account on server
+      await updateResource<AccountItem>("chart_of_accounts", existing.id, mergedAccount)
+
+      // Cascade update children if code changed
+      for (const child of childAccountsToUpdate) {
+        await updateResource<AccountItem>("chart_of_accounts", child.id, { parent_account_id: newCode }).catch((err) =>
+          console.warn("[FinanceStore] Failed to update child parent_account_id:", err)
+        )
+      }
+
+      return { success: true, account: mergedAccount }
+    } catch (err: any) {
+      console.error("[FinanceStore] Failed to persist account update to server:", err)
+      this.accounts = previousAccounts
+      this.notify()
+      return { success: false, error: err?.message || "Failed to save account changes to server." }
+    }
   }
 
-  public deleteAccount(id: string): { success: boolean; error?: string } {
+  public async deleteAccount(id: string): Promise<{ success: boolean; error?: string }> {
+    const target = this.accounts.find((a) => a.id === id || a.code === id)
+    if (!target) return { success: false, error: "Account not found." }
+
+    const targetCode = target.code || target.id
+
     // Prevent deletion if account is referenced in journal entry lines
-    const isReferenced = this.lines.some((l) => l.account_id === id || l.account_id === `ACC-${id}`)
+    const isReferenced = this.lines.some(
+      (l) => l.account_id === target.id || l.account_id === targetCode || l.account_id === `ACC-${targetCode}`
+    )
     if (isReferenced) {
-      return { success: false, error: "Cannot delete account: it has transactions posted against it." }
+      return { success: false, error: `Cannot delete account "${targetCode}": it has journal transactions posted against it.` }
     }
+
     // Prevent deletion if it has children
-    const hasChildren = this.accounts.some((a) => a.parent_account_id === id || a.parent_account_id === this.accounts.find(x => x.id === id)?.code)
+    const hasChildren = this.accounts.some(
+      (a) => a.parent_account_id === target.id || a.parent_account_id === targetCode
+    )
     if (hasChildren) {
-      return { success: false, error: "Cannot delete account: it has sub-accounts." }
+      return { success: false, error: `Cannot delete folder/account "${targetCode}": it contains sub-accounts. Please delete or reassign sub-accounts first.` }
     }
-    this.accounts = this.accounts.filter((a) => a.id !== id && a.code !== id)
-    void deleteResource("chart_of_accounts", id)
+
+    const previousAccounts = [...this.accounts]
+    this.accounts = this.accounts.filter((a) => a.id !== target.id && a.code !== targetCode)
     this.notify()
-    return { success: true }
+
+    try {
+      await deleteResource("chart_of_accounts", target.id)
+      return { success: true }
+    } catch (err: any) {
+      console.error("[FinanceStore] Failed to delete account from server:", err)
+      this.accounts = previousAccounts
+      this.notify()
+      return { success: false, error: err?.message || "Failed to delete account from server." }
+    }
   }
 
   // --- Fixed Assets Actions ---

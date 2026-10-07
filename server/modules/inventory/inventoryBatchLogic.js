@@ -114,8 +114,66 @@ export async function updateBatch(id, updates = {}) {
 
 export async function deleteBatch(id) {
   const cleanId = String(id).trim()
-  await pool.query("DELETE FROM `pharma_product_batches` WHERE id = ?", [cleanId])
-  return { status: 200, body: { success: true, message: `Batch '${cleanId}' deleted.` } }
+
+  return await withTransaction(async (conn) => {
+    // 1. Fetch batch details before deletion
+    const [bRows] = await conn.query("SELECT * FROM `pharma_product_batches` WHERE id = ?", [cleanId])
+    if (bRows.length === 0) {
+      return { status: 404, body: { error: `Batch '${cleanId}' not found.` } }
+    }
+    const batch = bRows[0]
+    const prodId = batch.product_id
+    const batchNo = batch.batch_no
+
+    // 2. Delete the batch record
+    await conn.query("DELETE FROM `pharma_product_batches` WHERE id = ?", [cleanId])
+
+    // 3. Atomically delete linked stock movements
+    await conn.query(
+      "DELETE FROM `stock_movements` WHERE product_id = ? AND (batch_no = ? OR id = ? OR reference_id = ?)",
+      [prodId, batchNo, cleanId, cleanId]
+    )
+
+    // 4. Atomically delete linked journal entries and journal entry lines
+    const [jes] = await conn.query(
+      "SELECT id FROM `journal_entries` WHERE source_id = ? OR id = ? OR id LIKE ? OR (source_type IN ('Inventory', 'Inventory Intake') AND description LIKE ?)",
+      [cleanId, `JE-INTAKE-${cleanId}`, `%${cleanId}%`, `%${batchNo}%`]
+    )
+    for (const j of jes) {
+      await conn.query("DELETE FROM `journal_entry_lines` WHERE journal_entry_id = ?", [j.id])
+      await conn.query("DELETE FROM `journal_entries` WHERE id = ?", [j.id])
+    }
+
+    // 5. Recalculate remaining active batches and update parent pharma_products
+    const [remBatches] = await conn.query(
+      "SELECT * FROM `pharma_product_batches` WHERE product_id = ? AND (qa_status != 'Quarantined' OR qa_status IS NULL)",
+      [prodId]
+    )
+    const newQty = remBatches.reduce((s, b) => s + Number(b.quantity || 0), 0)
+    const newStockVal = remBatches.reduce((s, b) => s + (Number(b.quantity || 0) * Number(b.unit_cost || 0)), 0)
+
+    const [pRows] = await conn.query("SELECT * FROM `pharma_products` WHERE id = ?", [prodId])
+    if (pRows.length > 0) {
+      const prod = pRows[0]
+      const packSize = Number(prod.quantity_per_pack || 1)
+      const updatedCartons = packSize > 0 ? Math.floor(newQty / packSize) : (prod.number_of_cartons || 0)
+      const nextStatus = newQty === 0 ? "Out of Stock" : newQty < 20 ? "Low Stock" : "In Stock"
+
+      await conn.query(
+        "UPDATE `pharma_products` SET quantity = ?, number_of_cartons = ?, total_stock_value = ?, status = ?, updated_at = NOW(3) WHERE id = ?",
+        [newQty, updatedCartons, newStockVal, nextStatus, prodId]
+      )
+    }
+
+    return {
+      status: 200,
+      body: {
+        success: true,
+        message: `Batch '${cleanId}' and linked movement & journal entries deleted atomically. Parent stock updated.`,
+        deletedJournalEntries: jes.length,
+      },
+    }
+  })
 }
 
 export async function transitionBatchStatus(id, newStatus, details = {}) {

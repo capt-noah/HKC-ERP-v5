@@ -171,7 +171,7 @@ export default function PartnersRegistry() {
         const isNewFile = custTradePaperUrl !== (editingCustomer.tradePaperUrl || "")
         const uploadedAt = isNewFile ? new Date().toISOString() : editingCustomer.tradePaperUploadedAt
 
-        erp.updateCustomer(editingCustomer.id, {
+        await erp.updateCustomer(editingCustomer.id, {
           name: custName.trim(),
           country: custCountry,
           region: custRegion,
@@ -218,7 +218,7 @@ export default function PartnersRegistry() {
           tradePaperUrl: custTradePaperUrl,
           tradePaperUploadedAt: hasFile ? new Date().toISOString() : undefined,
         }
-        erp.addCustomer(newCust)
+        await erp.addCustomer(newCust)
 
         if (custTradePaperUrl && custTradePaperName) {
           await saveTradeLicense({
@@ -234,14 +234,14 @@ export default function PartnersRegistry() {
         showToast("Customer Added", "success", `New customer ${custName} added to registry.`)
       }
       setShowAddCustomerModal(false)
-    } catch (err) {
-      showToast("Save Error", "warning", "Failed to save customer.")
+    } catch (err: any) {
+      showToast("Save Error", "warning", err.message || "Failed to save customer.")
     } finally {
       setIsSubmittingCustomer(false)
     }
   }
 
-  const handleSaveSupplier = (e: React.FormEvent) => {
+  const handleSaveSupplier = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!suppName.trim()) {
       showToast("Validation Error", "warning", "Supplier name is required.")
@@ -251,7 +251,7 @@ export default function PartnersRegistry() {
     try {
       setIsSubmittingSupplier(true)
       if (editingSupplier) {
-        erp.updateSupplier(editingSupplier.id, {
+        await erp.updateSupplier(editingSupplier.id, {
           name: suppName.trim(),
           country: "Ethiopia",
           city: suppCity.trim(),
@@ -281,12 +281,12 @@ export default function PartnersRegistry() {
           rating: "A",
           status: "Active",
         }
-        erp.addSupplier(newSupp)
+        await erp.addSupplier(newSupp)
         showToast("Supplier Added", "success", `New supplier ${suppName} added to registry.`)
       }
       setShowAddSupplierModal(false)
-    } catch (err) {
-      showToast("Save Error", "warning", "Failed to save supplier.")
+    } catch (err: any) {
+      showToast("Save Error", "warning", err.message || "Failed to save supplier.")
     } finally {
       setIsSubmittingSupplier(false)
     }
@@ -1159,10 +1159,14 @@ export default function PartnersRegistry() {
         recordName={deletingCustomer?.name}
         description="This will permanently delete this customer profile from system registry."
         onClose={() => setDeletingCustomer(null)}
-        onConfirmDelete={() => {
+        onConfirmDelete={async () => {
           if (!deletingCustomer) return
-          erp.deleteCustomer(deletingCustomer.id)
-          showToast("Customer Removed", "info", `Customer ${deletingCustomer.name} deleted.`)
+          try {
+            await erp.deleteCustomer(deletingCustomer.id)
+            showToast("Customer Removed", "info", `Customer ${deletingCustomer.name} deleted.`)
+          } catch (err: any) {
+            showToast("Delete Failed", "warning", err.message || "Failed to delete customer.")
+          }
           setDeletingCustomer(null)
           setShowAddCustomerModal(false)
           setEditingCustomer(null)
@@ -1176,10 +1180,14 @@ export default function PartnersRegistry() {
         recordName={deletingSupplier?.name}
         description="This will permanently delete this supplier profile from system registry."
         onClose={() => setDeletingSupplier(null)}
-        onConfirmDelete={() => {
+        onConfirmDelete={async () => {
           if (!deletingSupplier) return
-          erp.deleteSupplier(deletingSupplier.id)
-          showToast("Supplier Removed", "info", `Supplier ${deletingSupplier.name} deleted.`)
+          try {
+            await erp.deleteSupplier(deletingSupplier.id)
+            showToast("Supplier Removed", "info", `Supplier ${deletingSupplier.name} deleted.`)
+          } catch (err: any) {
+            showToast("Delete Failed", "warning", err.message || "Failed to delete supplier.")
+          }
           setDeletingSupplier(null)
           setShowAddSupplierModal(false)
           setEditingSupplier(null)
