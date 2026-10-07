@@ -1030,6 +1030,7 @@ class ErpStore {
         pharmaProducts,
         pharmaBatches,
         salesIssues,
+        stockMovements,
       ] = await Promise.all([
         loadResource<SalesOrder>("sales_orders").catch(() => []),
         loadResource<PurchaseOrder>("purchase_orders").catch(() => []),
@@ -1040,9 +1041,13 @@ class ErpStore {
         loadResource<Product>("pharma_products").catch(() => []),
         loadResource<any>("pharma_product_batches").catch(() => []),
         loadResource<any>("sales_issues").catch(() => []),
+        loadResource<any>("stock_movements").catch(() => []),
       ])
 
       this.salesIssues = salesIssues || []
+      if (stockMovements && stockMovements.length > 0) {
+        this.stockMovements = sortNewestFirst(stockMovements)
+      }
 
       this.salesOrders = sortNewestFirst((salesOrders || []).map((so: any) => ({
         ...so,
@@ -1099,6 +1104,8 @@ class ErpStore {
             expiry: b.expiry_date || b.expiryDate || "",
             mfgDate: b.mfg_date || b.mfgDate,
             unitPrice: Number(b.unit_cost || b.unitPrice || p.unitCost || 0),
+            sellingPrice: Number(b.selling_price ?? b.sellingPrice ?? p.selling_price ?? p.sellingPrice ?? 0),
+            selling_price: Number(b.selling_price ?? b.sellingPrice ?? p.selling_price ?? p.sellingPrice ?? 0),
             status: b.qa_status === "Released" ? ("Released" as const) : b.qa_status === "Quarantined" ? ("Quarantined" as const) : ("Released" as const),
             notes: b.notes,
           }))

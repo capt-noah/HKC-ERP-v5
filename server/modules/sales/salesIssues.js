@@ -12,7 +12,15 @@ import { inventoryService } from "../inventory/inventoryService.js"
 import { pool } from "../../db/client.js"
 import { unwrapRow } from "../../db/dbUtils.js"
 import { getLocalDateString } from "../../utils/dateUtils.js"
+import { withTransaction } from "../../db/transactionHelper.js"
 import crypto from "node:crypto"
+
+async function runInTransaction(existingConn, callback) {
+  if (existingConn) {
+    return await callback(existingConn)
+  }
+  return await withTransaction(callback)
+}
 
 // ── Service Logic ─────────────────────────────────────────────────────────────
 
@@ -452,7 +460,214 @@ export async function getSalesIssue(id) {
   }
 }
 
-export async function createSalesIssue(input, existingId = null) {
+async function reverseSalesIssuePosting(conn, issue) {
+  const issueId = String(issue.id || "").trim()
+  const fsNo = String(issue.fs_no || issue.issue_number || issueId).trim()
+  const isWh1 = isExportWarehouse(issue.warehouse_id)
+
+  // 1. Fetch items linked to this sales issue
+  const [items] = await conn.query(
+    "SELECT * FROM `sales_issue_items` WHERE sales_issue_id = ? OR sales_issue_id = ?",
+    [issueId, fsNo]
+  )
+
+  if (isWh1) {
+    // A. Remove OUTBOUND_DISPATCH movements
+    await conn.query(
+      "DELETE FROM `export_warehouse_movements` WHERE (voucher_no = ? OR voucher_no = ?) AND movement_type = 'OUTBOUND_DISPATCH'",
+      [issueId, fsNo]
+    )
+
+    // B. Restore stock on export_products and GRVs
+    for (const item of items) {
+      const prodId = item.product_id || item.item_id
+      const qty = Number(item.quantity || 0)
+      if (!prodId || qty <= 0) continue
+
+      await conn.query(
+        `UPDATE \`export_products\` SET
+          quantity = quantity + ?,
+          quantity_sold = GREATEST(0, quantity_sold - ?),
+          status = CASE WHEN (quantity + ?) > 0 THEN 'In Stock' ELSE status END,
+          updated_at = NOW(3)
+        WHERE id = ?`,
+        [qty, qty, qty, prodId]
+      )
+
+      if (item.batch_id) {
+        await conn.query(
+          "UPDATE `export_warehouse_movements` SET net_quantity = net_quantity + ?, updated_at = NOW(3) WHERE id = ?",
+          [qty, item.batch_id]
+        )
+      } else {
+        await conn.query(
+          "UPDATE `export_warehouse_movements` SET net_quantity = net_quantity + ?, updated_at = NOW(3) WHERE product_id = ? AND (movement_type = 'GRV_ENTRY' OR movement_type = 'entry') ORDER BY movement_date DESC, created_at DESC LIMIT 1",
+          [qty, prodId]
+        )
+      }
+    }
+  } else {
+    // Pharma Products (WH2 / WH3)
+    // A. Check for recorded stock_movements for this issue
+    const [movements] = await conn.query(
+      "SELECT * FROM `stock_movements` WHERE reference_type = 'SALES_ISSUE' AND (reference_id = ? OR reference_id = ?)",
+      [issueId, fsNo]
+    )
+
+    const affectedProductIds = new Set()
+
+    if (movements.length > 0) {
+      for (const m of movements) {
+        const prodId = m.product_id
+        const moveQty = Number(m.quantity || 0)
+        const batchNo = m.batch_no
+        if (prodId) affectedProductIds.add(prodId)
+
+        if (batchNo && !batchNo.includes(",")) {
+          await conn.query(
+            "UPDATE `pharma_product_batches` SET quantity = quantity + ?, updated_at = NOW(3) WHERE product_id = ? AND batch_no = ? LIMIT 1",
+            [moveQty, prodId, batchNo]
+          )
+        } else if (batchNo && batchNo.includes(",")) {
+          // If split across multiple batches, restore to product's earliest expiring batch
+          await conn.query(
+            "UPDATE `pharma_product_batches` SET quantity = quantity + ?, updated_at = NOW(3) WHERE product_id = ? ORDER BY expiry_date ASC LIMIT 1",
+            [moveQty, prodId]
+          )
+        } else {
+          await conn.query(
+            "UPDATE `pharma_product_batches` SET quantity = quantity + ?, updated_at = NOW(3) WHERE product_id = ? ORDER BY expiry_date DESC LIMIT 1",
+            [moveQty, prodId]
+          )
+        }
+      }
+
+      await conn.query(
+        "DELETE FROM `stock_movements` WHERE reference_type = 'SALES_ISSUE' AND (reference_id = ? OR reference_id = ?)",
+        [issueId, fsNo]
+      )
+    } else {
+      // Fallback: restore from sales_issue_items directly
+      for (const item of items) {
+        const prodId = item.product_id || item.item_id
+        const qty = Number(item.quantity || 0)
+        const batchId = item.batch_id
+        const batchNo = item.batch_no || item.batch_number
+        if (!prodId || qty <= 0) continue
+        affectedProductIds.add(prodId)
+
+        if (batchId) {
+          const [res] = await conn.query(
+            "UPDATE `pharma_product_batches` SET quantity = quantity + ?, updated_at = NOW(3) WHERE id = ?",
+            [qty, batchId]
+          )
+          if (res.affectedRows === 0 && batchNo) {
+            await conn.query(
+              "UPDATE `pharma_product_batches` SET quantity = quantity + ?, updated_at = NOW(3) WHERE product_id = ? AND batch_no = ? LIMIT 1",
+              [qty, prodId, batchNo]
+            )
+          }
+        } else if (batchNo) {
+          await conn.query(
+            "UPDATE `pharma_product_batches` SET quantity = quantity + ?, updated_at = NOW(3) WHERE product_id = ? AND batch_no = ? LIMIT 1",
+            [qty, prodId, batchNo]
+          )
+        } else {
+          await conn.query(
+            "UPDATE `pharma_product_batches` SET quantity = quantity + ?, updated_at = NOW(3) WHERE product_id = ? ORDER BY expiry_date DESC LIMIT 1",
+            [qty, prodId]
+          )
+        }
+      }
+    }
+
+    // B. Recalculate parent pharma_products
+    for (const prodId of affectedProductIds) {
+      const [allBatches] = await conn.query(
+        "SELECT * FROM `pharma_product_batches` WHERE product_id = ? AND (qa_status != 'Quarantined' OR qa_status IS NULL)",
+        [prodId]
+      )
+      const newQty = allBatches.reduce((s, b) => s + Number(b.quantity || 0), 0)
+      const totalStockVal = allBatches.reduce((s, b) => s + (Number(b.quantity || 0) * Number(b.unit_cost || 0)), 0)
+
+      const [pRows] = await conn.query("SELECT * FROM `pharma_products` WHERE id = ?", [prodId])
+      if (pRows.length > 0) {
+        const prod = pRows[0]
+        const packSize = Number(prod.quantity_per_pack || 1)
+        const updatedCartons = packSize > 0 ? Math.floor(newQty / packSize) : Number(prod.number_of_cartons || 0)
+        const unitCost = Number(prod.unit_cost || 0)
+        const newWeightedCost = newQty > 0 ? Math.round((totalStockVal / newQty) * 100) / 100 : unitCost
+        const totalItemsQty = items.filter(it => (it.product_id || it.item_id) === prodId).reduce((s, it) => s + Number(it.quantity || 0), 0)
+
+        await conn.query(
+          `UPDATE \`pharma_products\` SET
+            quantity = ?,
+            quantity_sold = GREATEST(0, quantity_sold - ?),
+            unit_cost = ?,
+            number_of_cartons = ?,
+            status = CASE WHEN ? = 0 THEN 'Out of Stock' WHEN ? < 20 THEN 'Low Stock' ELSE 'In Stock' END,
+            updated_at = NOW(3)
+          WHERE id = ?`,
+          [newQty, totalItemsQty, newWeightedCost, updatedCartons, newQty, newQty, prodId]
+        )
+      }
+    }
+  }
+
+  // 2. Delete Journal Entries and Lines
+  const jeIds = [
+    `JE-SALE-${issueId}`,
+    `JE-SALE-${fsNo}`,
+    `JE-COGS-${issueId}`,
+    `JE-COGS-${fsNo}`,
+  ]
+  const [matchingJes] = await conn.query(
+    "SELECT id FROM `journal_entries` WHERE payload->>'$.source_id' IN (?, ?) OR id IN (?, ?, ?, ?)",
+    [issueId, fsNo, ...jeIds]
+  )
+  const allJeIdsToDelete = Array.from(new Set([...jeIds, ...matchingJes.map(j => j.id)]))
+  for (const jId of allJeIdsToDelete) {
+    await conn.query(
+      "DELETE FROM `journal_entry_lines` WHERE id LIKE CONCAT(?, '%') OR payload->>'$.journal_entry_id' = ?",
+      [jId, jId]
+    )
+    await conn.query("DELETE FROM `journal_entries` WHERE id = ?", [jId])
+  }
+
+  // 3. Mark linked invoice as Cancelled
+  const [invRows] = await conn.query(
+    "SELECT id, payload FROM `invoices` WHERE id IN (?, ?) OR payload->>'$.sales_issue_id' IN (?, ?) OR payload->>'$.fs_no' IN (?, ?)",
+    [`INV-SI-${issueId}`, `INV-SI-${fsNo}`, issueId, fsNo, issueId, fsNo]
+  )
+  for (const inv of invRows) {
+    let payload = inv.payload
+    if (typeof payload === "string") {
+      try { payload = JSON.parse(payload) } catch { payload = {} }
+    }
+    payload.status = "Cancelled"
+    payload.balance_due = 0
+    await conn.query("UPDATE `invoices` SET payload = ?, updated_at = NOW(3) WHERE id = ?", [JSON.stringify(payload), inv.id])
+  }
+
+  // 4. Revert linked sales order if applicable
+  const soId = issue.sales_order_id || (issue.reference_no && String(issue.reference_no).startsWith("SO-") ? issue.reference_no : null)
+  if (soId) {
+    const [soRows] = await conn.query("SELECT id, payload FROM `sales_orders` WHERE id = ? FOR UPDATE", [soId])
+    if (soRows.length > 0) {
+      let soPayload = soRows[0].payload
+      if (typeof soPayload === "string") {
+        try { soPayload = JSON.parse(soPayload) } catch { soPayload = {} }
+      }
+      soPayload.stage = "Confirmed"
+      soPayload.deliveryStatus = "Pending"
+      soPayload.deliveredAmount = 0
+      soPayload.updatedAt = new Date().toISOString()
+      await conn.query("UPDATE `sales_orders` SET payload = ?, updated_at = NOW(3) WHERE id = ?", [JSON.stringify(soPayload), soId])
+    }
+  }
+}
+
+export async function createSalesIssue(input, existingId = null, existingConn = null) {
   const fs_no = input?.fs_no || input?.fsNo || input?.issue_number || input?.issueNumber || `FS-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`
   const id = existingId || input?.id || fs_no
   const rawSalesOrderId = input?.sales_order_id || input?.salesOrderId || input?.salesOrder || null
@@ -469,7 +684,6 @@ export async function createSalesIssue(input, existingId = null) {
   const total_quantity = items.reduce((sum, item) => sum + Number(item.quantity || item.qty || 0), 0)
   const itemTotal = items.reduce((sum, item) => sum + Number(item.amount || (item.quantity * item.unit_price) || 0), 0)
 
-  const isWh1 = isExportWarehouse(warehouse_id)
   const subtotal = input?.subtotal !== undefined ? Number(input.subtotal) : itemTotal
   const vat_rate = input?.vat_rate !== undefined ? Number(input.vat_rate) : (input?.tax_rate !== undefined ? Number(input.tax_rate) : 0)
   const vat_amount = input?.vat_amount !== undefined ? Number(input.vat_amount) : (input?.tax_amount !== undefined ? Number(input.tax_amount) : (vat_rate > 0 ? Math.round(subtotal * (vat_rate / 100)) : 0))
@@ -510,498 +724,351 @@ export async function createSalesIssue(input, existingId = null) {
     return { status: 400, body: { error: "Validation failed", details: errors } }
   }
 
-  // 1. Save Header with exact MySQL relational schema columns (including all possible naming variants)
-  const headerRow = {
-    id,
-    fs_no: fs_no,
-    fsNo: fs_no,
-    issue_number: fs_no,
-    issueNumber: fs_no,
-    reference_no: reference_no || null,
-    referenceNo: reference_no || null,
-    sales_order_id: sales_order_id || null,
-    salesOrderId: sales_order_id || null,
-    customer_id: customer_id || null,
-    customerId: customer_id || null,
-    customer_name: customer_name || null,
-    customer: customer_name || null,
-    warehouse_id: warehouse_id || null,
-    warehouseId: warehouse_id || null,
-    warehouse: warehouse_id || null,
-    sale_date: sale_date,
-    issue_date: sale_date,
-    issueDate: sale_date,
-    status: doc.status || "Draft",
-    total_quantity: total_quantity,
-    totalQuantity: total_quantity,
-    subtotal: subtotal,
-    subtotal_amount: subtotal,
-    subtotalAmount: subtotal,
-    vat_rate: vat_rate,
-    vatRate: vat_rate,
-    vat_amount: vat_amount,
-    vatAmount: vat_amount,
-    tax_amount: vat_amount,
-    taxAmount: vat_amount,
-    total_amount: finalTotalAmount,
-    totalAmount: finalTotalAmount,
-    payment_type: payment_type,
-    paymentType: payment_type,
-    payment_status: payment_type === "Cash" ? "Paid" : "Unpaid",
-    paymentStatus: payment_type === "Cash" ? "Paid" : "Unpaid",
-    payment_method: payment_type,
-    paymentMethod: payment_type,
-    created_by: doc.created_by || "Sales Officer",
-    createdBy: doc.created_by || "Sales Officer",
-    account_entries: doc.account_entries || doc.accountEntries || null,
-    accountEntries: doc.account_entries || doc.accountEntries || null,
-  }
-
-  await drizzleCreateRow({
-    resource: getResource("sales_issues"),
-    body: headerRow,
-  })
-
-  // 2. Save Items with exact MySQL relational schema columns
-  if (items.length > 0) {
-    const itemRows = items.map((item, idx) => {
-      const prodId = String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`)
-      const prodName = String(item.item_name || item.product_name || item.name || "Item")
-      const batchCode = String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN")
-      const packUnit = String(item.packaging_unit || item.unit || "Box")
-      const q = Number(item.quantity || item.qty || 0)
-      const p = Number(item.unit_price || item.price || 0)
-      const tot = Number(item.amount || item.total_price || (q * p) || 0)
-
-      return {
-        id: String(item.id || `${id}-ITEM-${idx + 1}`),
-        sales_issue_id: id,
-        salesIssueId: id,
-        item_id: prodId,
-        itemId: prodId,
-        product_id: prodId,
-        productId: prodId,
-        product_name: prodName,
-        productName: prodName,
-        item_name: prodName,
-        itemName: prodName,
-        batch_id: batchCode,
-        batchId: batchCode,
-        batch_number: batchCode,
-        batchNumber: batchCode,
-        batch_no: batchCode,
-        batchNo: batchCode,
-        quantity: q,
-        qty: q,
-        unit_price: p,
-        unitPrice: p,
-        total_price: tot,
-        totalPrice: tot,
-        amount: tot,
-        unit: packUnit,
-        packaging_unit: packUnit,
-        packagingUnit: packUnit,
-      }
-    })
-
-    for (const itemRow of itemRows) {
-      await drizzleCreateRow({
-        resource: getResource("sales_issue_items"),
-        body: itemRow,
-      })
-    }
-  }
-
-  if (String(doc.status || headerRow.status || "").toLowerCase() === "posted") {
-    try {
-      await postSalesIssue(id)
-    } catch (autoPostErr) {
-      console.warn("Auto-post during createSalesIssue warning:", autoPostErr.message)
-    }
-  }
-
-  return { status: 200, body: { ...doc, savedToDb: true } }
-}
-
-export async function updateSalesIssue(input, id) {
-  const cleanId = String(id).trim()
-  const getRes = await getSalesIssue(cleanId)
-  if (getRes.status >= 400 || !getRes.body) {
-    return { status: 404, body: { error: `Sales issue '${id}' not found.` } }
-  }
-
-  const existing = getRes.body
-  const items = Array.isArray(input?.items) ? input.items : existing.items || []
-  const total_quantity = items.reduce((sum, item) => sum + Number(item.quantity || item.qty || 0), 0)
-  const itemTotal = items.reduce((sum, item) => sum + Number(item.amount || (item.quantity * item.unit_price) || 0), 0)
-
-  const warehouse_id = input?.warehouse_id || existing.warehouse_id
-  const isWh1 = isExportWarehouse(warehouse_id)
-  const subtotal = input?.subtotal !== undefined ? Number(input.subtotal) : itemTotal
-  const vat_rate = input?.vat_rate !== undefined ? Number(input.vat_rate) : (input?.tax_rate !== undefined ? Number(input.tax_rate) : Number(existing.vat_rate || 0))
-  const vat_amount = input?.vat_amount !== undefined ? Number(input.vat_amount) : (input?.tax_amount !== undefined ? Number(input.tax_amount) : (vat_rate > 0 ? Math.round(subtotal * (vat_rate / 100)) : 0))
-  const finalTotalAmount = input?.total_amount !== undefined ? Number(input.total_amount) : (subtotal + vat_amount)
-
-    const incomingSoId = input?.sales_order_id !== undefined ? input.sales_order_id : (input?.salesOrderId !== undefined ? input.salesOrderId : existing.sales_order_id)
-    const incomingRef = input?.reference_no !== undefined ? input.reference_no : (input?.referenceNo !== undefined ? input.referenceNo : existing.reference_no)
-    const resolvedSoId = incomingSoId || (incomingRef && String(incomingRef).startsWith("SO-") ? incomingRef : null)
-
-    const updateHeader = {
-      fs_no: input?.fs_no || existing.fs_no || cleanId,
-      fsNo: input?.fs_no || existing.fs_no || cleanId,
-      issue_number: input?.fs_no || existing.fs_no || cleanId,
-      issueNumber: input?.fs_no || existing.fs_no || cleanId,
-      reference_no: incomingRef || null,
-      referenceNo: incomingRef || null,
-      sales_order_id: resolvedSoId || null,
-      salesOrderId: resolvedSoId || null,
-      customer_id: (input?.customer_id || existing.customer_id) || null,
-      customerId: (input?.customer_id || existing.customer_id) || null,
-      customer_name: (input?.customer_name || existing.customer_name) || null,
-      customer: (input?.customer_name || existing.customer_name) || null,
-      warehouse_id: warehouse_id || null,
-      warehouseId: warehouse_id || null,
-      warehouse: warehouse_id || null,
-    sale_date: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
-    issue_date: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
-    issueDate: input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
-    status: input?.status || existing.status || "Draft",
-    total_quantity: total_quantity,
-    totalQuantity: total_quantity,
-    subtotal: subtotal,
-    subtotal_amount: subtotal,
-    subtotalAmount: subtotal,
-    vat_rate: vat_rate,
-    vatRate: vat_rate,
-    vat_amount: vat_amount,
-    vatAmount: vat_amount,
-    tax_amount: vat_amount,
-    taxAmount: vat_amount,
-    total_amount: finalTotalAmount,
-    totalAmount: finalTotalAmount,
-    amount_paid: input?.amount_paid !== undefined ? Number(input.amount_paid) : (existing.amount_paid !== undefined ? Number(existing.amount_paid) : ((input?.payment_type || existing.payment_type) === "Cash" ? finalTotalAmount : 0)),
-    amountPaid: input?.amount_paid !== undefined ? Number(input.amount_paid) : (existing.amount_paid !== undefined ? Number(existing.amount_paid) : ((input?.payment_type || existing.payment_type) === "Cash" ? finalTotalAmount : 0)),
-    balance_due: input?.balance_due !== undefined ? Number(input.balance_due) : (existing.balance_due !== undefined ? Number(existing.balance_due) : ((input?.payment_type || existing.payment_type) === "Cash" ? 0 : finalTotalAmount)),
-    balanceDue: input?.balance_due !== undefined ? Number(input.balance_due) : (existing.balance_due !== undefined ? Number(existing.balance_due) : ((input?.payment_type || existing.payment_type) === "Cash" ? 0 : finalTotalAmount)),
-    settlement_status: input?.settlement_status || existing.settlement_status || ((input?.payment_type || existing.payment_type) === "Cash" ? "Fully Settled" : "Unpaid"),
-    settlementStatus: input?.settlement_status || existing.settlement_status || ((input?.payment_type || existing.payment_type) === "Cash" ? "Fully Settled" : "Unpaid"),
-    payment_type: input?.payment_type || existing.payment_type || "Cash",
-    paymentType: input?.payment_type || existing.payment_type || "Cash",
-    payment_status: input?.payment_status || (input?.settlement_status === "Fully Settled" || (input?.payment_type || existing.payment_type) === "Cash" ? "Paid" : (existing.payment_status || "Unpaid")),
-    paymentStatus: input?.payment_status || (input?.settlement_status === "Fully Settled" || (input?.payment_type || existing.payment_type) === "Cash" ? "Paid" : (existing.payment_status || "Unpaid")),
-    payment_method: input?.payment_type || existing.payment_type || "Cash",
-    paymentMethod: input?.payment_type || existing.payment_type || "Cash",
-    account_entries: input?.account_entries !== undefined ? input.account_entries : (input?.accountEntries !== undefined ? input.accountEntries : (existing.account_entries || existing.accountEntries || null)),
-    accountEntries: input?.account_entries !== undefined ? input.account_entries : (input?.accountEntries !== undefined ? input.accountEntries : (existing.account_entries || existing.accountEntries || null)),
-  }
-
-  await drizzleUpdateRow({
-    resource: getResource("sales_issues"),
-    id: cleanId,
-    body: updateHeader,
-  })
-
-  // Delete existing items and re-insert
   try {
-    const existingItems = existing.items || []
-    for (const item of existingItems) {
-      if (item.id) {
-        await drizzleDeleteRow({ resource: getResource("sales_issue_items"), id: item.id })
-      }
-    }
-    for (const [idx, item] of items.entries()) {
-      const prodId = String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`)
-      const prodName = String(item.item_name || item.product_name || item.name || "Item")
-      const batchCode = String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN")
-      const packUnit = String(item.packaging_unit || item.unit || "Box")
-      const q = Number(item.quantity || item.qty || 0)
-      const p = Number(item.unit_price || item.price || 0)
-      const tot = Number(item.amount || item.total_price || (q * p) || 0)
-
-      const itemRow = {
-        id: String(item.id || `${cleanId}-ITEM-${idx + 1}`),
-        sales_issue_id: cleanId,
-        salesIssueId: cleanId,
-        item_id: prodId,
-        itemId: prodId,
-        product_id: prodId,
-        productId: prodId,
-        product_name: prodName,
-        productName: prodName,
-        item_name: prodName,
-        itemName: prodName,
-        batch_id: batchCode,
-        batchId: batchCode,
-        batch_number: batchCode,
-        batchNumber: batchCode,
-        batch_no: batchCode,
-        batchNo: batchCode,
-        quantity: q,
-        qty: q,
-        unit_price: p,
-        unitPrice: p,
-        total_price: tot,
-        totalPrice: tot,
-        amount: tot,
-        unit: packUnit,
-        packaging_unit: packUnit,
-        packagingUnit: packUnit,
-      }
-      await drizzleCreateRow({
-        resource: getResource("sales_issue_items"),
-        body: itemRow,
-      })
-    }
-  } catch (itemErr) {
-    console.warn("Item update warning:", itemErr.message)
-  }
-
-  // Synchronize linked Invoices and Journal Entries if already created
-  try {
-    const rawCustomEntries = updateHeader.account_entries || updateHeader.accountEntries || null
-    let customEntries = rawCustomEntries
-    if (typeof customEntries === "string") {
-      try { customEntries = JSON.parse(customEntries) } catch { customEntries = null }
-    }
-
-    let customRevLines = []
-    let customCogsLines = []
-    if (customEntries && typeof customEntries === "object") {
-      if (Array.isArray(customEntries.revenue_lines)) {
-        customRevLines = customEntries.revenue_lines
-      } else if (Array.isArray(customEntries.debit_lines) || Array.isArray(customEntries.credit_lines)) {
-        customRevLines = [
-          ...(customEntries.debit_lines || []).map((l) => ({ ...l, debit: Number(l.amount || l.debit || 0), credit: 0 })),
-          ...(customEntries.credit_lines || []).map((l) => ({ ...l, debit: 0, credit: Number(l.amount || l.credit || 0) })),
+    return await runInTransaction(existingConn, async (conn) => {
+      // 1. Save Header
+      await conn.query(
+        `INSERT INTO \`sales_issues\` (
+          id, fs_no, reference_no, sales_order_id, issue_number, sale_date,
+          customer_id, customer_name, warehouse_id, payment_type, status,
+          total_quantity, total_amount, subtotal_amount, tax_amount,
+          payment_status, payment_method, account_entries, created_by, posted_by,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))
+        ON DUPLICATE KEY UPDATE
+          fs_no = VALUES(fs_no),
+          reference_no = VALUES(reference_no),
+          sales_order_id = VALUES(sales_order_id),
+          issue_number = VALUES(issue_number),
+          sale_date = VALUES(sale_date),
+          customer_id = VALUES(customer_id),
+          customer_name = VALUES(customer_name),
+          warehouse_id = VALUES(warehouse_id),
+          payment_type = VALUES(payment_type),
+          status = VALUES(status),
+          total_quantity = VALUES(total_quantity),
+          total_amount = VALUES(total_amount),
+          subtotal_amount = VALUES(subtotal_amount),
+          tax_amount = VALUES(tax_amount),
+          payment_status = VALUES(payment_status),
+          payment_method = VALUES(payment_method),
+          account_entries = VALUES(account_entries),
+          updated_at = NOW(3)`,
+        [
+          id,
+          fs_no,
+          reference_no,
+          sales_order_id,
+          fs_no,
+          sale_date,
+          customer_id,
+          customer_name,
+          warehouse_id,
+          payment_type,
+          String(doc.status).toLowerCase() === "posted" ? "Draft" : doc.status,
+          total_quantity,
+          finalTotalAmount,
+          subtotal,
+          vat_amount,
+          payment_type === "Cash" ? "Paid" : "Unpaid",
+          payment_type,
+          doc.account_entries ? JSON.stringify(doc.account_entries) : null,
+          doc.created_by || "Sales Officer",
+          doc.status === "Posted" ? (doc.posted_by || "Sales Officer") : null,
         ]
-      }
-      if (Array.isArray(customEntries.cogs_lines)) {
-        customCogsLines = customEntries.cogs_lines
-      } else if (Array.isArray(customEntries.cogs_debit_lines) || Array.isArray(customEntries.cogs_credit_lines)) {
-        customCogsLines = [
-          ...(customEntries.cogs_debit_lines || []).map((l) => ({ ...l, debit: Number(l.amount || l.debit || 0), credit: 0 })),
-          ...(customEntries.cogs_credit_lines || []).map((l) => ({ ...l, debit: 0, credit: Number(l.amount || l.credit || 0) })),
-        ]
-      }
-    }
+      )
 
-    const saleJeId = `JE-SALE-${cleanId}`
-    const cogsJeId = `JE-COGS-${cleanId}`
+      // 2. Save Items
+      await conn.query("DELETE FROM `sales_issue_items` WHERE sales_issue_id = ?", [id])
 
-    // 1. Update Invoices table via Drizzle
-    const invRes = await drizzleListRows({
-      resource: getResource("invoices"),
-      query: { sales_issue_id: cleanId }
+      for (const [idx, item] of items.entries()) {
+        const prodId = String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`)
+        const prodName = String(item.item_name || item.product_name || item.name || "Item")
+        const batchCode = String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN")
+        const q = Number(item.quantity || item.qty || 0)
+        const p = Number(item.unit_price || item.price || 0)
+        const tot = Number(item.amount || item.total_price || (q * p) || 0)
+
+        await conn.query(
+          `INSERT INTO \`sales_issue_items\` (
+            id, sales_issue_id, product_id, item_id, item_name,
+            batch_id, batch_no, batch_number, quantity, unit_price,
+            total_price, amount, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))`,
+          [
+            String(item.id || `${id}-ITEM-${idx + 1}`),
+            id,
+            prodId,
+            prodId,
+            prodName,
+            batchCode,
+            batchCode,
+            batchCode,
+            q,
+            p,
+            tot,
+            tot,
+          ]
+        )
+      }
+
+      // 3. Auto-post if marked Posted
+      if (String(doc.status).toLowerCase() === "posted") {
+        await postSalesIssue(id, null, conn)
+      }
+
+      return { status: 200, body: { ...doc, savedToDb: true } }
     })
-    let matchedInv = (Array.isArray(invRes.body) && invRes.body.length > 0) ? invRes.body[0] : null
-    if (!matchedInv) {
-      const directInv = await drizzleGetRow({ resource: getResource("invoices"), id: `INV-SI-${cleanId}` })
-      if (directInv.status === 200 && directInv.body) {
-        matchedInv = directInv.body
-      }
-    }
-
-    if (matchedInv) {
-      const inv = unwrapRow(matchedInv)
-      let existingGl = inv.gl_distribution
-      if (typeof existingGl === "string") {
-        try { existingGl = JSON.parse(existingGl) } catch { existingGl = {} }
-      }
-      const updatedGlDist = {
-        revenue_lines: customRevLines.length > 0 ? customRevLines : (existingGl?.revenue_lines || []),
-        cogs_lines: customCogsLines.length > 0 ? customCogsLines : (existingGl?.cogs_lines || []),
-        notes: customEntries?.notes || "Updated from Sales Issue",
-        updated_at: new Date().toISOString(),
-        updated_by: "Sales Issue System",
-      }
-
-      const updatedInvoiceBody = {
-        ...inv,
-        subtotal,
-        tax_amount: vat_amount,
-        tax_rate: vat_rate,
-        total: finalTotalAmount,
-        total_amount: finalTotalAmount,
-        amount_paid: updateHeader.amount_paid !== undefined ? updateHeader.amount_paid : inv.amount_paid,
-        balance_due: updateHeader.balance_due !== undefined ? updateHeader.balance_due : inv.balance_due,
-        status: updateHeader.payment_status || inv.status,
-        settlement_status: updateHeader.settlement_status || inv.settlement_status,
-        gl_distribution: updatedGlDist,
-        customer_name: updateHeader.customer_name || inv.customer_name,
-        warehouse_id: warehouse_id || inv.warehouse_id,
-      }
-
-      await drizzleUpdateRow({
-        resource: getResource("invoices"),
-        id: inv.id,
-        body: updatedInvoiceBody,
-      })
-    }
-
-    // 2. Update Journal Entry Lines for JE-SALE
-    if (customRevLines.length > 0) {
-      const jelRes = await drizzleListRows({
-        resource: getResource("journal_entry_lines"),
-        query: { journal_entry_id: saleJeId }
-      })
-      const existingSaleLines = Array.isArray(jelRes.body) ? jelRes.body : []
-      for (const line of existingSaleLines) {
-        const unwrappedLine = unwrapRow(line)
-        if (unwrappedLine?.id) {
-          await drizzleDeleteRow({ resource: getResource("journal_entry_lines"), id: unwrappedLine.id })
-        }
-      }
-
-      for (const [idx, line] of customRevLines.entries()) {
-        const accId = line.accountId || line.account_id || line.accountCode || line.account_code
-        const dAmt = Number(line.debit || line.debit_amount || (line.amount && (line.id?.startsWith("dr-") || line.debit) ? line.amount : 0))
-        const cAmt = Number(line.credit || line.credit_amount || (line.amount && (line.id?.startsWith("cr-") || line.credit) ? line.amount : 0))
-        if (dAmt <= 0 && cAmt <= 0) continue
-
-        await drizzleCreateRow({
-          resource: getResource("journal_entry_lines"),
-          body: {
-            id: `${saleJeId}-LINE-${idx + 1}-${Date.now().toString().slice(-4)}`,
-            journal_entry_id: saleJeId,
-            account_id: accId,
-            debit_amount: dAmt,
-            credit_amount: cAmt,
-            currency: "ETB",
-            exchange_rate_at_time: 1.0,
-            warehouse_id: warehouse_id || null,
-            party_type: "Customer",
-            party_id: updateHeader.customer_id || null,
-            party_name: updateHeader.customer_name || null,
-          },
-        })
-      }
-    }
-
-    // 3. Update Journal Entry Lines for JE-COGS
-    if (customCogsLines.length > 0) {
-      const cogsJelRes = await drizzleListRows({
-        resource: getResource("journal_entry_lines"),
-        query: { journal_entry_id: cogsJeId }
-      })
-      const existingCogsLines = Array.isArray(cogsJelRes.body) ? cogsJelRes.body : []
-      for (const line of existingCogsLines) {
-        const unwrappedLine = unwrapRow(line)
-        if (unwrappedLine?.id) {
-          await drizzleDeleteRow({ resource: getResource("journal_entry_lines"), id: unwrappedLine.id })
-        }
-      }
-
-      for (const [idx, line] of customCogsLines.entries()) {
-        const accId = line.accountId || line.account_id || line.accountCode || line.account_code
-        const dAmt = Number(line.debit || line.debit_amount || (line.amount && (line.id?.startsWith("dr-") || line.debit) ? line.amount : 0))
-        const cAmt = Number(line.credit || line.credit_amount || (line.amount && (line.id?.startsWith("cr-") || line.credit) ? line.amount : 0))
-        if (dAmt <= 0 && cAmt <= 0) continue
-
-        await drizzleCreateRow({
-          resource: getResource("journal_entry_lines"),
-          body: {
-            id: `${cogsJeId}-LINE-${idx + 1}-${Date.now().toString().slice(-4)}`,
-            journal_entry_id: cogsJeId,
-            account_id: accId,
-            debit_amount: dAmt,
-            credit_amount: cAmt,
-            currency: "ETB",
-            exchange_rate_at_time: 1.0,
-            warehouse_id: warehouse_id || null,
-          },
-        })
-      }
-    }
-  } catch (syncErr) {
-    console.warn("Invoice / JE synchronization warning during updateSalesIssue:", syncErr.message)
-  }
-
-  return { status: 200, body: { ...existing, ...input, total_quantity, total_amount: finalTotalAmount, items, savedToDb: true } }
-}
-
-
-
-export async function deleteSalesIssue(id) {
-  try {
-    const getRes = await getSalesIssue(id)
-    if (getRes.body?.items) {
-      for (const item of getRes.body.items) {
-        if (item.id) {
-          await drizzleDeleteRow({ resource: getResource("sales_issue_items"), id: item.id })
-        }
-      }
-    }
-    await drizzleDeleteRow({ resource: getResource("sales_issues"), id })
   } catch (err) {
-    console.warn("Delete sales issue warning:", err.message)
+    console.error("[createSalesIssue error]:", err)
+    return { status: 500, body: { error: "Failed to create sales issue", message: err.message } }
   }
-
-  return { status: 200, body: { ok: true, deletedId: id } }
 }
 
-export async function postSalesIssue(arg1, arg2) {
-  const id = typeof arg1 === "string" ? arg1 : typeof arg2 === "string" ? arg2 : arg1?.id || arg2?.id
-  const getRes = await getSalesIssue(id)
-  if (getRes.status >= 400 || !getRes.body) {
-    return { status: 404, body: { error: `Sales issue '${id}' not found.` } }
-  }
+export async function updateSalesIssue(input, id, existingConn = null) {
+  const cleanId = String(id).trim()
 
-  const existing = getRes.body
-  const statusUpper = (existing.status || "").toUpperCase()
-  if (statusUpper === "POSTED") {
-    return { status: 400, body: { error: `Sales issue '${id}' is already posted.` } }
-  }
-
-  let totalCost = 0
-  let totalAmount = 0
-  let totalQty = 0
-
-  // 1. Deduct Stock from inventory
   try {
-    const allProdRes = await inventoryService.listProducts().catch(() => ({ body: [] }))
-    const allProducts = Array.isArray(allProdRes.body) ? allProdRes.body : []
-
-    for (const item of (existing.items || [])) {
-      const prodId = item.item_id || item.productId || item.product_id
-      const itemName = (item.item_name || item.product_name || "").toLowerCase().trim()
-      
-      let matchedProd = allProducts.find(p => p.id === prodId || p.product_id === prodId)
-      if (!matchedProd && itemName) {
-        matchedProd = allProducts.find(p => (p.name || p.product_name || "").toLowerCase().trim() === itemName)
+    return await runInTransaction(existingConn, async (conn) => {
+      const [existingRows] = await conn.query(
+        "SELECT * FROM `sales_issues` WHERE id = ? OR fs_no = ? OR issue_number = ? FOR UPDATE",
+        [cleanId, cleanId, cleanId]
+      )
+      if (existingRows.length === 0) {
+        return { status: 404, body: { error: `Sales issue '${id}' not found.` } }
       }
 
-      if (matchedProd) {
-        const prod = matchedProd
-        const realProdId = prod.id || prodId
-        const issueQty = Number(item.quantity || item.qty || 0)
-        const itemSellingPrice = Number(item.unit_price || item.unitPrice || 0)
-        const unitCost = Number(prod.unitCost || prod.unit_cost || 0)
+      const existing = existingRows[0]
+      const items = Array.isArray(input?.items) ? input.items : []
+      const total_quantity = items.reduce((sum, item) => sum + Number(item.quantity || item.qty || 0), 0)
+      const itemTotal = items.reduce((sum, item) => sum + Number(item.amount || (item.quantity * item.unit_price) || 0), 0)
+
+      const warehouse_id = input?.warehouse_id || existing.warehouse_id
+      const subtotal = input?.subtotal !== undefined ? Number(input.subtotal) : (itemTotal || Number(existing.subtotal_amount || 0))
+      const vat_rate = input?.vat_rate !== undefined ? Number(input.vat_rate) : (input?.tax_rate !== undefined ? Number(input.tax_rate) : Number(existing.vat_rate || 0))
+      const vat_amount = input?.vat_amount !== undefined ? Number(input.vat_amount) : (input?.tax_amount !== undefined ? Number(input.tax_amount) : (vat_rate > 0 ? Math.round(subtotal * (vat_rate / 100)) : 0))
+      const finalTotalAmount = input?.total_amount !== undefined ? Number(input.total_amount) : (subtotal + vat_amount)
+
+      const incomingSoId = input?.sales_order_id !== undefined ? input.sales_order_id : (input?.salesOrderId !== undefined ? input.salesOrderId : existing.sales_order_id)
+      const incomingRef = input?.reference_no !== undefined ? input.reference_no : (input?.referenceNo !== undefined ? input.referenceNo : existing.reference_no)
+      const resolvedSoId = incomingSoId || (incomingRef && String(incomingRef).startsWith("SO-") ? incomingRef : null)
+
+      const payment_type = input?.payment_type || existing.payment_type || "Cash"
+      const isCash = payment_type.toLowerCase() === "cash"
+      const amount_paid = input?.amount_paid !== undefined ? Number(input.amount_paid) : (existing.amount_paid !== undefined ? Number(existing.amount_paid) : (isCash ? finalTotalAmount : 0))
+      const balance_due = input?.balance_due !== undefined ? Number(input.balance_due) : (existing.balance_due !== undefined ? Number(existing.balance_due) : (isCash ? 0 : finalTotalAmount))
+      const payment_status = input?.payment_status || (balance_due <= 0 || isCash ? "Paid" : (amount_paid > 0 ? "Partially Paid" : "Unpaid"))
+
+      await conn.query(
+        `UPDATE \`sales_issues\` SET
+          fs_no = ?,
+          reference_no = ?,
+          sales_order_id = ?,
+          issue_number = ?,
+          sale_date = ?,
+          customer_id = ?,
+          customer_name = ?,
+          warehouse_id = ?,
+          payment_type = ?,
+          status = ?,
+          total_quantity = ?,
+          total_amount = ?,
+          subtotal_amount = ?,
+          tax_amount = ?,
+          payment_status = ?,
+          payment_method = ?,
+          account_entries = ?,
+          updated_at = NOW(3)
+        WHERE id = ?`,
+        [
+          input?.fs_no || existing.fs_no || cleanId,
+          incomingRef || null,
+          resolvedSoId || null,
+          input?.fs_no || existing.fs_no || cleanId,
+          input?.sale_date || existing.sale_date || new Date().toISOString().split("T")[0],
+          input?.customer_id || existing.customer_id || null,
+          input?.customer_name || existing.customer_name || null,
+          warehouse_id || null,
+          payment_type,
+          input?.status || existing.status || "Draft",
+          total_quantity || existing.total_quantity,
+          finalTotalAmount,
+          subtotal,
+          vat_amount,
+          payment_status,
+          payment_type,
+          input?.account_entries ? JSON.stringify(input.account_entries) : existing.account_entries,
+          existing.id,
+        ]
+      )
+
+      if (items.length > 0) {
+        await conn.query("DELETE FROM `sales_issue_items` WHERE sales_issue_id = ?", [existing.id])
+        for (const [idx, item] of items.entries()) {
+          const prodId = String(item.item_id || item.productId || item.product_id || `ITEM-${idx + 1}`)
+          const prodName = String(item.item_name || item.product_name || item.name || "Item")
+          const batchCode = String(item.batch_no || item.batch_id || item.batch_number || "BATCH-MAIN")
+          const q = Number(item.quantity || item.qty || 0)
+          const p = Number(item.unit_price || item.price || 0)
+          const tot = Number(item.amount || item.total_price || (q * p) || 0)
+
+          await conn.query(
+            `INSERT INTO \`sales_issue_items\` (
+              id, sales_issue_id, product_id, item_id, item_name,
+              batch_id, batch_no, batch_number, quantity, unit_price,
+              total_price, amount, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(3), NOW(3))`,
+            [
+              String(item.id || `${existing.id}-ITEM-${idx + 1}`),
+              existing.id,
+              prodId,
+              prodId,
+              prodName,
+              batchCode,
+              batchCode,
+              batchCode,
+              q,
+              p,
+              tot,
+              tot,
+            ]
+          )
+        }
+      }
+
+      return { status: 200, body: { ...existing, ...input, total_quantity, total_amount: finalTotalAmount, items, savedToDb: true } }
+    })
+  } catch (err) {
+    console.error("[updateSalesIssue error]:", err)
+    return { status: 500, body: { error: "Failed to update sales issue", message: err.message } }
+  }
+}
+
+export async function deleteSalesIssue(id, existingConn = null) {
+  try {
+    return await runInTransaction(existingConn, async (conn) => {
+      const cleanId = String(id).trim()
+      const [issueRows] = await conn.query(
+        "SELECT * FROM `sales_issues` WHERE id = ? OR fs_no = ? OR issue_number = ? FOR UPDATE",
+        [cleanId, cleanId, cleanId]
+      )
+      if (issueRows.length === 0) {
+        return { status: 200, body: { ok: true, deletedId: id } }
+      }
+
+      const issue = issueRows[0]
+      if ((issue.status || "").toUpperCase() === "POSTED") {
+        await reverseSalesIssuePosting(conn, issue)
+      }
+
+      // Delete linked invoices
+      await conn.query(
+        "DELETE FROM `invoices` WHERE id IN (?, ?) OR payload->>'$.sales_issue_id' IN (?, ?) OR payload->>'$.fs_no' IN (?, ?)",
+        [`INV-SI-${issue.id}`, `INV-SI-${issue.fs_no}`, issue.id, issue.fs_no, issue.id, issue.fs_no]
+      )
+
+      // Delete items
+      await conn.query(
+        "DELETE FROM `sales_issue_items` WHERE sales_issue_id = ? OR sales_issue_id = ?",
+        [issue.id, issue.fs_no]
+      )
+
+      // Delete header
+      await conn.query(
+        "DELETE FROM `sales_issues` WHERE id = ?",
+        [issue.id]
+      )
+
+      return { status: 200, body: { ok: true, deletedId: id } }
+    })
+  } catch (err) {
+    console.error("[deleteSalesIssue error]:", err)
+    return { status: 500, body: { error: "Failed to delete sales issue", message: err.message } }
+  }
+}
+
+export async function postSalesIssue(arg1, arg2 = null, existingConn = null) {
+  let connArg = existingConn
+  let id = typeof arg1 === "string" ? arg1 : arg1?.id
+  if (!id && typeof arg2 === "string") {
+    id = arg2
+  }
+  if (!connArg && arg2 && typeof arg2.query === "function") {
+    connArg = arg2
+  }
+  if (!id) {
+    return { status: 400, body: { error: "Sales issue ID is required to post." } }
+  }
+
+  try {
+    return await runInTransaction(connArg, async (conn) => {
+      const cleanId = String(id).trim()
+      const [issueRows] = await conn.query(
+        "SELECT * FROM `sales_issues` WHERE id = ? OR fs_no = ? OR issue_number = ? FOR UPDATE",
+        [cleanId, cleanId, cleanId]
+      )
+      if (issueRows.length === 0) {
+        return { status: 404, body: { error: `Sales issue '${id}' not found.` } }
+      }
+
+      const existing = issueRows[0]
+      const statusUpper = (existing.status || "").toUpperCase()
+      if (statusUpper === "POSTED") {
+        return { status: 400, body: { error: `Sales issue '${id}' is already posted.` } }
+      }
+
+      // 1. Fetch items
+      const [itemRows] = await conn.query(
+        "SELECT * FROM `sales_issue_items` WHERE sales_issue_id = ? OR sales_issue_id = ?",
+        [existing.id, existing.fs_no]
+      )
+      const itemsToProcess = itemRows.length > 0 ? itemRows : (existing.items || [])
+
+      // 2. Fetch products for matching
+      const [pharmaProds] = await conn.query("SELECT * FROM `pharma_products`")
+      const [exportProds] = await conn.query("SELECT * FROM `export_products`")
+
+      let totalCost = 0
+      let totalAmount = 0
+      let totalQty = 0
+
+      for (const item of itemsToProcess) {
+        const prodId = item.product_id || item.item_id
+        const itemName = (item.item_name || "").toLowerCase().trim()
+        const issueQty = Number(item.quantity || 0)
+        const itemSellingPrice = Number(item.unit_price || 0)
 
         totalQty += issueQty
         totalAmount += issueQty * itemSellingPrice
 
-        const isWH1 =
-          prod.isExport ||
-          prod.warehouseType === "EXPORT_WH" ||
-          (prod.warehouse_id || prod.warehouse || existing.warehouse_id || "").toUpperCase().startsWith("WH1")
+        // Match export or pharma
+        let matchedExport = exportProds.find(p => p.id === prodId || (p.name && p.name.toLowerCase().trim() === itemName))
+        let matchedPharma = pharmaProds.find(p => p.id === prodId || (p.name && p.name.toLowerCase().trim() === itemName))
 
-        if (isWH1) {
-          // ── WH1 EXPORT COMMODITY PRODUCT LIFECYCLE ──────────────────────
+        const isWh1 =
+          isExportWarehouse(existing.warehouse_id) ||
+          Boolean(matchedExport) ||
+          (matchedPharma && isExportWarehouse(matchedPharma.warehouse_id))
+
+        if (isWh1) {
+          const prod = matchedExport || matchedPharma
+          const realProdId = prod?.id || prodId
+          const unitCost = Number(prod?.unit_cost || 0)
+
           let remainingToDeduct = issueQty
           let totalDeductedCost = 0
 
-          // If a specific inbound batch/parcel is selected (e.g. item.batch_id), prioritize it
           let grvRows = []
           if (item.batch_id) {
-            const [selectedRows] = await pool.query(
-              "SELECT * FROM `export_warehouse_movements` WHERE id = ? AND net_quantity > 0",
+            const [selectedRows] = await conn.query(
+              "SELECT * FROM `export_warehouse_movements` WHERE id = ? AND net_quantity > 0 FOR UPDATE",
               [item.batch_id]
             )
             grvRows = selectedRows
           }
           if (grvRows.length === 0) {
-            const [allActiveGrvs] = await pool.query(
-              "SELECT * FROM `export_warehouse_movements` WHERE product_id = ? AND (movement_type = 'GRV_ENTRY' OR movement_type = 'entry') AND net_quantity > 0 ORDER BY movement_date ASC, created_at ASC",
+            const [allActiveGrvs] = await conn.query(
+              "SELECT * FROM `export_warehouse_movements` WHERE product_id = ? AND (movement_type = 'GRV_ENTRY' OR movement_type = 'entry') AND net_quantity > 0 ORDER BY movement_date ASC, created_at ASC FOR UPDATE",
               [realProdId]
             )
             grvRows = allActiveGrvs
@@ -1016,79 +1083,52 @@ export async function postSalesIssue(arg1, arg2) {
             const unitAcqCost = Number(grv.unit_price || 0)
             totalDeductedCost += deduct * unitAcqCost
 
-            await pool.query(
+            await conn.query(
               "UPDATE `export_warehouse_movements` SET net_quantity = ?, updated_at = NOW(3) WHERE id = ?",
               [newNet, grv.id]
             )
           }
 
-          if (remainingToDeduct > 0) {
-            const [moreGrvs] = await pool.query(
-              "SELECT * FROM `export_warehouse_movements` WHERE product_id = ? AND (movement_type = 'GRV_ENTRY' OR movement_type = 'entry') AND net_quantity > 0 ORDER BY movement_date ASC, created_at ASC",
-              [realProdId]
-            )
-            for (const grv of moreGrvs) {
-              if (remainingToDeduct <= 0) break
-              const currentNet = Number(grv.net_quantity || 0)
-              const deduct = Math.min(currentNet, remainingToDeduct)
-              remainingToDeduct -= deduct
-              const newNet = Math.max(0, currentNet - deduct)
-              const unitAcqCost = Number(grv.unit_price || 0)
-              totalDeductedCost += deduct * unitAcqCost
-
-              await pool.query(
-                "UPDATE `export_warehouse_movements` SET net_quantity = ?, updated_at = NOW(3) WHERE id = ?",
-                [newNet, grv.id]
-              )
-            }
-          }
-
           const leaveCOGSUnitCost = issueQty > 0 && totalDeductedCost > 0 ? Math.round((totalDeductedCost / issueQty) * 100) / 100 : unitCost
           totalCost += totalDeductedCost > 0 ? totalDeductedCost : issueQty * unitCost
 
-          const commercialSellingPrice = itemSellingPrice > 0 ? itemSellingPrice : Number(prod.sellingPrice || prod.selling_price || 0)
-          const dispatchMovId = `EWM-DISP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+          const commercialSellingPrice = itemSellingPrice > 0 ? itemSellingPrice : Number(prod?.selling_price || 0)
+          const dispatchMovId = `EWM-DISP-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`
 
-          // 2. Insert the OUTBOUND_DISPATCH movement into export_warehouse_movements
-          await pool.query(
+          await conn.query(
             `INSERT INTO \`export_warehouse_movements\` (
               id, warehouse_id, product_id, movement_type, voucher_no, batch_no,
               party_name, plate_number, gross_quantity, reject_quantity, net_quantity,
-              uom, unit_price, selling_price, movement_date, reason, created_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              uom, unit_price, selling_price, movement_date, reason, created_by, created_at, updated_at
+            ) VALUES (?, ?, ?, 'OUTBOUND_DISPATCH', ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 'Sales Officer', NOW(3), NOW(3))`,
             [
               dispatchMovId,
-              prod.warehouse_id || prod.warehouse || "WH1",
+              existing.warehouse_id || "WH1",
               realProdId,
-              "OUTBOUND_DISPATCH",
-              existing.fs_no || id,
-              item.batch_no || item.batch || "COMMODITY-WH1",
-              existing.customer_name || existing.customer || "Customer Dispatch",
-              existing.plate_number || existing.plateNumber || item.plate_number || item.plateNumber || "—",
+              existing.fs_no || existing.id,
+              item.batch_no || "COMMODITY-WH1",
+              existing.customer_name || "Customer Dispatch",
+              existing.plate_number || "—",
               issueQty,
-              0,
               -issueQty,
-              prod.unit || "Quintal",
+              prod?.unit || "Quintal",
               leaveCOGSUnitCost,
               commercialSellingPrice > 0 ? commercialSellingPrice : null,
               existing.sale_date || getLocalDateString(),
-              `Sales Issue FS-${existing.fs_no || id} (Customer Dispatch)`,
-              "Sales Officer",
+              `Sales Issue FS-${existing.fs_no || existing.id} (Customer Dispatch)`,
             ]
           )
 
-          // 3. Compute new total inventory and asset valuation
-          const [allGrvs] = await pool.query(
+          const [allGrvs] = await conn.query(
             "SELECT * FROM `export_warehouse_movements` WHERE product_id = ? AND (movement_type = 'GRV_ENTRY' OR movement_type = 'entry')",
             [realProdId]
           )
           const newQty = allGrvs.reduce((sum, g) => sum + Number(g.net_quantity || 0), 0)
           const remainingVal = allGrvs.reduce((sum, g) => sum + (Number(g.net_quantity || 0) * Number(g.unit_price || 0)), 0)
-          const cumulativeIntakeVal = Number(prod.total_stock_value || prod.totalStockValue || 0) || allGrvs.reduce((sum, g) => sum + (Number(g.gross_quantity || g.quantity || g.net_quantity || 0) * Number(g.unit_price || 0)), 0)
+          const cumulativeIntakeVal = Number(prod?.total_stock_value || 0) || allGrvs.reduce((sum, g) => sum + (Number(g.gross_quantity || g.net_quantity || 0) * Number(g.unit_price || 0)), 0)
           const weightedCost = newQty > 0 ? Math.round((remainingVal / newQty) * 100) / 100 : unitCost
 
-          // 4. Update export_products in MySQL
-          await pool.query(
+          await conn.query(
             `UPDATE \`export_products\` SET
               quantity = ?,
               quantity_sold = quantity_sold + ?,
@@ -1101,7 +1141,7 @@ export async function postSalesIssue(arg1, arg2) {
             [
               newQty,
               issueQty,
-              newQty + (Number(prod.quantitySold || prod.quantity_sold || 0) + issueQty),
+              newQty + (Number(prod?.quantity_sold || 0) + issueQty),
               weightedCost,
               cumulativeIntakeVal,
               newQty === 0 ? "Out of Stock" : newQty < 20 ? "Low Stock" : "In Stock",
@@ -1109,17 +1149,20 @@ export async function postSalesIssue(arg1, arg2) {
             ]
           )
         } else {
-          // ── PHARMA PRODUCT LIFECYCLE (WH2 / WH3) ───────────────────────
+          // Pharma (WH2 / WH3)
+          const prod = matchedPharma || matchedExport
+          const realProdId = prod?.id || prodId
+          const unitCost = Number(prod?.unit_cost || 0)
+
           let targetBatchId = item.batch_id
-          let targetBatchNo = item.batch_no || item.batch || item.batch_number
+          let targetBatchNo = item.batch_no || item.batch_number
           let remainingPharmaDeduct = issueQty
           let totalDeductedPharmaCost = 0
           const deductedBatchNos = []
 
-          // 1. Deduct from specific batch in pharma_product_batches if specified
           if (targetBatchId) {
-            const [bRows] = await pool.query(
-              "SELECT * FROM `pharma_product_batches` WHERE id = ?",
+            const [bRows] = await conn.query(
+              "SELECT * FROM `pharma_product_batches` WHERE id = ? FOR UPDATE",
               [targetBatchId]
             )
             if (bRows.length > 0) {
@@ -1132,17 +1175,16 @@ export async function postSalesIssue(arg1, arg2) {
               if (b.batch_no && !deductedBatchNos.includes(b.batch_no)) {
                 deductedBatchNos.push(b.batch_no)
               }
-              await pool.query(
+              await conn.query(
                 "UPDATE `pharma_product_batches` SET quantity = GREATEST(0, quantity - ?), updated_at = NOW(3) WHERE id = ?",
                 [deduct, b.id]
               )
             }
           }
 
-          // 2. If not found by batch_id or if remaining qty > 0, match by batch_no
           if (remainingPharmaDeduct > 0 && targetBatchNo) {
-            const [bRows] = await pool.query(
-              "SELECT * FROM `pharma_product_batches` WHERE product_id = ? AND batch_no = ? AND quantity > 0 AND (qa_status != 'Quarantined' OR qa_status IS NULL) ORDER BY expiry_date ASC, created_at ASC",
+            const [bRows] = await conn.query(
+              "SELECT * FROM `pharma_product_batches` WHERE product_id = ? AND batch_no = ? AND quantity > 0 AND (qa_status != 'Quarantined' OR qa_status IS NULL) ORDER BY expiry_date ASC, created_at ASC FOR UPDATE",
               [realProdId, targetBatchNo]
             )
             for (const b of bRows) {
@@ -1155,17 +1197,16 @@ export async function postSalesIssue(arg1, arg2) {
               if (b.batch_no && !deductedBatchNos.includes(b.batch_no)) {
                 deductedBatchNos.push(b.batch_no)
               }
-              await pool.query(
+              await conn.query(
                 "UPDATE `pharma_product_batches` SET quantity = GREATEST(0, quantity - ?), updated_at = NOW(3) WHERE id = ?",
                 [deduct, b.id]
               )
             }
           }
 
-          // 3. If still remaining (or no batch was specified), deduct in FIFO order
           if (remainingPharmaDeduct > 0) {
-            const [bRows] = await pool.query(
-              "SELECT * FROM `pharma_product_batches` WHERE product_id = ? AND quantity > 0 AND (qa_status != 'Quarantined' OR qa_status IS NULL) ORDER BY expiry_date ASC, created_at ASC",
+            const [bRows] = await conn.query(
+              "SELECT * FROM `pharma_product_batches` WHERE product_id = ? AND quantity > 0 AND (qa_status != 'Quarantined' OR qa_status IS NULL) ORDER BY expiry_date ASC, created_at ASC FOR UPDATE",
               [realProdId]
             )
             for (const b of bRows) {
@@ -1178,14 +1219,13 @@ export async function postSalesIssue(arg1, arg2) {
               if (b.batch_no && !deductedBatchNos.includes(b.batch_no)) {
                 deductedBatchNos.push(b.batch_no)
               }
-              await pool.query(
+              await conn.query(
                 "UPDATE `pharma_product_batches` SET quantity = GREATEST(0, quantity - ?), updated_at = NOW(3) WHERE id = ?",
                 [deduct, b.id]
               )
             }
           }
 
-          // If still remaining qty couldn't be deducted from batches, fallback to product unitCost
           if (remainingPharmaDeduct > 0) {
             totalDeductedPharmaCost += remainingPharmaDeduct * unitCost
           }
@@ -1195,8 +1235,7 @@ export async function postSalesIssue(arg1, arg2) {
             : unitCost
           totalCost += totalDeductedPharmaCost
 
-          // 4. Compute aggregate stock across all non-quarantined batches
-          const [allBatches] = await pool.query(
+          const [allBatches] = await conn.query(
             "SELECT * FROM `pharma_product_batches` WHERE product_id = ? AND (qa_status != 'Quarantined' OR qa_status IS NULL)",
             [realProdId]
           )
@@ -1204,38 +1243,36 @@ export async function postSalesIssue(arg1, arg2) {
           const totalStockVal = allBatches.reduce((s, b) => s + (Number(b.quantity || 0) * Number(b.unit_cost || 0)), 0)
           const newWeightedCost = newQty > 0 ? Math.round((totalStockVal / newQty) * 100) / 100 : unitCost
 
-          // 5. Insert stock_movements record in MySQL
-          const smId = `SM-ISSUE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+          const smId = `SM-ISSUE-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`
           const recordedBatchNo = deductedBatchNos.length > 0 ? deductedBatchNos.join(", ") : targetBatchNo || "BATCH-ISSUE"
-          await pool.query(
+          await conn.query(
             `INSERT INTO stock_movements (
               id, product_id, warehouse_id, movement_type, quantity, unit_cost, unit_price, selling_price,
-              balance_after, batch_no, expiry_date, reference_type, reference_id, notes, party, performed_by, movement_date
-            ) VALUES (?, ?, ?, 'ISSUE', ?, ?, ?, ?, ?, ?, ?, 'SALES_ISSUE', ?, ?, ?, ?, ?)`,
+              balance_after, batch_no, expiry_date, reference_type, reference_id, notes, party, performed_by, movement_date,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, 'ISSUE', ?, ?, ?, ?, ?, ?, ?, 'SALES_ISSUE', ?, ?, ?, 'Sales Officer', ?, NOW(3), NOW(3))`,
             [
               smId,
               realProdId,
-              prod.warehouse_id || prod.warehouse || existing.warehouse_id || "WH2",
+              prod?.warehouse_id || existing.warehouse_id || "WH2",
               issueQty,
               leavePharmaCOGSUnitCost,
               leavePharmaCOGSUnitCost,
               itemSellingPrice > 0 ? itemSellingPrice : null,
               newQty,
               recordedBatchNo,
-              item.expiry_date || item.expiryDate || null,
-              existing.fs_no || id,
-              `Sales Issue FS-${existing.fs_no || id} (${existing.customer_name || 'Customer Dispatch'})`,
-              existing.customer_name || existing.customer || "Customer Dispatch",
-              "Sales Officer",
+              item.expiry_date || null,
+              existing.fs_no || existing.id,
+              `Sales Issue FS-${existing.fs_no || existing.id} (${existing.customer_name || 'Customer Dispatch'})`,
+              existing.customer_name || "Customer Dispatch",
               existing.sale_date || getLocalDateString(),
             ]
           )
 
-          // 6. Update parent pharma_products in MySQL
-          const packSize = Number(prod.quantity_per_pack || prod.quantityPerPack || 1)
-          const updatedCartons = packSize > 0 ? Math.round((newQty / packSize) * 100) / 100 : Number(prod.number_of_cartons || 0)
-          const cumulativeIntakeVal = Number(prod.total_stock_value || prod.totalStockValue || 0) || totalStockVal
-          await pool.query(
+          const packSize = Number(prod?.quantity_per_pack || 1)
+          const updatedCartons = packSize > 0 ? Math.floor(newQty / packSize) : Number(prod?.number_of_cartons || 0)
+          const cumulativeIntakeVal = Number(prod?.total_stock_value || 0) || totalStockVal
+          await conn.query(
             `UPDATE pharma_products SET
               quantity = ?,
               total_quantity = ?,
@@ -1248,7 +1285,7 @@ export async function postSalesIssue(arg1, arg2) {
              WHERE id = ?`,
             [
               newQty,
-              newQty + (Number(prod.quantity_sold || prod.quantitySold || 0) + issueQty),
+              newQty + (Number(prod?.quantity_sold || 0) + issueQty),
               issueQty,
               newWeightedCost,
               updatedCartons,
@@ -1259,305 +1296,234 @@ export async function postSalesIssue(arg1, arg2) {
           )
         }
       }
-    }
-  } catch (err) {
-    console.warn("Stock deduction warning during post:", err.message)
-  }
 
-  // 2. Update status in sales_issues while strictly preserving payment integrity
-  const isWh1 = isExportWarehouse(existing.warehouse_id)
-  const issueSubtotal = totalAmount || Number(existing.subtotal || existing.subtotal_amount || existing.total_amount || 0)
-  const issueVatRate = Number(existing.vat_rate !== undefined ? existing.vat_rate : (existing.tax_rate !== undefined ? existing.tax_rate : 0))
-  const issueVatAmount = issueVatRate > 0 ? Number(existing.vat_amount !== undefined ? existing.vat_amount : (existing.tax_amount !== undefined ? existing.tax_amount : Math.round(issueSubtotal * (issueVatRate / 100)))) : 0
-  const grandTotal = issueSubtotal + issueVatAmount
+      // 3. Update Sales Issue Header
+      const issueSubtotal = totalAmount || Number(existing.subtotal_amount || existing.total_amount || 0)
+      const issueVatRate = Number(existing.vat_rate !== undefined ? existing.vat_rate : 0)
+      const issueVatAmount = Number(existing.tax_amount !== undefined ? existing.tax_amount : (issueVatRate > 0 ? Math.round(issueSubtotal * (issueVatRate / 100)) : 0))
+      const grandTotal = issueSubtotal + issueVatAmount
 
-  const isCash = (existing.payment_type || "").toString().toLowerCase() === "cash"
-  const existingPaid = Number(existing.amount_paid || existing.amountPaid || (isCash ? grandTotal : 0))
-  const existingBal = isCash ? 0 : Number(existing.balance_due !== undefined ? existing.balance_due : Math.max(0, grandTotal - existingPaid))
-  const isFullySettled = isCash || (grandTotal > 0 && existingPaid >= grandTotal) || existing.settlement_status === "Fully Settled"
+      const isCash = (existing.payment_type || "").toString().toLowerCase() === "cash"
+      const existingPaid = Number(existing.amount_paid !== undefined ? existing.amount_paid : (isCash ? grandTotal : 0))
+      const existingBal = isCash ? 0 : Number(existing.balance_due !== undefined ? existing.balance_due : Math.max(0, grandTotal - existingPaid))
+      const isFullySettled = isCash || (grandTotal > 0 && existingPaid >= grandTotal)
 
-  const paymentStatus = isFullySettled ? "Paid" : (existingPaid > 0 ? "Partially Paid" : "Unpaid")
-  const settlementStatus = isFullySettled ? "Fully Settled" : (existingPaid > 0 ? "Ongoing" : "Unpaid")
+      const paymentStatus = isFullySettled ? "Paid" : (existingPaid > 0 ? "Partially Paid" : "Unpaid")
+      const settlementStatus = isFullySettled ? "Fully Settled" : (existingPaid > 0 ? "Ongoing" : "Unpaid")
 
-  await drizzleUpdateRow({
-    resource: getResource("sales_issues"),
-    id,
-    body: {
-      status: "Posted",
-      posted_at: new Date().toISOString(),
-      posted_by: "Sales Officer",
-      total_quantity: totalQty || existing.total_quantity,
-      totalQuantity: totalQty || existing.total_quantity,
-      subtotal: issueSubtotal,
-      subtotal_amount: issueSubtotal,
-      subtotalAmount: issueSubtotal,
-      vat_rate: issueVatRate,
-      vatRate: issueVatRate,
-      vat_amount: issueVatAmount,
-      vatAmount: issueVatAmount,
-      tax_amount: issueVatAmount,
-      taxAmount: issueVatAmount,
-      total_amount: grandTotal,
-      totalAmount: grandTotal,
-      amount_paid: existingPaid,
-      amountPaid: existingPaid,
-      balance_due: existingBal,
-      balanceDue: existingBal,
-      payment_status: paymentStatus,
-      paymentStatus: paymentStatus,
-      settlement_status: settlementStatus,
-    },
-  })
+      await conn.query(
+        `UPDATE \`sales_issues\` SET
+          status = 'Posted',
+          posted_at = NOW(3),
+          posted_by = 'Sales Officer',
+          total_quantity = ?,
+          subtotal_amount = ?,
+          tax_amount = ?,
+          total_amount = ?,
+          payment_status = ?,
+          updated_at = NOW(3)
+        WHERE id = ?`,
+        [totalQty || existing.total_quantity, issueSubtotal, issueVatAmount, grandTotal, paymentStatus, existing.id]
+      )
 
-  // 3. Post Double-Entry Journal Entries
-  try {
-    const [coaRes, mappingsRes] = await Promise.all([
-      drizzleListRows({ resource: getResource("chart_of_accounts") }).catch(() => ({ body: [] })),
-      drizzleListRows({ resource: getResource("gl_account_mappings") }).catch(() => ({ body: [] })),
-    ])
-    const allAccounts = Array.isArray(coaRes.body) ? coaRes.body.map(a => a?.payload ? { ...a.payload, ...a } : a) : []
-    const allMappings = Array.isArray(mappingsRes.body) ? mappingsRes.body.map(m => m?.payload ? { ...m.payload, ...m } : m) : []
-    const mappingMap = new Map(allMappings.map(m => [m.id, m.account_code || m.account_id]))
+      // 4. Double-Entry Journal Entries
+      const [coaRows] = await conn.query("SELECT * FROM `chart_of_accounts`")
+      const [mappingRows] = await conn.query("SELECT * FROM `gl_account_mappings`")
+      const allAccounts = coaRows.map(a => a?.payload ? { ...a.payload, ...a } : a)
+      const allMappings = mappingRows.map(m => m?.payload ? { ...m.payload, ...m } : m)
+      const mappingMap = new Map(allMappings.map(m => [m.id, m.account_code || m.account_id]))
+      const accMap = new Map(allAccounts.map(a => [a.id || a.code, a]))
 
-    const isCredit = (existing.payment_type || "").toString().toLowerCase().includes("credit")
-    const { debitAccId, revenueAccId, inventoryAccId, cogsAccId, vatAccId } = resolveSalesGLAccounts({
-      warehouseId: existing.warehouse_id,
-      items: existing.items || [],
-      isCredit,
-      allAccounts,
-      mappingMap,
-    })
-
-    const saleJeId = `JE-SALE-${id}`
-    const cogsJeId = `JE-COGS-${id}`
-
-    // Parse custom account entries if specified on the sales issue
-    const rawCustomEntries = existing.account_entries || existing.accountEntries || null
-    let customEntries = rawCustomEntries
-    if (typeof customEntries === "string") {
-      try { customEntries = JSON.parse(customEntries) } catch { customEntries = null }
-    }
-
-    let customRevLines = []
-    let customCogsLines = []
-
-    if (customEntries && typeof customEntries === "object") {
-      if (Array.isArray(customEntries.revenue_lines)) {
-        customRevLines = customEntries.revenue_lines
+      const getAccInfo = (idOrCode) => {
+        const a = accMap.get(idOrCode)
+        return { code: a?.code || idOrCode, name: a?.name || "Account" }
       }
-      if (Array.isArray(customEntries.cogs_lines)) {
-        customCogsLines = customEntries.cogs_lines
-      }
-      if (Array.isArray(customEntries) && customEntries.length > 0) {
-        customRevLines = customEntries.filter(r => !r.is_cogs && r.category !== "cogs")
-        customCogsLines = customEntries.filter(r => r.is_cogs || r.category === "cogs")
-      }
-    }
 
-    // A. Sales Journal Entry
-    await drizzleCreateRow({
-      resource: getResource("journal_entries"),
-      body: {
+      const isCredit = (existing.payment_type || "").toString().toLowerCase().includes("credit")
+      const { debitAccId, revenueAccId, inventoryAccId, cogsAccId, vatAccId } = resolveSalesGLAccounts({
+        warehouseId: existing.warehouse_id,
+        items: itemsToProcess,
+        isCredit,
+        allAccounts,
+        mappingMap,
+      })
+
+      const saleJeId = `JE-SALE-${existing.fs_no || existing.id}`
+      const cogsJeId = `JE-COGS-${existing.fs_no || existing.id}`
+
+      // A. Sales Journal Entry Header
+      const saleJePayload = {
         id: saleJeId,
-        entry_date: new Date().toISOString().split("T")[0],
-        description: `Sales issue ${existing.fs_no || id}`,
+        entry_number: saleJeId,
+        entry_date: existing.sale_date || getLocalDateString(),
+        description: `Sales issue ${existing.fs_no || existing.id}`,
         source_type: "Sales Issue",
-        source_id: id,
+        source_id: existing.fs_no || existing.id,
         created_by: "Sales Officer",
         currency: "ETB",
         exchange_rate: 1.0,
+        total_amount: grandTotal,
         posting_status: "POSTED",
-      },
-    })
-
-    // B. Sales Journal Entry Lines
-    if (customRevLines.length > 0) {
-      for (const [idx, line] of customRevLines.entries()) {
-        const accId = line.accountId || line.account_id || line.accountCode || line.account_code
-        const dAmt = Number(line.debit || line.debit_amount || 0)
-        const cAmt = Number(line.credit || line.credit_amount || 0)
-        if (dAmt <= 0 && cAmt <= 0) continue
-
-        await drizzleCreateRow({
-          resource: getResource("journal_entry_lines"),
-          body: {
-            id: `${saleJeId}-LINE-${idx + 1}`,
-            journal_entry_id: saleJeId,
-            account_id: accId,
-            debit_amount: dAmt,
-            credit_amount: cAmt,
-            currency: "ETB",
-            exchange_rate_at_time: 1.0,
-            warehouse_id: existing.warehouse_id || null,
-            party_type: "Customer",
-            party_id: existing.customer_id || null,
-            party_name: existing.customer_name || existing.customer || null,
-          },
-        })
       }
-    } else {
-      // 1. Debit Cash (1000) or Accounts Receivable (1300) for Grand Total
-      await drizzleCreateRow({
-        resource: getResource("journal_entry_lines"),
-        body: {
-          id: `${saleJeId}-DR`,
-          journal_entry_id: saleJeId,
-          account_id: debitAccId,
-          debit_amount: grandTotal,
-          credit_amount: 0,
-          currency: "ETB",
-          exchange_rate_at_time: 1.0,
-          warehouse_id: existing.warehouse_id || null,
-          party_type: "Customer",
-          party_id: existing.customer_id || null,
-          party_name: existing.customer_name || existing.customer || null,
-        },
-      })
+      await conn.query(
+        "INSERT INTO `journal_entries` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
+        [saleJeId, JSON.stringify(saleJePayload)]
+      )
 
-      // 2. Credit Sales Revenue (4000) for Net Subtotal
-      await drizzleCreateRow({
-        resource: getResource("journal_entry_lines"),
-        body: {
-          id: `${saleJeId}-CR`,
-          journal_entry_id: saleJeId,
-          account_id: revenueAccId,
-          debit_amount: 0,
-          credit_amount: issueSubtotal,
-          currency: "ETB",
-          exchange_rate_at_time: 1.0,
-          warehouse_id: existing.warehouse_id || null,
-          party_type: "Customer",
-          party_id: existing.customer_id || null,
-          party_name: existing.customer_name || existing.customer || null,
-        },
-      })
+      // B. Sales Journal Entry Lines
+      const debitInfo = getAccInfo(debitAccId)
+      const drLine = {
+        id: `${saleJeId}-DR`,
+        journal_entry_id: saleJeId,
+        account_id: debitAccId,
+        account_code: debitInfo.code,
+        account_name: debitInfo.name,
+        debit_amount: grandTotal,
+        credit_amount: 0,
+        currency: "ETB",
+        exchange_rate_at_time: 1.0,
+        warehouse_id: existing.warehouse_id || null,
+        party_type: "Customer",
+        party_id: existing.customer_id || null,
+        party_name: existing.customer_name || null,
+        description: `Customer settlement for Issue ${existing.fs_no || existing.id}`,
+        entry_date: existing.sale_date || getLocalDateString(),
+      }
+      await conn.query(
+        "INSERT INTO `journal_entry_lines` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
+        [drLine.id, JSON.stringify(drLine)]
+      )
 
-      // 3. Credit Output VAT Payable (2000-05) if VAT is charged
+      const revInfo = getAccInfo(revenueAccId)
+      const crLine = {
+        id: `${saleJeId}-CR`,
+        journal_entry_id: saleJeId,
+        account_id: revenueAccId,
+        account_code: revInfo.code,
+        account_name: revInfo.name,
+        debit_amount: 0,
+        credit_amount: issueSubtotal,
+        currency: "ETB",
+        exchange_rate_at_time: 1.0,
+        warehouse_id: existing.warehouse_id || null,
+        party_type: "Customer",
+        party_id: existing.customer_id || null,
+        party_name: existing.customer_name || null,
+        description: `Sales revenue for Issue ${existing.fs_no || existing.id}`,
+        entry_date: existing.sale_date || getLocalDateString(),
+      }
+      await conn.query(
+        "INSERT INTO `journal_entry_lines` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
+        [crLine.id, JSON.stringify(crLine)]
+      )
+
       if (issueVatAmount > 0) {
-        await drizzleCreateRow({
-          resource: getResource("journal_entry_lines"),
-          body: {
-            id: `${saleJeId}-VAT`,
-            journal_entry_id: saleJeId,
-            account_id: vatAccId,
-            debit_amount: 0,
-            credit_amount: issueVatAmount,
-            currency: "ETB",
-            exchange_rate_at_time: 1.0,
-            warehouse_id: existing.warehouse_id || null,
-            party_type: "Customer",
-            party_id: existing.customer_id || null,
-            party_name: existing.customer_name || existing.customer || null,
-          },
-        })
+        const vatInfo = getAccInfo(vatAccId)
+        const vatLine = {
+          id: `${saleJeId}-VAT`,
+          journal_entry_id: saleJeId,
+          account_id: vatAccId,
+          account_code: vatInfo.code,
+          account_name: vatInfo.name,
+          debit_amount: 0,
+          credit_amount: issueVatAmount,
+          currency: "ETB",
+          exchange_rate_at_time: 1.0,
+          warehouse_id: existing.warehouse_id || null,
+          party_type: "Customer",
+          party_id: existing.customer_id || null,
+          party_name: existing.customer_name || null,
+          description: `Output VAT for Issue ${existing.fs_no || existing.id}`,
+          entry_date: existing.sale_date || getLocalDateString(),
+        }
+        await conn.query(
+          "INSERT INTO `journal_entry_lines` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
+          [vatLine.id, JSON.stringify(vatLine)]
+        )
       }
-    }
 
-    // C. COGS Journal Entry
-    if (customCogsLines.length > 0) {
-      await drizzleCreateRow({
-        resource: getResource("journal_entries"),
-        body: {
+      // C. COGS Journal Entry
+      if (totalCost > 0) {
+        const cogsJePayload = {
           id: cogsJeId,
-          entry_date: new Date().toISOString().split("T")[0],
-          description: `Inventory cost for sales issue ${existing.fs_no || id}`,
+          entry_number: cogsJeId,
+          entry_date: existing.sale_date || getLocalDateString(),
+          description: `COGS — Sales Issue ${existing.fs_no || existing.id}`,
           source_type: "Sales Issue",
-          source_id: id,
+          source_id: existing.fs_no || existing.id,
           created_by: "Sales Officer",
           currency: "ETB",
           exchange_rate: 1.0,
+          total_amount: totalCost,
           posting_status: "POSTED",
-        },
-      })
+        }
+        await conn.query(
+          "INSERT INTO `journal_entries` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
+          [cogsJeId, JSON.stringify(cogsJePayload)]
+        )
 
-      for (const [idx, line] of customCogsLines.entries()) {
-        const accId = line.accountId || line.account_id || line.accountCode || line.account_code
-        const dAmt = Number(line.debit || line.debit_amount || 0)
-        const cAmt = Number(line.credit || line.credit_amount || 0)
-        if (dAmt <= 0 && cAmt <= 0) continue
-
-        await drizzleCreateRow({
-          resource: getResource("journal_entry_lines"),
-          body: {
-            id: `${cogsJeId}-LINE-${idx + 1}`,
-            journal_entry_id: cogsJeId,
-            account_id: accId,
-            debit_amount: dAmt,
-            credit_amount: cAmt,
-            currency: "ETB",
-            exchange_rate_at_time: 1.0,
-            warehouse_id: existing.warehouse_id || null,
-          },
-        })
-      }
-    } else if (totalCost > 0) {
-      await drizzleCreateRow({
-        resource: getResource("journal_entries"),
-        body: {
-          id: cogsJeId,
-          entry_date: new Date().toISOString().split("T")[0],
-          description: `Inventory cost for sales issue ${existing.fs_no || id}`,
-          source_type: "Sales Issue",
-          source_id: id,
-          created_by: "Sales Officer",
-          currency: "ETB",
-          exchange_rate: 1.0,
-          posting_status: "POSTED",
-        },
-      })
-
-      await drizzleCreateRow({
-        resource: getResource("journal_entry_lines"),
-        body: {
+        const cogsInfo = getAccInfo(cogsAccId)
+        const cogsDrLine = {
           id: `${cogsJeId}-DR`,
           journal_entry_id: cogsJeId,
           account_id: cogsAccId,
+          account_code: cogsInfo.code,
+          account_name: cogsInfo.name,
           debit_amount: totalCost,
           credit_amount: 0,
           currency: "ETB",
           exchange_rate_at_time: 1.0,
           warehouse_id: existing.warehouse_id || null,
-        },
-      })
+          description: `COGS expense for Issue ${existing.fs_no || existing.id}`,
+          entry_date: existing.sale_date || getLocalDateString(),
+        }
+        await conn.query(
+          "INSERT INTO `journal_entry_lines` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
+          [cogsDrLine.id, JSON.stringify(cogsDrLine)]
+        )
 
-      await drizzleCreateRow({
-        resource: getResource("journal_entry_lines"),
-        body: {
+        const invInfo = getAccInfo(inventoryAccId)
+        const invCrLine = {
           id: `${cogsJeId}-CR`,
           journal_entry_id: cogsJeId,
           account_id: inventoryAccId,
+          account_code: invInfo.code,
+          account_name: invInfo.name,
           debit_amount: 0,
           credit_amount: totalCost,
           currency: "ETB",
           exchange_rate_at_time: 1.0,
           warehouse_id: existing.warehouse_id || null,
-        },
-      })
-    }
+          description: `Inventory stock relief for Issue ${existing.fs_no || existing.id}`,
+          entry_date: existing.sale_date || getLocalDateString(),
+        }
+        await conn.query(
+          "INSERT INTO `journal_entry_lines` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
+          [invCrLine.id, JSON.stringify(invCrLine)]
+        )
+      }
 
-    // 3.5. Authoritative Invoice Sync into `invoices` table
-    try {
-      const invId = `INV-SI-${id}`
-      const invNumber = `INV-${existing.fs_no || existing.reference_no || id}`
-      const lineItems = (existing.items || []).map((i) => ({
-        description: i.item_name || i.product_name || i.name || "Issued Item",
-        quantity: Number(i.quantity || i.qty || 1),
-        unit_price: Number(i.unit_price || i.price || 0),
+      // 5. Authoritative Invoice in `invoices`
+      const invId = `INV-SI-${existing.fs_no || existing.id}`
+      const lineItems = itemsToProcess.map(i => ({
+        description: i.item_name || "Issued Item",
+        quantity: Number(i.quantity || 1),
+        unit_price: Number(i.unit_price || 0),
         line_total: Number(i.amount || (Number(i.quantity || 1) * Number(i.unit_price || 0))),
       }))
-      const invData = {
+      const invPayload = {
         id: invId,
-        invoice_number: invNumber,
+        invoice_number: `INV-${existing.fs_no || existing.reference_no || existing.id}`,
         invoice_type: "Sales",
         party_type: "Customer",
-        customer_name: existing.customer_name || existing.customer || "Customer",
-        sales_issue_id: id,
-        fs_no: existing.fs_no || id,
+        customer_name: existing.customer_name || "Customer",
+        sales_issue_id: existing.fs_no || existing.id,
+        fs_no: existing.fs_no || existing.id,
         sales_order_id: existing.sales_order_id || null,
         issue_date: existing.sale_date || getLocalDateString(),
         due_date: existing.sale_date || getLocalDateString(),
         currency: "ETB",
-        line_items: lineItems.length > 0 ? lineItems : [{ description: `Sales Issue ${existing.fs_no || id}`, quantity: 1, unit_price: grandTotal, line_total: grandTotal }],
+        line_items: lineItems.length > 0 ? lineItems : [{ description: `Sales Issue ${existing.fs_no || existing.id}`, quantity: 1, unit_price: grandTotal, line_total: grandTotal }],
         subtotal: issueSubtotal,
         tax_amount: issueVatAmount,
         tax_rate: issueVatRate,
@@ -1570,83 +1536,85 @@ export async function postSalesIssue(arg1, arg2) {
         status: paymentStatus,
         settlement_status: settlementStatus,
         gl_distribution: {
-          revenue_lines: customRevLines.length > 0 ? customRevLines : [
+          revenue_lines: [
             { account_id: debitAccId, debit: grandTotal, credit: 0, description: "Customer Settlement" },
             { account_id: revenueAccId, debit: 0, credit: issueSubtotal, description: "Sales Revenue" },
             ...(issueVatAmount > 0 ? [{ account_id: vatAccId, debit: 0, credit: issueVatAmount, description: "VAT Output Payable" }] : [])
           ],
-          cogs_lines: customCogsLines.length > 0 ? customCogsLines : (totalCost > 0 ? [
+          cogs_lines: totalCost > 0 ? [
             { account_id: cogsAccId, debit: totalCost, credit: 0, description: "Cost of Goods Sold" },
             { account_id: inventoryAccId, debit: 0, credit: totalCost, description: "Inventory Stock In Hand" }
-          ] : []),
+          ] : [],
           updated_at: new Date().toISOString(),
           updated_by: "Sales Issue System",
         },
       }
-      await drizzleCreateRow({
-        resource: getResource("invoices"),
-        body: invData,
-      })
-    } catch (invErr) {
-      console.warn("Invoice auto-sync warning during post:", invErr.message)
-    }
+      await conn.query(
+        "INSERT INTO `invoices` (id, payload, created_at, updated_at) VALUES (?, ?, NOW(3), NOW(3)) ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW(3)",
+        [invId, JSON.stringify(invPayload)]
+      )
 
-    // 4. Update Sales Order if referenced
-    const targetSoId = existing.sales_order_id || (existing.reference_no && String(existing.reference_no).startsWith("SO-") ? existing.reference_no : null)
-    if (targetSoId) {
-      try {
-        const soRes = await drizzleGetRow({ resource: getResource("sales_orders"), id: targetSoId })
-        if (soRes.status === 200 && soRes.body) {
-          const soData = soRes.body
+      // 6. Update linked Sales Order
+      const targetSoId = existing.sales_order_id || (existing.reference_no && String(existing.reference_no).startsWith("SO-") ? existing.reference_no : null)
+      if (targetSoId) {
+        const [soRows] = await conn.query("SELECT id, payload FROM `sales_orders` WHERE id = ? FOR UPDATE", [targetSoId])
+        if (soRows.length > 0) {
+          let soData = soRows[0].payload
+          if (typeof soData === "string") {
+            try { soData = JSON.parse(soData) } catch { soData = {} }
+          }
           const updatedSo = {
             ...soData,
             stage: "Shipped",
             deliveryStatus: "Fully Delivered",
             deliveredAmount: grandTotal,
-            billingStatus: existing.payment_type === "Cash" ? "Fully Billed" : (soData.billingStatus || "Fully Billed"),
+            billingStatus: isCash ? "Fully Billed" : (soData.billingStatus || "Fully Billed"),
             updatedAt: new Date().toISOString(),
           }
-          await drizzleUpdateRow({ resource: getResource("sales_orders"), id: targetSoId, body: updatedSo })
+          await conn.query("UPDATE `sales_orders` SET payload = ?, updated_at = NOW(3) WHERE id = ?", [JSON.stringify(updatedSo), targetSoId])
         }
-      } catch (soErr) {
-        console.warn("SO sync warning:", soErr.message)
       }
-    }
-  } catch (err) {
-    console.warn("GL Journal posting warning:", err.message)
-  }
 
-  return { status: 200, body: { ...existing, status: "Posted", ok: true } }
+      return { status: 200, body: { ...existing, status: "Posted", ok: true } }
+    })
+  } catch (err) {
+    console.error("[postSalesIssue error]:", err)
+    return { status: 500, body: { error: "Failed to post sales issue", message: err.message } }
+  }
 }
 
-export async function cancelSalesIssue(id) {
-  const getRes = await getSalesIssue(id)
-  if (getRes.status >= 400 || !getRes.body) {
-    return { status: 404, body: { error: `Sales issue '${id}' not found.` } }
-  }
-
-  const existing = getRes.body
-  await drizzleUpdateRow({
-    resource: getResource("sales_issues"),
-    id,
-    body: { status: "Cancelled" },
-  })
-
+export async function cancelSalesIssue(id, existingConn = null) {
   try {
-    const invId = `INV-SI-${id}`
-    const invRes = await drizzleGetRow({ resource: getResource("invoices"), id: invId })
-    if (invRes.status === 200 && invRes.body) {
-      await drizzleUpdateRow({
-        resource: getResource("invoices"),
-        id: invId,
-        body: { status: "Cancelled", balance_due: 0 },
-      })
-    }
-  } catch (cancelInvErr) {
-    console.warn("Cancel invoice warning:", cancelInvErr.message)
-  }
+    return await runInTransaction(existingConn, async (conn) => {
+      const cleanId = String(id).trim()
+      const [issueRows] = await conn.query(
+        "SELECT * FROM `sales_issues` WHERE id = ? OR fs_no = ? OR issue_number = ? FOR UPDATE",
+        [cleanId, cleanId, cleanId]
+      )
+      if (issueRows.length === 0) {
+        return { status: 404, body: { error: `Sales issue '${id}' not found.` } }
+      }
 
-  return { status: 200, body: { ...existing, status: "Cancelled", ok: true } }
+      const issue = issueRows[0]
+      if (issue.status === "Cancelled") {
+        return { status: 200, body: { ...issue, status: "Cancelled", ok: true } }
+      }
+
+      if ((issue.status || "").toUpperCase() === "POSTED") {
+        await reverseSalesIssuePosting(conn, issue)
+      }
+
+      await conn.query(
+        "UPDATE `sales_issues` SET status = 'Cancelled', updated_at = NOW(3) WHERE id = ?",
+        [issue.id]
+      )
+
+      return { status: 200, body: { ...issue, status: "Cancelled", ok: true } }
+    })
+  } catch (err) {
+    console.error("[cancelSalesIssue error]:", err)
+    return { status: 500, body: { error: "Failed to cancel sales issue", message: err.message } }
+  }
 }
 
 export async function getAvailableBatches(query = {}) {

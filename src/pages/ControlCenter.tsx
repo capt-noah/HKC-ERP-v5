@@ -720,7 +720,7 @@ export default function ControlCenter() {
   const products = erp.getProducts()
 
   // On-Hand Inventory Asset Value: Evaluated at cost for active stock on warehouse shelves
-  const { intakeCostValue, inventoryValue } = useMemo(() => {
+  const { intakeCostValue, currentStockValue } = useMemo(() => {
     let currentTotal = 0
     let intakeTotal = 0
 
@@ -742,8 +742,8 @@ export default function ControlCenter() {
         const batches = Array.isArray(prod.batches) ? prod.batches : []
         if (batches.length > 0) {
           const currentBatchVal = batches
-            .filter((b: any) => b.status === "Released")
-            .reduce((s: number, b: any) => s + (Number(b.qty || 0) * Number(b.unitPrice ?? prod.unitCost ?? 0)), 0)
+            .filter((b: any) => b.status === "Released" || (b as any).qa_status !== "Quarantined")
+            .reduce((s: number, b: any) => s + (Number(b.qty ?? (b as any).quantity ?? 0) * Number(b.unitPrice ?? (b as any).unit_cost ?? prod.unitCost ?? 0)), 0)
           currentTotal += currentBatchVal
         } else {
           currentTotal += Number(prod.totalStockValue || (Number(prod.quantity || 0) * Number(prod.unitCost || 0)))
@@ -757,12 +757,26 @@ export default function ControlCenter() {
       }
     }
 
+    // Cumulative Inbound Receipts Cost from Stock Movements:
+    const movements: any[] = erp.getStockMovements() || []
+    const movementReceiptsCost = movements
+      .filter((m: any) => {
+        const t = (m.type || m.movement_type || m.movementType || "").toUpperCase()
+        return t === "RECEIPT" || t === "INBOUND_RECEIPT" || t === "OPENING_BALANCE"
+      })
+      .reduce((s: number, m: any) => {
+        const q = Number(m.qty ?? m.quantity ?? 0)
+        const cost = Number(m.unitCost ?? m.unit_cost ?? m.unitPrice ?? 0)
+        return s + (q * cost)
+      }, 0)
+
+    const finalIntakeCost = movementReceiptsCost > 0 ? movementReceiptsCost : intakeTotal
+
     return {
       currentStockValue: currentTotal,
-      intakeCostValue: intakeTotal,
-      inventoryValue: currentTotal,
+      intakeCostValue: finalIntakeCost,
     }
-  }, [products, finance])
+  }, [products, erp])
 
   // Total Inventory Sale Value: FLUCTUATES with deductions, valued at active stock selling prices
   const inventorySaleValue = useMemo(() => {
@@ -1297,14 +1311,19 @@ export default function ControlCenter() {
                         </div>
                       </div>
                       <div className="mt-4 relative z-10">
-                        <p className="text-2xl sm:text-3xl font-black text-black tracking-tight font-mono">
-                          ETB {money(postedRevenue)}
-                        </p>
+                        <div className="flex items-baseline gap-1.5 whitespace-nowrap overflow-visible">
+                          <span className="text-xs sm:text-sm font-black text-emerald-950/60 uppercase tracking-wider font-sans shrink-0">
+                            ETB
+                          </span>
+                          <span className="text-lg sm:text-xl xl:text-2xl font-black text-black tracking-tight font-mono whitespace-nowrap">
+                            {money(postedRevenue)}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-emerald-800 relative z-10">
-                      <TrendingUp className="size-4 shrink-0" />
-                      <span className="truncate">Posted GL revenue transactions</span>
+                    <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-emerald-800 relative z-10 whitespace-nowrap">
+                      <TrendingUp className="size-4 shrink-0 text-emerald-700" />
+                      <span>Posted GL revenue transactions</span>
                     </div>
                   </div>
 
@@ -1331,18 +1350,23 @@ export default function ControlCenter() {
                         </div>
                       </div>
                       <div className="mt-4 relative z-10">
-                        <p className="text-2xl sm:text-3xl font-black text-black tracking-tight font-mono">
-                          ETB {money(grossProfit)}
-                        </p>
+                        <div className="flex items-baseline gap-1.5 whitespace-nowrap overflow-visible">
+                          <span className="text-xs sm:text-sm font-black text-teal-950/60 uppercase tracking-wider font-sans shrink-0">
+                            ETB
+                          </span>
+                          <span className="text-lg sm:text-xl xl:text-2xl font-black text-black tracking-tight font-mono whitespace-nowrap">
+                            {money(grossProfit)}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-teal-800 relative z-10">
-                      <Coins className="size-4 shrink-0" />
-                      <span className="truncate">COGS: ETB {money(totalCogs)}</span>
+                    <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-teal-800 relative z-10 whitespace-nowrap">
+                      <Coins className="size-4 shrink-0 text-teal-700" />
+                      <span>COGS: <strong className="font-mono text-teal-950">ETB {money(totalCogs)}</strong></span>
                     </div>
                   </div>
 
-                  {/* Card 3: Total Inventory Value (Indigo/Violet Gradient) - Frozen Intake Cost */}
+                  {/* Card 3: Total Inventory Value & Current Stock (Indigo/Violet Gradient) */}
                   <div
                     className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-indigo-500/15 via-violet-600/5 to-white/70 border border-indigo-500/30 backdrop-blur-xl shadow-lg shadow-indigo-950/[0.04] flex flex-col justify-between"
                   >
@@ -1360,18 +1384,23 @@ export default function ControlCenter() {
                         </div>
                       </div>
                       <div className="mt-4 relative z-10">
-                        <p className="text-2xl sm:text-3xl font-black text-black tracking-tight font-mono">
-                          ETB {money(inventoryValue)}
-                        </p>
+                        <div className="flex items-baseline gap-1.5 whitespace-nowrap overflow-visible">
+                          <span className="text-xs sm:text-sm font-black text-indigo-950/60 uppercase tracking-wider font-sans shrink-0">
+                            ETB
+                          </span>
+                          <span className="text-lg sm:text-xl xl:text-2xl font-black text-black tracking-tight font-mono whitespace-nowrap">
+                            {money(intakeCostValue)}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-indigo-800 relative z-10">
-                      <Layers className="size-4 shrink-0" />
-                      <span className="truncate">On-hand stock asset (Intake: ETB {money(intakeCostValue)})</span>
+                    <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-indigo-900 relative z-10 whitespace-nowrap">
+                      <Layers className="size-4 shrink-0 text-indigo-700" />
+                      <span>Current Stock: <strong className="font-mono text-black font-black">ETB {money(currentStockValue)}</strong></span>
                     </div>
                   </div>
 
-                  {/* Card 4: Total Inventory Sale Value (Purple/Fuchsia Gradient) - Real-time Selling Price */}
+                  {/* Card 4: Total Inventory Sale Value (Purple/Fuchsia Gradient) */}
                   <div
                     className="relative overflow-hidden rounded-3xl p-6 bg-gradient-to-br from-purple-500/15 via-fuchsia-600/5 to-white/70 border border-purple-500/30 backdrop-blur-xl shadow-lg shadow-purple-950/[0.04] flex flex-col justify-between"
                   >
@@ -1389,14 +1418,19 @@ export default function ControlCenter() {
                         </div>
                       </div>
                       <div className="mt-4 relative z-10">
-                        <p className="text-2xl sm:text-3xl font-black text-black tracking-tight font-mono">
-                          ETB {money(inventorySaleValue)}
-                        </p>
+                        <div className="flex items-baseline gap-1.5 whitespace-nowrap overflow-visible">
+                          <span className="text-xs sm:text-sm font-black text-purple-950/60 uppercase tracking-wider font-sans shrink-0">
+                            ETB
+                          </span>
+                          <span className="text-lg sm:text-xl xl:text-2xl font-black text-black tracking-tight font-mono whitespace-nowrap">
+                            {money(inventorySaleValue)}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-purple-800 relative z-10">
-                      <Tag className="size-4 shrink-0" />
-                      <span className="truncate">Active stock valued at selling price</span>
+                    <div className="flex items-center gap-1.5 mt-3 text-xs font-bold text-purple-900 relative z-10 whitespace-nowrap">
+                      <Tag className="size-4 shrink-0 text-purple-700" />
+                      <span>Active stock valued at selling price</span>
                     </div>
                   </div>
                 </>
