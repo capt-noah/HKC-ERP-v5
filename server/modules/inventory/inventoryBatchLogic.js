@@ -136,11 +136,21 @@ export async function deleteBatch(id) {
 
     // 4. Atomically delete linked journal entries and journal entry lines
     const [jes] = await conn.query(
-      "SELECT id FROM `journal_entries` WHERE source_id = ? OR id = ? OR id LIKE ? OR (source_type IN ('Inventory', 'Inventory Intake') AND description LIKE ?)",
-      [cleanId, `JE-INTAKE-${cleanId}`, `%${cleanId}%`, `%${batchNo}%`]
+      `SELECT id FROM \`journal_entries\` 
+       WHERE payload->>'$.source_id' IN (?, ?, ?) 
+          OR id IN (?, ?) 
+          OR id LIKE ? 
+          OR (
+            (payload->>'$.source_type' IN ('Inventory', 'Inventory Intake', 'Stock Intake') OR id LIKE 'JE-INTAKE-%') 
+            AND payload->>'$.description' LIKE ?
+          )`,
+      [cleanId, batchNo, `STK-IN-${batchNo}`, cleanId, `JE-INTAKE-${cleanId}`, `%${cleanId}%`, `%${batchNo}%`]
     )
     for (const j of jes) {
-      await conn.query("DELETE FROM `journal_entry_lines` WHERE journal_entry_id = ?", [j.id])
+      await conn.query(
+        "DELETE FROM `journal_entry_lines` WHERE id LIKE CONCAT(?, '%') OR payload->>'$.journal_entry_id' = ?",
+        [j.id, j.id]
+      )
       await conn.query("DELETE FROM `journal_entries` WHERE id = ?", [j.id])
     }
 

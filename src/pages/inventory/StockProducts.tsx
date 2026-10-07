@@ -321,10 +321,25 @@ export default function StockProducts() {
   const addDateInvalid = !isWH1Form && Boolean(addShelfLifeDays !== null && addShelfLifeDays <= 0)
 
   const addNormalizedBatch = addBatchNumber.trim().toLowerCase()
-  const addDuplicateBatch = !isWH1Form && Boolean(addNormalizedBatch) && products.some((product) => {
-    const batches = [product.batch, ...product.batches.map((batch) => batch.batchNo)]
+  
+  // Conflicting product if batch exists on a DIFFERENT product
+  const conflictingProduct = !isWH1Form && Boolean(addNormalizedBatch)
+    ? products.find((product) => {
+        if (selectedExistingProduct && product.id === selectedExistingProduct.id) {
+          return false
+        }
+        const batches = [product.batch, ...product.batches.map((batch) => batch.batchNo)]
+        return batches.some((batch) => String(batch || "").trim().toLowerCase() === addNormalizedBatch)
+      })
+    : null
+
+  const addDuplicateBatch = Boolean(conflictingProduct)
+
+  // Informative flag: batch already exists on THIS SAME existing product
+  const addIsExistingBatchOnSameProduct = !isWH1Form && Boolean(addNormalizedBatch) && Boolean(selectedExistingProduct) && (() => {
+    const batches = [selectedExistingProduct!.batch, ...selectedExistingProduct!.batches.map((batch) => batch.batchNo)]
     return batches.some((batch) => String(batch || "").trim().toLowerCase() === addNormalizedBatch)
-  })
+  })()
 
   const canSaveAdd = isWH1Form
     ? Boolean(
@@ -2582,8 +2597,16 @@ export default function StockProducts() {
                 )}
 
                 {addDuplicateBatch && (
-                  <p className="rounded-xl border border-amber-200 bg-amber-50 text-amber-800 p-3 font-bold">
-                    Batch number already exists.
+                  <p className="rounded-xl border border-amber-200 bg-amber-50 text-amber-800 p-3 font-bold text-xs">
+                    {selectedExistingProduct
+                      ? `Batch number already belongs to another product (${conflictingProduct?.name || "in inventory"}). Please use a unique batch number.`
+                      : `Batch number already exists for product "${conflictingProduct?.name || "existing item"}". To add stock to an existing item, select it from the list above.`}
+                  </p>
+                )}
+
+                {addIsExistingBatchOnSameProduct && !addDuplicateBatch && (
+                  <p className="rounded-xl border border-blue-200 bg-blue-50 text-blue-800 p-3 text-xs font-bold">
+                    Note: Batch "{addBatchNumber.trim()}" already exists for this medicine. Saving will add {addTotalQuantity.toLocaleString()} units to this existing batch.
                   </p>
                 )}
 

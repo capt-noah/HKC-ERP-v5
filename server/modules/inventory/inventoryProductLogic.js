@@ -574,41 +574,93 @@ export async function deleteProduct(id) {
     const batchIds = bRows.map((b) => b.id).filter(Boolean)
     const batchNos = bRows.map((b) => b.batch_no).filter(Boolean)
 
+    const [smRows] = await conn.query("SELECT id, reference_id, batch_no FROM stock_movements WHERE product_id = ?", [cleanId])
+    const [ewmRows] = await conn.query("SELECT id, voucher_no, batch_no FROM export_warehouse_movements WHERE product_id = ?", [cleanId])
+    const movementIds = [
+      ...smRows.map((m) => m.id),
+      ...smRows.map((m) => m.reference_id).filter(Boolean),
+      ...ewmRows.map((m) => m.id),
+      ...ewmRows.map((m) => m.voucher_no ? `GRV-${m.voucher_no}` : null).filter(Boolean),
+    ]
+
     // Collect all candidate journal entry IDs linked to this product or its batches
     const jeIdSet = new Set()
     
-    // Check journal entries matching product ID or batch IDs in source_id or id
-    const candidateSourceIds = [cleanId, ...batchIds]
-    if (product?.sku) candidateSourceIds.push(`STK-IN-${product.sku}`)
-    
-    for (const sid of candidateSourceIds) {
-      const [jes] = await conn.query("SELECT id FROM journal_entries WHERE source_id = ? OR id LIKE ?", [sid, `%${sid}%`])
-      jes.forEach((j) => jeIdSet.add(j.id))
-    }
-
-    // Check by batch IDs in journal_entries
-    for (const bId of batchIds) {
-      const [jes] = await conn.query("SELECT id FROM journal_entries WHERE id = ? OR id = ? OR source_id = ?", [
-        `JE-INTAKE-${bId}`,
-        bId,
-        bId,
-      ])
-      jes.forEach((j) => jeIdSet.add(j.id))
-    }
-
-    // Also check description for exact SKU if available
+    // Candidate source_ids and IDs
+    const candidateSourceIds = [
+      cleanId,
+      ...batchIds,
+      ...batchNos.map((b) => `STK-IN-${b}`),
+      ...batchNos,
+      ...movementIds,
+      `STK-IN-${cleanId}`,
+    ]
     if (product?.sku) {
-      const [jes] = await conn.query("SELECT id FROM journal_entries WHERE description LIKE ?", [`%${product.sku}%`])
+      candidateSourceIds.push(`STK-IN-${product.sku}`, product.sku)
+    }
+
+    // Query journal entries by source_id inside payload
+    if (candidateSourceIds.length > 0) {
+      const placeholders = candidateSourceIds.map(() => "?").join(", ")
+      const [jes] = await conn.query(
+        `SELECT id FROM \`journal_entries\` WHERE payload->>'$.source_id' IN (${placeholders}) OR id IN (${placeholders})`,
+        [...candidateSourceIds, ...candidateSourceIds]
+      )
       jes.forEach((j) => jeIdSet.add(j.id))
+    }
+
+    // Query journal entries by ID patterns
+    const [jesByIdPattern] = await conn.query(
+      "SELECT id FROM `journal_entries` WHERE id LIKE ? OR id LIKE ?",
+      [`%${cleanId}%`, `JE-INTAKE-%`]
+    )
+    for (const j of jesByIdPattern) {
+      for (const bId of [...batchIds, ...movementIds]) {
+        if (j.id.includes(bId)) {
+          jeIdSet.add(j.id)
+        }
+      }
+    }
+
+    // Query journal entries by description matching product name or batch numbers (for Inventory intake entries)
+    if (product?.name) {
+      const [jesByName] = await conn.query(
+        `SELECT id FROM \`journal_entries\` 
+         WHERE (payload->>'$.source_type' IN ('Inventory', 'Inventory Intake', 'Stock Intake') OR id LIKE 'JE-INTAKE-%') 
+           AND payload->>'$.description' LIKE ?`,
+        [`%${product.name}%`]
+      )
+      jesByName.forEach((j) => jeIdSet.add(j.id))
+    }
+
+    if (product?.sku) {
+      const [jesBySku] = await conn.query(
+        `SELECT id FROM \`journal_entries\` 
+         WHERE (payload->>'$.source_type' IN ('Inventory', 'Inventory Intake', 'Stock Intake') OR id LIKE 'JE-INTAKE-%') 
+           AND payload->>'$.description' LIKE ?`,
+        [`%${product.sku}%`]
+      )
+      jesBySku.forEach((j) => jeIdSet.add(j.id))
+    }
+
+    for (const bNo of batchNos) {
+      const [jesByBatch] = await conn.query(
+        `SELECT id FROM \`journal_entries\` 
+         WHERE (payload->>'$.source_type' IN ('Inventory', 'Inventory Intake', 'Stock Intake') OR id LIKE 'JE-INTAKE-%') 
+           AND (payload->>'$.description' LIKE ? OR payload->>'$.source_id' = ?)`,
+        [`%${bNo}%`, `STK-IN-${bNo}`]
+      )
+      jesByBatch.forEach((j) => jeIdSet.add(j.id))
     }
 
     // Cascade delete journal_entry_lines and journal_entries
     const jeIdsToDelete = Array.from(jeIdSet)
-    if (jeIdsToDelete.length > 0) {
-      for (const jeId of jeIdsToDelete) {
-        await conn.query("DELETE FROM journal_entry_lines WHERE journal_entry_id = ?", [jeId])
-        await conn.query("DELETE FROM journal_entries WHERE id = ?", [jeId])
-      }
+    for (const jeId of jeIdsToDelete) {
+      await conn.query(
+        "DELETE FROM `journal_entry_lines` WHERE id LIKE CONCAT(?, '%') OR payload->>'$.journal_entry_id' = ?",
+        [jeId, jeId]
+      )
+      await conn.query("DELETE FROM `journal_entries` WHERE id = ?", [jeId])
     }
 
     // 1. Clean up export movements if export product

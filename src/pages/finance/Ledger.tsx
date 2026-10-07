@@ -76,8 +76,8 @@ export default function Ledger() {
   }
 
   const [jeColWidths, setJeColWidths] = useState<Record<string, number>>(defaultJeColWidths)
-  const [jeSortKey, setJeSortKey] = useState<string | null>(null)
-  const [jeSortDir, setJeSortDir] = useState<"asc" | "desc">("asc")
+  const [jeSortKey, setJeSortKey] = useState<string | null>("entry_date")
+  const [jeSortDir, setJeSortDir] = useState<"asc" | "desc">("desc")
   const [openJeSortMenuCol, setOpenJeSortMenuCol] = useState<string | null>(null)
 
   const handleJeResizeStart = (e: React.MouseEvent, colKey: string) => {
@@ -468,7 +468,10 @@ export default function Ledger() {
         }
       }
     }
-    return 0
+    // Chronological fallback (newest posting date and newest creation timestamp on top)
+    const dateComp = String(b.entry_date || "").localeCompare(String(a.entry_date || ""))
+    if (dateComp !== 0) return dateComp
+    return String(b.created_at || b.id || "").localeCompare(String(a.created_at || a.id || ""))
   })
 
   const [jePage, setJePage] = useState(1)

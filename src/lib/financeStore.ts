@@ -87,6 +87,8 @@ export interface JournalEntry {
   auto_reverse?: boolean
   reversal_date?: string
   reversed_by_id?: string | null
+  created_at?: string
+  updated_at?: string
 }
 
 export interface JournalEntryLine {
@@ -3652,7 +3654,7 @@ class FinanceStore {
       if (productId && (src.includes(productId) || id.includes(productId))) return true
       if (sku && (src.includes(sku) || desc.includes(sku))) return true
       if (productName && desc.toLowerCase().includes(productName.toLowerCase())) {
-        if (batchNo && !desc.includes(batchNo)) return false
+        if (!isProductDeletion && batchNo && !desc.includes(batchNo)) return false
         return true
       }
 
@@ -3671,13 +3673,13 @@ class FinanceStore {
     this.lines = this.lines.filter((l) => !matchingIds.has(l.journal_entry_id))
     this.notify()
 
-    // Persist deletions to MySQL
+    // Persist deletions to MySQL (delete child journal_entry_lines BEFORE parent journal_entries)
     try {
-      for (const entry of matchingEntries) {
-        await deleteResource("journal_entries", entry.id)
-      }
       for (const line of linesToDelete) {
-        await deleteResource("journal_entry_lines", line.id)
+        await deleteResource("journal_entry_lines", line.id).catch(() => {})
+      }
+      for (const entry of matchingEntries) {
+        await deleteResource("journal_entries", entry.id).catch(() => {})
       }
     } catch (err) {
       console.warn("[FinanceStore] Error deleting stock journal tracing records from backend:", err)
