@@ -2448,8 +2448,7 @@ class ErpStore {
     const updatedBinEntries = [...currentBinEntries, newBinEntry]
 
     // 1. Save to relational table export_warehouse_movements FIRST in MySQL
-    try {
-      await createResource<any>("export_warehouse_movements", {
+    await createResource<any>("export_warehouse_movements", {
         id: entryId,
         warehouse_id: prod.warehouse || "WH1",
         product_id: productId,
@@ -2467,10 +2466,7 @@ class ErpStore {
         movement_date: entry.entryDate || new Date().toISOString().slice(0, 10),
         reason: entry.notes || null,
         created_by: useAuthStore.getState().user?.fullname || "Warehouse Officer",
-      })
-    } catch (e) {
-      console.warn("Could not write to relational export_warehouse_movements table:", e)
-    }
+    })
 
     // 2. Update parent product in MySQL & client state
     await this.updateProductDetails(productId, {
@@ -2589,29 +2585,25 @@ class ErpStore {
     }
 
     // 2. Save outbound movement to relational table export_warehouse_movements in MySQL
-    try {
-      await createResource<any>("export_warehouse_movements", {
-        id: movementId,
-        warehouse_id: prod.warehouse || "WH1",
-        product_id: productId,
-        movement_type: "OUTBOUND_DISPATCH",
-        voucher_no: leaveData.voucherNo || null,
-        batch_no: "COMMODITY-WH1",
-        party_name: leaveData.party || "Customer Dispatch",
-        plate_number: leaveData.plateNumber || null,
-        gross_quantity: issueQty,
-        reject_quantity: 0,
-        net_quantity: -issueQty,
-        uom: prod.unit || "Quintal",
-        unit_price: leaveCOGSUnitCost,
-        selling_price: leaveData.unitPrice || null,
-        movement_date: leaveData.date || new Date().toISOString().slice(0, 10),
-        reason: leaveData.remark || null,
-        created_by: useAuthStore.getState().user?.fullname || "Warehouse Officer",
-      })
-    } catch (e) {
-      console.warn("Could not write to relational export_warehouse_movements table:", e)
-    }
+    await createResource<any>("export_warehouse_movements", {
+      id: movementId,
+      warehouse_id: prod.warehouse || "WH1",
+      product_id: productId,
+      movement_type: "OUTBOUND_DISPATCH",
+      voucher_no: leaveData.voucherNo || null,
+      batch_no: "COMMODITY-WH1",
+      party_name: leaveData.party || "Customer Dispatch",
+      plate_number: leaveData.plateNumber || null,
+      gross_quantity: issueQty,
+      reject_quantity: 0,
+      net_quantity: -issueQty,
+      uom: prod.unit || "Quintal",
+      unit_price: leaveCOGSUnitCost,
+      selling_price: leaveData.unitPrice || null,
+      movement_date: leaveData.date || new Date().toISOString().slice(0, 10),
+      reason: leaveData.remark || null,
+      created_by: useAuthStore.getState().user?.fullname || "Warehouse Officer",
+    })
 
     // 3. Update parent product in MySQL & client state
     const cumulativeIntakeVal = prod.totalStockValue || updatedWH1Entries.reduce((sum, e) => sum + (Number(e.quantityReceived || 0) * Number(e.unitPrice || 0)), 0)
@@ -2829,28 +2821,24 @@ class ErpStore {
     }
 
     // 4. Save to relational table export_warehouse_movements in MySQL
-    try {
-      await createResource<any>("export_warehouse_movements", {
-        id: movementId,
-        warehouse_id: prod.warehouse || "WH1",
-        product_id: productId,
-        movement_type: "REJECT_DEDUCTION",
-        voucher_no: voucherRef || null,
-        batch_no: targetEntry?.voucherNo ? `GRV-${targetEntry.voucherNo}` : (rejectData.entryId || "COMMODITY-WH1"),
-        party_name: partyRef,
-        plate_number: plateRef || null,
-        gross_quantity: 0,
-        reject_quantity: rejectQty,
-        net_quantity: -rejectQty,
-        uom: prod.unit || "Quintal",
-        unit_price: rejectUnitCost,
-        movement_date: rejectData.date || new Date().toISOString().slice(0, 10),
-        reason: rejectData.reason || "Reject Loss",
-        created_by: useAuthStore.getState().user?.fullname || "Quality Officer",
-      })
-    } catch (e) {
-      console.warn("Could not write to relational export_warehouse_movements table:", e)
-    }
+    await createResource<any>("export_warehouse_movements", {
+      id: movementId,
+      warehouse_id: prod.warehouse || "WH1",
+      product_id: productId,
+      movement_type: "REJECT_DEDUCTION",
+      voucher_no: voucherRef || null,
+      batch_no: targetEntry?.voucherNo ? `GRV-${targetEntry.voucherNo}` : (rejectData.entryId || "COMMODITY-WH1"),
+      party_name: partyRef,
+      plate_number: plateRef || null,
+      gross_quantity: 0,
+      reject_quantity: rejectQty,
+      net_quantity: -rejectQty,
+      uom: prod.unit || "Quintal",
+      unit_price: rejectUnitCost,
+      movement_date: rejectData.date || new Date().toISOString().slice(0, 10),
+      reason: rejectData.reason || "Reject Loss",
+      created_by: useAuthStore.getState().user?.fullname || "Quality Officer",
+    })
 
     // 5. Update product in MySQL & client state
     const cumulativeIntakeVal = prod.totalStockValue || updatedWH1Entries.reduce((sum, e) => sum + (Number(e.quantityReceived || 0) * Number(e.unitPrice || 0)), 0)
@@ -3104,7 +3092,7 @@ class ErpStore {
     if (!isExport) {
       // 1. Sync batch lot
       if (entry.batchNo && isRec) {
-        createResource<any>("pharma_product_batches", {
+        await createResource<any>("pharma_product_batches", {
           id: `BAT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           product_id: productId,
           warehouse_id: prod.warehouse || "WH2",
@@ -3116,7 +3104,7 @@ class ErpStore {
           selling_price: sellingPrice,
           qa_status: isQuarantine ? "Quarantined" : "Released",
           notes: entry.remark || null,
-        }).catch((err) => console.warn("Batch upsert error:", err))
+        })
       }
 
       // 2. Sync stock movement
@@ -3135,7 +3123,7 @@ class ErpStore {
         remarks: entry.remark || (isRec ? "Bin card receipt" : "Bin card issue"),
         date: entry.date || new Date().toISOString().slice(0, 10),
       }
-      createResource<any>("stock_movements", {
+      await createResource<any>("stock_movements", {
         id: newEntry.id,
         product_id: productId,
         warehouse_id: prod.warehouse || "WH2",
@@ -3154,10 +3142,10 @@ class ErpStore {
         party: entry.party || (isRec ? "Supplier Receipt" : "Customer Dispatch"),
         performed_by: useAuthStore.getState().user?.fullname || "Warehouse Officer",
         movement_date: entry.date || new Date().toISOString().slice(0, 10),
-      }).catch((err) => console.warn("Stock movement write error:", err))
+      })
       this.stockMovements = [movementLog, ...this.stockMovements]
     } else {
-      createResource<any>("export_warehouse_movements", {
+      await createResource<any>("export_warehouse_movements", {
         id: newEntry.id,
         warehouse_id: prod.warehouse || "WH1",
         product_id: productId,
@@ -3175,7 +3163,7 @@ class ErpStore {
         movement_date: entry.date || new Date().toISOString().slice(0, 10),
         reason: entry.remark || null,
         created_by: useAuthStore.getState().user?.fullname || "Warehouse Officer",
-      }).catch((err) => console.warn("Export movement write error:", err))
+      })
     }
 
     return await this.updateProductDetails(productId, {

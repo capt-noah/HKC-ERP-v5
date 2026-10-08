@@ -807,6 +807,29 @@ export default function StockProducts() {
   // Handle saving direct slim sub-entry modal (WH1)
   const handleSaveWH1Entry = async (productId: string, entryData: Omit<WH1Entry, "entryId">) => {
     await erp.addWH1Entry(productId, entryData)
+    const prod = products.find((p) => p.id === productId)
+    if (prod) {
+      const qty = Number(entryData.quantityReceived || entryData.quantity || 0)
+      const unitCost = Number(entryData.unitPrice ?? prod.unitCost ?? 0)
+      if (qty > 0 && unitCost > 0) {
+        try {
+          await financeStore.recordStockIntake({
+            productId: prod.id,
+            productName: prod.name,
+            sku: prod.sku,
+            warehouseId: prod.warehouse,
+            quantity: qty,
+            unitCost,
+            unit: prod.unit || "Quintal",
+            entryDate: entryData.entryDate || new Date().toISOString().slice(0, 10),
+            entryId: entryData.voucherNo ? `GRV-${entryData.voucherNo}` : undefined,
+            isChild: true,
+          })
+        } catch (finErr) {
+          console.warn("Failed to record child stock GL valuation:", finErr)
+        }
+      }
+    }
   }
 
   const handleSaveWH1Leave = async (
@@ -964,6 +987,29 @@ export default function StockProducts() {
       await erp.updateBinCardEntry(productId, entryId, entryData)
     } else {
       await erp.addBinCardEntry(productId, entryData)
+      const prod = products.find((p) => p.id === productId)
+      if (prod && (entryData.type === "entry" || Number(entryData.qtyReceived || 0) > 0)) {
+        const qty = Number(entryData.qtyReceived || 0)
+        const unitCost = Number(entryData.unitPrice ?? prod.unitCost ?? 0)
+        if (qty > 0 && unitCost > 0) {
+          try {
+            await financeStore.recordStockIntake({
+              productId: prod.id,
+              productName: prod.name,
+              sku: prod.sku,
+              warehouseId: prod.warehouse,
+              quantity: qty,
+              unitCost,
+              unit: prod.unit || "Unit",
+              entryDate: entryData.date || new Date().toISOString().slice(0, 10),
+              batchNo: entryData.batchNo,
+              isChild: true,
+            })
+          } catch (finErr) {
+            console.warn("Failed to record batch stock GL valuation:", finErr)
+          }
+        }
+      }
     }
   }
 

@@ -255,7 +255,8 @@ export function normalizeBodyToDbColumns(body, validCols) {
     // If the explicit direct column was already provided in body, do not let a different alias override it,
     // but DO allow the exact canonical camelCase equivalent to update it.
     if (key !== dbCol && body[dbCol] !== undefined && normalized[dbCol] !== undefined) {
-      if (camelToSnake[key] === dbCol && value !== undefined && value !== null && value !== "") {
+      const isMatch = aliases[key] === dbCol || key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase() === dbCol
+      if (isMatch && value !== undefined && value !== null && value !== "") {
         normalized[dbCol] = value
       }
       continue

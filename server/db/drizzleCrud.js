@@ -400,6 +400,7 @@ export async function drizzleCreateRow({ resource, body }) {
       if (fields.length === 0) {
         return { status: 200, body: unwrapRow({ id, ...body }, "relational") }
       }
+      const colNames = fields.map((f) => `\`${f}\``).join(", ")
       const values = fields.map((k) => sanitizeSqlValue(normalizedBody[k]))
       const placeholders = fields.map(() => "?").join(", ")
       const updateSet = fields
