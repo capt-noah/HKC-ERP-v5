@@ -52,6 +52,9 @@ export async function createBatch(body = {}) {
   if (payload.manufacturing_date && !payload.mfg_date) {
     payload.mfg_date = payload.manufacturing_date
   }
+  if (!payload.expiry_date && (payload.expiry || payload.expDate || payload.expiration_date)) {
+    payload.expiry_date = payload.expiry || payload.expDate || payload.expiration_date
+  }
   if (!payload.warehouse_id) {
     const [pRows] = await pool.query("SELECT warehouse_id FROM pharma_products WHERE id = ?", [prodId])
     if (pRows.length > 0 && pRows[0].warehouse_id) {
@@ -71,6 +74,42 @@ export async function createBatch(body = {}) {
   }
 
   return await withTransaction(async (conn) => {
+    // Check if batch with this product_id and batch_no already exists
+    if (normalized.product_id && normalized.batch_no) {
+      const [existingBatches] = await conn.query(
+        "SELECT * FROM `pharma_product_batches` WHERE product_id = ? AND batch_no = ? FOR UPDATE",
+        [normalized.product_id, normalized.batch_no]
+      )
+      if (existingBatches.length > 0) {
+        const existing = existingBatches[0]
+        const incomingQty = Number(normalized.quantity || 0)
+        const updatedQty = Number(existing.quantity || 0) + incomingQty
+        const unitCost = normalized.unit_cost !== undefined ? Number(normalized.unit_cost) : Number(existing.unit_cost || 0)
+        const sellingPrice = normalized.selling_price !== undefined ? Number(normalized.selling_price) : Number(existing.selling_price || 0)
+        const expiryDate = normalized.expiry_date || existing.expiry_date || null
+        const mfgDate = normalized.mfg_date || existing.mfg_date || null
+        const notes = normalized.notes || existing.notes || null
+
+        await conn.query(
+          `UPDATE \`pharma_product_batches\` SET
+            quantity = ?,
+            unit_cost = ?,
+            selling_price = ?,
+            expiry_date = ?,
+            mfg_date = ?,
+            notes = ?,
+            updated_at = NOW(3)
+          WHERE id = ?`,
+          [updatedQty, unitCost, sellingPrice, expiryDate, mfgDate, notes, existing.id]
+        )
+
+        const [rows] = await conn.query("SELECT * FROM `pharma_product_batches` WHERE id = ?", [existing.id])
+        const out = unwrapRow(rows[0], "relational")
+        out.batch_number = out.batch_no
+        return { status: 200, body: out }
+      }
+    }
+
     const insertCols = Object.keys(normalized).filter((k) => k !== "created_at" && k !== "updated_at" && (!validCols || validCols.has(k)))
     const placeholders = insertCols.map(() => "?").join(", ")
     const values = insertCols.map((k) => sanitizeSqlValue(normalized[k]))

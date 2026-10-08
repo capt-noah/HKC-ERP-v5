@@ -50,6 +50,11 @@ export default function WH1ChildMovementLedger({
     })
     const binEntries = product.binCardEntries || []
     const inboundIds = new Set(wh1Entries.map((e) => e.entryId || e.id).filter(Boolean))
+    const inboundVouchers = new Set(
+      wh1Entries
+        .map((e) => (e.voucherNo || "").trim().toLowerCase().replace(/^no\.\s*/, ""))
+        .filter(Boolean)
+    )
 
     // 1. Inbound truckload entries from wh1Entries (Single source of truth for receipts)
     const inboundRows: UnifiedWH1Row[] = wh1Entries.map((e, idx) => {
@@ -78,8 +83,20 @@ export default function WH1ChildMovementLedger({
     const nonEntryBinRows: UnifiedWH1Row[] = binEntries
       .filter((rec) => {
         if (rec.id && inboundIds.has(rec.id)) return false
+
+        const cleanVoucher = (rec.voucherNo || "").trim().toLowerCase().replace(/^no\.\s*/, "")
+        if (cleanVoucher && inboundVouchers.has(cleanVoucher)) return false
+
+        const batchVoucher = (rec.batchNo || "").replace(/^GRV-/i, "").trim().toLowerCase()
+        if (batchVoucher && inboundVouchers.has(batchVoucher)) return false
+
         const mType = (rec.type as string || "").toLowerCase()
-        const isEntry = mType === "entry" || (Number(rec.qtyReceived || 0) > 0 && Number(rec.qtyIssued || 0) === 0)
+        const isEntry =
+          mType === "entry" ||
+          mType === "grv_entry" ||
+          mType === "receipt" ||
+          (Number(rec.qtyReceived || 0) > 0 && Number(rec.qtyIssued || 0) === 0)
+
         return !isEntry
       })
       .map((rec, idx) => {

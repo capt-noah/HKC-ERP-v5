@@ -2544,6 +2544,14 @@ class FinanceStore {
       party_name?: string | null
     }>
   ): { success: boolean; error?: string; entry?: JournalEntry; reversalEntry?: JournalEntry; autoRounded?: boolean; roundOffAmount?: number } {
+    // 0a. Idempotency: Return existing journal entry if already recorded for this source_id
+    if (entryData.source_id) {
+      const existing = this.entries.find((e) => e.source_id === entryData.source_id)
+      if (existing) {
+        return { success: true, entry: existing }
+      }
+    }
+
     // 0. Locked Accounting Period Validation
     const entryDate = entryData.entry_date
     const closedPeriod = this.periods.find(
@@ -2634,20 +2642,21 @@ class FinanceStore {
     const currentYear = new Date().getFullYear()
     for (const ent of this.entries) {
       if (ent.id) {
-        const match = ent.id.match(/\d+$/)
+        const match = ent.id.match(/\bJE-\d{4}-(\d+)/) || ent.id.match(/\d+$/)
         if (match) {
-          const val = parseInt(match[0], 10)
-          if (!isNaN(val) && val > maxJeNum) {
+          const val = parseInt(match[1] || match[0], 10)
+          if (!isNaN(val) && val > maxJeNum && val < 9000000) {
             maxJeNum = val
           }
         }
       }
     }
     let nextJeNum = Math.max(maxJeNum + 1, this.entries.length + 1)
-    let newEntryId = `JE-${currentYear}-${String(nextJeNum).padStart(3, "0")}`
+    const uniqueSuffix = Date.now().toString().slice(-4)
+    let newEntryId = `JE-${currentYear}-${String(nextJeNum).padStart(3, "0")}-${uniqueSuffix}`
     while (this.entries.some((e) => e.id === newEntryId)) {
       nextJeNum++
-      newEntryId = `JE-${currentYear}-${String(nextJeNum).padStart(3, "0")}`
+      newEntryId = `JE-${currentYear}-${String(nextJeNum).padStart(3, "0")}-${Date.now().toString().slice(-4)}`
     }
 
     const newEntry: JournalEntry = {
@@ -2692,10 +2701,11 @@ class FinanceStore {
       }
 
       nextJeNum++
-      let revJeId = `JE-${currentYear}-${String(nextJeNum).padStart(3, "0")}`
+      const revSuffix = (Date.now() + 1).toString().slice(-4)
+      let revJeId = `JE-${currentYear}-${String(nextJeNum).padStart(3, "0")}-${revSuffix}`
       while (this.entries.some((e) => e.id === revJeId) || revJeId === newEntryId) {
         nextJeNum++
-        revJeId = `JE-${currentYear}-${String(nextJeNum).padStart(3, "0")}`
+        revJeId = `JE-${currentYear}-${String(nextJeNum).padStart(3, "0")}-${(Date.now() + 2).toString().slice(-4)}`
       }
 
       reversalEntry = {

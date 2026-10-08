@@ -22,6 +22,26 @@ async function runInTransaction(existingConn, callback) {
   return await withTransaction(callback)
 }
 
+function serializeJsonColumn(val) {
+  if (val === undefined || val === null) return null
+  if (typeof val === "string") {
+    const trimmed = val.trim()
+    if (trimmed === "" || trimmed === "null" || trimmed === "undefined") return null
+    try {
+      JSON.parse(trimmed)
+      return trimmed
+    } catch {
+      return JSON.stringify(val)
+    }
+  }
+  try {
+    return JSON.stringify(val)
+  } catch (err) {
+    console.warn("[serializeJsonColumn] JSON stringify error:", err)
+    return null
+  }
+}
+
 // ── Service Logic ─────────────────────────────────────────────────────────────
 
 export async function listSalesIssues(query = {}) {
@@ -751,7 +771,7 @@ export async function createSalesIssue(input, existingId = null, existingConn = 
           vat_amount,
           payment_type === "Cash" ? "Paid" : "Unpaid",
           payment_type,
-          doc.account_entries ? JSON.stringify(doc.account_entries) : null,
+          serializeJsonColumn(doc.account_entries !== undefined ? doc.account_entries : doc.accountEntries),
           doc.created_by || "Sales Officer",
           doc.status === "Posted" ? (doc.posted_by || "Sales Officer") : null,
         ]
@@ -876,7 +896,11 @@ export async function updateSalesIssue(input, id, existingConn = null) {
           vat_amount,
           payment_status,
           payment_type,
-          input?.account_entries ? JSON.stringify(input.account_entries) : existing.account_entries,
+          serializeJsonColumn(
+            input?.account_entries !== undefined
+              ? input.account_entries
+              : (input?.accountEntries !== undefined ? input.accountEntries : existing.account_entries)
+          ),
           existing.id,
         ]
       )

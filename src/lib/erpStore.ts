@@ -1493,15 +1493,20 @@ class ErpStore {
     const currentBinEntries = prod.binCardEntries || []
     const updatedBinEntries = [...currentBinEntries, quarantineBinEntry]
 
-    // 4. Update product details in store & API
-    await this.updateProductDetails(prod.id, {
-      quantity: nextQty,
-      numberOfCartons: nextCartons,
-      totalStockValue: nextVal,
-      stockBreakdown: updatedBreakdown,
-      batches: updatedBatches,
-      binCardEntries: updatedBinEntries,
-    })
+    // 4. Update product details in local state (server transaction in createQuarantineRecord handles DB deduction)
+    this.products = this.products.map((p) =>
+      p.id === prod.id
+        ? {
+            ...p,
+            quantity: nextQty,
+            numberOfCartons: nextCartons,
+            totalStockValue: nextVal,
+            stockBreakdown: updatedBreakdown,
+            batches: updatedBatches,
+            binCardEntries: updatedBinEntries,
+          }
+        : p
+    )
 
     // 5. Store Quarantine record in memory and MySQL
     const record: QuarantineRecord = {
@@ -3092,19 +3097,44 @@ class ErpStore {
     if (!isExport) {
       // 1. Sync batch lot
       if (entry.batchNo && isRec) {
-        await createResource<any>("pharma_product_batches", {
-          id: `BAT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          product_id: productId,
-          warehouse_id: prod.warehouse || "WH2",
-          batch_no: entry.batchNo,
-          mfg_date: entry.mfgDate || null,
-          expiry_date: entry.expiryDate || null,
-          quantity: Number(entry.qtyReceived || 0),
-          unit_cost: unitCost,
-          selling_price: sellingPrice,
-          qa_status: isQuarantine ? "Quarantined" : "Released",
-          notes: entry.remark || null,
-        })
+        const bIdx = (prod.batches || []).findIndex((b) => b.batchNo === entry.batchNo)
+        const existingBatch = bIdx >= 0 ? (prod.batches || [])[bIdx] : null
+
+        if (existingBatch && (existingBatch as any).id) {
+          const nextBatchQty = Number(existingBatch.qty || 0) + Number(entry.qtyReceived || 0)
+          await updateResource<any>("pharma_product_batches", (existingBatch as any).id, {
+            quantity: nextBatchQty,
+            unit_cost: unitCost,
+            selling_price: sellingPrice,
+            expiry_date: entry.expiryDate || existingBatch.expiry || null,
+            mfg_date: entry.mfgDate || (existingBatch as any).mfgDate || null,
+            notes: entry.remark || (existingBatch as any).notes || null,
+          }).catch((err) => console.warn("Failed to update existing batch in MySQL:", err))
+        } else {
+          const newBatchId = `BAT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+          await createResource<any>("pharma_product_batches", {
+            id: newBatchId,
+            product_id: productId,
+            warehouse_id: prod.warehouse || "WH2",
+            batch_no: entry.batchNo,
+            mfg_date: entry.mfgDate || null,
+            expiry_date: entry.expiryDate || null,
+            quantity: Number(entry.qtyReceived || 0),
+            unit_cost: unitCost,
+            selling_price: sellingPrice,
+            qa_status: isQuarantine ? "Quarantined" : "Released",
+            notes: entry.remark || null,
+          }).catch((err) => console.warn("Failed to create new batch in MySQL:", err))
+        }
+      } else if (entry.batchNo && !isRec) {
+        const bIdx = (prod.batches || []).findIndex((b) => b.batchNo === entry.batchNo)
+        const existingBatch = bIdx >= 0 ? (prod.batches || [])[bIdx] : null
+        if (existingBatch && (existingBatch as any).id) {
+          const nextBatchQty = Math.max(0, Number(existingBatch.qty || 0) - Number(entry.qtyIssued || 0))
+          await updateResource<any>("pharma_product_batches", (existingBatch as any).id, {
+            quantity: nextBatchQty,
+          }).catch((err) => console.warn("Failed to update issued batch in MySQL:", err))
+        }
       }
 
       // 2. Sync stock movement
