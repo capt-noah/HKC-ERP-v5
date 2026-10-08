@@ -3050,6 +3050,7 @@ class ErpStore {
 
     // Update batches
     const updatedBatches = [...(prod.batches || [])]
+    let newlyCreatedBatchId: string | null = null
     if (entry.batchNo) {
       const bIdx = updatedBatches.findIndex((b) => b.batchNo === entry.batchNo)
       if (isRec) {
@@ -3061,8 +3062,9 @@ class ErpStore {
             mfgDate: entry.mfgDate || updatedBatches[bIdx].mfgDate,
           }
         } else {
+          newlyCreatedBatchId = `BAT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
           updatedBatches.push({
-            id: `BAT-${Date.now()}`,
+            id: newlyCreatedBatchId,
             batchNo: entry.batchNo,
             qty: Number(entry.qtyReceived || 0),
             expiry: entry.expiryDate || "",
@@ -3111,7 +3113,7 @@ class ErpStore {
             notes: entry.remark || (existingBatch as any).notes || null,
           }).catch((err) => console.warn("Failed to update existing batch in MySQL:", err))
         } else {
-          const newBatchId = `BAT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+          const newBatchId = newlyCreatedBatchId || `BAT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
           await createResource<any>("pharma_product_batches", {
             id: newBatchId,
             product_id: productId,

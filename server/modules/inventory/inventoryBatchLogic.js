@@ -132,6 +132,30 @@ export async function updateBatch(id, updates = {}) {
   const normalized = normalizeBodyToDbColumns(updates, validCols)
 
   return await withTransaction(async (conn) => {
+    let targetId = cleanId
+    let [rows] = await conn.query("SELECT * FROM `pharma_product_batches` WHERE id = ?", [targetId])
+
+    // Defense-in-depth fallback: if not found by primary ID, match by batch_no and optional product_id
+    if (rows.length === 0 && (normalized.batch_no || normalized.product_id)) {
+      const pId = normalized.product_id
+      const bNo = normalized.batch_no
+      if (bNo) {
+        let fallbackQuery = "SELECT * FROM `pharma_product_batches` WHERE batch_no = ?"
+        const fallbackParams = [bNo]
+        if (pId) {
+          fallbackQuery += " AND product_id = ?"
+          fallbackParams.push(pId)
+        }
+        const [fbRows] = await conn.query(fallbackQuery, fallbackParams)
+        if (fbRows.length > 0) {
+          targetId = fbRows[0].id
+          rows = fbRows
+        }
+      }
+    }
+
+    if (rows.length === 0) return { status: 404, body: { error: `Batch '${cleanId}' not found.` } }
+
     const updateCols = Object.keys(normalized).filter(
       (k) => k !== "id" && k !== "created_at" && (!validCols || validCols.has(k))
     )
@@ -139,13 +163,12 @@ export async function updateBatch(id, updates = {}) {
     if (updateCols.length > 0) {
       const setClauses = updateCols.map((c) => `\`${c}\` = ?`).join(", ")
       const values = updateCols.map((k) => sanitizeSqlValue(normalized[k]))
-      values.push(cleanId)
+      values.push(targetId)
       await conn.query(`UPDATE \`pharma_product_batches\` SET ${setClauses}, updated_at = NOW(3) WHERE id = ?`, values)
     }
 
-    const [rows] = await conn.query("SELECT * FROM `pharma_product_batches` WHERE id = ?", [cleanId])
-    if (rows.length === 0) return { status: 404, body: { error: `Batch '${cleanId}' not found.` } }
-    const out = unwrapRow(rows[0], "relational")
+    const [finalRows] = await conn.query("SELECT * FROM `pharma_product_batches` WHERE id = ?", [targetId])
+    const out = unwrapRow(finalRows[0] || rows[0], "relational")
     out.batch_number = out.batch_no
     return { status: 200, body: out }
   })
