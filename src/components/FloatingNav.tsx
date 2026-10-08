@@ -17,10 +17,12 @@ import {
   ShoppingCart,
   LogOut,
   Sliders,
+  ShieldAlert,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuthStore, normalizeRole } from "@/lib/authStore"
 import { useErpStore } from "@/lib/erpStore"
+import { useDeletionStore } from "@/lib/deletionStore"
 import { isExportWarehouse } from "@/lib/warehouses"
 import type { Role } from "@/lib/authStore"
 
@@ -90,26 +92,52 @@ export function FloatingNav({
   const isSuperAdmin = userRoles.includes("superadmin")
   const userWarehouseIds = (user?.warehouse_ids || ((user as any)?.warehouse_id ? [(user as any).warehouse_id] : [])).map((id: string) => String(id).toUpperCase())
 
-  // Dynamic notifications for Super Admin (e.g. pending sales orders)
+  const { requests: deletionRequests, fetchRequests: fetchDeletionRequests } = useDeletionStore()
+
+  useEffect(() => {
+    if (isSuperAdmin) {
+      fetchDeletionRequests()
+    }
+  }, [isSuperAdmin, fetchDeletionRequests])
+
+  // Dynamic notifications for Super Admin (e.g. pending sales orders & deletion requests)
   const notifications = useMemo(() => {
     if (!isSuperAdmin) return []
-    const pendingOrders = salesOrders.filter((so) => {
-      const st = so.approvalStatus || (so as any).approval_status || "Pending"
-      return st === "Pending"
-    })
-    return pendingOrders
+    const soList = salesOrders
+      .filter((so) => {
+        const st = so.approvalStatus || (so as any).approval_status || "Pending"
+        return st === "Pending"
+      })
       .filter((so) => !dismissedNotificationIds.includes(so.id))
       .map((so) => ({
         id: so.id,
-        title: `Sales Order Pending Approval: ${so.id}`,
-        desc: `${so.customer} • ETB ${Number(so.amount || 0).toLocaleString()} (${so.paymentType || "Cash"}) awaiting Super Admin approval.`,
+        title: `Sales Order Pending: ${so.id}`,
+        desc: `${so.customer} • ETB ${Number(so.amount || 0).toLocaleString()} awaiting Super Admin approval.`,
         time: so.date || "Today",
         type: "approval",
         icon: Clock,
         unread: !readNotificationIds.includes(so.id),
         orderId: so.id,
+        targetUrl: "/admin?tab=approvals",
       }))
-  }, [isSuperAdmin, salesOrders, dismissedNotificationIds, readNotificationIds])
+
+    const delList = (deletionRequests || [])
+      .filter((r) => r.status === "Pending")
+      .filter((r) => !dismissedNotificationIds.includes(r.id))
+      .map((r) => ({
+        id: r.id,
+        title: `Deletion Request: ${r.record_name}`,
+        desc: `Requested by ${r.requested_by_name}: "${r.reason}"`,
+        time: new Date(r.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        type: "deletion",
+        icon: ShieldAlert,
+        unread: !readNotificationIds.includes(r.id),
+        orderId: r.id,
+        targetUrl: "/admin?tab=deletions",
+      }))
+
+    return [...delList, ...soList]
+  }, [isSuperAdmin, salesOrders, deletionRequests, dismissedNotificationIds, readNotificationIds])
 
   // Export hub access: true if superadmin, or if no specific warehouse restriction is set, or if any assigned warehouse is an export warehouse
   const hasWH1Access = isSuperAdmin || userWarehouseIds.length === 0 || userWarehouseIds.some(id => isExportWarehouse(id))
@@ -137,9 +165,9 @@ export function FloatingNav({
     )
   }
 
-  const handleNotificationClick = (_orderId?: string) => {
+  const handleNotificationClick = (targetUrl?: string) => {
     setShowNotifications(false)
-    navigate("/admin?tab=approvals")
+    navigate(targetUrl || "/admin?tab=approvals")
   }
 
   const activeSection =
@@ -356,7 +384,7 @@ export function FloatingNav({
                                 return (
                                   <div
                                     key={n.id}
-                                    onClick={() => handleNotificationClick(n.orderId)}
+                                    onClick={() => handleNotificationClick((n as any).targetUrl || n.orderId)}
                                     className={cn(
                                       "flex items-start gap-3 p-3 rounded-2xl border transition-all text-left relative group cursor-pointer",
                                       n.unread
@@ -367,6 +395,7 @@ export function FloatingNav({
                                     <div className={cn(
                                       "size-8 rounded-full flex items-center justify-center shrink-0 border",
                                       n.type === "approval" && "bg-amber-100 text-amber-800 border-amber-200",
+                                      n.type === "deletion" && "bg-rose-100 text-rose-800 border-rose-200",
                                       n.type === "success" && "bg-emerald-50 text-emerald-600 border-emerald-100",
                                       n.type === "info" && "bg-blue-50 text-blue-600 border-blue-100",
                                       n.type === "calendar" && "bg-purple-50 text-purple-600 border-purple-100"

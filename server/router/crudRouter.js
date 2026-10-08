@@ -315,6 +315,24 @@ crudRouter.delete("/:resource/:id", async (req, res, next) => {
       res.status(404).json({ error: `Unknown resource '${req.params.resource}'.` })
       return
     }
+
+    const protectedResources = [
+      "pharma_products",
+      "export_products",
+      "pharma_product_batches",
+      "sales_orders",
+      "purchase_orders",
+    ]
+    const userRoles = (req.user?.roles || (req.user?.role ? [req.user.role] : [])).map(normalizeRole)
+    const isSuperadmin = userRoles.includes("superadmin")
+
+    if (protectedResources.includes(req.params.resource.toLowerCase()) && !isSuperadmin) {
+      return res.status(403).json({
+        error: "Direct deletion of this record is restricted to Superadmin. Please submit a Deletion Request for approval.",
+        requiresApproval: true,
+      })
+    }
+
     const result = await crudService.delete({ resource, id: req.params.id, headers: req.headers })
     res.status(result.status).json(result.body)
   } catch (err) {

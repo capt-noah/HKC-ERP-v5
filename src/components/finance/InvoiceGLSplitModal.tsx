@@ -50,6 +50,17 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
   const [auditNote, setAuditNote] = useState("")
   const [isSaving, setIsSaving] = useState(false)
   const isPurchase = invoice ? (invoice.invoice_type === "Purchase" || Boolean(invoice.purchase_order_id)) : false
+  const isServiceInvoice = invoice
+    ? ((invoice as any).issue_type === "PROCESSING_SERVICE" ||
+       String(invoice.warehouse_id || "").toUpperCase().includes("PROCESSING") ||
+       String(invoice.id || "").startsWith("INV-PS-") ||
+       invoice.line_items?.some((item: any) =>
+         (item.description || "").toLowerCase().includes("processing") ||
+         (item.description || "").toLowerCase().includes("cleaning") ||
+         (item.item_name || "").toLowerCase().includes("processing") ||
+         (item.item_name || "").toLowerCase().includes("cleaning")
+       ))
+    : false
   const loadedInvoiceIdRef = useRef<string | null>(null)
 
   // Initialize state on invoice change
@@ -64,9 +75,9 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
     }
     loadedInvoiceIdRef.current = invoice.id
 
-    const invTotal = Number(invoice.total || 0)
-    const invSubtotal = Number(invoice.subtotal || invTotal)
+    const invTotal = Number(invoice.total_amount ?? invoice.total ?? 0)
     const invTax = Number(invoice.tax_amount || 0)
+    const invSubtotal = Number(invoice.subtotal ?? (invTax > 0 ? Math.max(0, invTotal - invTax) : invTotal))
 
     const isPurchase = invoice.invoice_type === "Purchase" || Boolean(invoice.purchase_order_id)
     const isCredit = (invoice.payment_terms || "").toLowerCase().includes("credit") || Number(invoice.balance_due || 0) > 0
@@ -170,18 +181,25 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
         ])
       } else {
         // Default: AR account for total invoice amount
-        const defaultArAcc = financeStore.getMappedAccount(
-          isExport ? "sales_credit_ar_export" : "sales_credit_ar",
-          isExport ? "1300-01" : "1300-03",
-          { warehouseId: invoice.warehouse_id }
-        )
+        let defaultArAcc: any = null
+        if (isServiceInvoice) {
+          defaultArAcc = isCredit
+            ? liveAccounts.find((a) => a.code === "1300-05") || { id: "1300-05", code: "1300-05", name: "Cleaning Service Receivable" }
+            : liveAccounts.find((a) => a.code === "1000-02-26") || { id: "1000-02-26", code: "1000-02-26", name: "CBE Bank Operating" }
+        } else {
+          defaultArAcc = financeStore.getMappedAccount(
+            isExport ? "sales_credit_ar_export" : "sales_credit_ar",
+            isExport ? "1300-01" : "1300-03",
+            { warehouseId: invoice.warehouse_id }
+          )
+        }
         const custName = invoice.customer_name || "Customer"
         setRevDebitLines([
           {
             id: `dr-rev-init-${Date.now()}`,
-            accountId: defaultArAcc?.id || (isExport ? "1300-01" : "1300-03"),
-            accountCode: defaultArAcc?.code || (isExport ? "1300-01" : "1300-03"),
-            accountName: defaultArAcc?.name || (isExport ? "EXPORT SALES RECIVEABLE" : "VET MEDICEN SALES RECIVABLE"),
+            accountId: defaultArAcc?.id || (isServiceInvoice ? (isCredit ? "1300-05" : "1000-02-26") : (isExport ? "1300-01" : "1300-03")),
+            accountCode: defaultArAcc?.code || (isServiceInvoice ? (isCredit ? "1300-05" : "1000-02-26") : (isExport ? "1300-01" : "1300-03")),
+            accountName: defaultArAcc?.name || (isServiceInvoice ? (isCredit ? "Cleaning Service Receivable" : "CBE Bank Operating") : (isExport ? "EXPORT SALES RECIVEABLE" : "VET MEDICEN SALES RECIVABLE")),
             description: `Customer Invoice Due (${custName})`,
             amount: invTotal,
             partyType: "Customer",
@@ -242,20 +260,25 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
         ])
       } else {
         // Default: Sales Revenue for Subtotal, and VAT for Tax (if applicable)
-        const defaultRevAcc = financeStore.getMappedAccount(
-          isExport ? "sales_revenue_export" : "sales_revenue_domestic",
-          isExport ? "4000-02-01" : "4000-01-01",
-          { warehouseId: invoice.warehouse_id, itemName: firstItem }
-        )
+        let defaultRevAcc: any = null
+        if (isServiceInvoice) {
+          defaultRevAcc = liveAccounts.find((a) => a.code === "4000-03-02") || { id: "4000-03-02", code: "4000-03-02", name: "Cleaning and Grading Service Revenue" }
+        } else {
+          defaultRevAcc = financeStore.getMappedAccount(
+            isExport ? "sales_revenue_export" : "sales_revenue_domestic",
+            isExport ? "4000-02-01" : "4000-01-01",
+            { warehouseId: invoice.warehouse_id, itemName: firstItem }
+          )
+        }
         const vatAcc = financeStore.getMappedAccount("sales_vat_output", "2000-05")
 
         const initialCredits: SplitLineItem[] = [
           {
             id: `cr-rev-init-1-${Date.now()}`,
-            accountId: defaultRevAcc?.id || (isExport ? "4000-02-01" : "4000-01-01"),
-            accountCode: defaultRevAcc?.code || (isExport ? "4000-02-01" : "4000-01-01"),
-            accountName: defaultRevAcc?.name || (isExport ? "Revenue - Export Commodities" : "Sales Revenue"),
-            description: "Operating Sales Revenue",
+            accountId: defaultRevAcc?.id || (isServiceInvoice ? "4000-03-02" : (isExport ? "4000-02-01" : "4000-01-01")),
+            accountCode: defaultRevAcc?.code || (isServiceInvoice ? "4000-03-02" : (isExport ? "4000-02-01" : "4000-01-01")),
+            accountName: defaultRevAcc?.name || (isServiceInvoice ? "Cleaning and Grading Service Revenue" : (isExport ? "Revenue - Export Commodities" : "Sales Revenue")),
+            description: isServiceInvoice ? "Cleaning & Processing Service Revenue" : "Operating Sales Revenue",
             amount: invSubtotal,
           },
         ]
@@ -275,8 +298,8 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
       }
     }
 
-    // 3. COGS & INVENTORY SECTION (Only for Sales, NOT for Purchases)
-    if (isPurchase) {
+    // 3. COGS & INVENTORY SECTION (Only for physical goods Sales, NOT for Purchases or Service Invoices)
+    if (isPurchase || isServiceInvoice) {
       setHasCogsSection(false)
       setCogsDebitLines([])
       setCogsCreditLines([])
@@ -406,7 +429,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
 
   if (!isOpen || !invoice) return null
 
-  const invTotal = Number(invoice.total || 0)
+  const invTotal = Number(invoice.total_amount ?? invoice.total ?? 0)
 
   // Section A Balance
   const revTotalDebits = Math.round(revDebitLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0) * 100) / 100
@@ -419,7 +442,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
   const cogsTotalDebits = Math.round(cogsDebitLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0) * 100) / 100
   const cogsTotalCredits = Math.round(cogsCreditLines.reduce((sum, l) => sum + (Number(l.amount) || 0), 0) * 100) / 100
   const cogsDiff = Math.round(Math.abs(cogsTotalDebits - cogsTotalCredits) * 100) / 100
-  const isCogsBalanced = isPurchase || !hasCogsSection || (cogsDiff < 0.01 && cogsTotalDebits >= 0)
+  const isCogsBalanced = isPurchase || isServiceInvoice || !hasCogsSection || (cogsDiff < 0.01 && cogsTotalDebits >= 0)
 
   // Overall validation
   const canSave = isRevBalanced && isCogsBalanced
@@ -576,7 +599,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
       return
     }
 
-    if (!isPurchase && hasCogsSection && !isCogsBalanced) {
+    if (!isPurchase && !isServiceInvoice && hasCogsSection && !isCogsBalanced) {
       showToast(
         "COGS Split Unbalanced",
         "warning",
@@ -620,7 +643,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
       ]
 
       let cogsLines: InvoiceGLDistributionLine[] | undefined = undefined
-      if (!isPurchase && hasCogsSection && (cogsTotalDebits > 0 || cogsTotalCredits > 0)) {
+      if (!isPurchase && !isServiceInvoice && hasCogsSection && (cogsTotalDebits > 0 || cogsTotalCredits > 0)) {
         cogsLines = [
           ...cogsDebitLines.map((l) => ({
             id: l.id,
@@ -641,6 +664,8 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
             description: l.description.trim() || "Warehouse Inventory Asset Derecognition",
           })),
         ]
+      } else if (isServiceInvoice) {
+        cogsLines = []
       }
 
       const res = await financeStore.updateInvoiceGLDistribution(invoice.id, {
@@ -741,7 +766,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
               )}
             </button>
 
-            {!isPurchase && (
+            {!isPurchase && !isServiceInvoice && (
               <button
                 type="button"
                 onClick={() => {
@@ -1046,7 +1071,7 @@ export const InvoiceGLSplitModal: React.FC<InvoiceGLSplitModalProps> = ({
             )}
 
             {/* ═════════ TAB 2: INVENTORY & COGS COST SPLIT ═════════ */}
-            {!isPurchase && activeTab === "cogs" && (
+            {!isPurchase && !isServiceInvoice && activeTab === "cogs" && (
               <div className="space-y-4">
                 <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs text-amber-900 font-medium">
                   {isPurchase ? (

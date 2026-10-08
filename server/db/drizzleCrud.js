@@ -12,6 +12,7 @@ import { inventoryService } from "../modules/inventory/inventoryService.js"
 import { salesService } from "../modules/sales/salesService.js"
 import { withTransaction } from "./transactionHelper.js"
 import { getDefaultWarehouseForType, invalidateWarehouseCache } from "../utils/warehouseUtils.js"
+import { checkSalesOrderDeletable, checkPurchaseOrderDeletable } from "../modules/governance/deletionGuardrails.js"
 
 export {
   unwrapRow,
@@ -612,6 +613,18 @@ export async function drizzleDeleteRow({ resource, id }) {
   }
   if (tableName === "sales_issues") {
     return await salesService.delete(cleanId)
+  }
+  if (tableName === "sales_orders") {
+    const eligibility = await checkSalesOrderDeletable(cleanId)
+    if (!eligibility.canDelete) {
+      return { status: 403, body: { error: eligibility.reason, isPermanentlyBlocked: true } }
+    }
+  }
+  if (tableName === "purchase_orders") {
+    const eligibility = await checkPurchaseOrderDeletable(cleanId)
+    if (!eligibility.canDelete) {
+      return { status: 403, body: { error: eligibility.reason, isPermanentlyBlocked: true } }
+    }
   }
   if (tableName === "invoices") {
     return await withTransaction(async (conn) => {

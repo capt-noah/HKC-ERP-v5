@@ -21,9 +21,18 @@ export function sanitizeSheetName(name: string): string {
 /**
  * Format date nicely (DD/MM/YYYY or original DD/MM/YYYY)
  */
-function formatDateLabel(val?: string | null): string {
-  if (!val || typeof val !== "string") return "—"
-  const clean = val.includes("T") ? val.split("T")[0] : val.split(" ")[0]
+function formatDateLabel(val?: string | Date | null): string {
+  if (!val) return "—"
+  let strVal = ""
+  if (val instanceof Date) {
+    strVal = !isNaN(val.getTime()) ? val.toISOString().slice(0, 10) : ""
+  } else if (typeof val === "string") {
+    strVal = val
+  } else {
+    strVal = String(val)
+  }
+  if (!strVal || strVal === "—") return "—"
+  const clean = strVal.includes("T") ? strVal.split("T")[0] : strVal.split(" ")[0]
   const parts = clean.split("-")
   if (parts.length === 3 && parts[0].length === 4 && parts[1] && parts[2]) {
     // YYYY-MM-DD -> DD/MM/YYYY
@@ -61,10 +70,77 @@ export function getProductPackagingFactor(prod: Product): number {
 }
 
 /**
- * Filter products to strictly Import Warehouse (Veterinary/Pharma) items
+ * Filter products to strictly Import Warehouse (Veterinary/Pharma) items,
+ * sorted alphabetically by product name for consistent regulatory presentation.
  */
 export function getImportWarehouseProducts(products: Product[]): Product[] {
-  return (products || []).filter((p) => !isExportWarehouse(p.warehouse || ""))
+  const filtered = (products || []).filter((p) => !isExportWarehouse(p.warehouse || ""))
+  return filtered.sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { numeric: true }))
+}
+
+/**
+ * Resolve the original received intake quantity for a batch of a product.
+ * When sales occur, batch.quantity in the database decreases to reflect current stock.
+ * For official regulatory ledgers (Stock In & Annual Imported Summary), we must report
+ * the true original intake volume, not post-sales remaining stock.
+ */
+export function getOriginalBatchQuantity(
+  prod: Product,
+  b: { batchNo?: string; qty?: number },
+  salesIssues?: SalesIssue[]
+): number {
+  const batchCode = (b.batchNo || prod.batch || "").trim().toLowerCase()
+
+  // 1. Check binCardEntries for entry/receipt movements matching this batch
+  if (Array.isArray(prod.binCardEntries) && prod.binCardEntries.length > 0) {
+    const matchingReceipts = prod.binCardEntries.filter((m) => {
+      const isEntry =
+        m.type === "entry" ||
+        (m as any).movement_type === "RECEIPT" ||
+        (m as any).movement_type === "INBOUND"
+      const mBatch = (m.batchNo || "").trim().toLowerCase()
+      const matchBatch = !batchCode || !mBatch || mBatch === batchCode
+      return isEntry && matchBatch
+    })
+    const totalReceiptQty = matchingReceipts.reduce((sum, m) => sum + Number(m.qtyReceived || 0), 0)
+    if (totalReceiptQty > 0) {
+      return totalReceiptQty
+    }
+  }
+
+  // 2. Sum current batch remaining quantity + all sales issued specifically against this batch
+  const currentBatchQty = Number(b.qty || 0)
+  let soldForThisBatch = 0
+  if (Array.isArray(salesIssues) && salesIssues.length > 0) {
+    salesIssues.forEach((si) => {
+      (si.items || []).forEach((it) => {
+        const matchProd =
+          it.item_id === prod.id ||
+          (it.item_name && it.item_name.trim().toLowerCase() === prod.name.trim().toLowerCase())
+        const itBatch = (it.batch_no || it.batch_id || "").trim().toLowerCase()
+        const matchBatch = !batchCode || !itBatch || itBatch === batchCode
+        if (matchProd && matchBatch) {
+          soldForThisBatch += Number(it.quantity || 0)
+        }
+      })
+    })
+  }
+
+  if (soldForThisBatch > 0) {
+    return currentBatchQty + soldForThisBatch
+  }
+
+  // 3. Fallback to product total quantity if single batch or product-level sold quantity
+  const batchesCount = Array.isArray(prod.batches) && prod.batches.length > 0 ? prod.batches.length : 1
+  if (batchesCount <= 1) {
+    const totalQty = Number(prod.totalQuantity || (prod as any).total_quantity || 0)
+    if (totalQty > 0) return totalQty
+
+    const totalSold = Number(prod.quantitySold || (prod as any).quantity_sold || 0)
+    if (totalSold > 0) return currentBatchQty + totalSold
+  }
+
+  return currentBatchQty
 }
 
 // Reusable styling helpers for ExcelJS
@@ -96,7 +172,8 @@ const headerBorder: Partial<ExcelJS.Borders> = {
 export function buildAnnualImportedWorksheet(
   workbook: ExcelJS.Workbook,
   products: Product[],
-  options: VeterinaryExportOptions = {}
+  options: VeterinaryExportOptions = {},
+  salesIssues: SalesIssue[] = []
 ): ExcelJS.Worksheet {
   const importProds = getImportWarehouseProducts(products)
   const currentYear = new Date().getFullYear()
@@ -199,9 +276,16 @@ export function buildAnnualImportedWorksheet(
           voucherNo: prod.voucherNo || "",
         }]
 
-    batches.forEach((b: any, bIdx: number) => {
+    const sortedBatches = [...batches].sort((a: any, b: any) => {
+      const timeA = a.mfgDate ? new Date(a.mfgDate).getTime() : 0
+      const timeB = b.mfgDate ? new Date(b.mfgDate).getTime() : 0
+      if (timeA !== timeB && timeA > 0 && timeB > 0) return timeA - timeB
+      return (a.batchNo || "").localeCompare(b.batchNo || "")
+    })
+
+    sortedBatches.forEach((b: any, bIdx: number) => {
       const isFirstBatch = bIdx === 0
-      const batchQty = Number(b.qty || 0)
+      const batchQty = getOriginalBatchQuantity(prod, b, salesIssues)
       const refNo = b.voucherNo || prod.voucherNo || "VDFACA/25/948/PI1"
       const mfg = b.mfgDate || prod.manufacturingDate || prod.entryDate || ""
 
@@ -340,6 +424,7 @@ export function buildProductLedgerWorksheet(
       }]
 
   batches.forEach((b: any) => {
+    const origQty = getOriginalBatchQuantity(product, b, salesIssues)
     inEntries.push({
       type: "IN",
       date: b.mfgDate || product.entryDate || product.createdDate || "",
@@ -347,10 +432,18 @@ export function buildProductLedgerWorksheet(
       mfgDate: b.mfgDate || product.manufacturingDate || "",
       expiryDate: b.expiry || product.expiry || "",
       unit: product.unit || "Box",
-      qtyReceived: Number(b.qty || 0),
+      qtyReceived: origQty,
       qtySold: 0,
       remark: "",
     })
+  })
+
+  // Sort inEntries chronologically ascending (earliest intake first)
+  inEntries.sort((a, b) => {
+    const timeA = a.date && a.date !== "—" ? new Date(a.date).getTime() : 0
+    const timeB = b.date && b.date !== "—" ? new Date(b.date).getTime() : 0
+    if (timeA !== timeB && timeA > 0 && timeB > 0) return timeA - timeB
+    return (a.batchNo || "").localeCompare(b.batchNo || "")
   })
 
   // Assemble Stock Out Sales
@@ -396,6 +489,16 @@ export function buildProductLedgerWorksheet(
         remark: "",
       })
     })
+  })
+
+  // Sort outEntries chronologically ascending (earliest sale date first, then invoice number)
+  outEntries.sort((a, b) => {
+    const timeA = a.date && a.date !== "—" ? new Date(a.date).getTime() : 0
+    const timeB = b.date && b.date !== "—" ? new Date(b.date).getTime() : 0
+    if (timeA !== timeB && timeA > 0 && timeB > 0) return timeA - timeB
+    const invA = a.invoiceNo || ""
+    const invB = b.invoiceNo || ""
+    return invA.localeCompare(invB, undefined, { numeric: true })
   })
 
   // Row 1: Header Banner (A1:R1 Merged)
@@ -748,7 +851,7 @@ export async function exportComprehensiveVeterinaryWorkbook(
   const importProds = getImportWarehouseProducts(products)
 
   // 1. Tab 1: Products imported per annum (Annual Imported Summary)
-  buildAnnualImportedWorksheet(workbook, importProds, options)
+  buildAnnualImportedWorksheet(workbook, importProds, options, salesIssues)
 
   // 2. Tabs 2..N: Product Ledger Worksheets
   const usedSheetNames = new Set<string>(["products imported per annum", "annual imported veterinary products"])

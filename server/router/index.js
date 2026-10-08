@@ -10,6 +10,7 @@ import { activityLoggerMiddleware } from "../modules/common/activityLogger.js"
 import { inventoryRouter } from "./inventoryRouter.js"
 import { hrRouter } from "./hrRouter.js"
 import { uploadRouter } from "./uploadRouter.js"
+import { deletionRouter } from "./deletionRouter.js"
 
 export const masterRouter = Router()
 
@@ -41,6 +42,7 @@ masterRouter.get("/api", (_req, res) => {
 })
 
 // Domain routers (Order matters: specific domain routes before generic /api/:resource fallback)
+masterRouter.use("/api/deletion-requests", deletionRouter)
 masterRouter.use("/api", uploadRouter)
 masterRouter.use("/api", salesRouter)
 masterRouter.use("/api", financeRouter)

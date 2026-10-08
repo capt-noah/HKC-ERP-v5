@@ -270,7 +270,10 @@ export default function SalesOrders() {
     const desc = (so.desc || (so as any).description || "").toLowerCase()
     const q = (soSearch || "").toLowerCase()
 
-    const matchesSearch = cust.includes(q) || id.includes(q) || desc.includes(q)
+    const matchesItem = Array.isArray(so.items) && so.items.some((i) =>
+      ((i.name || (i as any).item_name || (i as any).productName || "").toLowerCase().includes(q))
+    )
+    const matchesSearch = cust.includes(q) || id.includes(q) || desc.includes(q) || matchesItem
     if (!matchesSearch) return false
 
     // Warehouse filter from dropdown
@@ -299,6 +302,7 @@ export default function SalesOrders() {
   const salesOrderColumns: TableColumn[] = [
     { key: "id", label: "Order ID", align: "left" },
     { key: "customer", label: "Customer", align: "left" },
+    { key: "items", label: "Item(s)", align: "left" },
     { key: "warehouse", label: "Warehouse", align: "left" },
     { key: "paymentType", label: "Payment Method", align: "left" },
     { key: "approvalStatus", label: "Approval Status", align: "center" },
@@ -1119,7 +1123,8 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           reloadTooltip="Reload sales orders from server"
           defaultWidths={{
             id: 110,
-            customer: 220,
+            customer: 200,
+            items: 210,
             warehouse: 100,
             paymentType: 120,
             approvalStatus: 140,
@@ -1150,6 +1155,32 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                     {so.customerPhone ? `📞 ${so.customerPhone} • ` : ""}{so.customerGroup || "Client"}
                   </span>
                 </div>
+              </td>
+
+              <td style={{ width: `${colWidths.items}px` }} className="py-4 px-4 overflow-hidden text-xs">
+                {Array.isArray(so.items) && so.items.length > 0 ? (
+                  <div className="flex flex-col gap-1 max-w-full">
+                    {so.items.map((itm: any, idx: number) => {
+                      const name = itm.name || itm.item_name || itm.productName || "Item"
+                      const qty = Number(itm.qty ?? itm.quantity ?? 0)
+                      const unit = itm.unit || itm.packaging_unit || ""
+                      return (
+                        <div key={idx} className="flex items-center gap-1.5 leading-snug">
+                          <span className="font-black text-zinc-950 truncate" title={name}>
+                            {name}
+                          </span>
+                          {qty > 0 && (
+                            <span className="text-[10px] font-bold text-zinc-500 shrink-0">
+                              ({qty.toLocaleString()} {unit})
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <span className="text-zinc-400 font-bold italic text-xs">No items</span>
+                )}
               </td>
 
               <td style={{ width: `${colWidths.warehouse}px` }} className="py-4 px-4 overflow-hidden">
@@ -2696,8 +2727,15 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         title="Delete Sales Order Contract?"
         recordId={deletingOrder?.id}
         recordName={deletingOrder ? `${deletingOrder.customer} — ETB ${Number(deletingOrder.amount || 0).toLocaleString()}` : ""}
+        resourceType="sales_orders"
+        warehouseId={deletingOrder?.warehouse}
         description="This will permanently delete this Sales Order contract from system registry."
         onClose={() => setDeletingOrder(null)}
+        onRequestSubmitted={() => {
+          setDeletingOrder(null)
+          setIsEditOrderOpen(false)
+          setEditingOrder(null)
+        }}
         onConfirmDelete={() => {
           if (!deletingOrder) return
           erp.deleteSalesOrder(deletingOrder.id)

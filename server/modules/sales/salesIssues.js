@@ -269,17 +269,30 @@ export function resolveCommodityAccounts(itemName = "") {
 export function resolveSalesGLAccounts({ warehouseId, items = [], isCredit = false, allAccounts = [], mappingMap = new Map() }) {
   const findAcc = (code) => allAccounts.find(a => (a.code || a.account_code) === code)?.id || code
   const getMappedCode = (ruleId, fallbackCode) => mappingMap.get(ruleId) || fallbackCode
-  const isWh1 = isExportWarehouse(warehouseId)
+  const sWh = String(warehouseId || "").toUpperCase()
+  const isProcessing = sWh.includes("PROCESSING") || items.some(i => {
+    const n = (i.item_name || i.name || "").toLowerCase()
+    const id = (i.item_id || i.product_id || "").toString()
+    return n.includes("processing") || n.includes("cleaning") || id.includes("SRV-")
+  })
+  const isWh1 = isExportWarehouse(warehouseId) && !isProcessing
 
   // 1. Receivables / Cash (Debit for Sales Voucher)
   const debitCode = isCredit
-    ? (isWh1 ? getMappedCode("sales_credit_ar_export", "1300-01") : getMappedCode("sales_credit_ar", "1300-03"))
-    : getMappedCode("sales_cash_clearing", "1000-02-26")
+    ? (isProcessing
+        ? getMappedCode("sales_credit_ar_services", "1300-05")
+        : (isWh1 ? getMappedCode("sales_credit_ar_export", "1300-01") : getMappedCode("sales_credit_ar", "1300-03")))
+    : (isProcessing ? getMappedCode("sales_cash_clearing_services", "1000-02-27") : getMappedCode("sales_cash_clearing", "1000-02-26"))
   const debitAccId = findAcc(debitCode)
 
   let revenueAccId, inventoryAccId, cogsAccId
 
-  if (isWh1) {
+  if (isProcessing) {
+    const serviceRevCode = getMappedCode("sales_revenue_services", "4000-03-02")
+    revenueAccId = findAcc(serviceRevCode)
+    inventoryAccId = null
+    cogsAccId = null
+  } else if (isWh1) {
     const firstItemName = items[0]?.item_name || items[0]?.name || ""
     const commodity = resolveCommodityAccounts(firstItemName)
 
@@ -904,6 +917,36 @@ export async function updateSalesIssue(input, id, existingConn = null) {
           existing.id,
         ]
       )
+
+      const oldFsNo = existing.fs_no
+      const newFsNo = (input?.fs_no || input?.fsNo) ? String(input.fs_no || input.fsNo).trim() : null
+
+      // Atomic Cascade Synchronization if FS No was edited
+      if (newFsNo && oldFsNo && newFsNo !== oldFsNo) {
+        // 1. Update linked invoices
+        await conn.query(
+          "UPDATE `invoices` SET fs_no = ?, invoice_number = REPLACE(invoice_number, ?, ?), updated_at = NOW(3) WHERE fs_no = ? OR sales_issue_id = ?",
+          [newFsNo, oldFsNo, newFsNo, oldFsNo, existing.id]
+        ).catch((e) => console.warn("[CASCADE FS INVOICES WARNING]:", e.message))
+
+        // 2. Update journal entries description and source_id
+        await conn.query(
+          "UPDATE `journal_entries` SET source_id = ?, description = REPLACE(description, ?, ?), updated_at = NOW(3) WHERE source_id IN (?, ?) OR id LIKE ?",
+          [newFsNo, oldFsNo, newFsNo, oldFsNo, existing.id, `%${oldFsNo}%`]
+        ).catch((e) => console.warn("[CASCADE FS JE WARNING]:", e.message))
+
+        // 3. Update shipment documents (attachments)
+        await conn.query(
+          "UPDATE `shipment_documents` SET record_id = ?, updated_at = NOW(3) WHERE record_id = ?",
+          [newFsNo, oldFsNo]
+        ).catch((e) => console.warn("[CASCADE FS DOCS WARNING]:", e.message))
+
+        // 4. Update stock movements reference
+        await conn.query(
+          "UPDATE `stock_movements` SET reference_id = ?, notes = REPLACE(notes, ?, ?), updated_at = NOW(3) WHERE reference_id = ?",
+          [newFsNo, oldFsNo, newFsNo, oldFsNo]
+        ).catch((e) => console.warn("[CASCADE FS MOVEMENTS WARNING]:", e.message))
+      }
 
       if (items.length > 0) {
         await conn.query("DELETE FROM `sales_issue_items` WHERE sales_issue_id = ?", [existing.id])
@@ -1633,7 +1676,7 @@ export async function postSalesIssue(arg1, arg2 = null, existingConn = null) {
           { account_id: revenueAccId, debit: 0, credit: issueSubtotal, description: "Sales Revenue" },
           ...(issueVatAmount > 0 ? [{ account_id: vatAccId, debit: 0, credit: issueVatAmount, description: "VAT Output Payable" }] : [])
         ],
-        cogs_lines: totalCost > 0 ? [
+        cogs_lines: (totalCost > 0 && cogsAccId && inventoryAccId) ? [
           { account_id: cogsAccId, debit: totalCost, credit: 0, description: "Cost of Goods Sold" },
           { account_id: inventoryAccId, debit: 0, credit: totalCost, description: "Inventory Stock In Hand" }
         ] : [],

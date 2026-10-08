@@ -42,10 +42,11 @@ export const resources = {
   payroll_records: { table: "payroll_records", module: "hr", ...relational },
   leave_requests: { table: "leave_requests", module: "hr", ...relational },
 
-  // Admin & Security (3 Relational Tables)
+  // Admin & Security (4 Relational Tables)
   users: { table: "users", module: "admin", ...relational },
   user_activity_logs: { table: "user_activity_logs", module: "admin", ...relational },
   user_sessions: { table: "user_sessions", module: "admin", ...relational },
+  deletion_requests: { table: "deletion_requests", module: "admin", ...relational },
 }
 
 export function getResource(name) {

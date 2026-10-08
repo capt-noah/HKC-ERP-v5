@@ -2278,8 +2278,11 @@ export default function PurchaseOrders() {
         onClose={() => setDeletingPo(null)}
         onConfirmDelete={handleConfirmDelete}
         title="Delete Cheque Payment Voucher"
+        recordId={deletingPo?.id}
         recordName={deletingPo?.voucherNo || deletingPo?.poNumber || "this voucher"}
+        resourceType="purchase_orders"
         description="This action will permanently delete this cheque payment voucher."
+        onRequestSubmitted={() => setDeletingPo(null)}
       />
 
       {/* PRINTABLE OFFICIAL VOUCHER SLIP MODAL */}

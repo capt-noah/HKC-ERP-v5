@@ -1,7 +1,7 @@
 import { pool } from "../server/db/client.js"
 import fs from "fs"
 
-const BACKUP_PATH = "/Users/Noah/Desktop/hkc_trading_full_snapshot_before_wipe.sql"
+const BACKUP_PATH = "/Users/Noah/Documents/React/HKC-ERP-v5/server/db/backups/snapshot_before_testing_clear.sql"
 
 const ESSENTIAL_TABLES = new Set([
   "users",
@@ -12,6 +12,11 @@ const ESSENTIAL_TABLES = new Set([
   "company_settings",
   "tax_rules",
   "user_activity_logs",
+  "employees",
+  "attendance_records",
+  "leave_requests",
+  "payroll_periods",
+  "payroll_records",
 ])
 
 const TABLES_TO_CLEAR = [
@@ -46,6 +51,9 @@ const TABLES_TO_CLEAR = [
   // 5. Commercial Partners
   "customers",
   "suppliers",
+
+  // 6. Governance & Approvals
+  "deletion_requests",
 ]
 
 async function main() {
@@ -58,13 +66,13 @@ async function main() {
     console.error(`❌ ERROR: Safety snapshot backup not found at ${BACKUP_PATH}! Aborting for safety.`)
     process.exit(1)
   }
-  console.log(`✓ Verified safety snapshot backup on Desktop (${(fs.statSync(BACKUP_PATH).size / 1024).toFixed(1)} KB)`)
+  console.log(`✓ Verified safety snapshot backup (${(fs.statSync(BACKUP_PATH).size / 1024).toFixed(1)} KB)`)
 
   const conn = await pool.getConnection()
   try {
     await conn.query("SET FOREIGN_KEY_CHECKS = 0")
 
-    console.log("\nClearing transactional, stock, and partner tables...")
+    console.log("\nClearing transactional, stock, partner, and request tables...")
     for (const table of TABLES_TO_CLEAR) {
       const [{ affectedRows }] = await conn.query(`DELETE FROM \`${table}\``)
       console.log(`  ✓ Cleared ${table.padEnd(28)} (${affectedRows} records removed)`)

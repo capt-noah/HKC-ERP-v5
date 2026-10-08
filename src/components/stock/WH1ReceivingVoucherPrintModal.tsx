@@ -34,7 +34,7 @@ export default function WH1ReceivingVoucherPrintModal({
   const arrivalItems = wh1Entries.map((entry) => {
     const qty = Number(entry.quantityReceived || 0)
     const unitPrice = Number(entry.unitPrice || product.unitCost || 0)
-    const party = entry.customer || product.customer || "Supplier Arrival"
+    const party = entry.customer || product.customer || "—"
     const voucher = entry.voucherNo ? (entry.voucherNo.startsWith("No.") ? entry.voucherNo : `No. ${entry.voucherNo}`) : ""
     const plate = entry.plateNumber && entry.plateNumber !== "—" ? `[Plate: ${entry.plateNumber}]` : ""
     

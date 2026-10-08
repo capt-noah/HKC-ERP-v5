@@ -36,6 +36,7 @@ export default function StockBinEntryModal({
   const [expiryDate, setExpiryDate] = useState("")
   const [party, setParty] = useState("")
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
+  const [saveSupplierToRegistry, setSaveSupplierToRegistry] = useState(false)
   const [unitPrice, setUnitPrice] = useState("")
   const [sellingPrice, setSellingPrice] = useState("")
   const [remark, setRemark] = useState("")
@@ -54,6 +55,7 @@ export default function StockBinEntryModal({
       setExpiryDate(entry.expiryDate || product?.expiry || "")
       setParty(entry.party || "")
       setShowSupplierDropdown(false)
+      setSaveSupplierToRegistry(false)
       setUnitPrice(entry.unitPrice !== undefined ? String(entry.unitPrice) : (product?.unitCost !== undefined ? String(product.unitCost) : ""))
       setSellingPrice(entry.sellingPrice !== undefined ? String(entry.sellingPrice) : (product?.sellingPrice !== undefined ? String(product.sellingPrice) : ""))
       setRemark(entry.remark || "")
@@ -66,40 +68,9 @@ export default function StockBinEntryModal({
       setQuantity("")
       setMfgDate(product?.manufacturingDate || (product as any)?.mfgDate || product?.batches?.[0]?.mfgDate || today)
       setExpiryDate(product?.expiry || (product as any)?.expiryDate || product?.batches?.[0]?.expiry || `${currentYear + 2}-12-31`)
-
-      // Associated suppliers for this product
-      const itemSuppliers = Array.from(
-        new Set(
-          [
-            product?.supplierName,
-            product?.customer,
-            ...(product?.binCardEntries || [])
-              .filter((e) => Number(e.qtyReceived || 0) > 0 && e.party)
-              .map((e) => e.party),
-          ]
-            .filter((s): s is string => Boolean(s && s.trim()))
-            .map((s) => s.trim())
-        )
-      )
-      const suppliers = erp.getSuppliers()
-      const parentSupplier =
-        product?.supplierName ||
-        product?.customer ||
-        (product?.binCardEntries && product.binCardEntries.length > 0
-          ? product.binCardEntries.find((e) => Number(e.qtyReceived || 0) > 0 && e.party)?.party
-          : "") ||
-        ""
-
-      const defaultSupplier =
-        parentSupplier ||
-        (itemSuppliers.length === 1
-          ? itemSuppliers[0]
-          : itemSuppliers.length === 0 && suppliers.length === 1
-          ? suppliers[0].name
-          : "")
-
-      setParty(defaultSupplier)
+      setParty("")
       setShowSupplierDropdown(false)
+      setSaveSupplierToRegistry(false)
       setUnitPrice(product?.unitCost !== undefined ? String(product.unitCost) : "")
       setSellingPrice(product?.sellingPrice !== undefined ? String(product.sellingPrice) : "")
       setRemark("")
@@ -149,7 +120,7 @@ export default function StockBinEntryModal({
         qtyIssued: !isRec ? qtyNum : 0,
         mfgDate: mfgDate.trim() || undefined,
         expiryDate: expiryDate.trim(),
-        party: party.trim() || (isRec ? "Stock Receipt" : "Customer Dispatch"),
+        party: party.trim() || undefined,
         unitPrice: effectiveUnitPrice,
         sellingPrice: (effectiveSellingPrice !== undefined && effectiveSellingPrice > 0) ? effectiveSellingPrice : undefined,
         remark: remark.trim() || (isRec ? "Stock Inbound" : "Stock Dispatch")
@@ -157,11 +128,14 @@ export default function StockBinEntryModal({
 
       await onSave(product.id, entryPayload, entry?.id)
 
-      // Auto-save supplier to Supplier Registry if inbound and newly provided party
-      if (isRec && party.trim()) {
+      // Only save supplier to Supplier Registry if inbound receipt, user checked saveSupplierToRegistry, and newly provided party
+      if (isRec && saveSupplierToRegistry && party.trim()) {
         const partyName = party.trim()
-        const ignoredParties = ["Stock Receipt", "Stock Inbound", "Initial Deposit", "Quarantine Hold", "HKC Intake", "Customer Dispatch"]
-        if (!ignoredParties.includes(partyName)) {
+        const ignoredParties = [
+          "Stock Receipt", "Stock Inbound", "Initial Deposit", "Initial Stock Deposit",
+          "Initial stock receipt", "Quarantine Hold", "HKC Intake", "Customer Dispatch"
+        ]
+        if (!ignoredParties.some((p) => p.toLowerCase() === partyName.toLowerCase())) {
           const existingSupp = erp.getSuppliers().find((s) => (s?.name || "").toLowerCase() === partyName.toLowerCase())
           if (!existingSupp) {
             try {
@@ -425,9 +399,22 @@ export default function StockBinEntryModal({
             {/* Received From / Issued To */}
             {movementType === "received" ? (
               <div className="space-y-1 relative">
-                <label className="block text-[10px] font-black uppercase text-zinc-500">
-                  Received From (Supplier)
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-black uppercase text-zinc-500">
+                    Received From (Supplier / Source) <span className="text-[9px] text-zinc-400 lowercase">(optional)</span>
+                  </label>
+                  {!erp.getSuppliers().some((s) => (s?.name || "").toLowerCase() === party.trim().toLowerCase()) && party.trim() !== "" && (
+                    <label className="inline-flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-200 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={saveSupplierToRegistry}
+                        onChange={(e) => setSaveSupplierToRegistry(e.target.checked)}
+                        className="size-3.5 rounded text-emerald-700 focus:ring-emerald-600 cursor-pointer"
+                      />
+                      Save to registry
+                    </label>
+                  )}
+                </div>
                 <div className="relative flex items-center">
                   <input
                     type="text"

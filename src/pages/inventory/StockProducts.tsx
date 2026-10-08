@@ -185,7 +185,7 @@ export default function StockProducts() {
   const [addVoucherNo, setAddVoucherNo] = useState("")
   const [addCustomer, setAddCustomer] = useState("")
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
-  const [saveSupplierToRegistry, setSaveSupplierToRegistry] = useState(true)
+  const [saveSupplierToRegistry, setSaveSupplierToRegistry] = useState(false)
   const [addPlateNumber, setAddPlateNumber] = useState("")
   const [addDosage, setAddDosage] = useState("")
   const [addShelfNo, setAddShelfNo] = useState("")
@@ -371,7 +371,7 @@ export default function StockProducts() {
     setAddVoucherNo("")
     setAddCustomer("")
     setShowSupplierDropdown(false)
-    setSaveSupplierToRegistry(true)
+    setSaveSupplierToRegistry(false)
     setAddPlateNumber("")
     setAddDosage("")
     setAddShelfNo("")
@@ -650,7 +650,7 @@ export default function StockProducts() {
             batchNo: entryBatch || `BATCH-${Date.now().toString().slice(-4)}`,
             voucherNo: entryBatch ? `BATCH-${entryBatch}` : `RCV-${Date.now().toString().slice(-6)}`,
             type: "entry",
-            party: addCustomer.trim() || selectedExistingProduct.customer || selectedExistingProduct.supplierName || "HKC Intake",
+            party: addCustomer.trim() || undefined,
             expiryDate: addExpDate || "",
             qtyReceived: addTotalQuantity,
             qtyIssued: 0,
@@ -752,7 +752,7 @@ export default function StockProducts() {
             balance: addTotalQuantity,
             mfgDate: isWH1Form ? undefined : (addMfgDate || undefined),
             expiryDate: addExpDate,
-            party: "Initial Stock Deposit",
+            party: addCustomer.trim() || undefined,
             unitPrice: parsedUnitCost,
             sellingPrice: parsedSellingPrice > 0 ? parsedSellingPrice : undefined,
             remark: addNotes.trim() || "Initial Stock Registration",
@@ -3073,11 +3073,14 @@ export default function StockProducts() {
       <RecordDeleteModal
         isOpen={!!deletingProduct}
         title="Delete Stock Item?"
-        recordId={deletingProduct?.sku}
-        recordName={deletingProduct?.name}
+        recordId={deletingProduct?.id}
+        recordName={deletingProduct ? `${deletingProduct.name} (${deletingProduct.sku})` : ""}
+        resourceType={isWH1(deletingProduct?.warehouse || "") ? "export_products" : "pharma_products"}
+        warehouseId={deletingProduct?.warehouse}
         description="This will permanently delete this stock product and all associated movement ledger records from the inventory registry. This action is irreversible."
         onClose={() => setDeletingProduct(null)}
         onConfirmDelete={handleDeleteProductConfirm}
+        onRequestSubmitted={() => setDeletingProduct(null)}
       />
 
       {/* MODAL: DELETE WH1 SUB-ENTRY */}

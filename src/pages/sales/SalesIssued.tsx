@@ -338,7 +338,12 @@ export default function SalesIssued() {
     warehouseId === "EXP-WH-PS" ||
     Boolean(selectedPsId) ||
     Boolean(editing?.service_order_id) ||
-    editing?.warehouse_id === "EXP-WH Processing"
+    editing?.warehouse_id === "EXP-WH Processing" ||
+    items.some((i) =>
+      i.item_id === "SRV-EXP-PROCESSING" ||
+      (i.item_name || "").toLowerCase().includes("processing fee") ||
+      (i.item_name || "").toLowerCase().includes("cleaning service")
+    )
 
   const pullableProcessedServices = useMemo(() => {
     return processedServices.filter((ps) => {
@@ -753,16 +758,21 @@ export default function SalesIssued() {
   ) => {
     const isCreditSale = pType === "Credit"
     const cleanWh = String(whId || "").trim().toUpperCase()
-    const isProcessing = cleanWh.includes("PROCESSING") || cleanWh === "EXP-WH-PS" || (isProcessingService && (whId === "" || cleanWh.includes("EXP")))
+    const isProcessing =
+      cleanWh.includes("PROCESSING") ||
+      cleanWh === "EXP-WH-PS" ||
+      isProcessingService ||
+      Boolean((itemName || "").toLowerCase().includes("cleaning")) ||
+      Boolean((itemName || "").toLowerCase().includes("processing"))
     const isExportSale = cleanWh.startsWith("WH1") || cleanWh.includes("EXP") || isWH1(whId, warehouses) || isProcessing
     const gTot = Math.round((subTot + vat) * 100) / 100
 
     // 1. Section A: Debit Accounts (Settlement / Cash / Bank / AR)
     const mappingRuleKey = isCreditSale
-      ? (isExportSale ? "sales_credit_ar_export" : "sales_credit_ar")
+      ? (isProcessing ? "sales_credit_ar_services" : (isExportSale ? "sales_credit_ar_export" : "sales_credit_ar"))
       : "sales_cash_clearing"
     const fallbackDrCode = isCreditSale
-      ? (isExportSale ? "1300-01" : "1300-03")
+      ? (isProcessing ? "1300-05" : (isExportSale ? "1300-01" : "1300-03"))
       : "1000-02-26"
 
     const drAcc = financeStore.getMappedAccount(mappingRuleKey, fallbackDrCode, { warehouseId: whId, itemName })
@@ -787,7 +797,7 @@ export default function SalesIssued() {
           id: `dr-sale-${Date.now()}-1`,
           accountId: drAcc?.id || fallbackDrCode,
           accountCode: drAcc?.code || fallbackDrCode,
-          accountName: drAcc?.name || (isCreditSale ? (isExportSale ? "EXPORT SALES RECIVEABLE" : "VET MEDICEN SALES RECIVABLE") : "Commercial Bank of Ethiopia (CBE)"),
+          accountName: drAcc?.name || (isCreditSale ? (isProcessing ? "CLEANING SERVICE RECIEVABLE" : (isExportSale ? "EXPORT SALES RECIVEABLE" : "VET MEDICEN SALES RECIVABLE")) : "Commercial Bank of Ethiopia (CBE)"),
           description: isCreditSale ? `Receivable - ${cName || "Customer"}` : "Customer Direct Deposit",
           amount: gTot,
         },
@@ -797,11 +807,25 @@ export default function SalesIssued() {
     // 2. Section A: Credit Accounts (Sales Revenue + VAT)
     const isWh1Sale = (isExportSale || isWH1(whId, warehouses)) && !isProcessing
     const commSet = (isExportSale || isWh1Sale) ? resolveCommodityAccounts(itemName) : null
-    let defaultRevCode = isExportSale ? (commSet?.revenueCode || "4000-02-01") : "4000-01-01"
-    let defaultRevName = isExportSale ? (commSet?.revenueName || "Revenue - Export Commodities") : "SALES OF VETERINARY DRUG"
+    let defaultRevCode = isProcessing
+      ? "4000-03-02"
+      : isExportSale
+      ? (commSet?.revenueCode || "4000-02-01")
+      : "4000-01-01"
+    let defaultRevName = isProcessing
+      ? "CLEANING SERVICE"
+      : isExportSale
+      ? (commSet?.revenueName || "Revenue - Export Commodities")
+      : "SALES OF VETERINARY DRUG"
+
+    const revMappingKey = isProcessing
+      ? "sales_revenue_services"
+      : isExportSale
+      ? "sales_revenue_export"
+      : "sales_revenue_domestic"
 
     const revAcc = financeStore.getMappedAccount(
-      isExportSale ? "sales_revenue_export" : "sales_revenue_domestic",
+      revMappingKey,
       defaultRevCode,
       { warehouseId: whId, itemName }
     )
@@ -812,7 +836,7 @@ export default function SalesIssued() {
         accountId: revAcc?.id || defaultRevCode,
         accountCode: revAcc?.code || defaultRevCode,
         accountName: revAcc?.name || defaultRevName,
-        description: isProcessing ? "Export Processing & Sales Revenue Recognition" : "Sales Revenue Recognition",
+        description: isProcessing ? "Cleaning & Processing Service Revenue Recognition" : (isExportSale ? "Export Sales Revenue Recognition" : "Sales Revenue Recognition"),
         amount: Math.round(subTot * 100) / 100,
       },
     ]
@@ -2083,7 +2107,7 @@ export default function SalesIssued() {
     fs_no: 110,
     reference_no: 120,
     sale_date: 100,
-    item: 160,
+    item: 210,
     customer_name: 160,
     payment_status: 170,
     total_quantity: 90,
@@ -2184,7 +2208,31 @@ export default function SalesIssued() {
                       <td style={{ width: `${salesTable.colWidths.fs_no}px` }} className="px-3 py-3 font-mono text-xs font-black text-zinc-950 truncate">{row.fs_no}</td>
                       <td style={{ width: `${salesTable.colWidths.reference_no}px` }} className="px-3 py-3 font-mono text-xs font-bold text-zinc-700 truncate">{row.reference_no}</td>
                       <td style={{ width: `${salesTable.colWidths.sale_date}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">{formatDate(row.sale_date)}</td>
-                      <td style={{ width: `${salesTable.colWidths.item}px` }} className="px-3 py-3 text-xs font-black text-zinc-900 truncate">{row.items?.[0]?.item_name || "Multiple items"}</td>
+                      <td style={{ width: `${salesTable.colWidths.item}px` }} className="px-3 py-3 text-xs">
+                        {Array.isArray(row.items) && row.items.length > 0 ? (
+                          <div className="flex flex-col gap-1 max-w-full">
+                            {row.items.map((itm: any, idx: number) => {
+                              const name = itm.item_name || itm.name || itm.product_name || "Item"
+                              const qty = Number(itm.quantity ?? itm.qty ?? 0)
+                              const unit = itm.packaging_unit || itm.unit || ""
+                              return (
+                                <div key={idx} className="flex items-center gap-1.5 leading-snug">
+                                  <span className="font-black text-zinc-900 truncate" title={name}>
+                                    {name}
+                                  </span>
+                                  {row.items!.length > 1 && qty > 0 && (
+                                    <span className="text-[10px] font-bold text-zinc-500 shrink-0">
+                                      ({qty.toLocaleString()} {unit})
+                                    </span>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <span className="text-zinc-400 font-bold italic">No items</span>
+                        )}
+                      </td>
                       <td style={{ width: `${salesTable.colWidths.customer_name}px` }} className="px-3 py-3 text-xs font-bold text-zinc-700 truncate">{row.customer_name}</td>
                       
                       {/* Payment & Settlement Status */}
@@ -2218,10 +2266,32 @@ export default function SalesIssued() {
                         )}
                       </td>
 
-                      <td style={{ width: `${salesTable.colWidths.total_quantity}px` }} className="px-3 py-3 text-right font-mono text-xs font-black truncate">
-                        {Number(row.total_quantity).toLocaleString()}{row.items?.[0]?.packaging_unit ? ` ${row.items[0].packaging_unit}` : ""}
+                      <td style={{ width: `${salesTable.colWidths.total_quantity}px` }} className="px-3 py-3 text-right font-mono text-xs font-black">
+                        {Array.isArray(row.items) && row.items.length > 1 ? (
+                          <div className="flex flex-col gap-1 items-end">
+                            {row.items.map((itm: any, idx: number) => (
+                              <span key={idx} className="leading-snug">
+                                {Number(itm.quantity || 0).toLocaleString()}{itm.packaging_unit ? ` ${itm.packaging_unit}` : ""}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          `${Number(row.total_quantity).toLocaleString()}${row.items?.[0]?.packaging_unit ? ` ${row.items[0].packaging_unit}` : ""}`
+                        )}
                       </td>
-                      <td style={{ width: `${salesTable.colWidths.unit_price}px` }} className="px-3 py-3 text-right font-mono text-xs font-bold truncate">{money(row.items?.[0]?.unit_price || 0)}</td>
+                      <td style={{ width: `${salesTable.colWidths.unit_price}px` }} className="px-3 py-3 text-right font-mono text-xs font-bold">
+                        {Array.isArray(row.items) && row.items.length > 1 ? (
+                          <div className="flex flex-col gap-1 items-end">
+                            {row.items.map((itm: any, idx: number) => (
+                              <span key={idx} className="leading-snug">
+                                {money(itm.unit_price || 0)}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          money(row.items?.[0]?.unit_price || 0)
+                        )}
+                      </td>
                       <td style={{ width: `${salesTable.colWidths.total_amount}px` }} className="px-3 py-3 text-right font-mono text-xs font-black truncate">{money(row.total_amount)}</td>
                       <td style={{ width: `${salesTable.colWidths._actions}px` }} className="py-4 px-2 text-center whitespace-nowrap overflow-hidden">
                         <div className="flex items-center justify-center gap-1.5 flex-nowrap" onClick={(e) => e.stopPropagation()}>

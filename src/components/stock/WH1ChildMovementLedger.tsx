@@ -64,7 +64,7 @@ export default function WH1ChildMovementLedger({
         type: "entry" as const,
         date: e.entryDate || product.entryDate || "—",
         voucherNo: e.voucherNo ? (e.voucherNo.startsWith("No.") ? e.voucherNo : `No. ${e.voucherNo}`) : "—",
-        party: e.customer || product.customer || "Supplier Arrival",
+        party: e.customer || product.customer || "—",
         plateNumber: e.plateNumber || product.plateNumber || "—",
         qtyIn,
         qtyProcessed: 0,

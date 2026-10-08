@@ -74,7 +74,7 @@ export interface BinCardMovementEntry {
   expiryDate: string
   mfgDate?: string
   proposedReleaseDate?: string
-  party: string
+  party?: string
   unitPrice?: number
   sellingPrice?: number
   remark: string
@@ -2444,7 +2444,7 @@ class ErpStore {
       qtyIssued: 0,
       balance: nextQty,
       expiryDate: "",
-      party: entry.customer || "Supplier Arrival",
+      party: entry.customer?.trim() || "",
       unitPrice,
       sellingPrice: effectiveSellingPrice,
       remark: entry.notes || `Goods Received Voucher ${entry.voucherNo ? `No. ${entry.voucherNo}` : ""}`.trim(),
@@ -2460,7 +2460,7 @@ class ErpStore {
         movement_type: "GRV_ENTRY",
         voucher_no: entry.voucherNo || null,
         batch_no: entry.voucherNo ? `GRV-${entry.voucherNo}` : "COMMODITY-WH1",
-        party_name: entry.customer || "Supplier Arrival",
+        party_name: entry.customer?.trim() || null,
         plate_number: entry.plateNumber || null,
         gross_quantity: qtyReceived,
         reject_quantity: 0,
@@ -2667,7 +2667,7 @@ class ErpStore {
           ...b,
           voucherNo: patch.voucherNo !== undefined ? patch.voucherNo : b.voucherNo,
           plateNumber: patch.plateNumber !== undefined ? patch.plateNumber : b.plateNumber,
-          party: patch.customer !== undefined ? (patch.customer || "Supplier Arrival") : b.party,
+          party: patch.customer !== undefined ? (patch.customer?.trim() || "") : b.party,
           qtyReceived: patch.quantityReceived !== undefined ? Number(patch.quantityReceived) : b.qtyReceived,
           unitPrice: patch.unitPrice !== undefined ? Number(patch.unitPrice) : b.unitPrice,
           sellingPrice: patch.sellingPrice !== undefined ? Number(patch.sellingPrice) : b.sellingPrice,
@@ -2683,7 +2683,7 @@ class ErpStore {
       try {
         await updateResource<any>("export_warehouse_movements", entryId, {
           voucher_no: u.voucherNo || null,
-          party_name: u.customer || "Supplier Arrival",
+          party_name: u.customer?.trim() || null,
           plate_number: u.plateNumber || null,
           gross_quantity: u.quantityReceived,
           net_quantity: u.quantityRemaining,
@@ -3171,7 +3171,7 @@ class ErpStore {
         reference_type: isRec ? "STOCK_RECEIPT" : isQuarantine ? "QUARANTINE" : "STOCK_ISSUE",
         reference_id: entry.voucherNo || newEntry.id,
         notes: entry.remark || entry.party || "Bin card transaction",
-        party: entry.party || (isRec ? "Supplier Receipt" : "Customer Dispatch"),
+        party: entry.party?.trim() || (isRec ? null : "Customer Dispatch"),
         performed_by: useAuthStore.getState().user?.fullname || "Warehouse Officer",
         movement_date: entry.date || new Date().toISOString().slice(0, 10),
       })
@@ -3184,7 +3184,7 @@ class ErpStore {
         movement_type: entry.type === "reject" ? "REJECT_DEDUCTION" : entry.type === "entry" ? "GRV_ENTRY" : "OUTBOUND_DISPATCH",
         voucher_no: entry.voucherNo || null,
         batch_no: entry.batchNo || "COMMODITY-WH1",
-        party_name: entry.party || (entry.type === "entry" ? "Supplier Arrival" : "Customer Dispatch"),
+        party_name: entry.party?.trim() || (entry.type === "entry" ? null : "Customer Dispatch"),
         plate_number: entry.plateNumber || null,
         gross_quantity: Number(entry.qtyReceived || entry.qtyIssued || 0),
         reject_quantity: entry.type === "reject" ? Number(entry.qtyIssued || 0) : 0,

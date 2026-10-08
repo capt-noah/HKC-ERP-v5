@@ -2,6 +2,7 @@ import { pool } from "../../db/client.js"
 import { withTransaction } from "../../db/transactionHelper.js"
 import { getTableColumns, normalizeBodyToDbColumns, sanitizeSqlValue, unwrapRow } from "../../db/dbUtils.js"
 import { getLocalDateString } from "../../utils/dateUtils.js"
+import { checkBatchDeletable } from "../governance/deletionGuardrails.js"
 
 export async function listBatches(query = {}) {
   let sql = "SELECT * FROM `pharma_product_batches`"
@@ -176,6 +177,15 @@ export async function updateBatch(id, updates = {}) {
 
 export async function deleteBatch(id) {
   const cleanId = String(id).trim()
+
+  // Guardrail: Prohibit deletion if batch has been sold/issued
+  const eligibility = await checkBatchDeletable(cleanId)
+  if (!eligibility.canDelete) {
+    return {
+      status: 403,
+      body: { error: eligibility.reason, isPermanentlyBlocked: true },
+    }
+  }
 
   return await withTransaction(async (conn) => {
     // 1. Fetch batch details before deletion

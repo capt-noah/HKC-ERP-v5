@@ -63,6 +63,8 @@ import { type HRData, loadHRData, money } from "@/lib/hrApi"
 import { loadResource } from "@/lib/apiPersistence"
 import { listSalesIssues, type SalesIssue } from "@/lib/salesIssuesApi"
 import { isExportWarehouse, isPharmaWarehouse } from "@/lib/warehouses"
+import { DeletionRequestsPanel } from "@/components/admin/DeletionRequestsPanel"
+import { useDeletionStore } from "@/lib/deletionStore"
 import { computeWH1SupplierQuality } from "@/lib/wh1QualityAnalytics"
 import { getExpiringItemsSummary } from "@/lib/expiryUtils"
 import { formatDateTimeDisplay, parseSafeDate } from "@/lib/dateUtils"
@@ -263,18 +265,24 @@ export default function ControlCenter() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const tabParam = searchParams.get("tab")
-  const initialTab = tabParam === "approvals" || tabParam === "logs" || tabParam === "overview" ? tabParam : "overview"
+  const initialTab = tabParam === "approvals" || tabParam === "logs" || tabParam === "overview" || tabParam === "deletions" ? tabParam : "overview"
   const chartParam = searchParams.get("chart")
   const initialChart = chartParam === "profit" || chartParam === "quality" || chartParam === "inventory" || chartParam === "revenue" ? chartParam : "revenue"
-  const [activeTab, setActiveTab] = useState<"overview" | "logs" | "approvals">(initialTab)
+  const [activeTab, setActiveTab] = useState<"overview" | "logs" | "approvals" | "deletions">(initialTab)
   const [chartMode, setChartMode] = useState<"revenue" | "profit" | "inventory" | "quality">(initialChart)
   const [qualityWarehouseFilter, setQualityWarehouseFilter] = useState<string>("all")
   const [qualityProductFilter, setQualityProductFilter] = useState<string>("all")
   const [adminExpiryTier, setAdminExpiryTier] = useState<"ALL" | "CRITICAL" | "WARNING" | "EXPIRED">("ALL")
   const [adminExpiryWarehouse, setAdminExpiryWarehouse] = useState<string>("ALL")
 
+  const { pendingCount: pendingDeletionCount, fetchRequests: fetchDeletionRequests } = useDeletionStore()
+
   useEffect(() => {
-    if (tabParam === "approvals" || tabParam === "logs" || tabParam === "overview") {
+    fetchDeletionRequests()
+  }, [fetchDeletionRequests])
+
+  useEffect(() => {
+    if (tabParam === "approvals" || tabParam === "logs" || tabParam === "overview" || tabParam === "deletions") {
       setActiveTab(tabParam)
     }
   }, [tabParam])
@@ -285,7 +293,7 @@ export default function ControlCenter() {
     }
   }, [chartParam])
 
-  const handleTabChange = (newTab: "overview" | "logs" | "approvals") => {
+  const handleTabChange = (newTab: "overview" | "logs" | "approvals" | "deletions") => {
     setActiveTab(newTab)
     const nextParams: Record<string, string> = { tab: newTab }
     if (chartMode !== "revenue") nextParams.chart = chartMode
@@ -1306,6 +1314,21 @@ export default function ControlCenter() {
             {pendingOrders.length > 0 && (
               <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white leading-none shadow-xs">
                 {pendingOrders.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => handleTabChange("deletions")}
+            className={cn(
+              "px-3.5 sm:px-4 py-2 sm:py-2.5 text-[11px] sm:text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 whitespace-nowrap shrink-0 active:scale-95 cursor-pointer",
+              activeTab === "deletions" ? "bg-zinc-900 text-white shadow-sm" : "text-gray-500 hover:text-black hover:bg-black/5"
+            )}
+          >
+            <ShieldAlert className="size-4 shrink-0" />
+            Deletion Requests
+            {pendingDeletionCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white leading-none shadow-xs">
+                {pendingDeletionCount}
               </span>
             )}
           </button>
@@ -3408,6 +3431,11 @@ export default function ControlCenter() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Tab Content 4: Deletion Requests */}
+        {activeTab === "deletions" && (
+          <DeletionRequestsPanel />
         )}
 
       {/* Document Preview Modal */}

@@ -234,7 +234,7 @@ export default function Invoices() {
 
   // Aggregates
   const totalReceivables = useMemo(() => {
-    return invoices.reduce((acc, inv) => acc + (inv.total || 0), 0)
+    return invoices.reduce((acc, inv) => acc + Number(inv.total_amount ?? inv.total ?? 0), 0)
   }, [invoices])
 
   const totalCollected = useMemo(() => {
@@ -244,13 +244,13 @@ export default function Invoices() {
   const totalOutstandingDue = useMemo(() => {
     return invoices.reduce((acc, inv) => {
       const paid = inv.amount_paid || 0
-      const total = inv.total || 0
+      const total = Number(inv.total_amount ?? inv.total ?? 0)
       return acc + Math.max(0, total - paid)
     }, 0)
   }, [invoices])
 
   const activeCount = useMemo(() => {
-    return invoices.filter((i) => (i.balance_due ?? i.total) > 0).length
+    return invoices.filter((i) => (i.balance_due ?? Number(i.total_amount ?? i.total ?? 0)) > 0).length
   }, [invoices])
 
   // Add line item in creation form
@@ -324,7 +324,7 @@ export default function Invoices() {
     setEditingInvoice(inv)
     setEditCustName(inv.customer_name || inv.supplier_name || "")
     const paid = Number(inv.amount_paid || 0)
-    const total = Number(inv.total || 0)
+    const total = Number(inv.total_amount ?? inv.total ?? 0)
     const due = Number(Math.max(0, total - paid).toFixed(2))
 
     setEditPayAmount(due > 0 ? String(due) : "")
@@ -344,7 +344,7 @@ export default function Invoices() {
     const isPurchase = editingInvoice.invoice_type === "Purchase" || editingInvoice.party_type === "Supplier" || Boolean(editingInvoice.purchase_order_id)
     const numPay = parseFloat(editPayAmount)
     const hasPayment = !isNaN(numPay) && numPay > 0
-    const totalVal = Number(editingInvoice.total || 0)
+    const totalVal = Number(editingInvoice.total_amount ?? editingInvoice.total ?? 0)
     const alreadyPaid = Number(editingInvoice.amount_paid || 0)
     const currentDue = Number(Math.max(0, totalVal - alreadyPaid).toFixed(2))
 
@@ -580,7 +580,7 @@ export default function Invoices() {
 
                   <div className="flex items-center gap-2">
                     {(() => {
-                      const totalVal = Number(activeInvoice.total ?? 0)
+                      const totalVal = Number(activeInvoice.total_amount ?? activeInvoice.total ?? 0)
                       const paidVal = Number(activeInvoice.amount_paid ?? 0)
                       const dueVal = Number(activeInvoice.balance_due ?? Math.max(0, totalVal - paidVal))
                       const pct = totalVal > 0 ? Math.min(100, Math.round((paidVal / totalVal) * 100)) : 0
@@ -627,7 +627,7 @@ export default function Invoices() {
 
                 {/* Itemized Table & Financial Summary */}
                 {(() => {
-                  const totalVal = Number(activeInvoice.total ?? 0)
+                  const totalVal = Number(activeInvoice.total_amount ?? activeInvoice.total ?? 0)
                   const lineItemsSum = (activeInvoice.line_items || []).reduce((s, i) => s + (Number(i.line_total) || (Number(i.quantity) * Number(i.unit_price)) || 0), 0)
                   const subtotalVal = Number(activeInvoice.subtotal !== undefined ? activeInvoice.subtotal : (lineItemsSum > 0 ? lineItemsSum : totalVal))
                   const discVal = Number(activeInvoice.discount_amount ?? 0)
@@ -800,6 +800,17 @@ export default function Invoices() {
                     const isPurchase = activeInvoice.invoice_type === "Purchase" || Boolean(activeInvoice.purchase_order_id)
                     const isCredit = (activeInvoice.payment_terms || "").toLowerCase().includes("credit") || Number(activeInvoice.balance_due || 0) > 0
 
+                    const isServiceInvoice =
+                      (activeInvoice as any).issue_type === "PROCESSING_SERVICE" ||
+                      String(activeInvoice.warehouse_id || "").toUpperCase().includes("PROCESSING") ||
+                      String(activeInvoice.id || "").startsWith("INV-PS-") ||
+                      activeInvoice.line_items?.some((item: any) =>
+                        (item.description || "").toLowerCase().includes("processing") ||
+                        (item.description || "").toLowerCase().includes("cleaning") ||
+                        (item.item_name || "").toLowerCase().includes("processing") ||
+                        (item.item_name || "").toLowerCase().includes("cleaning")
+                      )
+
                     const isExportWh =
                       String(activeInvoice.warehouse_id || "").toUpperCase().startsWith("WH1") ||
                       String(activeInvoice.warehouse_id || "").toUpperCase().includes("EXP") ||
@@ -842,8 +853,8 @@ export default function Invoices() {
                       }
                     }
 
-                    let cogsDebits = dist?.cogs_lines?.filter((l) => Number(l.debit) > 0) || cogsLines.filter((l) => Number(l.debit_amount) > 0)
-                    let cogsCredits = dist?.cogs_lines?.filter((l) => Number(l.credit) > 0) || cogsLines.filter((l) => Number(l.credit_amount) > 0)
+                    let cogsDebits = isServiceInvoice ? [] : (dist?.cogs_lines?.filter((l) => Number(l.debit) > 0) || cogsLines.filter((l) => Number(l.debit_amount) > 0))
+                    let cogsCredits = isServiceInvoice ? [] : (dist?.cogs_lines?.filter((l) => Number(l.credit) > 0) || cogsLines.filter((l) => Number(l.credit_amount) > 0))
 
                     // Provide standard defaults if lines are empty so accounts are always shown clearly
                     if (revDebits.length === 0 && revCredits.length === 0) {
@@ -860,26 +871,40 @@ export default function Invoices() {
                         revDebits = [{
                           account_code: defaultStockAcc?.code || (isExport ? "1410-01" : "1400-01"),
                           account_name: defaultStockAcc?.name || (isExport ? "STOCK OF GREEN MUNG" : "STOCK OF VETERINARY DRUG"),
-                          debit: activeInvoice.total,
+                          debit: Number(activeInvoice.total_amount ?? activeInvoice.total ?? 0),
                         }] as any
                         revCredits = [{
                           account_code: defaultPayableAcc?.code || (isCredit ? "2100-06" : "1000-02-26"),
                           account_name: defaultPayableAcc?.name || (isCredit ? "Other Accruals & Payables" : "CBE Bank Operating"),
-                          credit: activeInvoice.total,
+                          credit: Number(activeInvoice.total_amount ?? activeInvoice.total ?? 0),
                         }] as any
+                      } else if (isServiceInvoice) {
+                        const defaultArCode = isCredit ? "1300-05" : "1000-02-26"
+                        const defaultArName = isCredit ? "Cleaning Service Receivable" : "CBE Bank Operating"
+                        const defaultRevCode = "4000-03-02"
+                        const defaultRevName = "Cleaning and Grading Service Revenue"
+                        const invGrandTotal = Number(activeInvoice.total_amount ?? activeInvoice.total ?? 0)
+                        const invSub = Number(activeInvoice.subtotal ?? (Number(activeInvoice.tax_amount || 0) > 0 ? Math.max(0, invGrandTotal - Number(activeInvoice.tax_amount || 0)) : invGrandTotal))
+                        revDebits = [{ account_code: defaultArCode, account_name: defaultArName, debit: invGrandTotal }] as any
+                        const defCredits: any[] = [{ account_code: defaultRevCode, account_name: defaultRevName, credit: invSub }]
+                        if (Number(activeInvoice.tax_amount || 0) > 0) {
+                          defCredits.push({ account_code: "2000-05", account_name: "VAT Output Payable (15%)", credit: Number(activeInvoice.tax_amount) })
+                        }
+                        revCredits = defCredits as any
                       } else {
                         const defaultArCode = isExport ? "1300-01" : "1300-03"
                         const defaultRevCode = isExport ? "4000-02-01" : "4000-01-01"
-                        revDebits = [{ account_code: defaultArCode, account_name: isExport ? "EXPORT SALES RECIVEABLE" : "VET MEDICEN SALES RECIVABLE", debit: activeInvoice.total }] as any
-                        const defCredits: any[] = [{ account_code: defaultRevCode, account_name: isExport ? "Revenue - Export Commodities" : "Sales Revenue - Pharmaceuticals", credit: activeInvoice.subtotal || activeInvoice.total }]
+                        const invGrandTotal = Number(activeInvoice.total_amount ?? activeInvoice.total ?? 0)
+                        revDebits = [{ account_code: defaultArCode, account_name: isExport ? "EXPORT SALES RECIVEABLE" : "VET MEDICEN SALES RECIVABLE", debit: invGrandTotal }] as any
+                        const defCredits: any[] = [{ account_code: defaultRevCode, account_name: isExport ? "Revenue - Export Commodities" : "Sales Revenue - Pharmaceuticals", credit: activeInvoice.subtotal || invGrandTotal }]
                         if (Number(activeInvoice.tax_amount || 0) > 0) {
-                          defCredits.push({ account_code: "2000-05", account_name: "VAT Output Payable (15%)", credit: activeInvoice.tax_amount })
+                          defCredits.push({ account_code: "2000-05", account_name: "VAT Output Payable (15%)", credit: Number(activeInvoice.tax_amount) })
                         }
                         revCredits = defCredits as any
                       }
                     }
 
-                    if (!isPurchase && cogsDebits.length === 0 && cogsCredits.length === 0) {
+                    if (!isPurchase && !isServiceInvoice && cogsDebits.length === 0 && cogsCredits.length === 0) {
                       const defaultCogsCode = isExport ? "5010-01" : "5000-01"
                       const defaultCogsName = isExport ? "Cost of Goods Sold - Export" : "Cost of Goods Sold - Pharmaceuticals"
                       const defaultStockCode = isExport ? "1410-01" : "1400-01"
@@ -947,8 +972,8 @@ export default function Invoices() {
                           </div>
                         </div>
 
-                        {/* Section B: COGS & Inventory (Only for Sales Invoices) */}
-                        {!isPurchase && (
+                        {/* Section B: COGS & Inventory (Only for Physical Goods Sales Invoices) */}
+                        {!isPurchase && !isServiceInvoice && (
                           <div className="bg-white rounded-xl border border-zinc-200 p-3 space-y-2">
                             <div className="text-[10px] font-black uppercase tracking-wider text-zinc-500">
                               Section B: Inventory & Cost of Goods Sold (COGS)
@@ -1215,7 +1240,7 @@ export default function Invoices() {
                   const isSelected = activeInvoice?.id === inv.id
                   const isPurchase = (inv.invoice_type || (inv.purchase_order_id ? "Purchase" : "Sales")) === "Purchase"
                   const partyName = inv.supplier_name || inv.customer_name || "Partner"
-                  const totalAmt = Number(inv.total || 0)
+                  const totalAmt = Number(inv.total_amount ?? inv.total ?? 0)
                   const paidAmt = Number(inv.amount_paid || 0)
                   const dueAmt = Number(inv.balance_due ?? Math.max(0, totalAmt - paidAmt))
                   const pct = totalAmt > 0 ? Math.min(100, Math.round((paidAmt / totalAmt) * 100)) : 0
@@ -1301,7 +1326,7 @@ export default function Invoices() {
               />
 
               {(() => {
-                const totalAmt = Number(editingInvoice.total || 0)
+                const totalAmt = Number(editingInvoice.total_amount ?? editingInvoice.total ?? 0)
                 const paidAmt = Number(editingInvoice.amount_paid || 0)
                 const dueAmt = Number(Math.max(0, totalAmt - paidAmt).toFixed(2))
                 const currentInputAmt = parseFloat(editPayAmount) || 0

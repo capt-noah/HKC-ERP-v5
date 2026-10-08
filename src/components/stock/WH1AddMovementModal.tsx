@@ -58,7 +58,7 @@ export default function WH1AddMovementModal({
   const [voucherNo, setVoucherNo] = useState("")
   const [customer, setCustomer] = useState("")
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
-  const [saveSupplierToRegistry, setSaveSupplierToRegistry] = useState(true)
+  const [saveSupplierToRegistry, setSaveSupplierToRegistry] = useState(false)
   const [plateNumber, setPlateNumber] = useState("")
   const [packagingUnit, setPackagingUnit] = useState("Quintal")
   const [quantity, setQuantity] = useState("")
@@ -83,20 +83,11 @@ export default function WH1AddMovementModal({
 
   useEffect(() => {
     if (isOpen && product) {
-      const parentSupplier =
-        product.customer ||
-        product.supplierName ||
-        (product.wh1Entries && product.wh1Entries.length > 0
-          ? product.wh1Entries.find((e) => Boolean(e.customer))?.customer || (product.wh1Entries[0] as any)?.customer
-          : "") ||
-        (erp.getSuppliers().length === 1 ? erp.getSuppliers()[0].name : "") ||
-        ""
-
       setActiveTab("entry")
       setVoucherNo("")
-      setCustomer(parentSupplier)
+      setCustomer("")
       setShowSupplierDropdown(false)
-      setSaveSupplierToRegistry(true)
+      setSaveSupplierToRegistry(false)
       setPlateNumber(product.plateNumber || "")
       setPackagingUnit(product.unit || "Quintal")
       setQuantity("")
@@ -105,30 +96,10 @@ export default function WH1AddMovementModal({
       setEntryDate(new Date().toISOString().slice(0, 10))
       setNotes("")
 
-      // Associated suppliers for this product
-      const itemSuppliers = Array.from(
-        new Set(
-          [
-            product.customer,
-            product.supplierName,
-            ...(product.wh1Entries || []).map((e: any) => e.party || e.customer),
-          ]
-            .filter((s): s is string => Boolean(s && s.trim()))
-            .map((s) => s.trim())
-        )
-      )
-      const defaultSupplier =
-        parentSupplier ||
-        (itemSuppliers.length === 1
-          ? itemSuppliers[0]
-          : itemSuppliers.length === 0 && erp.getSuppliers().length === 1
-          ? erp.getSuppliers()[0].name
-          : "")
-
       // Reset Reject fields
       setRejectDate(new Date().toISOString().slice(0, 10))
       setRejectQuantity("")
-      setRejectParty(defaultSupplier)
+      setRejectParty("")
       setShowRejectSupplierDropdown(false)
       setRejectNotes("")
 
@@ -261,7 +232,7 @@ export default function WH1AddMovementModal({
     try {
       await onSaveReject(product.id, {
         date: rejectDate,
-        party: rejectParty.trim() || product.customer || product.supplierName || "Direct Supplier",
+        party: rejectParty.trim() || undefined,
         rejectQuantity: rawQty,
         reason: "Reject / Cleaning Loss",
         notes: rejectNotes.trim() || undefined,

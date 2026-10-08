@@ -197,56 +197,60 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
 
   // AUTOMATED REVENUE RECOGNITION WHEN STAGE REACHES 'Delivered'
   if (targetStage === "Delivered" && !invoiceId) {
-    invoiceId = `INV-PS-${id}`
-    journalEntry = generateProcessingServiceRevenueJournalEntry({ ...existing, id, agreed_price: agreedPrice })
+    if (extraData.salesIssueId || extraData.fsNo) {
+      // Delivered through authoritative Sales Issue: link to the sales issue invoice and skip stub invoice / JE generation
+      invoiceId = `INV-SI-${extraData.fsNo || extraData.salesIssueId}`
+    } else {
+      invoiceId = `INV-PS-${id}`
+      journalEntry = generateProcessingServiceRevenueJournalEntry({ ...existing, id, agreed_price: agreedPrice })
 
-    // Save invoice via Drizzle CRUD
-    try {
-      const clientName = existing.client_company_name || existing.clientCompanyName || "Client Company"
-      const refNum = existing.reference_number || existing.referenceNumber || id
-      const invoicePayload = {
-        id: invoiceId,
-        invoice_number: invoiceId,
-        customer_name: clientName,
-        customer: clientName,
-        issue_date: new Date().toISOString().split("T")[0],
-        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-        line_items: [
-          {
-            description: `Toll processing & storage fee for ${existing.goods_description || existing.goodsDescription} (${existing.quantity} ${existing.uom})`,
-            quantity: Number(existing.quantity || 1),
-            qty: Number(existing.quantity || 1),
-            unit_price: Number(agreedPrice || 0) / Number(existing.quantity || 1),
-            line_total: Number(agreedPrice || 0),
-            total: Number(agreedPrice || 0),
-          }
-        ],
-        subtotal: Number(agreedPrice || 0),
-        tax_amount: 0,
-        tax_rate: 0,
-        discount_amount: 0,
-        total: Number(agreedPrice || 0),
-        total_amount: Number(agreedPrice || 0),
-        amount_paid: 0,
-        balance_due: Number(agreedPrice || 0),
-        status: "Unpaid",
-        settlement_status: "Unpaid",
-        payment_terms: "Credit (Net 30)",
-        currency: "ETB",
-        sales_order_id: id,
-        fs_no: refNum,
+      // Save invoice via Drizzle CRUD
+      try {
+        const clientName = existing.client_company_name || existing.clientCompanyName || "Client Company"
+        const refNum = existing.reference_number || existing.referenceNumber || id
+        const invoicePayload = {
+          id: invoiceId,
+          invoice_number: invoiceId,
+          customer_name: clientName,
+          customer: clientName,
+          issue_date: new Date().toISOString().split("T")[0],
+          due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+          line_items: [
+            {
+              description: `Toll processing & storage fee for ${existing.goods_description || existing.goodsDescription} (${existing.quantity} ${existing.uom})`,
+              quantity: Number(existing.quantity || 1),
+              qty: Number(existing.quantity || 1),
+              unit_price: Number(agreedPrice || 0) / Number(existing.quantity || 1),
+              line_total: Number(agreedPrice || 0),
+              total: Number(agreedPrice || 0),
+            }
+          ],
+          subtotal: Number(agreedPrice || 0),
+          tax_amount: 0,
+          tax_rate: 0,
+          discount_amount: 0,
+          total: Number(agreedPrice || 0),
+          total_amount: Number(agreedPrice || 0),
+          amount_paid: 0,
+          balance_due: Number(agreedPrice || 0),
+          status: "Unpaid",
+          settlement_status: "Unpaid",
+          payment_terms: "Credit (Net 30)",
+          currency: "ETB",
+          sales_order_id: id,
+          fs_no: refNum,
+        }
+
+        const invResource = getResource("invoices")
+        await drizzleCreateRow({ resource: invResource, body: invoicePayload })
+      } catch (err) {
+        console.warn("Failed to persist service invoice via Drizzle:", err.message)
       }
 
-      const invResource = getResource("invoices")
-      await drizzleCreateRow({ resource: invResource, body: invoicePayload })
-    } catch (err) {
-      console.warn("Failed to persist service invoice via Drizzle:", err.message)
-    }
-
-    // Save journal entry & lines via Drizzle CRUD
-    try {
-      const jeResource = getResource("journal_entries")
-      const jelResource = getResource("journal_entry_lines")
+      // Save journal entry & lines via Drizzle CRUD
+      try {
+        const jeResource = getResource("journal_entries")
+        const jelResource = getResource("journal_entry_lines")
 
       await drizzleCreateRow({
         resource: jeResource,
@@ -288,6 +292,7 @@ export async function transitionProcessingServiceStage(id, targetStage, extraDat
       console.warn("Failed to persist service journal entry via Drizzle:", err.message)
     }
   }
+}
 
   const patchBody = {
     status: targetStage,

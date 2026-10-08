@@ -3,6 +3,7 @@ import { withTransaction } from "../../db/transactionHelper.js"
 import { getTableColumns, normalizeBodyToDbColumns, sanitizeSqlValue, unwrapRow } from "../../db/dbUtils.js"
 import { getLocalDateString } from "../../utils/dateUtils.js"
 import { isExportWarehouse } from "../../utils/warehouseUtils.js"
+import { checkProductDeletable } from "../governance/deletionGuardrails.js"
 
 export async function listProducts(query = {}) {
   const warehouse = query.warehouse || query.warehouse_id || query.warehouseId
@@ -97,7 +98,7 @@ function hydrateExportProduct(productRow, movements = []) {
       qtyIssued,
       balance: Number(unwrapped.quantity || 0),
       expiryDate: "",
-      party: r.partyName || (isReject ? "Cleaning Loss Deduction" : isEntry ? "Supplier Arrival" : "Customer Dispatch"),
+      party: r.partyName || (isReject ? "Cleaning Loss Deduction" : isEntry ? "" : "Customer Dispatch"),
       unitPrice: Number(r.unit_price ?? r.unitPrice ?? r.unit_cost ?? r.unitCost ?? 0),
       sellingPrice: !isReject && (r.sellingPrice != null || r.selling_price != null) ? Number(r.sellingPrice ?? r.selling_price) : (unwrapped.sellingPrice != null ? Number(unwrapped.sellingPrice) : undefined),
       remark: r.reason || (isReject ? "Reject / Cleaning Loss" : isEntry ? "Goods Receipt Voucher" : "Customer Dispatch"),
@@ -277,7 +278,7 @@ export async function createProduct(body = {}) {
         const movementId = clientEntry?.entryId || clientEntry?.id || body.movement_id || body.movementId || body.entryId || `EWM-INIT-${prodId}-${Date.now()}`
         const voucherNo = clientEntry?.voucherNo || body.voucher_no || body.voucherNo || normalized.voucher_no || null
         const plateNumber = clientEntry?.plateNumber || body.plate_number || body.plateNumber || body.truck_plate || body.truckPlate || normalized.plate_number || null
-        const partyName = clientEntry?.customer || body.party_name || body.supplier_name || body.supplierName || body.driver_name || body.driverName || body.customer || normalized.supplier_name || "Supplier Arrival"
+        const partyName = clientEntry?.customer || body.party_name || body.supplier_name || body.supplierName || body.driver_name || body.driverName || body.customer || normalized.supplier_name || null
         const entryUnitPrice = (clientEntry?.unitPrice != null && Number(clientEntry.unitPrice) >= 0) ? Number(clientEntry.unitPrice) : unitCost
         const entryReason = clientEntry?.notes || body.reason || body.notes || "Initial Stock Registration"
         const entryDate = clientEntry?.entryDate || body.entryDate || todayStr
@@ -353,7 +354,7 @@ export async function createProduct(body = {}) {
             "STOCK_RECEIPT",
             batchNo,
             "Initial Stock Registration",
-            body.supplierName || body.supplier_name || body.party || "Initial Stock Deposit",
+            body.supplierName || body.supplier_name || body.party || null,
             body.performedBy || body.createdBy || "Warehouse Officer",
             normalized.mfg_date || todayStr,
           ]
@@ -563,6 +564,15 @@ export async function updateProduct(id, updates = {}) {
 
 export async function deleteProduct(id) {
   const cleanId = String(id).trim()
+
+  // Guardrail: Prohibit deletion if product has any sales transactions
+  const eligibility = await checkProductDeletable(cleanId)
+  if (!eligibility.canDelete) {
+    return {
+      status: 403,
+      body: { error: eligibility.reason, isPermanentlyBlocked: true },
+    }
+  }
 
   return await withTransaction(async (conn) => {
     // 0. Query product info & batch IDs to cascade accounting cleanup
