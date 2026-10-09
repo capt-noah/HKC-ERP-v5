@@ -12,8 +12,8 @@ interface SubPageNavProps {
 }
 
 const sectionRoleMapping: Record<string, Role[]> = {
-  Sales: ["superadmin", "sales", "hkc_docs"],
-  "HKC Docs": ["superadmin", "sales", "hkc_docs"],
+  Sales: ["superadmin", "sales"],
+  "HKC Docs": ["superadmin", "hkc_docs"],
   Inventory: ["superadmin", "inventory"],
   Finance: ["superadmin", "finance"],
   HR: ["superadmin", "hr"],
