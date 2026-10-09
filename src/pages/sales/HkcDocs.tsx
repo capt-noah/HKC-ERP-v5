@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
 import { Plus } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -6,12 +7,18 @@ import { navSections } from "@/lib/nav-config"
 import { FinanceTableToolbar } from "@/components/FinanceTableToolbar"
 import type { HkcDocRecord } from "@/lib/erpStore"
 import { loadHkcDocRecords } from "@/lib/hkcDocsApi"
+import { useAuthStore, normalizeRole } from "@/lib/authStore"
 import HkcDocsTable from "@/components/hkcDocs/HkcDocsTable"
 import HkcDocAddModal from "@/components/hkcDocs/HkcDocAddModal"
 import HkcDocEditModal from "@/components/hkcDocs/HkcDocEditModal"
 import { useFeedback } from "@/context/FeedbackContext"
 
 export default function HkcDocs() {
+  const navigate = useNavigate()
+  const { user } = useAuthStore()
+  const userRoles = (user?.roles || ((user as any)?.role ? [(user as any).role] : [])).map(normalizeRole)
+  const isAllowed = userRoles.includes("superadmin") || userRoles.includes("hkc_docs")
+
   const { showToast } = useFeedback()
   const [records, setRecords] = useState<HkcDocRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -36,8 +43,16 @@ export default function HkcDocs() {
   }
 
   useEffect(() => {
+    if (!isAllowed) {
+      navigate("/sales", { replace: true })
+      return
+    }
     void fetchRecords()
-  }, [])
+  }, [isAllowed, navigate])
+
+  if (!isAllowed) {
+    return null
+  }
 
   const handleSaveSuccess = (record: HkcDocRecord) => {
     // If it's a new record (not existing in state), add it; otherwise update it
