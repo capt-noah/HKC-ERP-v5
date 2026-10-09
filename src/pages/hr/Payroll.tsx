@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   BadgeCheck,
   Calendar,
@@ -120,6 +120,128 @@ export default function Payroll() {
   const [paymentModalRecords, setPaymentModalRecords] = useState<PayrollRecord[] | null>(null)
   const [isPaying, setIsPaying] = useState(false)
 
+  const isEnsuringRef = useRef(false)
+
+  const ensureActiveEmployeesForPeriod = async (
+    targetMonth: number,
+    targetYear: number,
+    currentEmps?: Employee[],
+    currentPeriods?: PayrollPeriod[],
+    currentRecs?: PayrollRecord[]
+  ) => {
+    if (isEnsuringRef.current) return
+    isEnsuringRef.current = true
+
+    try {
+      const empsList = currentEmps || employees
+      const periodsList = currentPeriods || periods
+      const recsList = currentRecs || records
+
+      const activeEmployees = empsList.filter((employee) => employee.status === "Active")
+      if (activeEmployees.length === 0) {
+        return
+      }
+
+      let period = periodsList.find(
+        (p) => Number(p.month) === targetMonth && Number(p.year) === targetYear
+      )
+
+      // 1. If period does not exist in DB for this month & year, auto-create it now
+      if (!period) {
+        const monthName = MONTH_NAMES[targetMonth - 1]
+        const periodName = `${monthName} ${targetYear}`
+        const startDate = new Date(targetYear, targetMonth - 1, 1).toISOString().slice(0, 10)
+        const endDate = new Date(targetYear, targetMonth, 0).toISOString().slice(0, 10)
+
+        const newPeriodPayload = {
+          id: makeId("PER"),
+          name: periodName,
+          month: targetMonth,
+          year: targetYear,
+          start_date: startDate,
+          end_date: endDate,
+          status: "Draft",
+        }
+
+        period = await hrApi.createPayrollPeriod(newPeriodPayload)
+      }
+
+      // Existing records for this period
+      const existingPeriodRecords = recsList.filter((r) => r.payroll_period_id === period!.id)
+      const missing = activeEmployees.filter(
+        (employee) => !existingPeriodRecords.some((record) => record.employee_id === employee.id)
+      )
+
+      // Check for pending records where basic salary in employee master changed
+      const empMap = new Map(empsList.map((e) => [e.id, e]))
+      const pendingToUpdate = existingPeriodRecords.filter((record) => {
+        if (record.payment_status !== "Pending") return false
+        const emp = empMap.get(record.employee_id)
+        if (!emp) return false
+        return Number(record.basic_salary || 0) !== Number(emp.basic_salary || 0)
+      })
+
+      if (missing.length === 0 && pendingToUpdate.length === 0) {
+        return
+      }
+
+      const createPromises = missing.map((employee) =>
+        hrApi.createPayrollRecord(blankRecord(employee, period!.id))
+      )
+
+      const s = financeStore.getCompanySettings()
+      const pensionConfig = {
+        employeeRatePercent: s.pension_employee_rate ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.employeeRatePercent,
+        employerRatePercent: s.pension_employer_rate ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.employerRatePercent,
+        expatExempt: s.pension_expat_exempt ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.expatExempt,
+      }
+      const taxBrackets =
+        s.tax_brackets_config && s.tax_brackets_config.length > 0
+          ? s.tax_brackets_config
+          : DEFAULT_ETHIOPIAN_TAX_BRACKETS
+
+      const updatePromises = pendingToUpdate.map((record) => {
+        const emp = empMap.get(record.employee_id)!
+        const newSalary = Number(emp.basic_salary || 0)
+        const calculated = calculateEthiopianPayroll({
+          basicSalary: newSalary,
+          taxableAllowances: Number(record.taxable_allowances ?? record.allowances ?? 0),
+          nonTaxableAllowances: Number(record.non_taxable_allowances || 0),
+          overtimePay: Number(record.overtime_pay || 0),
+          bonus: Number(record.bonus || 0),
+          otherEarnings: Number(record.other_earnings || 0),
+          absenceDeduction: Number(record.absence_deduction || 0),
+          loanDeduction: Number(record.loan_deduction || 0),
+          otherDeductions: Number(record.other_deductions || 0),
+          pensionConfig,
+          taxBrackets,
+        })
+
+        return hrApi.updatePayrollRecord(record.id, {
+          ...record,
+          basic_salary: newSalary,
+          pension: calculated.employeePension,
+          tax: calculated.incomeTaxDeducted,
+          gross_pay: calculated.grossSalary,
+          total_deductions: calculated.totalEmployeeDeductions,
+          net_pay: calculated.netTakeHomePay,
+        })
+      })
+
+      await Promise.all([...createPromises, ...updatePromises])
+
+      // Refresh data silently to update state
+      const freshData = await loadHRData()
+      setEmployees(freshData.employees)
+      setPeriods(freshData.payrollPeriods)
+      setRecords(freshData.payrollRecords)
+    } catch (err) {
+      console.warn("[Payroll auto-load notice]:", err)
+    } finally {
+      isEnsuringRef.current = false
+    }
+  }
+
   const refresh = async () => {
     setLoading(true)
     setError("")
@@ -132,6 +254,7 @@ export default function Payroll() {
       setPeriods(data.payrollPeriods)
       setRecords(data.payrollRecords)
       setWarehouses(withOperatingWarehouses(whData || []))
+      void ensureActiveEmployeesForPeriod(selectedMonth, selectedYear, data.employees, data.payrollPeriods, data.payrollRecords)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load payroll.")
     } finally {
@@ -142,6 +265,12 @@ export default function Payroll() {
   useEffect(() => {
     void refresh()
   }, [])
+
+  useEffect(() => {
+    if (employees.length > 0) {
+      void ensureActiveEmployeesForPeriod(selectedMonth, selectedYear)
+    }
+  }, [selectedMonth, selectedYear])
 
   const employeeById = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees])
   const periodById = useMemo(() => new Map(periods.map((period) => [period.id, period])), [periods])
@@ -301,114 +430,7 @@ export default function Payroll() {
     Object.fromEntries(columns.map((col) => [col.key, col.initialWidth || 130]))
   )
 
-  /**
-   * Flow: HR manager chooses Month/Year from dropdown -> clicks "+ Load Active Employees".
-   * Auto-ensures payroll_periods record exists in MySQL DB for the chosen month/year.
-   * Auto-creates statutory payroll records for active employees in MySQL DB.
-   * Auto-syncs salary changes from employee profiles for pending records.
-   * 100% DB persistence.
-   */
-  const loadActiveEmployees = async () => {
-    try {
-      let period = currentPeriod
 
-      // 1. If period does not exist in DB for this month & year, auto-create it now
-      if (!period) {
-        const monthName = MONTH_NAMES[selectedMonth - 1]
-        const periodName = `${monthName} ${selectedYear}`
-        const startDate = new Date(selectedYear, selectedMonth - 1, 1).toISOString().slice(0, 10)
-        const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().slice(0, 10)
-
-        const newPeriodPayload = {
-          id: makeId("PER"),
-          name: periodName,
-          month: selectedMonth,
-          year: selectedYear,
-          start_date: startDate,
-          end_date: endDate,
-          status: "Draft",
-        }
-
-        period = await hrApi.createPayrollPeriod(newPeriodPayload)
-      }
-
-      const activeEmployees = employees.filter((employee) => employee.status === "Active")
-      if (activeEmployees.length === 0) {
-        showToast("No Active Employees", "warning", "There are no active employees currently registered in the system.")
-        await refresh()
-        return
-      }
-
-      // Existing records for this period
-      const existingPeriodRecords = records.filter((r) => r.payroll_period_id === period!.id)
-      const missing = activeEmployees.filter(
-        (employee) => !existingPeriodRecords.some((record) => record.employee_id === employee.id)
-      )
-
-      // Check for pending records where basic salary in employee master changed
-      const pendingToUpdate = existingPeriodRecords.filter((record) => {
-        if (record.payment_status !== "Pending") return false
-        const emp = employeeById.get(record.employee_id)
-        if (!emp) return false
-        return Number(record.basic_salary || 0) !== Number(emp.basic_salary || 0)
-      })
-
-      const createPromises = missing.map((employee) =>
-        hrApi.createPayrollRecord(blankRecord(employee, period!.id))
-      )
-
-      const s = financeStore.getCompanySettings()
-      const pensionConfig = {
-        employeeRatePercent: s.pension_employee_rate ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.employeeRatePercent,
-        employerRatePercent: s.pension_employer_rate ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.employerRatePercent,
-        expatExempt: s.pension_expat_exempt ?? DEFAULT_ETHIOPIAN_PENSION_CONFIG.expatExempt,
-      }
-      const taxBrackets =
-        s.tax_brackets_config && s.tax_brackets_config.length > 0
-          ? s.tax_brackets_config
-          : DEFAULT_ETHIOPIAN_TAX_BRACKETS
-
-      const updatePromises = pendingToUpdate.map((record) => {
-        const emp = employeeById.get(record.employee_id)!
-        const newSalary = Number(emp.basic_salary || 0)
-        const calculated = calculateEthiopianPayroll({
-          basicSalary: newSalary,
-          taxableAllowances: Number(record.taxable_allowances ?? record.allowances ?? 0),
-          nonTaxableAllowances: Number(record.non_taxable_allowances || 0),
-          overtimePay: Number(record.overtime_pay || 0),
-          bonus: Number(record.bonus || 0),
-          otherEarnings: Number(record.other_earnings || 0),
-          absenceDeduction: Number(record.absence_deduction || 0),
-          loanDeduction: Number(record.loan_deduction || 0),
-          otherDeductions: Number(record.other_deductions || 0),
-          pensionConfig,
-          taxBrackets,
-        })
-
-        return hrApi.updatePayrollRecord(record.id, {
-          ...record,
-          basic_salary: newSalary,
-          pension: calculated.employeePension,
-          tax: calculated.incomeTaxDeducted,
-          gross_pay: calculated.grossSalary,
-          total_deductions: calculated.totalEmployeeDeductions,
-          net_pay: calculated.netTakeHomePay,
-        })
-      })
-
-      await Promise.all([...createPromises, ...updatePromises])
-
-      const msgs: string[] = []
-      if (missing.length > 0) msgs.push(`${missing.length} active employee${missing.length > 1 ? "s" : ""} loaded`)
-      if (pendingToUpdate.length > 0) msgs.push(`${pendingToUpdate.length} salary updates synced`)
-      if (msgs.length === 0) msgs.push("All active employee records are already loaded and up to date")
-
-      showToast("Payroll Updated", "success", `${msgs.join("; ")} for ${period.name}.`)
-      await refresh()
-    } catch (err) {
-      showToast("Payroll Load Failed", "warning", err instanceof Error ? err.message : "Could not load payroll records.")
-    }
-  }
 
   const updateRecord = async (record: PayrollRecord, changes: Partial<PayrollRecord>) => {
     const editable = record.payment_status === "Pending"
@@ -579,7 +601,7 @@ export default function Payroll() {
           <div>
             <h1 className="text-3xl font-black text-black tracking-tight mt-1">Payroll Management</h1>
             <p className="text-xs font-semibold text-zinc-500 max-w-xl leading-relaxed mt-1">
-              Select any Month &amp; Year from the dropdowns below, load active employees, manage Ethiopian statutory tax &amp; pension, and print official payslips &amp; payroll registers.
+              Select any Month &amp; Year from the dropdowns below to manage Ethiopian statutory tax &amp; pension, and print official payslips &amp; payroll registers.
             </p>
           </div>
           <SubPageNav items={getSectionChildren("/hr")} />
@@ -681,7 +703,7 @@ export default function Payroll() {
                 subtitle={
                   currentPeriod
                     ? `📅 ${currentPeriod.name} • ${currentPeriod.start_date} to ${currentPeriod.end_date}`
-                    : `📅 ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear} (Not Initialized — Click "+ Load Active Employees")`
+                    : `📅 ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`
                 }
                 searchValue={search}
                 onSearchChange={setSearch}
@@ -710,7 +732,6 @@ export default function Payroll() {
                   },
                 ]}
                 actions={[
-                  { label: "Load Active Employees", onClick: loadActiveEmployees },
                   ...(selectedApprovedRecords.length > 0
                     ? [
                         {
@@ -821,7 +842,7 @@ export default function Payroll() {
                                 No payroll records found for {MONTH_NAMES[selectedMonth - 1]} {selectedYear}.
                               </p>
                               <p className="text-xs text-zinc-400">
-                                Click <strong className="text-emerald-700">"+ Load Active Employees"</strong> to automatically generate and save statutory records.
+                                No active employees registered in HR for this payroll period.
                               </p>
                             </div>
                           ) : (
