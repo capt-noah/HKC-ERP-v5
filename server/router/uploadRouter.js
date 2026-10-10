@@ -59,6 +59,13 @@ const fileFilter = (_req, file, cb) => {
     ".jpg",
     ".jpeg",
     ".webp",
+    ".heic",
+    ".heif",
+    ".tiff",
+    ".tif",
+    ".jfif",
+    ".bmp",
+    ".svg",
     ".doc",
     ".docx",
     ".xls",
@@ -70,7 +77,7 @@ const fileFilter = (_req, file, cb) => {
   if (allowedExts.has(ext)) {
     cb(null, true)
   } else {
-    cb(new Error(`File type '${ext}' is not allowed. Allowed types: PDF, PNG, JPG, JPEG, WEBP, DOCX, XLSX, CSV.`))
+    cb(new Error(`File type '${ext}' is not allowed. Allowed types: PDF, PNG, JPG, JPEG, WEBP, HEIC, DOCX, XLSX, CSV.`))
   }
 }
 
@@ -78,59 +85,77 @@ const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 25 * 1024 * 1024, // 25 MB max limit
+    fileSize: 25 * 1024 * 1024, // 25 MB max limit per file
   },
 })
 
 /**
  * POST /api/upload
- * Single file upload handler
+ * Single file upload handler with safe error interceptor
  */
-uploadRouter.post("/upload", upload.single("file"), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: "No file was uploaded" })
-  }
+uploadRouter.post("/upload", (req, res, next) => {
+  upload.single("file")(req, res, (err) => {
+    if (err) {
+      if (err instanceof multer.MulterError) {
+        return res.status(400).json({ success: false, error: `Upload error: ${err.message}` })
+      }
+      return res.status(400).json({ success: false, error: err.message || "File upload failed" })
+    }
 
-  const destinationDir = req.file.destination || ""
-  const actualFolder = path.basename(destinationDir) || "general"
-  const fileUrl = `/uploads/${actualFolder}/${req.file.filename}`
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: "No file was uploaded" })
+    }
 
-  res.status(201).json({
-    success: true,
-    url: fileUrl,
-    filename: req.file.filename,
-    originalName: req.file.originalname,
-    size: req.file.size,
-    mimeType: req.file.mimetype,
-    folder: actualFolder,
+    const destinationDir = req.file.destination || ""
+    const actualFolder = path.basename(destinationDir) || "general"
+    const fileUrl = `/uploads/${actualFolder}/${req.file.filename}`
+
+    res.status(201).json({
+      success: true,
+      url: fileUrl,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      mimeType: req.file.mimetype,
+      folder: actualFolder,
+    })
   })
 })
 
 /**
  * POST /api/upload/multiple
- * Multiple files upload handler
+ * Multiple files upload handler with safe error interceptor
  */
-uploadRouter.post("/upload/multiple", upload.array("files", 10), (req, res) => {
-  if (!req.files || req.files.length === 0) {
-    return res.status(400).json({ error: "No files were uploaded" })
-  }
-
-  const results = req.files.map((file) => {
-    const destinationDir = file.destination || ""
-    const actualFolder = path.basename(destinationDir) || "general"
-    return {
-      url: `/uploads/${actualFolder}/${file.filename}`,
-      filename: file.filename,
-      originalName: file.originalname,
-      size: file.size,
-      mimeType: file.mimetype,
-      folder: actualFolder,
+uploadRouter.post("/upload/multiple", (req, res, next) => {
+  upload.array("files", 30)(req, res, (err) => {
+    if (err) {
+      if (err instanceof multer.MulterError) {
+        return res.status(400).json({ success: false, error: `Upload error: ${err.message}` })
+      }
+      return res.status(400).json({ success: false, error: err.message || "Multiple files upload failed" })
     }
-  })
 
-  res.status(201).json({
-    success: true,
-    files: results,
-    count: results.length,
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ success: false, error: "No files were uploaded" })
+    }
+
+    const results = req.files.map((file) => {
+      const destinationDir = file.destination || ""
+      const actualFolder = path.basename(destinationDir) || "general"
+      return {
+        url: `/uploads/${actualFolder}/${file.filename}`,
+        filename: file.filename,
+        originalName: file.originalname,
+        size: file.size,
+        mimeType: file.mimetype,
+        folder: actualFolder,
+      }
+    })
+
+    res.status(201).json({
+      success: true,
+      files: results,
+      count: results.length,
+    })
   })
 })

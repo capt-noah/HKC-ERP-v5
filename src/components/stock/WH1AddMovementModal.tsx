@@ -70,8 +70,7 @@ export default function WH1AddMovementModal({
   // Reject Loss Form State
   const [rejectDate, setRejectDate] = useState("")
   const [rejectQuantity, setRejectQuantity] = useState("")
-  const [rejectParty, setRejectParty] = useState("")
-  const [showRejectSupplierDropdown, setShowRejectSupplierDropdown] = useState(false)
+  const [rejectVoucher, setRejectVoucher] = useState("")
   const [rejectNotes, setRejectNotes] = useState("")
 
   // Processed Goods Form State
@@ -99,8 +98,7 @@ export default function WH1AddMovementModal({
       // Reset Reject fields
       setRejectDate(new Date().toISOString().slice(0, 10))
       setRejectQuantity("")
-      setRejectParty("")
-      setShowRejectSupplierDropdown(false)
+      setRejectVoucher("")
       setRejectNotes("")
 
       // Reset Processed fields
@@ -232,7 +230,8 @@ export default function WH1AddMovementModal({
     try {
       await onSaveReject(product.id, {
         date: rejectDate,
-        party: rejectParty.trim() || undefined,
+        voucherNo: rejectVoucher.trim() || undefined,
+        party: "WH1 Cleaning / Processing Line",
         rejectQuantity: rawQty,
         reason: "Reject / Cleaning Loss",
         notes: rejectNotes.trim() || undefined,
@@ -711,77 +710,18 @@ export default function WH1AddMovementModal({
                   />
                 </label>
 
-                <div className="space-y-1 relative">
-                  <span className="text-zinc-500 uppercase text-[10px] font-black">Supplier / Source</span>
-                  <div className="relative flex items-center">
-                    <input
-                      type="text"
-                      placeholder="e.g. Adola Farmers Union"
-                      value={rejectParty}
-                      onFocus={() => setShowRejectSupplierDropdown(true)}
-                      onChange={(e) => {
-                        setRejectParty(e.target.value)
-                        setShowRejectSupplierDropdown(true)
-                      }}
-                      className="h-10 w-full border border-zinc-200 rounded-xl pl-3 pr-9 font-semibold text-xs outline-none focus:border-rose-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowRejectSupplierDropdown((prev) => !prev)}
-                      className="absolute right-2 p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
-                      title="Choose supplier from registry"
-                    >
-                      <ChevronDown className={`size-4 transition-transform ${showRejectSupplierDropdown ? "rotate-180" : ""}`} />
-                    </button>
-                  </div>
-                  {showRejectSupplierDropdown && (
-                    <div className="absolute top-full left-0 right-0 z-30 mt-1 max-h-52 overflow-y-auto rounded-xl bg-white border border-zinc-200 shadow-xl py-1 divide-y divide-zinc-50">
-                      {(() => {
-                        const allSuppliers = Array.from(
-                          new Set([
-                            ...erp.getSuppliers().map((s) => s.name),
-                            ...((product?.wh1Entries || []).map((e: any) => e.party || e.customer).filter(Boolean)),
-                            product?.customer,
-                            product?.supplierName,
-                          ].filter((s): s is string => Boolean(s && s.trim())))
-                        )
-                        const filtered = rejectParty.trim()
-                          ? allSuppliers.filter((s) => (s || "").toLowerCase().includes(rejectParty.toLowerCase()))
-                          : allSuppliers
-                        if (filtered.length === 0) {
-                          return (
-                            <div className="px-3 py-2.5 text-xs text-zinc-400 font-medium text-center">
-                              {allSuppliers.length === 0 ? "No suppliers found" : `No matches for "${rejectParty}"`}
-                            </div>
-                          )
-                        }
-                        return filtered.map((suppName) => {
-                          const regSupp = erp.getSuppliers().find((s) => (s?.name || "").toLowerCase() === (suppName || "").toLowerCase())
-                          return (
-                            <button
-                              key={suppName}
-                              type="button"
-                              onClick={() => {
-                                setRejectParty(suppName)
-                                setShowRejectSupplierDropdown(false)
-                              }}
-                              className="w-full text-left px-3 py-2 hover:bg-rose-50 text-xs flex items-center justify-between transition-colors cursor-pointer"
-                            >
-                              <div>
-                                <span className="font-bold text-zinc-900 block">{suppName}</span>
-                                {regSupp && (
-                                  <span className="text-[10px] text-zinc-500 font-medium">
-                                    {regSupp.phone ? `📞 ${regSupp.phone} • ` : ""}{regSupp.city || "Ethiopia"}
-                                  </span>
-                                )}
-                              </div>
-                            </button>
-                          )
-                        })
-                      })()}
-                    </div>
-                  )}
-                </div>
+                <label className="space-y-1 block">
+                  <span className="text-zinc-500 uppercase text-[10px] font-black">
+                    Voucher / Ref <span className="text-[9px] text-zinc-400 font-normal lowercase">(optional)</span>
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="e.g. VR-001 or REF-2024"
+                    value={rejectVoucher}
+                    onChange={(e) => setRejectVoucher(e.target.value)}
+                    className="h-10 w-full border border-zinc-200 rounded-xl px-3 font-mono font-bold text-zinc-900 outline-none focus:border-rose-500"
+                  />
+                </label>
 
                 <label className="space-y-1 block md:col-span-1">
                   <span className="text-zinc-500 uppercase text-[10px] font-black">

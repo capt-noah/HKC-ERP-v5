@@ -280,6 +280,12 @@ export default function WH1ChildMovementLedger({
                         <span className="text-sky-800 font-bold">
                           {row.voucherNo && row.voucherNo !== "—" ? row.voucherNo : "PROCESSED"}
                         </span>
+                      ) : isReject ? (
+                        <span className="text-rose-700 font-mono font-black">
+                          {row.voucherNo && row.voucherNo !== "—" && row.voucherNo !== "N/A"
+                            ? row.voucherNo
+                            : "—"}
+                        </span>
                       ) : (
                         <span className="text-zinc-900 font-black">
                           {(() => {

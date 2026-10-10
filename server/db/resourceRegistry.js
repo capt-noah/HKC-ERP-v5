@@ -23,8 +23,8 @@ export const resources = {
   processing_services: { table: "processing_services", module: "sales", ...relational },
   shipment_documents: { table: "shipment_documents", module: "sales", ...relational },
   hkc_doc_records: { table: "hkc_doc_records", module: "sales", ...relational },
-
-  // Finance & GL (9 Relational Tables + 1 Config Singleton)
+  "hkc-docs": { table: "hkc_doc_records", module: "sales", ...relational },
+  hkc_docs: { table: "hkc_doc_records", module: "sales", ...relational },
   chart_of_accounts: { table: "chart_of_accounts", module: "finance", ...relational },
   gl_account_mappings: { table: "gl_account_mappings", module: "finance", ...relational },
   journal_entries: { table: "journal_entries", module: "finance", ...relational },

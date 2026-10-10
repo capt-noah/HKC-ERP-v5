@@ -10,6 +10,7 @@ import {
 } from "./dbUtils.js"
 import { inventoryService } from "../modules/inventory/inventoryService.js"
 import { salesService } from "../modules/sales/salesService.js"
+import { hkcDocsService } from "../modules/sales/hkcDocsService.js"
 import { withTransaction } from "./transactionHelper.js"
 import { getDefaultWarehouseForType, invalidateWarehouseCache } from "../utils/warehouseUtils.js"
 import { checkSalesOrderDeletable, checkPurchaseOrderDeletable } from "../modules/governance/deletionGuardrails.js"
@@ -82,6 +83,9 @@ export async function drizzleListRows({ resource, query = {} }) {
   }
 
   const tableName = resource.table
+  if (tableName === "hkc_doc_records") {
+    return await hkcDocsService.list(query)
+  }
   const isDoc = resource.storage === "jsonb_document" || resource.storage === "json_document"
 
   try {
@@ -221,6 +225,9 @@ export async function drizzleGetRow({ resource, id }) {
 
   const tableName = resource.table
   const cleanId = String(id).trim()
+  if (tableName === "hkc_doc_records") {
+    return await hkcDocsService.get(cleanId)
+  }
   try {
     // 1. Direct primary key query
     const [rows] = await pool.query(`SELECT * FROM \`${tableName}\` WHERE id = ? LIMIT 1`, [cleanId])
@@ -303,6 +310,9 @@ export async function drizzleCreateRow({ resource, body }) {
   }
   if (tableName === "store_transfers") {
     return await inventoryService.createTransfer(body)
+  }
+  if (tableName === "hkc_doc_records") {
+    return await hkcDocsService.create(body)
   }
 
   const isDoc = resource.storage === "jsonb_document" || resource.storage === "json_document"
@@ -444,6 +454,9 @@ export async function drizzleUpdateRow({ resource, id, body }) {
   }
   if (tableName === "store_transfers") {
     return await inventoryService.updateTransfer(cleanId, body)
+  }
+  if (tableName === "hkc_doc_records") {
+    return await hkcDocsService.update(cleanId, body)
   }
 
   const isDoc = resource.storage === "jsonb_document" || resource.storage === "json_document"
@@ -610,6 +623,9 @@ export async function drizzleDeleteRow({ resource, id }) {
   }
   if (tableName === "store_transfers") {
     return await inventoryService.deleteTransfer(cleanId)
+  }
+  if (tableName === "hkc_doc_records") {
+    return await hkcDocsService.delete(cleanId)
   }
   if (tableName === "sales_issues") {
     return await salesService.delete(cleanId)

@@ -128,6 +128,88 @@ export async function uploadFile(
 }
 
 /**
+ * Uploads a local file to server storage with real-time byte and percentage progress events.
+ */
+export function uploadFileWithProgress(
+  file: File,
+  folder: UploadFolder = "general",
+  onProgress?: (percent: number, loaded: number, total: number) => void,
+  signal?: AbortSignal
+): Promise<UploadResult> {
+  return new Promise((resolve, reject) => {
+    const authHeaders = getAuthHeaders()
+    const formData = new FormData()
+    formData.append("folder", folder)
+    formData.append("file", file)
+
+    const uploadUrl = `${API_BASE}/api/upload?folder=${encodeURIComponent(folder)}`
+    const xhr = new XMLHttpRequest()
+
+    if (signal) {
+      signal.addEventListener("abort", () => {
+        xhr.abort()
+        reject(new Error("Upload aborted"))
+      })
+    }
+
+    xhr.open("POST", uploadUrl)
+
+    // Set auth headers
+    for (const [key, value] of Object.entries(authHeaders)) {
+      if (value) {
+        xhr.setRequestHeader(key, value)
+      }
+    }
+
+    // Set timeout to 90 seconds
+    xhr.timeout = 90000
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        const percent = Math.min(100, Math.round((event.loaded / event.total) * 100))
+        onProgress(percent, event.loaded, event.total)
+      }
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText)
+          if (onProgress) onProgress(100, file.size, file.size)
+          resolve({
+            url: data.url,
+            filename: data.filename,
+            originalName: data.originalName || file.name,
+            size: data.size || file.size,
+            mimeType: data.mimeType || file.type || "application/octet-stream",
+            folder,
+          })
+        } catch (parseErr) {
+          reject(new Error("Failed to parse server upload response"))
+        }
+      } else {
+        let errorMsg = `Server responded with status ${xhr.status}`
+        try {
+          const errData = JSON.parse(xhr.responseText)
+          if (errData.error) errorMsg = errData.error
+        } catch {}
+        reject(new Error(errorMsg))
+      }
+    }
+
+    xhr.onerror = () => {
+      reject(new Error(`Network error while uploading ${file.name}. Please check connection.`))
+    }
+
+    xhr.ontimeout = () => {
+      reject(new Error(`Upload timed out for ${file.name}. Please retry.`))
+    }
+
+    xhr.send(formData)
+  })
+}
+
+/**
  * Resolves a stored file URL into a fully accessible asset URL.
  * Handles both relative '/uploads/...' paths, data URLs, and full external URLs.
  */

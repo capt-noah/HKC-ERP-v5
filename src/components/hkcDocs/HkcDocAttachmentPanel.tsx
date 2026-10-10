@@ -1,10 +1,23 @@
-import { useRef, useState } from "react"
+import { useRef, useState, useEffect, useCallback } from "react"
 import type { ChangeEvent } from "react"
-import { File, Paperclip, Download, Camera, Image as ImageIcon, Eye, Trash2, FileText } from "lucide-react"
+import {
+  File,
+  Paperclip,
+  Download,
+  Camera,
+  Image as ImageIcon,
+  Eye,
+  Trash2,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
+  RotateCw,
+  X as XIcon,
+} from "lucide-react"
 import type { HkcDocAttachment } from "@/lib/erpStore"
 import CameraCaptureModal from "./CameraCaptureModal"
 import { useFeedback } from "@/context/FeedbackContext"
-import { uploadFile, resolveFileUrl } from "@/lib/fileUpload"
+import { uploadFileWithProgress, resolveFileUrl } from "@/lib/fileUpload"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 
 interface HkcDocAttachmentPanelProps {
@@ -14,16 +27,32 @@ interface HkcDocAttachmentPanelProps {
   isEditing?: boolean
 }
 
+interface UploadQueueItem {
+  id: string
+  file: File
+  fileName: string
+  fileSize: number
+  fileType: string
+  previewUrl?: string
+  progress: number
+  loadedBytes: number
+  totalBytes: number
+  status: "queued" | "uploading" | "success" | "error"
+  errorMessage?: string
+}
+
+const MAX_CONCURRENT_UPLOADS = 3
+
 export default function HkcDocAttachmentPanel({
   attachments,
   onAddAttachments,
   onRemoveAttachment,
 }: HkcDocAttachmentPanelProps) {
-  const { confirm, showToast } = useFeedback()
+  const { confirm } = useFeedback()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isCameraOpen, setIsCameraOpen] = useState(false)
-  const [isUploading, setIsUploading] = useState(false)
   const [previewDoc, setPreviewDoc] = useState<{ fileName: string; fileUrl: string } | null>(null)
+  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([])
 
   const handleDeleteAttachment = (file: HkcDocAttachment) => {
     confirm({
@@ -38,34 +67,129 @@ export default function HkcDocAttachmentPanel({
     })
   }
 
-  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+  // Upload runner for a single item
+  const runUpload = useCallback(
+    async (item: UploadQueueItem) => {
+      setUploadQueue((prev) =>
+        prev.map((q) => (q.id === item.id ? { ...q, status: "uploading", progress: Math.max(q.progress, 5) } : q))
+      )
+
+      try {
+        const res = await uploadFileWithProgress(
+          item.file,
+          "hkc_docs",
+          (pct, loaded, total) => {
+            setUploadQueue((prev) =>
+              prev.map((q) =>
+                q.id === item.id
+                  ? {
+                      ...q,
+                      progress: pct,
+                      loadedBytes: loaded,
+                      totalBytes: total,
+                    }
+                  : q
+              )
+            )
+          }
+        )
+
+        // Mark as success
+        setUploadQueue((prev) =>
+          prev.map((q) =>
+            q.id === item.id
+              ? {
+                  ...q,
+                  progress: 100,
+                  status: "success",
+                  loadedBytes: item.fileSize,
+                  totalBytes: item.fileSize,
+                }
+              : q
+          )
+        )
+
+        // Commit to active attachments
+        onAddAttachments([
+          {
+            fileName: res.originalName || item.fileName,
+            fileUrl: res.url,
+          },
+        ])
+
+        // Automatically clean up the successful queue item after a brief celebration
+        setTimeout(() => {
+          setUploadQueue((prev) => prev.filter((q) => q.id !== item.id))
+        }, 1200)
+      } catch (err: any) {
+        setUploadQueue((prev) =>
+          prev.map((q) =>
+            q.id === item.id
+              ? {
+                  ...q,
+                  status: "error",
+                  errorMessage: err?.message || "Upload failed. Please retry.",
+                }
+              : q
+          )
+        )
+      }
+    },
+    [onAddAttachments]
+  )
+
+  // Concurrency queue processor
+  useEffect(() => {
+    const uploadingCount = uploadQueue.filter((q) => q.status === "uploading").length
+    if (uploadingCount >= MAX_CONCURRENT_UPLOADS) return
+
+    const nextQueued = uploadQueue.find((q) => q.status === "queued")
+    if (nextQueued) {
+      void runUpload(nextQueued)
+    }
+  }, [uploadQueue, runUpload])
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return
     const files = Array.from(e.target.files)
-    setIsUploading(true)
 
-    try {
-      const results: { fileName: string; fileUrl: string }[] = []
-      for (const file of files) {
+    const newQueueItems: UploadQueueItem[] = files.map((file) => {
+      const isImg = file.type.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif|heic|bmp)$/i.test(file.name)
+      let previewUrl: string | undefined = undefined
+      if (isImg) {
         try {
-          const res = await uploadFile(file, "hkc_docs")
-          results.push({
-            fileName: res.originalName || file.name,
-            fileUrl: res.url,
-          })
-        } catch (err) {
-          console.warn("File upload failed for", file.name, err)
-        }
+          previewUrl = URL.createObjectURL(file)
+        } catch {}
       }
 
-      if (results.length > 0) {
-        onAddAttachments(results)
+      return {
+        id: `UQ-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        file,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type || "application/octet-stream",
+        previewUrl,
+        progress: 0,
+        loadedBytes: 0,
+        totalBytes: file.size,
+        status: "queued",
       }
-    } catch (err) {
-      showToast("Upload Error", "warning", "Failed to upload attachments.")
-    } finally {
-      setIsUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ""
-    }
+    })
+
+    setUploadQueue((prev) => [...prev, ...newQueueItems])
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
+
+  const handleRetryItem = (itemId: string) => {
+    const item = uploadQueue.find((q) => q.id === itemId)
+    if (!item) return
+    setUploadQueue((prev) =>
+      prev.map((q) => (q.id === itemId ? { ...q, status: "queued", progress: 0, errorMessage: undefined } : q))
+    )
+  }
+
+  const handleDismissItem = (itemId: string) => {
+    setUploadQueue((prev) => prev.filter((q) => q.id !== itemId))
   }
 
   const handleCameraCapture = (captured: { fileName: string; fileUrl: string }) => {
@@ -121,6 +245,15 @@ export default function HkcDocAttachmentPanel({
     return fileUrl.startsWith("data:application/pdf") || /\.pdf$/i.test(fileName)
   }
 
+  const formatFileSize = (bytes: number) => {
+    if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
+    if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`
+    return `${bytes} B`
+  }
+
+  const isAnyUploading = uploadQueue.some((q) => q.status === "uploading" || q.status === "queued")
+
   return (
     <div className="border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 bg-zinc-50/30 dark:bg-zinc-950/20">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -144,12 +277,12 @@ export default function HkcDocAttachmentPanel({
           <button
             type="button"
             onClick={triggerFileSelect}
-            disabled={isUploading}
-            className="px-3 py-1.5 rounded-xl border border-zinc-200 hover:bg-zinc-100 disabled:opacity-50 text-xs font-black inline-flex items-center gap-1.5 hover:border-zinc-300 active:scale-95 transition-all text-zinc-800 dark:text-zinc-200 cursor-pointer"
+            disabled={isAnyUploading}
+            className="px-3 py-1.5 rounded-xl border border-zinc-200 hover:bg-zinc-100 disabled:opacity-60 text-xs font-black inline-flex items-center gap-1.5 hover:border-zinc-300 active:scale-95 transition-all text-zinc-800 dark:text-zinc-200 cursor-pointer"
             title="Upload file or document"
           >
             <Paperclip className="size-3.5 text-zinc-500" />
-            <span>{isUploading ? "Uploading..." : "Attach File"}</span>
+            <span>{isAnyUploading ? "Uploading..." : "Attach File"}</span>
           </button>
         </div>
 
@@ -163,7 +296,14 @@ export default function HkcDocAttachmentPanel({
         />
       </div>
 
-      {attachments.length === 0 ? (
+      <style>{`
+        @keyframes slidingShimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(200%); }
+        }
+      `}</style>
+
+      {attachments.length === 0 && uploadQueue.length === 0 ? (
         <div className="text-center py-6 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl">
           <div className="flex justify-center items-center gap-2 mb-1.5">
             <Camera className="size-5 text-zinc-400" />
@@ -172,7 +312,132 @@ export default function HkcDocAttachmentPanel({
           <p className="text-zinc-500 font-semibold text-[11px]">No files attached. Use &quot;Snap Photo&quot; to take a picture or &quot;Attach File&quot; to upload PDFs or documents.</p>
         </div>
       ) : (
-        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+        <div className="space-y-2 max-h-56 overflow-y-auto pr-0.5">
+          {/* Active Upload Queue Items (Sliding Window Loader Cards) */}
+          {uploadQueue.map((item) => {
+            const isImg = item.fileType.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif|heic|bmp)$/i.test(item.fileName)
+            const isPdf = item.fileType === "application/pdf" || /\.pdf$/i.test(item.fileName)
+
+            return (
+              <div
+                key={item.id}
+                className={`p-2.5 rounded-xl border transition-all ${
+                  item.status === "error"
+                    ? "border-rose-300 bg-rose-50/40 dark:bg-rose-950/20"
+                    : item.status === "success"
+                    ? "border-emerald-300 bg-emerald-50/40 dark:bg-emerald-950/20"
+                    : "border-sky-200 bg-sky-50/30 dark:bg-sky-950/20 shadow-xs"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                    {/* Thumbnail Preview */}
+                    <div className="size-8 rounded-lg overflow-hidden border border-zinc-200 bg-zinc-100 flex items-center justify-center shrink-0">
+                      {isImg && item.previewUrl ? (
+                        <img src={item.previewUrl} alt={item.fileName} className="size-full object-cover" />
+                      ) : isPdf ? (
+                        <FileText className="size-4 text-rose-600" />
+                      ) : (
+                        <File className="size-4 text-sky-600" />
+                      )}
+                    </div>
+
+                    {/* File Meta */}
+                    <div className="flex flex-col min-w-0 pr-2">
+                      <span className="truncate text-zinc-900 dark:text-zinc-100 font-bold text-xs" title={item.fileName}>
+                        {item.fileName}
+                      </span>
+                      <span className="text-[10px] text-zinc-500 font-mono">
+                        {item.status === "uploading" ? (
+                          `Uploading • ${formatFileSize(item.loadedBytes)} of ${formatFileSize(item.totalBytes)}`
+                        ) : item.status === "queued" ? (
+                          `Queued • ${formatFileSize(item.fileSize)}`
+                        ) : item.status === "success" ? (
+                          <span className="text-emerald-700 font-semibold">Uploaded ready • {formatFileSize(item.fileSize)}</span>
+                        ) : (
+                          <span className="text-rose-600 font-semibold flex items-center gap-1">
+                            <AlertCircle className="size-3 shrink-0" />
+                            {item.errorMessage || "Upload failed"}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Status Badges & Action Controls */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {item.status === "uploading" && (
+                      <span className="font-mono font-black text-xs text-sky-800 bg-sky-100/80 px-2 py-0.5 rounded-md border border-sky-200 shadow-2xs">
+                        {item.progress}%
+                      </span>
+                    )}
+
+                    {item.status === "queued" && (
+                      <span className="font-mono text-[10px] text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-md border border-zinc-200">
+                        Queued
+                      </span>
+                    )}
+
+                    {item.status === "success" && (
+                      <span className="inline-flex items-center gap-1 font-bold text-xs text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200">
+                        <CheckCircle2 className="size-3.5 text-emerald-600" />
+                        Uploaded
+                      </span>
+                    )}
+
+                    {item.status === "error" && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleRetryItem(item.id)}
+                          className="px-2 py-1 rounded-lg bg-amber-500 text-white font-bold text-[10px] inline-flex items-center gap-1 hover:bg-amber-600 transition-colors cursor-pointer shadow-xs"
+                          title="Retry file upload"
+                        >
+                          <RotateCw className="size-3" />
+                          Retry
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDismissItem(item.id)}
+                          className="p-1 rounded-lg text-zinc-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          title="Dismiss item"
+                        >
+                          <XIcon className="size-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Sliding Window Progress Bar */}
+                <div className="w-full bg-zinc-200/80 dark:bg-zinc-800 h-1.5 rounded-full overflow-hidden relative mt-2">
+                  <div
+                    className={`h-full transition-all duration-300 ease-out relative rounded-full ${
+                      item.status === "error"
+                        ? "bg-rose-500"
+                        : item.status === "success"
+                        ? "bg-emerald-500"
+                        : "bg-gradient-to-r from-sky-500 via-teal-400 to-emerald-500"
+                    }`}
+                    style={{
+                      width: `${item.status === "queued" ? 8 : Math.max(8, item.progress)}%`,
+                    }}
+                  >
+                    {item.status === "uploading" && (
+                      <div
+                        className="absolute inset-0 bg-gradient-to-r from-transparent via-white/80 to-transparent"
+                        style={{
+                          animation: "slidingShimmer 1.5s infinite linear",
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+
+          {/* Persisted Attached Files */}
           {attachments.map((file) => {
             const isImg = isImageFile(file.fileName, file.fileUrl)
             const isPdf = isPdfFile(file.fileName, file.fileUrl)
