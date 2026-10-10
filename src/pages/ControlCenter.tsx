@@ -38,7 +38,6 @@ import {
   Area,
   BarChart,
   Bar,
-  Cell,
   XAxis,
   YAxis,
   Tooltip,
@@ -65,7 +64,6 @@ import { listSalesIssues, type SalesIssue } from "@/lib/salesIssuesApi"
 import { isExportWarehouse, isPharmaWarehouse } from "@/lib/warehouses"
 import { DeletionRequestsPanel } from "@/components/admin/DeletionRequestsPanel"
 import { useDeletionStore } from "@/lib/deletionStore"
-import { computeWH1SupplierQuality } from "@/lib/wh1QualityAnalytics"
 import { getExpiringItemsSummary } from "@/lib/expiryUtils"
 import { formatDateTimeDisplay, parseSafeDate } from "@/lib/dateUtils"
 import { resolveActivityDetails, isAutoSyncActivityLog, type UserActivityLog } from "@/lib/activityUtils"
@@ -267,11 +265,9 @@ export default function ControlCenter() {
   const tabParam = searchParams.get("tab")
   const initialTab = tabParam === "approvals" || tabParam === "logs" || tabParam === "overview" || tabParam === "deletions" ? tabParam : "overview"
   const chartParam = searchParams.get("chart")
-  const initialChart = chartParam === "profit" || chartParam === "quality" || chartParam === "inventory" || chartParam === "revenue" ? chartParam : "revenue"
+  const initialChart = chartParam === "profit" || chartParam === "inventory" || chartParam === "revenue" ? chartParam : "revenue"
   const [activeTab, setActiveTab] = useState<"overview" | "logs" | "approvals" | "deletions">(initialTab)
-  const [chartMode, setChartMode] = useState<"revenue" | "profit" | "inventory" | "quality">(initialChart)
-  const [qualityWarehouseFilter, setQualityWarehouseFilter] = useState<string>("all")
-  const [qualityProductFilter, setQualityProductFilter] = useState<string>("all")
+  const [chartMode, setChartMode] = useState<"revenue" | "profit" | "inventory">(initialChart)
   const [adminExpiryTier, setAdminExpiryTier] = useState<"ALL" | "CRITICAL" | "WARNING" | "EXPIRED">("ALL")
   const [adminExpiryWarehouse, setAdminExpiryWarehouse] = useState<string>("ALL")
 
@@ -288,7 +284,7 @@ export default function ControlCenter() {
   }, [tabParam])
 
   useEffect(() => {
-    if (chartParam === "profit" || chartParam === "quality" || chartParam === "inventory" || chartParam === "revenue") {
+    if (chartParam === "profit" || chartParam === "inventory" || chartParam === "revenue") {
       setChartMode(chartParam)
     }
   }, [chartParam])
@@ -300,7 +296,7 @@ export default function ControlCenter() {
     setSearchParams(nextParams)
   }
 
-  const handleChartModeChange = (mode: "revenue" | "profit" | "inventory" | "quality") => {
+  const handleChartModeChange = (mode: "revenue" | "profit" | "inventory") => {
     setChartMode(mode)
     const nextParams: Record<string, string> = {}
     if (activeTab !== "overview") nextParams.tab = activeTab
@@ -1057,11 +1053,6 @@ export default function ControlCenter() {
       .slice(0, 8)
   }, [products])
 
-  // Raw Stock Supplier Quality Benchmark (Strictly export warehouse raw arrivals & cleaning rejects)
-  const wh1QualitySummary = useMemo(() => {
-    return computeWH1SupplierQuality(products, qualityProductFilter, qualityWarehouseFilter)
-  }, [products, qualityProductFilter, qualityWarehouseFilter])
-
   // WH2 & WH3 Stock Expiration Summary (9-Month Watch & 6-Month Critical)
   const adminExpirySummary = useMemo(() => {
     return getExpiringItemsSummary(products, {
@@ -1555,18 +1546,6 @@ export default function ControlCenter() {
                           <PieChartIcon className="size-3.5 text-indigo-600" />
                           Stock Valuation
                         </button>
-                        <button
-                          onClick={() => handleChartModeChange("quality")}
-                          className={cn(
-                            "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5",
-                            chartMode === "quality"
-                              ? "bg-white text-black shadow-sm"
-                              : "text-gray-500 hover:text-black"
-                          )}
-                        >
-                          <ShieldCheck className="size-3.5 text-amber-600" />
-                          Supplier Quality
-                        </button>
                       </div>
                     </div>
 
@@ -1721,7 +1700,7 @@ export default function ControlCenter() {
                           </ResponsiveContainer>
                         </div>
                       </div>
-                    ) : chartMode === "inventory" ? (
+                    ) : (
                       <div className="h-[320px] w-full pt-4">
                         {inventoryCategoryData.length === 0 ? (
                           <div className="h-full flex items-center justify-center text-xs font-semibold text-gray-400">
@@ -1756,174 +1735,6 @@ export default function ControlCenter() {
                             </BarChart>
                           </ResponsiveContainer>
                         )}
-                      </div>
-                    ) : (
-                      <div className="space-y-3 pt-2">
-                        {/* Warehouse & Commodity Filters and Mini KPIs */}
-                        <div className="flex flex-wrap items-center justify-between gap-2.5 p-2.5 rounded-2xl bg-black/[0.02] border border-black/5">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Warehouse:</span>
-                              <select
-                                value={qualityWarehouseFilter}
-                                onChange={(e) => {
-                                  setQualityWarehouseFilter(e.target.value)
-                                  setQualityProductFilter("all")
-                                }}
-                                className="px-2.5 py-1 text-xs font-bold rounded-xl border border-black/10 bg-white text-black outline-none shadow-2xs cursor-pointer hover:border-black/20 transition-all"
-                              >
-                                <option value="all">All Export Warehouses</option>
-                                {warehouses
-                                  .filter((w) => isExportWarehouse(w, warehouses))
-                                  .map((w) => (
-                                    <option key={w.id} value={w.id}>
-                                      {w.name} ({w.code || w.id})
-                                    </option>
-                                  ))}
-                              </select>
-                            </div>
-
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Commodity:</span>
-                              <select
-                                value={qualityProductFilter}
-                                onChange={(e) => setQualityProductFilter(e.target.value)}
-                                className="px-2.5 py-1 text-xs font-bold rounded-xl border border-black/10 bg-white text-black outline-none shadow-2xs cursor-pointer hover:border-black/20 transition-all"
-                              >
-                                <option value="all">All Commodities ({wh1QualitySummary.availableProducts.length})</option>
-                                {wh1QualitySummary.availableProducts.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3 text-xs font-bold flex-wrap">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-gray-400 text-[11px]">Inbound:</span>
-                              <span className="text-black font-mono">{wh1QualitySummary.overallTotalReceived.toLocaleString()} Qtl</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-gray-400 text-[11px]">Rejects:</span>
-                              <span className="text-rose-600 font-mono">{wh1QualitySummary.overallTotalRejected.toLocaleString()} Qtl</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/10 text-amber-700 border border-amber-500/20">
-                              <span className="text-[10px] uppercase tracking-wider font-extrabold">Avg Reject:</span>
-                              <span className="font-mono font-black">{wh1QualitySummary.overallRejectRate}%</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Recharts Bar Graph for Supplier Reject Rates */}
-                        <div className="h-[235px] w-full pt-1">
-                          {wh1QualitySummary.supplierMetrics.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-xs font-semibold text-gray-400 gap-1.5">
-                              <Package className="size-6 text-gray-300" />
-                              <span>No WH1 supplier arrival or rejection records found.</span>
-                            </div>
-                          ) : (
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart
-                                data={wh1QualitySummary.supplierMetrics}
-                                margin={{ top: 10, right: 10, left: -15, bottom: 20 }}
-                              >
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
-                                <XAxis
-                                  dataKey="supplierName"
-                                  tickLine={false}
-                                  axisLine={false}
-                                  tick={{ fontSize: 10, fill: "#666", fontWeight: 700 }}
-                                  interval={0}
-                                  angle={-10}
-                                  textAnchor="end"
-                                />
-                                <YAxis
-                                  tickLine={false}
-                                  axisLine={false}
-                                  tick={{ fontSize: 10, fill: "#888", fontWeight: 600 }}
-                                  domain={[0, (dataMax: number) => Math.max(12, Math.ceil(dataMax * 1.25))]}
-                                  tickFormatter={(val) => `${val}%`}
-                                />
-                                <Tooltip
-                                  contentStyle={{
-                                    backgroundColor: "rgba(255, 255, 255, 0.98)",
-                                    borderRadius: "16px",
-                                    border: "1px solid rgba(0,0,0,0.08)",
-                                    boxShadow: "0 10px 25px -5px rgba(0,0,0,0.12)",
-                                    padding: "10px 14px",
-                                  }}
-                                  content={({ active, payload }) => {
-                                    if (!active || !payload || !payload.length) return null
-                                    const data = payload[0].payload
-                                    return (
-                                      <div className="space-y-1.5 text-left text-xs font-semibold min-w-[200px]">
-                                        <div className="font-extrabold text-black text-sm pb-1 border-b border-black/5">
-                                          {data.supplierName}
-                                        </div>
-                                        <div className="flex items-center justify-between gap-4">
-                                          <span className="text-gray-500">Reject Rate:</span>
-                                          <span className="font-mono text-rose-600 font-extrabold">{data.rejectRate}%</span>
-                                        </div>
-                                        <div className="flex items-center justify-between gap-4">
-                                          <span className="text-gray-500">Clean Yield:</span>
-                                          <span className="font-mono text-emerald-600 font-extrabold">{data.cleanYieldRate}%</span>
-                                        </div>
-                                        <div className="flex items-center justify-between gap-4 text-[11px] pt-1 border-t border-black/5">
-                                          <span className="text-gray-400">Total Received:</span>
-                                          <span className="font-mono text-black">{data.totalReceived} Qtl</span>
-                                        </div>
-                                        <div className="flex items-center justify-between gap-4 text-[11px]">
-                                          <span className="text-gray-400">Total Rejections:</span>
-                                          <span className="font-mono text-rose-600">{data.totalRejected} Qtl</span>
-                                        </div>
-                                        <div className="text-[10px] text-gray-500 font-bold mt-1 bg-black/[0.03] px-2 py-0.5 rounded-md">
-                                          Rating: {data.gradeLabel}
-                                        </div>
-                                      </div>
-                                    )
-                                  }}
-                                />
-                                <Bar dataKey="rejectRate" name="Reject Rate (%)" radius={[6, 6, 0, 0]} maxBarSize={45}>
-                                  {wh1QualitySummary.supplierMetrics.map((entry, index) => (
-                                    <Cell
-                                      key={`cell-${index}`}
-                                      fill={
-                                        entry.rejectRate <= 5
-                                          ? "#10b981" // Emerald
-                                          : entry.rejectRate <= 10
-                                          ? "#f59e0b" // Amber
-                                          : "#f43f5e" // Rose
-                                      }
-                                    />
-                                  ))}
-                                </Bar>
-                              </BarChart>
-                            </ResponsiveContainer>
-                          )}
-                        </div>
-
-                        {/* Benchmark Legend & Rating Explanations */}
-                        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-black/5 text-[11px] font-semibold text-gray-500">
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <span className="inline-flex items-center gap-1">
-                              <span className="size-2.5 rounded-full bg-emerald-500 inline-block" />
-                              <span className="text-black font-bold">Grade A</span> (&le;5% Loss)
-                            </span>
-                            <span className="inline-flex items-center gap-1">
-                              <span className="size-2.5 rounded-full bg-amber-500 inline-block" />
-                              <span className="text-black font-bold">Grade B</span> (5%–10% Loss)
-                            </span>
-                            <span className="inline-flex items-center gap-1">
-                              <span className="size-2.5 rounded-full bg-rose-500 inline-block" />
-                              <span className="text-black font-bold">Grade C</span> (&gt;10% Loss)
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-gray-400 font-medium">
-                            WH1 raw commodity arrivals & cleaning rejects only
-                          </span>
-                        </div>
                       </div>
                     )}
                   </div>

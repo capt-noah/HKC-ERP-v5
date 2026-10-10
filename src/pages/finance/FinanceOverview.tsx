@@ -5,7 +5,8 @@ import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useFinanceStore, isCogsAccount } from "@/lib/financeStore"
-import { erpStore } from "@/lib/erpStore"
+import { useErpStore, erpStore } from "@/lib/erpStore"
+import { isWH1 } from "@/lib/warehouses"
 import { cn } from "@/lib/utils"
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts"
 import { Link } from "react-router-dom"
@@ -14,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 export default function FinanceOverview() {
   const store = useFinanceStore()
+  const erp = useErpStore()
   const isLoading = store.isLoading()
 
   useEffect(() => {
@@ -21,6 +23,67 @@ export default function FinanceOverview() {
     void erpStore.loadInventoryData(false)
     void erpStore.loadSalesData(false)
   }, [])
+
+  const products = erp.getProducts()
+
+  // On-Hand Inventory Asset Value: Evaluated at cost for active stock on warehouse shelves
+  const { intakeCostValue, currentStockValue } = useMemo(() => {
+    let currentTotal = 0
+    let intakeTotal = 0
+
+    for (const prod of products) {
+      const isWH1Item = isWH1(prod.warehouse)
+      if (isWH1Item) {
+        const wh1Entries = prod.wh1Entries || []
+        const currentWh1Val = wh1Entries.reduce(
+          (s, e) => s + (Number(e.quantityRemaining || 0) * Number(e.unitPrice ?? prod.unitCost ?? 0)),
+          0
+        )
+        const intakeWh1Val = wh1Entries.reduce(
+          (s, e) => s + (Number(e.quantityReceived || 0) * Number(e.unitPrice ?? prod.unitCost ?? 0)),
+          0
+        )
+        currentTotal += currentWh1Val || Number(prod.totalStockValue || 0)
+        intakeTotal += intakeWh1Val || Number(prod.totalStockValue || 0)
+      } else {
+        const batches = Array.isArray(prod.batches) ? prod.batches : []
+        if (batches.length > 0) {
+          const currentBatchVal = batches
+            .filter((b: any) => b.status === "Released" || (b as any).qa_status !== "Quarantined")
+            .reduce((s: number, b: any) => s + (Number(b.qty ?? (b as any).quantity ?? 0) * Number(b.unitPrice ?? (b as any).unit_cost ?? prod.unitCost ?? 0)), 0)
+          currentTotal += currentBatchVal
+        } else {
+          currentTotal += Number(prod.totalStockValue || (Number(prod.quantity || 0) * Number(prod.unitCost || 0)))
+        }
+
+        const binEntries = prod.binCardEntries || []
+        const pharmaIntake = binEntries
+          .filter((e) => e.type === "entry" || Number(e.qtyReceived || 0) > 0)
+          .reduce((s, e) => s + (Number(e.qtyReceived || 0) * Number(e.unitPrice ?? prod.unitCost ?? 0)), 0)
+        intakeTotal += pharmaIntake || currentTotal
+      }
+    }
+
+    // Cumulative Inbound Receipts Cost from Stock Movements:
+    const movements: any[] = erp.getStockMovements() || []
+    const movementReceiptsCost = movements
+      .filter((m: any) => {
+        const t = (m.type || m.movement_type || m.movementType || "").toUpperCase()
+        return t === "RECEIPT" || t === "INBOUND_RECEIPT" || t === "OPENING_BALANCE"
+      })
+      .reduce((s: number, m: any) => {
+        const q = Number(m.qty ?? m.quantity ?? 0)
+        const cost = Number(m.unitCost ?? m.unit_cost ?? m.unitPrice ?? 0)
+        return s + (q * cost)
+      }, 0)
+
+    const finalIntakeCost = movementReceiptsCost > 0 ? movementReceiptsCost : intakeTotal
+
+    return {
+      currentStockValue: currentTotal,
+      intakeCostValue: finalIntakeCost,
+    }
+  }, [products, erp])
 
   const invoices = store.getInvoices()
   const journalLines = store.getJournalEntryLines()
@@ -418,7 +481,7 @@ export default function FinanceOverview() {
         </div>
 
         {/* Executive Profitability & Treasury Strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
           {/* Card 1: Operating Revenue */}
           <GlassCard className="p-4 flex flex-col justify-between">
             <div>
@@ -499,7 +562,35 @@ export default function FinanceOverview() {
             <p className="text-[11px] text-gray-400 mt-2 font-medium">Gross surplus (Revenue - COGS)</p>
           </GlassCard>
 
-          {/* Card 4: Liquid Cash Position */}
+          {/* Card 4: Total Inventory Value & Current Stock */}
+          <GlassCard className="p-4 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Total Inventory Value</span>
+                <div className="size-7 rounded-lg bg-indigo-100/80 text-indigo-700 flex items-center justify-center">
+                  <Package className="size-4" />
+                </div>
+              </div>
+              {isLoading ? (
+                <Skeleton className="h-7 w-32 bg-zinc-200/80 my-1" />
+              ) : (
+                <div className="flex items-baseline gap-1.5 mt-1 min-w-0 overflow-hidden">
+                  <span className="text-xs font-extrabold text-indigo-800/70 font-sans tracking-wide shrink-0">
+                    ETB
+                  </span>
+                  <span className="text-lg sm:text-xl font-black font-mono text-indigo-900 truncate" title={`ETB ${intakeCostValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}>
+                    {intakeCostValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between mt-2 pt-1 border-t border-black/5 text-[11px] text-gray-400 font-medium">
+              <span>Current Stock:</span>
+              <span className="font-mono font-bold text-zinc-900">ETB {currentStockValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+          </GlassCard>
+
+          {/* Card 5: Liquid Cash Position */}
           <GlassCard className="p-4 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -611,7 +702,7 @@ export default function FinanceOverview() {
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="font-bold text-base text-black">
-                    {activeChartTab === "cash_flow" ? "Cash Flow & Profit Trends" : "Items Sold & Volume Analytics"}
+                    {activeChartTab === "cash_flow" ? "Operating Revenue & Profitability Trends" : "Items Sold & Volume Analytics"}
                   </h3>
                   {activeChartTab === "items_sold" && (
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
@@ -621,7 +712,7 @@ export default function FinanceOverview() {
                 </div>
                 <p className="text-xs text-gray-400 mt-0.5">
                   {activeChartTab === "cash_flow"
-                    ? "Monthly breakdown of operating revenue, costs, and net operating income"
+                    ? "Monthly breakdown of operating revenue, direct COGS/operational costs, and net operating income"
                     : `Breakdown of physical quantities sold across warehouses for ${selectedMonthDisplay}`}
                 </p>
               </div>
@@ -637,7 +728,7 @@ export default function FinanceOverview() {
                   )}
                 >
                   <TrendingUp className="size-3.5 text-emerald-600" />
-                  Cash Flow
+                  Operating Profitability
                 </button>
                 <button
                   type="button"
@@ -756,9 +847,9 @@ export default function FinanceOverview() {
             {activeChartTab === "cash_flow" && (
               <>
                 <div className="flex items-center justify-end gap-4 text-xs font-semibold mb-4">
-                  <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#18181b]" /> Revenue</div>
-                  <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-rose-500" /> Expenses</div>
-                  <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-emerald-600" /> Net Profit</div>
+                  <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-[#18181b]" /> Operating Revenue</div>
+                  <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-rose-500" /> COGS & Expenses</div>
+                  <div className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-emerald-600" /> Net Operating Income</div>
                 </div>
                 <div className="h-[300px]">
                   {cashFlowData.length === 0 ? (
@@ -798,7 +889,13 @@ export default function FinanceOverview() {
                         <Tooltip
                           formatter={(value: any, name: any) => [
                             `ETB ${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                            name === "NetProfit" || name === "Net Profit" ? "Net Operating Income" : name
+                            name === "NetProfit" || name === "Net Profit" || name === "Net Operating Income"
+                              ? "Net Operating Income"
+                              : name === "Revenue" || name === "Operating Revenue"
+                              ? "Operating Revenue"
+                              : name === "Expenses" || name === "COGS & Expenses"
+                              ? "COGS & Expenses"
+                              : name
                           ]}
                           labelStyle={{ fontWeight: 800, color: "#18181b", marginBottom: "4px" }}
                           contentStyle={{
@@ -812,9 +909,9 @@ export default function FinanceOverview() {
                             fontWeight: 600,
                           }}
                         />
-                        <Area type="monotone" dataKey="Revenue" stroke="#18181b" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRev)" />
-                        <Area type="monotone" dataKey="Expenses" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#colorExp)" />
-                        <Area type="monotone" dataKey="NetProfit" name="Net Profit" stroke="#059669" strokeWidth={2.5} fillOpacity={1} fill="url(#colorProfit)" />
+                        <Area type="monotone" dataKey="Revenue" name="Operating Revenue" stroke="#18181b" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRev)" />
+                        <Area type="monotone" dataKey="Expenses" name="COGS & Expenses" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#colorExp)" />
+                        <Area type="monotone" dataKey="NetProfit" name="Net Operating Income" stroke="#059669" strokeWidth={2.5} fillOpacity={1} fill="url(#colorProfit)" />
                       </AreaChart>
                     </ResponsiveContainer>
                   )}

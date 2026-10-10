@@ -283,7 +283,7 @@ export default function WH1ChildMovementLedger({
                       ) : isReject ? (
                         <span className="text-rose-700 font-mono font-black">
                           {row.voucherNo && row.voucherNo !== "—" && row.voucherNo !== "N/A"
-                            ? row.voucherNo
+                            ? (row.voucherNo.startsWith("No.") ? row.voucherNo : `No. ${row.voucherNo}`)
                             : "—"}
                         </span>
                       ) : (
