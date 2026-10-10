@@ -24,11 +24,21 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 1200,
       rollupOptions: {
         output: {
-          manualChunks: {
-            "vendor-react": ["react", "react-dom", "react-router-dom"],
-            "vendor-charts": ["recharts"],
-            "vendor-icons": ["lucide-react"],
-            "vendor-ui": ["sonner", "clsx", "tailwind-merge", "zustand"],
+          manualChunks(id) {
+            if (id.includes("node_modules")) {
+              if (id.includes("react-dom") || id.includes("react-router") || id.includes("/react/")) {
+                return "vendor-react";
+              }
+              if (id.includes("recharts")) {
+                return "vendor-charts";
+              }
+              if (id.includes("lucide-react")) {
+                return "vendor-icons";
+              }
+              if (id.includes("sonner") || id.includes("clsx") || id.includes("tailwind-merge") || id.includes("zustand")) {
+                return "vendor-ui";
+              }
+            }
           },
         },
       },

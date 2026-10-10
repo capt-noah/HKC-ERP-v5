@@ -7,6 +7,7 @@ export const users = mysqlTable("users", {
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
   role: varchar("role", { length: 50 }).default("viewer").notNull(),
   roles: json("roles"),
+  permissions: json("permissions"),
   status: varchar("status", { length: 50 }).default("active").notNull(),
   fullname: varchar("fullname", { length: 191 }),
   firstName: varchar("first_name", { length: 191 }),

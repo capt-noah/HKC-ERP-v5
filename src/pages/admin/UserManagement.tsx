@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Search, Plus, Filter, X, ShieldCheck, UserCheck, Trash2, Users, UserX, Edit, Eye, EyeOff } from "lucide-react"
+import { Search, Plus, Filter, X, ShieldCheck, UserCheck, Trash2, Users, UserX, Edit, Eye, EyeOff, ChevronDown, ShoppingCart } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -30,6 +30,7 @@ export interface UserAccount {
   fullname: string
   role?: string
   roles: Role[]
+  permissions?: string[]
   status: "active" | "suspended"
   warehouse_id?: string | null
   warehouse_ids?: string[]
@@ -59,6 +60,12 @@ const roleLabels: Record<Role, string> = {
   finance: "Finance",
   hkc_docs: "HKC Docs",
 }
+
+export const SALES_SUB_PERMISSIONS = [
+  { id: "sales_issue", label: "Sales Issue", desc: "Sales dispatch & issue vouchers" },
+  { id: "sales_order", label: "Sales Order", desc: "Customer orders & proformas" },
+  { id: "purchase_order", label: "Purchase Order", desc: "Procurement & vendor orders" },
+] as const
 
 export function isWarehouseChecked(wh: Warehouse, selectedIds: string[] | undefined): boolean {
   if (!selectedIds || selectedIds.length === 0) return false
@@ -201,6 +208,7 @@ export default function UserManagement() {
     password: "",
     fullname: "",
     roles: [] as Role[],
+    permissions: ["sales_issue", "sales_order", "purchase_order"] as string[],
     status: "active" as UserAccount["status"],
     employee_id: "",
     warehouse_ids: [] as string[],
@@ -212,6 +220,8 @@ export default function UserManagement() {
   const [showNewUserPassword, setShowNewUserPassword] = useState(false)
   const [showEditingUserPassword, setShowEditingUserPassword] = useState(false)
   const [editPassword, setEditPassword] = useState("")
+  const [isNewUserSalesOpen, setIsNewUserSalesOpen] = useState(true)
+  const [isEditUserSalesOpen, setIsEditUserSalesOpen] = useState(true)
 
   const fetchAllData = async () => {
     setLoading(true)
@@ -248,9 +258,22 @@ export default function UserManagement() {
           whIds = u.warehouse_id ? [u.warehouse_id] : []
         }
 
+        let perms = u.permissions
+        if (typeof perms === "string") {
+          try {
+            perms = JSON.parse(perms)
+          } catch {
+            perms = []
+          }
+        }
+        if (!Array.isArray(perms)) {
+          perms = []
+        }
+
         return {
           ...u,
           roles: cleanRoles,
+          permissions: perms,
           warehouse_ids: whIds,
         }
       })
@@ -297,6 +320,9 @@ export default function UserManagement() {
       const canonicalRoles = newUser.roles.map(normalizeRole)
       const isSuper = canonicalRoles.includes("superadmin")
       const targetWhIds = isSuper ? [] : (newUser.warehouse_ids || [])
+      const targetPerms = canonicalRoles.includes("sales")
+        ? (newUser.permissions && newUser.permissions.length > 0 ? newUser.permissions : ["sales_issue", "sales_order", "purchase_order"])
+        : []
 
       const response = await fetch(`${API_BASE}/api/auth/register`, {
         method: "POST",
@@ -308,6 +334,7 @@ export default function UserManagement() {
           password: newUser.password,
           role: canonicalRoles[0] || "viewer",
           roles: canonicalRoles,
+          permissions: targetPerms,
           status: newUser.status,
           fullname: finalFullname,
           employee_id: newUser.employee_id || null,
@@ -330,6 +357,7 @@ export default function UserManagement() {
         password: "",
         fullname: "",
         roles: [],
+        permissions: ["sales_issue", "sales_order", "purchase_order"],
         status: "active",
         employee_id: "",
         warehouse_ids: [],
@@ -362,11 +390,15 @@ export default function UserManagement() {
       const canonicalRoles = editingUser.roles.map(normalizeRole)
       const isSuper = canonicalRoles.includes("superadmin")
       const targetWhIds = isSuper ? [] : (editingUser.warehouse_ids || [])
+      const targetPerms = canonicalRoles.includes("sales")
+        ? (editingUser.permissions && editingUser.permissions.length > 0 ? editingUser.permissions : ["sales_issue", "sales_order", "purchase_order"])
+        : []
 
       const updateData: any = {
         fullname: editingUser.fullname,
         role: canonicalRoles[0] || "viewer",
         roles: canonicalRoles,
+        permissions: targetPerms,
         status: editingUser.status,
         employee_id: editingUser.employee_id || null,
         warehouse_ids: targetWhIds,
@@ -690,7 +722,16 @@ export default function UserManagement() {
                                       : (user.warehouse_id ? [user.warehouse_id] : [])
                                     const rawRoles = (user.roles && user.roles.length > 0) ? user.roles : [user.role || "viewer"]
                                     const cleanRoles = rawRoles.map(normalizeRole)
-                                    setEditingUser({ ...user, roles: cleanRoles, warehouse_ids: whIds })
+                                    let rawPerms: any = user.permissions
+                                    if (typeof rawPerms === "string") {
+                                      try { rawPerms = JSON.parse(rawPerms) } catch { rawPerms = [] }
+                                    }
+                                    let userPerms = Array.isArray(rawPerms) ? rawPerms : []
+                                    if (userPerms.length === 0 && cleanRoles.includes("sales")) {
+                                      userPerms = ["sales_issue", "sales_order", "purchase_order"]
+                                    }
+                                    setEditingUser({ ...user, roles: cleanRoles, permissions: userPerms, warehouse_ids: whIds })
+                                    setIsEditUserSalesOpen(true)
                                     setEditPassword("")
                                     setShowEditingUserPassword(false)
                                     setShowEditModal(true)
@@ -920,12 +961,21 @@ export default function UserManagement() {
                               }
                             } else {
                               if (isSuperadminChecked) {
-                                setNewUser({ ...newUser, roles: [role] })
+                                const nextPerms = role === "sales"
+                                  ? Array.from(new Set([...(newUser.permissions || []), "sales_issue", "sales_order", "purchase_order"]))
+                                  : newUser.permissions
+                                setNewUser({ ...newUser, roles: [role], permissions: nextPerms })
+                                if (role === "sales") setIsNewUserSalesOpen(true)
                               } else {
                                 if (isChecked) {
                                   setNewUser({ ...newUser, roles: newUser.roles.filter(r => r !== role) })
                                 } else {
-                                  setNewUser({ ...newUser, roles: [...newUser.roles, role] })
+                                  const nextRoles = [...newUser.roles, role]
+                                  const nextPerms = role === "sales"
+                                    ? Array.from(new Set([...(newUser.permissions || []), "sales_issue", "sales_order", "purchase_order"]))
+                                    : newUser.permissions
+                                  setNewUser({ ...newUser, roles: nextRoles, permissions: nextPerms })
+                                  if (role === "sales") setIsNewUserSalesOpen(true)
                                 }
                               }
                             }
@@ -942,6 +992,94 @@ export default function UserManagement() {
                     )
                   })}
                 </div>
+
+                {/* Sales Sub-Permissions Dropdown Card */}
+                {newUser.roles.includes("sales") && (
+                  <div className="mt-2.5 p-3 rounded-2xl bg-amber-500/[0.04] border border-amber-500/20 transition-all">
+                    <div 
+                      className="flex items-center justify-between cursor-pointer select-none"
+                      onClick={() => setIsNewUserSalesOpen(!isNewUserSalesOpen)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <ShoppingCart className="size-4 text-amber-600" />
+                        <span className="text-xs font-bold text-gray-900">
+                          Sales Sub-Modules Access
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                          {(newUser.permissions || []).filter(p => ["sales_issue", "sales_order", "purchase_order"].includes(p)).length}/3 Assigned
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-gray-500 hover:text-gray-800">
+                        <span className="text-[10px] font-semibold">{isNewUserSalesOpen ? "Collapse" : "Configure"}</span>
+                        <ChevronDown className={cn("size-3.5 transition-transform", isNewUserSalesOpen && "rotate-180")} />
+                      </div>
+                    </div>
+
+                    {isNewUserSalesOpen && (
+                      <div className="mt-2.5 pt-2.5 border-t border-amber-500/10 space-y-2">
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="text-gray-500 font-medium">Select specific sales operational privileges:</span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nonSales = (newUser.permissions || []).filter(p => !["sales_issue", "sales_order", "purchase_order"].includes(p))
+                                setNewUser({ ...newUser, permissions: [...nonSales, "sales_issue", "sales_order", "purchase_order"] })
+                              }}
+                              className="text-[10px] font-bold text-amber-700 hover:underline cursor-pointer"
+                            >
+                              Select All
+                            </button>
+                            <span className="text-gray-300">•</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nonSales = (newUser.permissions || []).filter(p => !["sales_issue", "sales_order", "purchase_order"].includes(p))
+                                setNewUser({ ...newUser, permissions: nonSales })
+                              }}
+                              className="text-[10px] font-bold text-gray-500 hover:underline cursor-pointer"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          {SALES_SUB_PERMISSIONS.map((perm) => {
+                            const isPermChecked = (newUser.permissions || []).includes(perm.id)
+                            return (
+                              <label
+                                key={perm.id}
+                                className={cn(
+                                  "flex items-start gap-2 p-2.5 rounded-xl border transition-all cursor-pointer",
+                                  isPermChecked
+                                    ? "bg-white border-amber-500/40 shadow-2xs"
+                                    : "bg-white/40 border-black/5 hover:bg-white"
+                                )}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isPermChecked}
+                                  onChange={() => {
+                                    const nextPerms = isPermChecked
+                                      ? (newUser.permissions || []).filter(p => p !== perm.id)
+                                      : [...(newUser.permissions || []), perm.id]
+                                    setNewUser({ ...newUser, permissions: nextPerms })
+                                  }}
+                                  className="accent-amber-600 size-3.5 mt-0.5 cursor-pointer"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <span className="text-xs font-bold text-gray-900 block">{perm.label}</span>
+                                  <span className="text-[9px] text-gray-500 block leading-tight mt-0.5">{perm.desc}</span>
+                                </div>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Warehouse Scope Selection */}
@@ -961,34 +1099,39 @@ export default function UserManagement() {
                     <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                       Warehouse Access Scope
                     </label>
-                    <span className="text-[10px] font-bold text-gray-500">
-                      {!newUser.roles.includes("inventory")
-                        ? "Applies to Inventory Role"
-                        : (newUser.warehouse_ids || []).length === 0
-                        ? "All Warehouses & HQ"
-                        : `${newUser.warehouse_ids.length} Restricted`}
-                    </span>
+                    {(() => {
+                      const hasWarehouseRole = newUser.roles.includes("inventory") || newUser.roles.includes("sales")
+                      return (
+                        <span className="text-[10px] font-bold text-gray-500">
+                          {!hasWarehouseRole
+                            ? "Applies to Sales & Inventory Roles"
+                            : (newUser.warehouse_ids || []).length === 0
+                            ? "All Warehouses & HQ"
+                            : `${newUser.warehouse_ids.length} Restricted`}
+                        </span>
+                      )
+                    })()}
                   </div>
 
                   {/* Scope Mode Selection */}
                   {(() => {
-                    const hasInventory = newUser.roles.includes("inventory")
-                    const isAllSelected = hasInventory && (newUser.warehouse_ids || []).length === 0
-                    const isSpecificSelected = hasInventory && (newUser.warehouse_ids || []).length > 0
+                    const hasWarehouseRole = newUser.roles.includes("inventory") || newUser.roles.includes("sales")
+                    const isAllSelected = hasWarehouseRole && (newUser.warehouse_ids || []).length === 0
+                    const isSpecificSelected = hasWarehouseRole && (newUser.warehouse_ids || []).length > 0
 
                     return (
                       <>
                         <div className="grid grid-cols-2 gap-2 mb-2.5">
                           <button
                             type="button"
-                            disabled={!hasInventory}
+                            disabled={!hasWarehouseRole}
                             onClick={() => {
-                              if (!hasInventory) return
+                              if (!hasWarehouseRole) return
                               setNewUser({ ...newUser, warehouse_ids: [] })
                             }}
                             className={cn(
                               "flex flex-col items-start p-3 rounded-2xl border text-left transition-all",
-                              !hasInventory
+                              !hasWarehouseRole
                                 ? "bg-black/[0.01] border-black/5 text-gray-400 opacity-40 cursor-not-allowed"
                                 : isAllSelected
                                 ? "bg-green-700/10 border-green-600 text-green-900 shadow-2xs ring-1 ring-green-600/30 cursor-pointer"
@@ -999,7 +1142,7 @@ export default function UserManagement() {
                               <span
                                 className={cn(
                                   "size-3 rounded-full border flex items-center justify-center",
-                                  !hasInventory
+                                  !hasWarehouseRole
                                     ? "border-gray-300 bg-transparent"
                                     : isAllSelected
                                     ? "border-green-700 bg-green-700"
@@ -1008,27 +1151,27 @@ export default function UserManagement() {
                               >
                                 {isAllSelected && <span className="size-1.5 rounded-full bg-white" />}
                               </span>
-                              <span className={cn("text-xs font-bold", !hasInventory ? "text-gray-400" : "text-black")}>
+                              <span className={cn("text-xs font-bold", !hasWarehouseRole ? "text-gray-400" : "text-black")}>
                                 HQ & All Warehouses
                               </span>
                             </div>
-                            <p className={cn("text-[10px] mt-1 pl-5", !hasInventory ? "text-gray-400" : "text-gray-500")}>
+                            <p className={cn("text-[10px] mt-1 pl-5", !hasWarehouseRole ? "text-gray-400" : "text-gray-500")}>
                               Access to operations across all warehouse facilities and HQ.
                             </p>
                           </button>
 
                           <button
                             type="button"
-                            disabled={!hasInventory}
+                            disabled={!hasWarehouseRole}
                             onClick={() => {
-                              if (!hasInventory) return
+                              if (!hasWarehouseRole) return
                               if ((newUser.warehouse_ids || []).length === 0) {
                                 setNewUser({ ...newUser, warehouse_ids: [warehouses[0]?.code || "WH1"] })
                               }
                             }}
                             className={cn(
                               "flex flex-col items-start p-3 rounded-2xl border text-left transition-all",
-                              !hasInventory
+                              !hasWarehouseRole
                                 ? "bg-black/[0.01] border-black/5 text-gray-400 opacity-40 cursor-not-allowed"
                                 : isSpecificSelected
                                 ? "bg-green-700/10 border-green-600 text-green-900 shadow-2xs ring-1 ring-green-600/30 cursor-pointer"
@@ -1039,7 +1182,7 @@ export default function UserManagement() {
                               <span
                                 className={cn(
                                   "size-3 rounded-full border flex items-center justify-center",
-                                  !hasInventory
+                                  !hasWarehouseRole
                                     ? "border-gray-300 bg-transparent"
                                     : isSpecificSelected
                                     ? "border-green-700 bg-green-700"
@@ -1048,18 +1191,18 @@ export default function UserManagement() {
                               >
                                 {isSpecificSelected && <span className="size-1.5 rounded-full bg-white" />}
                               </span>
-                              <span className={cn("text-xs font-bold", !hasInventory ? "text-gray-400" : "text-black")}>
+                              <span className={cn("text-xs font-bold", !hasWarehouseRole ? "text-gray-400" : "text-black")}>
                                 Specific Warehouses
                               </span>
                             </div>
-                            <p className={cn("text-[10px] mt-1 pl-5", !hasInventory ? "text-gray-400" : "text-gray-500")}>
+                            <p className={cn("text-[10px] mt-1 pl-5", !hasWarehouseRole ? "text-gray-400" : "text-gray-500")}>
                               Restrict operations to designated warehouse facilities only.
                             </p>
                           </button>
                         </div>
 
                         {/* Checklist of warehouses */}
-                        {hasInventory && (newUser.warehouse_ids || []).length > 0 && (
+                        {hasWarehouseRole && (newUser.warehouse_ids || []).length > 0 && (
                           <div className="space-y-1.5 bg-black/[0.01] p-3 rounded-2xl border border-black/5">
                             <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
                               Select Allowed Warehouses
@@ -1216,12 +1359,21 @@ export default function UserManagement() {
                               }
                             } else {
                               if (isSuperadminChecked) {
-                                setEditingUser({ ...editingUser, roles: [role] })
+                                const nextPerms = role === "sales"
+                                  ? Array.from(new Set([...(editingUser.permissions || []), "sales_issue", "sales_order", "purchase_order"]))
+                                  : editingUser.permissions
+                                setEditingUser({ ...editingUser, roles: [role], permissions: nextPerms })
+                                if (role === "sales") setIsEditUserSalesOpen(true)
                               } else {
                                 if (isChecked) {
                                   setEditingUser({ ...editingUser, roles: editingUser.roles.filter(r => r !== role) })
                                 } else {
-                                  setEditingUser({ ...editingUser, roles: [...editingUser.roles, role] })
+                                  const nextRoles = [...editingUser.roles, role]
+                                  const nextPerms = role === "sales"
+                                    ? Array.from(new Set([...(editingUser.permissions || []), "sales_issue", "sales_order", "purchase_order"]))
+                                    : editingUser.permissions
+                                  setEditingUser({ ...editingUser, roles: nextRoles, permissions: nextPerms })
+                                  if (role === "sales") setIsEditUserSalesOpen(true)
                                 }
                               }
                             }
@@ -1238,6 +1390,94 @@ export default function UserManagement() {
                     )
                   })}
                 </div>
+
+                {/* Sales Sub-Permissions Dropdown Card */}
+                {editingUser.roles.includes("sales") && (
+                  <div className="mt-2.5 p-3 rounded-2xl bg-amber-500/[0.04] border border-amber-500/20 transition-all">
+                    <div 
+                      className="flex items-center justify-between cursor-pointer select-none"
+                      onClick={() => setIsEditUserSalesOpen(!isEditUserSalesOpen)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <ShoppingCart className="size-4 text-amber-600" />
+                        <span className="text-xs font-bold text-gray-900">
+                          Sales Sub-Modules Access
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                          {(editingUser.permissions || []).filter(p => ["sales_issue", "sales_order", "purchase_order"].includes(p)).length}/3 Assigned
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-gray-500 hover:text-gray-800">
+                        <span className="text-[10px] font-semibold">{isEditUserSalesOpen ? "Collapse" : "Configure"}</span>
+                        <ChevronDown className={cn("size-3.5 transition-transform", isEditUserSalesOpen && "rotate-180")} />
+                      </div>
+                    </div>
+
+                    {isEditUserSalesOpen && (
+                      <div className="mt-2.5 pt-2.5 border-t border-amber-500/10 space-y-2">
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="text-gray-500 font-medium">Select specific sales operational privileges:</span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nonSales = (editingUser.permissions || []).filter(p => !["sales_issue", "sales_order", "purchase_order"].includes(p))
+                                setEditingUser({ ...editingUser, permissions: [...nonSales, "sales_issue", "sales_order", "purchase_order"] })
+                              }}
+                              className="text-[10px] font-bold text-amber-700 hover:underline cursor-pointer"
+                            >
+                              Select All
+                            </button>
+                            <span className="text-gray-300">•</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nonSales = (editingUser.permissions || []).filter(p => !["sales_issue", "sales_order", "purchase_order"].includes(p))
+                                setEditingUser({ ...editingUser, permissions: nonSales })
+                              }}
+                              className="text-[10px] font-bold text-gray-500 hover:underline cursor-pointer"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          {SALES_SUB_PERMISSIONS.map((perm) => {
+                            const isPermChecked = (editingUser.permissions || []).includes(perm.id)
+                            return (
+                              <label
+                                key={perm.id}
+                                className={cn(
+                                  "flex items-start gap-2 p-2.5 rounded-xl border transition-all cursor-pointer",
+                                  isPermChecked
+                                    ? "bg-white border-amber-500/40 shadow-2xs"
+                                    : "bg-white/40 border-black/5 hover:bg-white"
+                                )}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isPermChecked}
+                                  onChange={() => {
+                                    const nextPerms = isPermChecked
+                                      ? (editingUser.permissions || []).filter(p => p !== perm.id)
+                                      : [...(editingUser.permissions || []), perm.id]
+                                    setEditingUser({ ...editingUser, permissions: nextPerms })
+                                  }}
+                                  className="accent-amber-600 size-3.5 mt-0.5 cursor-pointer"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <span className="text-xs font-bold text-gray-900 block">{perm.label}</span>
+                                  <span className="text-[9px] text-gray-500 block leading-tight mt-0.5">{perm.desc}</span>
+                                </div>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Warehouse Scope Selection */}
@@ -1257,34 +1497,39 @@ export default function UserManagement() {
                     <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                       Warehouse Access Scope
                     </label>
-                    <span className="text-[10px] font-bold text-gray-500">
-                      {!editingUser.roles.includes("inventory")
-                        ? "Applies to Inventory Role"
-                        : (editingUser.warehouse_ids || []).length === 0
-                        ? "All Warehouses & HQ"
-                        : `${(editingUser.warehouse_ids || []).length} Restricted`}
-                    </span>
+                    {(() => {
+                      const hasWarehouseRole = editingUser.roles.includes("inventory") || editingUser.roles.includes("sales")
+                      return (
+                        <span className="text-[10px] font-bold text-gray-500">
+                          {!hasWarehouseRole
+                            ? "Applies to Sales & Inventory Roles"
+                            : (editingUser.warehouse_ids || []).length === 0
+                            ? "All Warehouses & HQ"
+                            : `${(editingUser.warehouse_ids || []).length} Restricted`}
+                        </span>
+                      )
+                    })()}
                   </div>
 
                   {/* Scope Mode Selection */}
                   {(() => {
-                    const hasInventory = editingUser.roles.includes("inventory")
-                    const isAllSelected = hasInventory && (editingUser.warehouse_ids || []).length === 0
-                    const isSpecificSelected = hasInventory && (editingUser.warehouse_ids || []).length > 0
+                    const hasWarehouseRole = editingUser.roles.includes("inventory") || editingUser.roles.includes("sales")
+                    const isAllSelected = hasWarehouseRole && (editingUser.warehouse_ids || []).length === 0
+                    const isSpecificSelected = hasWarehouseRole && (editingUser.warehouse_ids || []).length > 0
 
                     return (
                       <>
                         <div className="grid grid-cols-2 gap-2 mb-2.5">
                           <button
                             type="button"
-                            disabled={!hasInventory}
+                            disabled={!hasWarehouseRole}
                             onClick={() => {
-                              if (!hasInventory) return
+                              if (!hasWarehouseRole) return
                               setEditingUser({ ...editingUser, warehouse_ids: [], warehouse_id: null })
                             }}
                             className={cn(
                               "flex flex-col items-start p-3 rounded-2xl border text-left transition-all",
-                              !hasInventory
+                              !hasWarehouseRole
                                 ? "bg-black/[0.01] border-black/5 text-gray-400 opacity-40 cursor-not-allowed"
                                 : isAllSelected
                                 ? "bg-green-700/10 border-green-600 text-green-900 shadow-2xs ring-1 ring-green-600/30 cursor-pointer"
@@ -1295,7 +1540,7 @@ export default function UserManagement() {
                               <span
                                 className={cn(
                                   "size-3 rounded-full border flex items-center justify-center",
-                                  !hasInventory
+                                  !hasWarehouseRole
                                     ? "border-gray-300 bg-transparent"
                                     : isAllSelected
                                     ? "border-green-700 bg-green-700"
@@ -1304,20 +1549,20 @@ export default function UserManagement() {
                               >
                                 {isAllSelected && <span className="size-1.5 rounded-full bg-white" />}
                               </span>
-                              <span className={cn("text-xs font-bold", !hasInventory ? "text-gray-400" : "text-black")}>
+                              <span className={cn("text-xs font-bold", !hasWarehouseRole ? "text-gray-400" : "text-black")}>
                                 HQ & All Warehouses
                               </span>
                             </div>
-                            <p className={cn("text-[10px] mt-1 pl-5", !hasInventory ? "text-gray-400" : "text-gray-500")}>
+                            <p className={cn("text-[10px] mt-1 pl-5", !hasWarehouseRole ? "text-gray-400" : "text-gray-500")}>
                               Access to operations across all warehouse facilities and HQ.
                             </p>
                           </button>
 
                           <button
                             type="button"
-                            disabled={!hasInventory}
+                            disabled={!hasWarehouseRole}
                             onClick={() => {
-                              if (!hasInventory) return
+                              if (!hasWarehouseRole) return
                               if ((editingUser.warehouse_ids || []).length === 0) {
                                 const initialWh = warehouses[0]?.code || "WH1"
                                 setEditingUser({ ...editingUser, warehouse_ids: [initialWh], warehouse_id: initialWh })
@@ -1325,7 +1570,7 @@ export default function UserManagement() {
                             }}
                             className={cn(
                               "flex flex-col items-start p-3 rounded-2xl border text-left transition-all",
-                              !hasInventory
+                              !hasWarehouseRole
                                 ? "bg-black/[0.01] border-black/5 text-gray-400 opacity-40 cursor-not-allowed"
                                 : isSpecificSelected
                                 ? "bg-green-700/10 border-green-600 text-green-900 shadow-2xs ring-1 ring-green-600/30 cursor-pointer"
@@ -1336,7 +1581,7 @@ export default function UserManagement() {
                               <span
                                 className={cn(
                                   "size-3 rounded-full border flex items-center justify-center",
-                                  !hasInventory
+                                  !hasWarehouseRole
                                     ? "border-gray-300 bg-transparent"
                                     : isSpecificSelected
                                     ? "border-green-700 bg-green-700"
@@ -1345,18 +1590,18 @@ export default function UserManagement() {
                               >
                                 {isSpecificSelected && <span className="size-1.5 rounded-full bg-white" />}
                               </span>
-                              <span className={cn("text-xs font-bold", !hasInventory ? "text-gray-400" : "text-black")}>
+                              <span className={cn("text-xs font-bold", !hasWarehouseRole ? "text-gray-400" : "text-black")}>
                                 Specific Warehouses
                               </span>
                             </div>
-                            <p className={cn("text-[10px] mt-1 pl-5", !hasInventory ? "text-gray-400" : "text-gray-500")}>
+                            <p className={cn("text-[10px] mt-1 pl-5", !hasWarehouseRole ? "text-gray-400" : "text-gray-500")}>
                               Restrict operations to designated warehouse facilities only.
                             </p>
                           </button>
                         </div>
 
                         {/* Checklist of warehouses */}
-                        {hasInventory && (editingUser.warehouse_ids || []).length > 0 && (
+                        {hasWarehouseRole && (editingUser.warehouse_ids || []).length > 0 && (
                           <div className="space-y-1.5 bg-black/[0.01] p-3 rounded-2xl border border-black/5">
                             <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
                               Select Allowed Warehouses

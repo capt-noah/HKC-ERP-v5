@@ -50,6 +50,15 @@ export function sanitizeUser(user) {
       safeUser.warehouse_ids = []
     }
   }
+  if (typeof safeUser.permissions === "string") {
+    try {
+      safeUser.permissions = JSON.parse(safeUser.permissions)
+    } catch {
+      safeUser.permissions = []
+    }
+  } else if (!Array.isArray(safeUser.permissions)) {
+    safeUser.permissions = safeUser.permissions ? [safeUser.permissions] : []
+  }
 
   return safeUser
 }

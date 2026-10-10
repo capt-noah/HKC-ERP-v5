@@ -15,6 +15,7 @@ export interface User {
   roles: Role[]
   fullname: string
   warehouse_ids: string[]
+  permissions?: string[]
 }
 
 interface AuthState {

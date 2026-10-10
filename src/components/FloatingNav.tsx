@@ -184,6 +184,11 @@ export function FloatingNav({
     if (child.path === "/inventory/processing-services" && !hasWH1Access) {
       return false
     }
+    if (!isSuperAdmin && user?.permissions && Array.isArray(user.permissions) && user.permissions.length > 0) {
+      if (child.path === "/sales/sales-issued" && !user.permissions.includes("sales_issue")) return false
+      if (child.path === "/sales/sales-orders" && !user.permissions.includes("sales_order")) return false
+      if (child.path === "/sales/purchase-orders" && !user.permissions.includes("purchase_order")) return false
+    }
     return true
   })
 
@@ -566,7 +571,16 @@ export function FloatingNav({
                   {visibleSections.map((section) => {
                     const isSecActive = activeSection?.label === section.label
                     const IconComp = sectionIcons[section.label] || Package
-                    const sectionChildren = section.children || []
+                    const rawSectionChildren = section.children || []
+                    const sectionChildren = rawSectionChildren.filter((child) => {
+                      if (child.path === "/inventory/processing-services" && !hasWH1Access) return false
+                      if (!isSuperAdmin && user?.permissions && Array.isArray(user.permissions) && user.permissions.length > 0) {
+                        if (child.path === "/sales/sales-issued" && !user.permissions.includes("sales_issue")) return false
+                        if (child.path === "/sales/sales-orders" && !user.permissions.includes("sales_order")) return false
+                        if (child.path === "/sales/purchase-orders" && !user.permissions.includes("purchase_order")) return false
+                      }
+                      return true
+                    })
 
                     return (
                       <div key={section.label} className="space-y-1">

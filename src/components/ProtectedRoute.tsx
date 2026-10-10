@@ -9,9 +9,10 @@ import { hrStore } from "@/lib/hrStore"
 interface ProtectedRouteProps {
   children: React.ReactNode
   allowedRoles?: Role[]
+  requiredPermission?: string
 }
 
-export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
+export function ProtectedRoute({ children, allowedRoles, requiredPermission }: ProtectedRouteProps) {
   const { user, isAuthenticated } = useAuthStore()
   const location = useLocation()
   const authenticated = isAuthenticated()
@@ -90,6 +91,18 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
         break
     }
     return <Navigate to={homeRoute} replace />
+  }
+
+  // Check granular permission if required
+  if (
+    !userRoles.includes("superadmin") &&
+    requiredPermission &&
+    user?.permissions &&
+    Array.isArray(user.permissions) &&
+    user.permissions.length > 0 &&
+    !user.permissions.includes(requiredPermission)
+  ) {
+    return <Navigate to="/sales" replace />
   }
 
   return <>{children}</>

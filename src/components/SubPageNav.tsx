@@ -45,6 +45,11 @@ export function SubPageNav({ items, variant = "light" }: SubPageNavProps) {
 
   const visibleItems = items.filter(item => {
     if (item.path === "/inventory/processing-services" && !hasWH1Access) return false
+    if (!isSuperAdmin && user?.permissions && Array.isArray(user.permissions) && user.permissions.length > 0) {
+      if (item.path === "/sales/sales-issued" && !user.permissions.includes("sales_issue")) return false
+      if (item.path === "/sales/sales-orders" && !user.permissions.includes("sales_order")) return false
+      if (item.path === "/sales/purchase-orders" && !user.permissions.includes("purchase_order")) return false
+    }
     return true
   })
 

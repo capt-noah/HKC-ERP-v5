@@ -280,6 +280,18 @@ export async function login(req, res) {
       warehouseIds = user.warehouse_id ? [user.warehouse_id] : []
     }
 
+    let permissions = user.permissions
+    if (typeof permissions === "string") {
+      try {
+        permissions = JSON.parse(permissions)
+      } catch {
+        permissions = []
+      }
+    }
+    if (!Array.isArray(permissions)) {
+      permissions = []
+    }
+
     // Create database-backed session (6 hours expiration per security mandate)
     let session = null
     try {
@@ -294,6 +306,7 @@ export async function login(req, res) {
         id: user.id,
         username: user.username,
         roles,
+        permissions,
         fullname,
         role: primaryRole,
         warehouse_ids: warehouseIds,
@@ -331,6 +344,7 @@ export async function login(req, res) {
         id: user.id,
         username: user.username,
         roles,
+        permissions,
         role: primaryRole,
         fullname,
         first_name: user.first_name || user.firstName,
@@ -372,10 +386,23 @@ export async function getCurrentUser(req, res) {
       warehouseIds = u.warehouse_id ? [u.warehouse_id] : []
     }
 
+    let permissions = u.permissions
+    if (typeof permissions === "string") {
+      try {
+        permissions = JSON.parse(permissions)
+      } catch {
+        permissions = []
+      }
+    }
+    if (!Array.isArray(permissions)) {
+      permissions = []
+    }
+
     res.status(200).json({
       id: u.id,
       username: u.username,
       roles,
+      permissions,
       role: roles[0],
       fullname,
       first_name: u.first_name || u.firstName,
@@ -513,7 +540,7 @@ export async function changePassword(req, res) {
 }
 
 export async function register(req, res) {
-  const { username, password, roles, role, status, fullname, firstName, lastName, warehouse_ids, warehouse_id, employee_id } = req.body
+  const { username, password, roles, role, permissions, status, fullname, firstName, lastName, warehouse_ids, warehouse_id, employee_id } = req.body
 
   if (!username || !password) {
     return res.status(400).json({ error: "Username and password are required" })
@@ -526,6 +553,7 @@ export async function register(req, res) {
 
   const assignedRoles = Array.isArray(roles) && roles.length > 0 ? roles : [role || "viewer"]
   let assignedWarehouseIds = Array.isArray(warehouse_ids) ? warehouse_ids : warehouse_id ? [warehouse_id] : []
+  let assignedPermissions = Array.isArray(permissions) ? permissions : (permissions ? [permissions] : [])
 
   try {
     const resource = getResource("users")
@@ -551,6 +579,7 @@ export async function register(req, res) {
         password_hash,
         role: assignedRoles[0],
         roles: assignedRoles,
+        permissions: assignedPermissions,
         fullname: fNameFull || username,
         first_name: fName,
         last_name: lName,

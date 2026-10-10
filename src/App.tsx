@@ -90,12 +90,12 @@ export function App() {
         <Route path="/sales" element={<ProtectedRoute allowedRoles={["superadmin", "sales"]}><SalesDashboard /></ProtectedRoute>} />
         <Route path="/sales/hkc-docs" element={<ProtectedRoute allowedRoles={["superadmin", "hkc_docs"]}><HkcDocs /></ProtectedRoute>} />
         <Route path="/sales/processing-services" element={<Navigate to="/inventory/processing-services" replace />} />
-        <Route path="/sales/sales-issued" element={<ProtectedRoute allowedRoles={["superadmin", "sales"]}><SalesIssued /></ProtectedRoute>} />
-        <Route path="/sales/sales-issued/:id/attachment" element={<ProtectedRoute allowedRoles={["superadmin", "sales"]}><CreditSalesAttachment /></ProtectedRoute>} />
-        <Route path="/sales/sales-orders" element={<ProtectedRoute allowedRoles={["superadmin", "sales"]}><SalesOrders /></ProtectedRoute>} />
+        <Route path="/sales/sales-issued" element={<ProtectedRoute allowedRoles={["superadmin", "sales"]} requiredPermission="sales_issue"><SalesIssued /></ProtectedRoute>} />
+        <Route path="/sales/sales-issued/:id/attachment" element={<ProtectedRoute allowedRoles={["superadmin", "sales"]} requiredPermission="sales_issue"><CreditSalesAttachment /></ProtectedRoute>} />
+        <Route path="/sales/sales-orders" element={<ProtectedRoute allowedRoles={["superadmin", "sales"]} requiredPermission="sales_order"><SalesOrders /></ProtectedRoute>} />
         <Route path="/sales/quotations" element={<Navigate to="/sales/sales-orders" replace />} />
         <Route path="/sales/delivery-notes" element={<Navigate to="/sales/sales-orders" replace />} />
-        <Route path="/sales/purchase-orders" element={<ProtectedRoute allowedRoles={["superadmin", "sales"]}><PurchaseOrders /></ProtectedRoute>} />
+        <Route path="/sales/purchase-orders" element={<ProtectedRoute allowedRoles={["superadmin", "sales"]} requiredPermission="purchase_order"><PurchaseOrders /></ProtectedRoute>} />
         <Route path="/purchase-orders" element={<Navigate to="/sales/purchase-orders" replace />} />
 
         {/* Inventory section */}

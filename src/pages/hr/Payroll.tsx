@@ -119,6 +119,8 @@ export default function Payroll() {
   const [selectedRecordIds, setSelectedRecordIds] = useState<Set<string>>(new Set())
   const [paymentModalRecords, setPaymentModalRecords] = useState<PayrollRecord[] | null>(null)
   const [isPaying, setIsPaying] = useState(false)
+  const [approvalModalRecord, setApprovalModalRecord] = useState<PayrollRecord | null>(null)
+  const [isApproving, setIsApproving] = useState(false)
 
   const isEnsuringRef = useRef(false)
 
@@ -944,9 +946,9 @@ export default function Payroll() {
                                 {canApprove && (
                                   <button
                                     type="button"
-                                    onClick={() => transitionPaymentStatus(record, "Approved")}
+                                    onClick={() => setApprovalModalRecord(record)}
                                     className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-[11px] transition-all border border-emerald-200/80 active:scale-95 shadow-2xs cursor-pointer"
-                                    title="Approve Payroll"
+                                    title="Review & Approve Payroll"
                                   >
                                     <BadgeCheck className="size-3 text-emerald-700" /> Approve
                                   </button>
@@ -1132,6 +1134,45 @@ export default function Payroll() {
             if (!isPaying) setPaymentModalRecords(null)
           }}
           onConfirm={handleConfirmPayments}
+        />
+      )}
+
+      {/* PRE-APPROVAL REVIEW CONFIRMATION DIALOG MODAL */}
+      {approvalModalRecord && (
+        <PayrollApprovalConfirmationModal
+          record={approvalModalRecord}
+          employeeById={employeeById}
+          warehouses={warehouses}
+          period={
+            currentPeriod ||
+            (approvalModalRecord.payroll_period_id
+              ? periodById.get(approvalModalRecord.payroll_period_id)
+              : undefined)
+          }
+          isProcessing={isApproving}
+          onClose={() => {
+            if (!isApproving) setApprovalModalRecord(null)
+          }}
+          onEdit={() => {
+            const rec = approvalModalRecord
+            setApprovalModalRecord(null)
+            if (rec) setEditing(rec)
+          }}
+          onConfirm={async () => {
+            if (!approvalModalRecord) return
+            setIsApproving(true)
+            try {
+              await transitionPaymentStatus(approvalModalRecord, "Approved")
+              setApprovalModalRecord(null)
+              showToast(
+                "Payroll Approved",
+                "success",
+                `Payroll record for ${employeeById.get(approvalModalRecord.employee_id)?.full_name || approvalModalRecord.employee_id} has been approved.`
+              )
+            } finally {
+              setIsApproving(false)
+            }
+          }}
         />
       )}
     </div>
@@ -2222,6 +2263,271 @@ function PayrollPaymentConfirmationModal({
                   <span>
                     Confirm &amp; Pay {records.length > 1 ? `(${records.length} Employees)` : ""}
                   </span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface PayrollApprovalConfirmationModalProps {
+  record: PayrollRecord
+  employeeById: Map<string, Employee>
+  warehouses?: Warehouse[]
+  period?: PayrollPeriod
+  isProcessing: boolean
+  onClose: () => void
+  onEdit: () => void
+  onConfirm: () => Promise<void>
+}
+
+function PayrollApprovalConfirmationModal({
+  record,
+  employeeById,
+  warehouses = [],
+  period,
+  isProcessing,
+  onClose,
+  onEdit,
+  onConfirm,
+}: PayrollApprovalConfirmationModalProps) {
+  const emp = employeeById.get(record.employee_id)
+  const empName = emp?.full_name || record.employee_id
+  const empRole = emp?.employment_type || "Staff Employee"
+  const whName = resolveWarehouseFullName(emp?.warehouse_id, warehouses)
+
+  const allowancesTotal =
+    Number(
+      record.allowances ||
+        Number(record.taxable_allowances || 0) + Number(record.non_taxable_allowances || 0)
+    ) +
+    Number(record.bonus || 0) +
+    Number(record.overtime_pay || 0) +
+    Number(record.other_earnings || 0)
+
+  const deductionsTotal = Number(record.total_deductions || 0)
+  const grossPay = Number(record.gross_pay || 0)
+  const netPay = Number(record.net_pay || 0)
+  const basicSalary = Number(record.basic_salary || 0)
+  const pension = Number(record.pension || 0)
+  const incomeTax = Number(record.tax || 0)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+      <div className="w-full max-w-4xl bg-white dark:bg-zinc-900 rounded-3xl p-6 md:p-8 shadow-2xl border border-black/10 dark:border-white/10 my-8">
+        {/* Header */}
+        <div className="flex items-start justify-between pb-4 mb-4 border-b border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-2xl border border-emerald-200 dark:border-emerald-800/50">
+              <BadgeCheck className="size-6 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg md:text-xl font-black text-zinc-950 dark:text-white tracking-tight">
+                  Payroll Approval Verification
+                </h3>
+                {period && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-[11px] font-extrabold text-zinc-700 dark:text-zinc-300">
+                    {period.name}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-zinc-500 font-semibold mt-0.5">
+                Carefully verify salary calculations, statutory deductions, and net payable before granting official approval.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={isProcessing}
+            className="p-2 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer disabled:opacity-40"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+
+        {/* Employee Summary Card */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/80 dark:border-zinc-700/60 mb-5 gap-3">
+          <div className="flex items-center gap-3">
+            <div className="size-11 rounded-2xl bg-emerald-700/10 dark:bg-emerald-400/10 border border-emerald-600/20 flex items-center justify-center text-emerald-700 dark:text-emerald-400 font-black text-base">
+              {empName.slice(0, 2).toUpperCase()}
+            </div>
+            <div>
+              <div className="text-sm font-black text-zinc-950 dark:text-white flex items-center gap-2">
+                {empName}
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300">
+                  {emp?.employee_number || record.employee_id}
+                </span>
+              </div>
+              <div className="text-xs text-zinc-500 font-semibold mt-0.5">
+                {empRole} • <span className="text-zinc-700 dark:text-zinc-300">{whName}</span>
+              </div>
+            </div>
+          </div>
+          <div className="text-right">
+            <span className="text-[9px] font-black text-zinc-400 uppercase tracking-wider block">Current Status</span>
+            <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-black inline-block mt-0.5">
+              Pending Review
+            </span>
+          </div>
+        </div>
+
+        {/* 4 Summary KPI Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+          <div className="bg-zinc-50 dark:bg-zinc-800/50 p-3.5 rounded-2xl border border-zinc-200/60 dark:border-zinc-700/50">
+            <span className="block text-[9px] font-black text-zinc-400 uppercase tracking-wider">
+              Basic Salary
+            </span>
+            <span className="text-lg font-black text-zinc-950 dark:text-white mt-1 block font-mono">
+              ETB {money(basicSalary)}
+            </span>
+          </div>
+          <div className="bg-zinc-50 dark:bg-zinc-800/50 p-3.5 rounded-2xl border border-zinc-200/60 dark:border-zinc-700/50">
+            <span className="block text-[9px] font-black text-zinc-400 uppercase tracking-wider">
+              Allowances &amp; Earnings
+            </span>
+            <span className="text-lg font-black text-zinc-950 dark:text-white mt-1 block font-mono">
+              ETB {money(allowancesTotal)}
+            </span>
+          </div>
+          <div className="bg-zinc-50 dark:bg-zinc-800/50 p-3.5 rounded-2xl border border-zinc-200/60 dark:border-zinc-700/50">
+            <span className="block text-[9px] font-black text-zinc-400 uppercase tracking-wider">
+              Statutory Deductions
+            </span>
+            <span className="text-lg font-black text-rose-600 dark:text-rose-400 mt-1 block font-mono">
+              ETB {money(deductionsTotal)}
+            </span>
+          </div>
+          <div className="bg-emerald-50 dark:bg-emerald-950/30 p-3.5 rounded-2xl border border-emerald-200 dark:border-emerald-800/50">
+            <span className="block text-[9px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
+              Net Take-Home Pay
+            </span>
+            <span className="text-lg font-black text-emerald-700 dark:text-emerald-400 mt-1 block font-mono">
+              ETB {money(netPay)}
+            </span>
+          </div>
+        </div>
+
+        {/* Detailed Breakdown Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+          {/* Earnings Breakdown */}
+          <div className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/60 space-y-2.5">
+            <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-wider block border-b border-zinc-100 dark:border-zinc-800 pb-2">
+              Gross Earnings Breakdown
+            </span>
+            <div className="space-y-1.5 text-xs">
+              <div className="flex items-center justify-between text-zinc-600 dark:text-zinc-300">
+                <span>Basic Salary</span>
+                <span className="font-mono font-bold text-zinc-900 dark:text-white">ETB {money(basicSalary)}</span>
+              </div>
+              <div className="flex items-center justify-between text-zinc-600 dark:text-zinc-300">
+                <span>Taxable Allowances</span>
+                <span className="font-mono font-bold text-zinc-900 dark:text-white">ETB {money(record.taxable_allowances ?? record.allowances ?? 0)}</span>
+              </div>
+              <div className="flex items-center justify-between text-zinc-600 dark:text-zinc-300">
+                <span>Non-Taxable Allowances</span>
+                <span className="font-mono font-bold text-zinc-900 dark:text-white">ETB {money(record.non_taxable_allowances || 0)}</span>
+              </div>
+              <div className="flex items-center justify-between text-zinc-600 dark:text-zinc-300">
+                <span>Overtime Pay</span>
+                <span className="font-mono font-bold text-zinc-900 dark:text-white">ETB {money(record.overtime_pay || 0)}</span>
+              </div>
+              <div className="flex items-center justify-between text-zinc-600 dark:text-zinc-300">
+                <span>Bonus &amp; Other Earnings</span>
+                <span className="font-mono font-bold text-zinc-900 dark:text-white">ETB {money(Number(record.bonus || 0) + Number(record.other_earnings || 0))}</span>
+              </div>
+              <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between font-black text-zinc-950 dark:text-white">
+                <span>Total Gross Pay</span>
+                <span className="font-mono text-emerald-700 dark:text-emerald-400">ETB {money(grossPay)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Deductions Breakdown */}
+          <div className="p-4 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900/60 space-y-2.5">
+            <span className="text-[10px] font-black text-rose-600 dark:text-rose-400 uppercase tracking-wider block border-b border-zinc-100 dark:border-zinc-800 pb-2">
+              Statutory Withholdings &amp; Deductions
+            </span>
+            <div className="space-y-1.5 text-xs">
+              <div className="flex items-center justify-between text-zinc-600 dark:text-zinc-300">
+                <span>Employee Pension (7%)</span>
+                <span className="font-mono font-bold text-rose-600 dark:text-rose-400">ETB {money(pension)}</span>
+              </div>
+              <div className="flex items-center justify-between text-zinc-600 dark:text-zinc-300">
+                <span>Income Tax (PAYE)</span>
+                <span className="font-mono font-bold text-rose-600 dark:text-rose-400">ETB {money(incomeTax)}</span>
+              </div>
+              <div className="flex items-center justify-between text-zinc-600 dark:text-zinc-300">
+                <span>Absence Deduction</span>
+                <span className="font-mono font-bold text-rose-600 dark:text-rose-400">ETB {money(record.absence_deduction || 0)}</span>
+              </div>
+              <div className="flex items-center justify-between text-zinc-600 dark:text-zinc-300">
+                <span>Loan / Advance Repayment</span>
+                <span className="font-mono font-bold text-rose-600 dark:text-rose-400">ETB {money(record.loan_deduction || 0)}</span>
+              </div>
+              <div className="flex items-center justify-between text-zinc-600 dark:text-zinc-300">
+                <span>Other Deductions</span>
+                <span className="font-mono font-bold text-rose-600 dark:text-rose-400">ETB {money(record.other_deductions || 0)}</span>
+              </div>
+              <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between font-black text-zinc-950 dark:text-white">
+                <span>Total Deductions</span>
+                <span className="font-mono text-rose-600 dark:text-rose-400">ETB {money(deductionsTotal)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Verification Check Notice */}
+        <div className="rounded-2xl bg-amber-500/[0.06] p-3.5 border border-amber-500/20 mb-5 flex items-start gap-2.5">
+          <BadgeCheck className="size-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
+            <span className="font-bold block mb-0.5">HR Pre-Approval Audit Note</span>
+            Please confirm that the basic salary, allowances, and statutory tax/pension match the employee's contract and attendance logs. If any figures need correction, click <strong>"Edit / Fix Record"</strong> to adjust them before approving.
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between pt-3 border-t border-zinc-200 dark:border-zinc-800 gap-3">
+          <div className="text-xs font-bold text-zinc-500 flex items-center gap-2">
+            <span>Net Take-Home:</span>
+            <strong className="text-emerald-700 dark:text-emerald-400 font-mono text-base">ETB {money(netPay)}</strong>
+          </div>
+          <div className="flex items-center justify-end gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isProcessing}
+              className="px-4 py-2.5 rounded-xl bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-bold text-xs transition-all cursor-pointer disabled:opacity-40"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onEdit}
+              disabled={isProcessing}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-900 dark:text-white font-bold text-xs transition-all cursor-pointer active:scale-95 disabled:opacity-40"
+            >
+              <Pencil className="size-3.5 text-zinc-700 dark:text-zinc-300" />
+              <span>Edit / Fix Record</span>
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={isProcessing}
+              className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-600/25 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  <span>Approving...</span>
+                </>
+              ) : (
+                <>
+                  <BadgeCheck className="size-4" />
+                  <span>Confirm &amp; Approve</span>
                 </>
               )}
             </button>
