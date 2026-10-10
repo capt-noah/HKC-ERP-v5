@@ -8,6 +8,7 @@ import {
   BadgeDollarSign,
   Users,
   ShoppingCart,
+  FileText,
 } from "lucide-react"
 
 export default function NotFound() {
@@ -151,6 +152,15 @@ export default function NotFound() {
                   >
                     <BadgeDollarSign className="size-4 text-zinc-500 group-hover:text-emerald-700 transition-colors" />
                     <span className="font-bold text-[11px] text-zinc-700 group-hover:text-emerald-800">Finance</span>
+                  </button>
+                )}
+                {(primaryRole === "superadmin" || primaryRole === "hkc_docs") && (
+                  <button
+                    onClick={() => navigate("/sales/hkc-docs")}
+                    className="p-2.5 rounded-xl bg-white/60 hover:bg-white border border-zinc-200/60 hover:border-emerald-300 flex flex-col items-center gap-1.5 transition-all shadow-xs cursor-pointer group"
+                  >
+                    <FileText className="size-4 text-zinc-500 group-hover:text-emerald-700 transition-colors" />
+                    <span className="font-bold text-[11px] text-zinc-700 group-hover:text-emerald-800">HKC Docs</span>
                   </button>
                 )}
                 {(primaryRole === "superadmin" || primaryRole === "hr") && (

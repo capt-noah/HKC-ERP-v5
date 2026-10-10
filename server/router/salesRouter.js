@@ -6,8 +6,9 @@ export const salesRouter = Router()
 
 // RBAC Role Guard Helpers
 const requireProcessingMutation = authorizeRoles("superadmin", "inventory", "sales")
-const requireShipmentDocMutation = authorizeRoles("superadmin", "hkc_docs", "sales")
-const requireSalesIssueMutation = authorizeRoles("superadmin", "sales", "hkc_docs", "inventory")
+const requireShipmentDocAccess = authorizeRoles("superadmin", "hkc_docs")
+const requireShipmentDocMutation = authorizeRoles("superadmin", "hkc_docs")
+const requireSalesIssueMutation = authorizeRoles("superadmin", "sales", "inventory")
 const requireSuperAdmin = authorizeRoles("superadmin")
 
 salesRouter.get(["/processing-services", "/processing_services"], async (req, res, next) => {
@@ -81,7 +82,7 @@ salesRouter.post(["/processing-services/:id/upload-contract", "/processing_servi
   }
 })
 
-salesRouter.get(["/shipment-documents/officers", "/shipment_documents/officers"], async (req, res, next) => {
+salesRouter.get(["/shipment-documents/officers", "/shipment_documents/officers"], requireShipmentDocAccess, async (req, res, next) => {
   try {
     const result = await salesService.listAssignedOfficers()
     res.status(result.status).json(result.body)
@@ -99,7 +100,7 @@ salesRouter.post(["/shipment-documents/assign", "/shipment_documents/assign"], r
   }
 })
 
-salesRouter.get(["/shipment-documents/rules", "/shipment_documents/rules"], async (req, res, next) => {
+salesRouter.get(["/shipment-documents/rules", "/shipment_documents/rules"], requireShipmentDocAccess, async (req, res, next) => {
   try {
     const result = await salesService.listShipmentDocRules(req.query)
     res.status(result.status).json(result.body)
@@ -108,7 +109,7 @@ salesRouter.get(["/shipment-documents/rules", "/shipment_documents/rules"], asyn
   }
 })
 
-salesRouter.get(["/shipment-documents", "/shipment_documents"], async (req, res, next) => {
+salesRouter.get(["/shipment-documents", "/shipment_documents"], requireShipmentDocAccess, async (req, res, next) => {
   try {
     const result = await salesService.listShipmentDocs(req.query)
     res.status(result.status).json(result.body)
