@@ -1,7 +1,11 @@
 import path from "node:path"
 import fs from "node:fs"
+import { fileURLToPath } from "node:url"
 import { Router } from "express"
 import multer from "multer"
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 export const uploadRouter = Router()
 
@@ -20,34 +24,48 @@ const ALLOWED_FOLDERS = new Set([
   "general",
 ])
 
-// Base uploads root directory
-const UPLOADS_ROOT = path.resolve(process.cwd(), "uploads")
-if (!fs.existsSync(UPLOADS_ROOT)) {
-  fs.mkdirSync(UPLOADS_ROOT, { recursive: true })
+// Base uploads root directory (guaranteed relative to project root)
+const UPLOADS_ROOT = path.resolve(__dirname, "../../uploads")
+try {
+  if (!fs.existsSync(UPLOADS_ROOT)) {
+    fs.mkdirSync(UPLOADS_ROOT, { recursive: true })
+  }
+} catch (err) {
+  console.warn("[UPLOADS_ROOT INIT NOTICE]:", err.message)
 }
 
 // Multer Disk Storage Configuration
 const storage = multer.diskStorage({
   destination: (req, _file, cb) => {
-    let rawFolder = (req.query?.folder || req.body?.folder || "general").toString().toLowerCase().trim()
-    let folder = ALLOWED_FOLDERS.has(rawFolder) ? rawFolder : "general"
+    try {
+      let rawFolder = (req.query?.folder || req.body?.folder || "general").toString().toLowerCase().trim()
+      let folder = ALLOWED_FOLDERS.has(rawFolder) ? rawFolder : "general"
 
-    const targetDir = path.join(UPLOADS_ROOT, folder)
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true })
+      const targetDir = path.join(UPLOADS_ROOT, folder)
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true })
+      }
+
+      cb(null, targetDir)
+    } catch (err) {
+      console.error("[STORAGE DESTINATION ERROR]:", err)
+      cb(err)
     }
-
-    cb(null, targetDir)
   },
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase()
-    const basename = path
-      .basename(file.originalname, ext)
-      .replace(/[^a-zA-Z0-9_-]/g, "_")
-      .slice(0, 50)
-    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-    const safeFilename = `${uniqueSuffix}-${basename}${ext}`
-    cb(null, safeFilename)
+    try {
+      const ext = path.extname(file.originalname).toLowerCase()
+      const basename = path
+        .basename(file.originalname, ext)
+        .replace(/[^a-zA-Z0-9_-]/g, "_")
+        .slice(0, 50)
+      const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+      const safeFilename = `${uniqueSuffix}-${basename}${ext}`
+      cb(null, safeFilename)
+    } catch (err) {
+      console.error("[STORAGE FILENAME ERROR]:", err)
+      cb(err)
+    }
   },
 })
 

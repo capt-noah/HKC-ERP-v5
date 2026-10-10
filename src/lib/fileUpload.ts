@@ -75,6 +75,74 @@ export async function compressImageIfPossible(
 }
 
 /**
+ * Compresses an image file in-browser into an optimized, compact File object.
+ * Reduces 5-15MB camera photos down to ~200-400KB before uploading to prevent
+ * Nginx HTTP/2 protocol errors (client_max_body_size), proxy buffer stalls, and timeouts.
+ */
+export async function compressImageToFile(
+  file: File,
+  maxWidth = 1920,
+  maxHeight = 1080,
+  quality = 0.85
+): Promise<File> {
+  if (typeof window === "undefined" || !file.type.startsWith("image/")) {
+    return file
+  }
+  // Keep tiny images / SVGs / GIFs untouched
+  if (file.size <= 350 * 1024 || file.type.includes("svg") || file.type.includes("gif")) {
+    return file
+  }
+
+  return new Promise<File>((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        let { width, height } = img
+        if (width > maxWidth || height > maxHeight) {
+          if (width / maxWidth > height / maxHeight) {
+            height = Math.round((height * maxWidth) / width)
+            width = maxWidth
+          } else {
+            width = Math.round((width * maxHeight) / height)
+            height = maxHeight
+          }
+        }
+        const canvas = document.createElement("canvas")
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext("2d")
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height)
+          canvas.toBlob(
+            (blob) => {
+              if (blob && blob.size < file.size) {
+                const cleanName = file.name.replace(/\.[^.]+$/, ".jpg")
+                const compressedFile = new File([blob], cleanName, {
+                  type: "image/jpeg",
+                  lastModified: Date.now(),
+                })
+                resolve(compressedFile)
+              } else {
+                resolve(file)
+              }
+            },
+            "image/jpeg",
+            quality
+          )
+        } else {
+          resolve(file)
+        }
+      }
+      img.onerror = () => resolve(file)
+      img.src = e.target?.result as string
+    }
+    reader.onerror = () => resolve(file)
+    reader.readAsDataURL(file)
+  })
+}
+
+/**
  * Uploads a local file to the server storage organized under the specified folder category.
  * If the server is unreachable or responds with an error, it gracefully falls back to optimized DataURL encoding.
  */
@@ -84,10 +152,11 @@ export async function uploadFile(
   allowDataUrlFallback = false
 ): Promise<UploadResult> {
   const authHeaders = getAuthHeaders()
+  const processedFile = file.type.startsWith("image/") ? await compressImageToFile(file) : file
 
   const formData = new FormData()
   formData.append("folder", folder)
-  formData.append("file", file)
+  formData.append("file", processedFile)
 
   try {
     const uploadUrl = `${API_BASE}/api/upload?folder=${encodeURIComponent(folder)}`
@@ -139,17 +208,19 @@ export async function uploadFile(
 /**
  * Uploads a local file to server storage with real-time byte and percentage progress events.
  */
-export function uploadFileWithProgress(
+export async function uploadFileWithProgress(
   file: File,
   folder: UploadFolder = "general",
   onProgress?: (percent: number, loaded: number, total: number) => void,
   signal?: AbortSignal
 ): Promise<UploadResult> {
+  const processedFile = file.type.startsWith("image/") ? await compressImageToFile(file) : file
+
   return new Promise((resolve, reject) => {
     const authHeaders = getAuthHeaders()
     const formData = new FormData()
     formData.append("folder", folder)
-    formData.append("file", file)
+    formData.append("file", processedFile)
 
     const uploadUrl = `${API_BASE}/api/upload?folder=${encodeURIComponent(folder)}`
     const xhr = new XMLHttpRequest()
