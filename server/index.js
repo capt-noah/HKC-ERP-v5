@@ -278,7 +278,7 @@ function shutdown(signal) {
   setTimeout(() => {
     console.error("Forced exit after timeout.")
     process.exit(1)
-  }, 10_000).unref()
+  }, 3_000).unref()
 }
 
 process.on("SIGTERM", () => shutdown("SIGTERM"))

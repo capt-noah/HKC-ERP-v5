@@ -196,6 +196,8 @@ export default function SalesOrders() {
   const [editingOrder, setEditingOrder] = useState<SalesOrder | null>(null)
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false)
   const [isSavingEditOrder, setIsSavingEditOrder] = useState(false)
+  const [isUploadingTradePaper, setIsUploadingTradePaper] = useState(false)
+  const [isUploadingPaymentAdvice, setIsUploadingPaymentAdvice] = useState(false)
   const [isSubmittingQuotation, setIsSubmittingQuotation] = useState(false)
   const [deletingOrder, setDeletingOrder] = useState<SalesOrder | null>(null)
   const [isNewQuotationOpen, setIsNewQuotationOpen] = useState(false)
@@ -1828,6 +1830,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                   const f = e.target.files?.[0]
                                   if (f) {
                                     try {
+                                      setIsUploadingTradePaper(true)
                                       const res = await uploadFile(f, "sales_orders")
                                       setStagedTradePaperName(res.originalName)
                                       setStagedTradePaperUrl(res.url)
@@ -1839,6 +1842,9 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                       })
                                     } catch (err: any) {
                                       showToast("Upload Error", "warning", err.message || "Failed to upload file")
+                                    } finally {
+                                      setIsUploadingTradePaper(false)
+                                      e.target.value = ""
                                     }
                                   }
                                 }}
@@ -1892,6 +1898,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                     const f = e.target.files?.[0]
                                     if (f) {
                                       try {
+                                        setIsUploadingPaymentAdvice(true)
                                         const res = await uploadFile(f, "sales_orders")
                                         setStagedPaymentAdviceName(res.originalName)
                                         setStagedPaymentAdviceUrl(res.url)
@@ -1902,6 +1909,9 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                         })
                                       } catch (err: any) {
                                         showToast("Upload Error", "warning", err.message || "Failed to upload file")
+                                      } finally {
+                                        setIsUploadingPaymentAdvice(false)
+                                        e.target.value = ""
                                       }
                                     }
                                   }}
@@ -2095,7 +2105,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
                   <button 
                     type="button" 
-                    disabled={isSubmittingOrder}
+                    disabled={isSubmittingOrder || isUploadingTradePaper || isUploadingPaymentAdvice}
                     onClick={() => setIsNewOrderOpen(false)}
                     className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
                   >
@@ -2103,10 +2113,19 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   </button>
                   <button 
                     type="submit" 
-                    disabled={isSubmittingOrder}
-                    className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    disabled={isSubmittingOrder || isUploadingTradePaper || isUploadingPaymentAdvice}
+                    className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors gap-2"
                   >
-                    {isSubmittingOrder ? <LoadingDots color="bg-white" size="sm" /> : "Create Order"}
+                    {isSubmittingOrder ? (
+                      <LoadingDots color="bg-white" size="sm" />
+                    ) : isUploadingTradePaper || isUploadingPaymentAdvice ? (
+                      <>
+                        <LoadingDots color="bg-white" size="sm" />
+                        <span>Uploading document...</span>
+                      </>
+                    ) : (
+                      "Create Order"
+                    )}
                   </button>
                 </div>
               </form>
@@ -2353,6 +2372,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                           const f = e.target.files?.[0]
                           if (f) {
                             try {
+                              setIsUploadingTradePaper(true)
                               const res = await uploadFile(f, "sales_orders")
                               setStagedTradePaperName(res.originalName)
                               setStagedTradePaperUrl(res.url)
@@ -2364,6 +2384,9 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                               })
                             } catch (err: any) {
                               showToast("Upload Error", "warning", err.message || "Failed to upload file")
+                            } finally {
+                              setIsUploadingTradePaper(false)
+                              e.target.value = ""
                             }
                           }
                         }}
@@ -2416,6 +2439,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                             const f = e.target.files?.[0]
                             if (f) {
                               try {
+                                setIsUploadingPaymentAdvice(true)
                                 const res = await uploadFile(f, "sales_orders")
                                 setStagedPaymentAdviceName(res.originalName)
                                 setStagedPaymentAdviceUrl(res.url)
@@ -2426,6 +2450,9 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                 })
                               } catch (err: any) {
                                 showToast("Upload Error", "warning", err.message || "Failed to upload file")
+                              } finally {
+                                setIsUploadingPaymentAdvice(false)
+                                e.target.value = ""
                               }
                             }
                           }}
@@ -2619,7 +2646,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
           <button 
             type="button" 
-            disabled={isSavingEditOrder}
+            disabled={isSavingEditOrder || isUploadingTradePaper || isUploadingPaymentAdvice}
             onClick={() => setIsEditOrderOpen(false)}
             className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
           >
@@ -2627,10 +2654,19 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           </button>
           <button 
             type="submit" 
-            disabled={isSavingEditOrder}
-            className="min-w-[150px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            disabled={isSavingEditOrder || isUploadingTradePaper || isUploadingPaymentAdvice}
+            className="min-w-[150px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors gap-2"
           >
-            {isSavingEditOrder ? <LoadingDots color="bg-white" size="sm" /> : "Save Order Changes"}
+            {isSavingEditOrder ? (
+              <LoadingDots color="bg-white" size="sm" />
+            ) : isUploadingTradePaper || isUploadingPaymentAdvice ? (
+              <>
+                <LoadingDots color="bg-white" size="sm" />
+                <span>Uploading document...</span>
+              </>
+            ) : (
+              "Save Order Changes"
+            )}
           </button>
         </div>
               </form>

@@ -42,6 +42,7 @@ import {
   uploadProcessingServiceContract,
   deleteProcessingService,
 } from "@/lib/processingServicesApi"
+import { validateFileForUpload } from "@/lib/fileUpload"
 
 function ProcessingServicesSkeletonRows() {
   return (
@@ -396,6 +397,11 @@ export default function ProcessingServices() {
 
   // Upload Contract File
   const handleUploadContract = async (id: string, file: File) => {
+    const valErr = validateFileForUpload(file)
+    if (valErr) {
+      showToast("Invalid File", "warning", valErr)
+      return
+    }
     setIsUploadingContract(true)
     try {
       const updated = await uploadProcessingServiceContract(id, file)
@@ -1383,11 +1389,20 @@ export default function ProcessingServices() {
                     </button>
                     <button
                       type="button"
-                      disabled={isSavingEdit}
+                      disabled={isSavingEdit || isUploadingContract}
                       onClick={handleSaveEdit}
-                      className="min-w-[140px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="min-w-[140px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors gap-2"
                     >
-                      {isSavingEdit ? <LoadingDots color="bg-white" size="sm" /> : "Save Order Changes"}
+                      {isSavingEdit ? (
+                        <LoadingDots color="bg-white" size="sm" />
+                      ) : isUploadingContract ? (
+                        <>
+                          <LoadingDots color="bg-white" size="sm" />
+                          <span>Uploading Contract...</span>
+                        </>
+                      ) : (
+                        "Save Order Changes"
+                      )}
                     </button>
                   </div>
                 </div>
@@ -1569,10 +1584,19 @@ export default function ProcessingServices() {
                         <input
                           type="file"
                           accept=".pdf,.png,.jpg,.jpeg"
+                          disabled={isSubmitting}
                           className="hidden"
                           onChange={(e) => {
                             const file = e.target.files?.[0]
-                            if (file) setCreateContractFile(file)
+                            if (file) {
+                              const valErr = validateFileForUpload(file)
+                              if (valErr) {
+                                showToast("Invalid File", "warning", valErr)
+                                e.target.value = ""
+                                return
+                              }
+                              setCreateContractFile(file)
+                            }
                           }}
                         />
                       </label>

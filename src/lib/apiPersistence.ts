@@ -224,8 +224,10 @@ export async function updateExportMovementDifference(movementId: string, differe
   return body
 }
 
-export function persistResources(resources: Array<{ resource: string; items: Identified[] }>) {
-  return Promise.all(resources.map(({ resource, items }) => replaceResource(resource, items))).then(() => undefined)
+export async function persistResources(resources: Array<{ resource: string; items: Identified[] }>): Promise<void> {
+  for (const { resource, items } of resources) {
+    await replaceResource(resource, items)
+  }
 }
 
 export async function postInvoiceGLDistribution(invoiceId: string, payload: any) {

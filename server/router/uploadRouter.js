@@ -109,10 +109,29 @@ const upload = multer({
 
 /**
  * POST /api/upload
- * Single file upload handler with safe error interceptor
+ * Single file upload handler with safe error interceptor and CORS guarantee
  */
 uploadRouter.post("/upload", (req, res, next) => {
+  res.set("Access-Control-Allow-Origin", "*")
+  res.set("Access-Control-Allow-Methods", "POST, OPTIONS")
+  res.set("Access-Control-Allow-Headers", "*")
+
+  let isAborted = false
+  req.on("aborted", () => {
+    isAborted = true
+  })
+  req.on("close", () => {
+    if (!res.writableEnded && req.file?.path) {
+      fs.unlink(req.file.path, () => {})
+    }
+  })
+
   upload.single("file")(req, res, (err) => {
+    if (isAborted) {
+      if (req.file?.path) fs.unlink(req.file.path, () => {})
+      return
+    }
+
     if (err) {
       if (err instanceof multer.MulterError) {
         return res.status(400).json({ success: false, error: `Upload error: ${err.message}` })
@@ -145,6 +164,10 @@ uploadRouter.post("/upload", (req, res, next) => {
  * Multiple files upload handler with safe error interceptor
  */
 uploadRouter.post("/upload/multiple", (req, res, next) => {
+  res.set("Access-Control-Allow-Origin", "*")
+  res.set("Access-Control-Allow-Methods", "POST, OPTIONS")
+  res.set("Access-Control-Allow-Headers", "*")
+
   upload.array("files", 30)(req, res, (err) => {
     if (err) {
       if (err instanceof multer.MulterError) {

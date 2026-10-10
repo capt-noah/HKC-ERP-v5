@@ -27,7 +27,7 @@ import { numberToBirrWords } from "@/lib/numberToWords"
 import PurchaseOrderPrintModal from "@/components/purchase/PurchaseOrderPrintModal"
 import PurchaseOrderGLSplitModal from "@/components/purchase/PurchaseOrderGLSplitModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
-import { uploadFile } from "@/lib/fileUpload"
+import { uploadFile, uploadFilesConcurrently } from "@/lib/fileUpload"
 import COAAccountSelector from "@/components/finance/COAAccountSelector"
 import PurchaseCOASplitSection, { type SplitLineItem } from "@/components/purchase/PurchaseCOASplitSection"
 import { 
@@ -96,9 +96,12 @@ export default function PurchaseOrders() {
 
   // Dedicated Payment Advice (Optional)
   const [paymentAdvice, setPaymentAdvice] = useState<PurchaseOrderAttachment | null>(null)
+  const [isUploadingPaymentAdvice, setIsUploadingPaymentAdvice] = useState(false)
 
   // Optional Supporting Attachments
   const [attachments, setAttachments] = useState<PurchaseOrderAttachment[]>([])
+  const [isUploadingSupporting, setIsUploadingSupporting] = useState(false)
+  const [supportingUploadStatus, setSupportingUploadStatus] = useState("")
 
   // Load ERP inventory, sales data, and finance data on mount / page refresh
   useEffect(() => {
@@ -549,14 +552,10 @@ export default function PurchaseOrders() {
           const uploadRes = await uploadFile(payAdviceFile, "purchase_orders")
           stagedSlipName = uploadRes.originalName
           stagedSlipUrl = uploadRes.url
-        } catch (uploadErr) {
-          console.warn("Server upload failed, falling back to data URL:", uploadErr)
-          stagedSlipName = payAdviceFile.name
-          stagedSlipUrl = await new Promise<string>((resolve) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(reader.result as string)
-            reader.readAsDataURL(payAdviceFile)
-          })
+        } catch (uploadErr: any) {
+          showToast("Upload Failed", "warning", uploadErr.message || "Failed to upload payment advice receipt. Please retry.")
+          setIsSubmittingPayment(false)
+          return
         }
       }
 
@@ -608,6 +607,7 @@ export default function PurchaseOrders() {
     if (!file) return
 
     try {
+      setIsUploadingPaymentAdvice(true)
       const res = await uploadFile(file, "purchase_orders")
       const newAdvice: PurchaseOrderAttachment = {
         id: `adv-${Date.now()}`,
@@ -617,35 +617,53 @@ export default function PurchaseOrders() {
         uploadedAt: new Date().toISOString(),
       }
       setPaymentAdvice(newAdvice)
-    } catch (err) {
+      showToast("Payment Slip Attached", "success", `${file.name} uploaded successfully.`)
+    } catch (err: any) {
       console.warn("Payment advice upload failed:", err)
-      showToast("Upload Error", "warning", "Failed to upload payment advice file.")
+      showToast("Upload Error", "warning", err.message || "Failed to upload payment advice file.")
+    } finally {
+      setIsUploadingPaymentAdvice(false)
+      e.target.value = ""
     }
-    e.target.value = ""
   }
 
-  // Supporting Files Upload Handler
+  // Supporting Files Upload Handler with Concurrency Throttling (Max 2)
   const handleSupportingFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
+    const fileList = Array.from(files)
 
-    for (const file of Array.from(files)) {
-      try {
-        const res = await uploadFile(file, "purchase_orders")
-        const newAttachment: PurchaseOrderAttachment = {
-          id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          name: res.originalName || file.name,
-          size: file.size,
-          url: res.url,
-          uploadedAt: new Date().toISOString(),
+    try {
+      setIsUploadingSupporting(true)
+      setSupportingUploadStatus(`Uploading 1 of ${fileList.length}...`)
+
+      const uploadedResults = await uploadFilesConcurrently(
+        fileList,
+        "purchase_orders",
+        2,
+        (completed, total, currentName) => {
+          setSupportingUploadStatus(`Uploading ${completed + 1} of ${total} (${currentName})...`)
         }
-        setAttachments((prev) => [...prev, newAttachment])
-      } catch (err) {
-        console.warn("Supporting file upload failed:", err)
-      }
-    }
+      )
 
-    e.target.value = ""
+      const newAttachments: PurchaseOrderAttachment[] = uploadedResults.map((res) => ({
+        id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        name: res.originalName,
+        size: res.size,
+        url: res.url,
+        uploadedAt: new Date().toISOString(),
+      }))
+
+      setAttachments((prev) => [...prev, ...newAttachments])
+      showToast("Files Attached", "success", `${newAttachments.length} supporting file(s) uploaded successfully.`)
+    } catch (err: any) {
+      console.warn("Supporting file upload failed:", err)
+      showToast("Upload Error", "warning", err.message || "Failed to upload one or more files.")
+    } finally {
+      setIsUploadingSupporting(false)
+      setSupportingUploadStatus("")
+      e.target.value = ""
+    }
   }
 
   const handleRemoveSupportingAttachment = (id: string) => {
@@ -1759,7 +1777,7 @@ export default function PurchaseOrders() {
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
                   <button 
                     type="button" 
-                    disabled={isSubmittingVoucher}
+                    disabled={isSubmittingVoucher || isUploadingSupporting || isUploadingPaymentAdvice}
                     onClick={() => setIsCreateModalOpen(false)}
                     className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 cursor-pointer"
                   >
@@ -1767,10 +1785,19 @@ export default function PurchaseOrders() {
                   </button>
                   <button 
                     type="submit" 
-                    disabled={isSubmittingVoucher}
-                    className="min-w-[150px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                    disabled={isSubmittingVoucher || isUploadingSupporting || isUploadingPaymentAdvice}
+                    className="min-w-[150px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer gap-2"
                   >
-                    {isSubmittingVoucher ? <LoadingDots color="bg-white" size="sm" /> : (paymentType === "Credit" ? "Create Credit Purchase" : "Create Cheque Voucher")}
+                    {isSubmittingVoucher ? (
+                      <LoadingDots color="bg-white" size="sm" />
+                    ) : isUploadingSupporting || isUploadingPaymentAdvice ? (
+                      <>
+                        <LoadingDots color="bg-white" size="sm" />
+                        <span>{supportingUploadStatus || "Uploading file..."}</span>
+                      </>
+                    ) : (
+                      paymentType === "Credit" ? "Create Credit Purchase" : "Create Cheque Voucher"
+                    )}
                   </button>
                 </div>
               </form>
@@ -2253,7 +2280,7 @@ export default function PurchaseOrders() {
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
                   <button 
                     type="button" 
-                    disabled={isSavingEditVoucher}
+                    disabled={isSavingEditVoucher || isUploadingSupporting || isUploadingPaymentAdvice}
                     onClick={() => setIsEditModalOpen(false)}
                     className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 cursor-pointer"
                   >
@@ -2261,10 +2288,19 @@ export default function PurchaseOrders() {
                   </button>
                   <button 
                     type="submit" 
-                    disabled={isSavingEditVoucher}
-                    className="min-w-[150px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                    disabled={isSavingEditVoucher || isUploadingSupporting || isUploadingPaymentAdvice}
+                    className="min-w-[150px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer gap-2"
                   >
-                    {isSavingEditVoucher ? <LoadingDots color="bg-white" size="sm" /> : "Save Changes"}
+                    {isSavingEditVoucher ? (
+                      <LoadingDots color="bg-white" size="sm" />
+                    ) : isUploadingSupporting || isUploadingPaymentAdvice ? (
+                      <>
+                        <LoadingDots color="bg-white" size="sm" />
+                        <span>{supportingUploadStatus || "Uploading file..."}</span>
+                      </>
+                    ) : (
+                      "Save Changes"
+                    )}
                   </button>
                 </div>
               </form>

@@ -443,8 +443,8 @@ export function activityLoggerMiddleware(req, res, next) {
     if (res.statusCode >= 200 && res.statusCode < 300 && req.user) {
       const { resource, action } = parseRequestAction(req.method, req.originalUrl || req.url)
 
-      // Skip logging logs themselves to prevent recursion
-      if (resource === "user_activity_logs") {
+      // Skip logging logs themselves and raw file uploads to avoid DB contention
+      if (resource === "user_activity_logs" || resource === "upload") {
         return
       }
 

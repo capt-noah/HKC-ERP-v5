@@ -12,8 +12,9 @@ function getPoolConfig() {
     return {
       uri,
       waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
+      connectionLimit: 25,
+      queueLimit: 150,
+      connectTimeout: 20000,
       enableKeepAlive: true,
       keepAliveInitialDelay: 10000,
       dateStrings: true,
@@ -29,8 +30,9 @@ function getPoolConfig() {
     password: config.dbPassword,
     database: config.dbName,
     waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
+    connectionLimit: 25,
+    queueLimit: 150,
+    connectTimeout: 20000,
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
     dateStrings: true,
@@ -39,6 +41,11 @@ function getPoolConfig() {
 
 // MySQL connection pool
 export const pool = mysql.createPool(getPoolConfig())
+
+// Catch background connection drops without crashing the Node process
+pool.on("error", (err) => {
+  console.error("[MYSQL POOL EVENT ERROR]:", err.message || err)
+})
 
 // Unified type-safe Drizzle MySQL client
 export const db = drizzle(pool, { schema, mode: "default" })

@@ -126,18 +126,8 @@ export async function uploadProcessingServiceContract(
   id: string,
   file: File
 ): Promise<ProcessingServiceOrder> {
-  let contractUrl = ""
-  try {
-    const upRes = await uploadFile(file, "processing_services")
-    contractUrl = upRes.url
-  } catch {
-    contractUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = () => reject(new Error("Failed to read contract file."))
-      reader.readAsDataURL(file)
-    })
-  }
+  const upRes = await uploadFile(file, "processing_services")
+  const contractUrl = upRes.url
 
   const res = await fetch(`${API_BASE}/api/processing-services/${id}/upload-contract`, {
     method: "POST",

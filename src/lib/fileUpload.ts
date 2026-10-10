@@ -142,23 +142,59 @@ export async function compressImageToFile(
   })
 }
 
+const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25 MB
+const ALLOWED_EXTENSIONS = new Set([
+  ".pdf",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".heic",
+  ".heif",
+  ".tiff",
+  ".tif",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".csv",
+  ".txt",
+])
+
+export function validateFileForUpload(file: File): string | null {
+  if (file.size > MAX_FILE_SIZE) {
+    return `File '${file.name}' (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 25 MB limit. Please select a smaller file.`
+  }
+  const extMatch = file.name.match(/\.[^.]+$/)
+  const ext = extMatch ? extMatch[0].toLowerCase() : ""
+  if (ext && !ALLOWED_EXTENSIONS.has(ext)) {
+    return `File type '${ext}' is not supported. Allowed formats: PDF, PNG, JPG, JPEG, WEBP, HEIC, DOCX, XLSX, CSV.`
+  }
+  return null
+}
+
 /**
- * Uploads a local file to the server storage organized under the specified folder category.
- * If the server is unreachable or responds with an error, it gracefully falls back to optimized DataURL encoding.
+ * Uploads a local file to server storage organized under the specified folder category.
+ * Enforces client-side validation, in-browser compression, and safe 1-shot retry.
  */
 export async function uploadFile(
   file: File,
   folder: UploadFolder = "general",
-  allowDataUrlFallback = false
+  _legacyFallback?: boolean
 ): Promise<UploadResult> {
-  const authHeaders = getAuthHeaders()
-  const processedFile = file.type.startsWith("image/") ? await compressImageToFile(file) : file
+  const validationError = validateFileForUpload(file)
+  if (validationError) {
+    throw new Error(validationError)
+  }
 
-  const formData = new FormData()
-  formData.append("folder", folder)
-  formData.append("file", processedFile)
+  const attemptUpload = async (): Promise<UploadResult> => {
+    const authHeaders = getAuthHeaders()
+    const processedFile = file.type.startsWith("image/") ? await compressImageToFile(file) : file
 
-  try {
+    const formData = new FormData()
+    formData.append("folder", folder)
+    formData.append("file", processedFile)
+
     const uploadUrl = `${API_BASE}/api/upload?folder=${encodeURIComponent(folder)}`
     const res = await fetch(uploadUrl, {
       method: "POST",
@@ -179,29 +215,26 @@ export async function uploadFile(
     return {
       url: data.url,
       filename: data.filename,
-      originalName: data.originalName,
-      size: data.size,
-      mimeType: data.mimeType,
+      originalName: data.originalName || file.name,
+      size: data.size || file.size,
+      mimeType: data.mimeType || file.type || "application/octet-stream",
       folder,
     }
-  } catch (error) {
-    if (allowDataUrlFallback) {
-      console.warn(`[FILE UPLOAD]: Server upload failed for ${file.name}, falling back to local encoding:`, error)
-      const dataUrl = await compressImageIfPossible(file)
-      return {
-        url: dataUrl,
-        filename: file.name,
-        originalName: file.name,
-        size: file.size,
-        mimeType: file.type || "image/jpeg",
-        folder,
-      }
-    }
+  }
 
-    console.error(`[FILE UPLOAD]: Server upload failed for ${file.name}:`, error)
-    throw error instanceof Error
-      ? error
-      : new Error(`Failed to upload ${file.name} to server storage.`)
+  try {
+    return await attemptUpload()
+  } catch (firstError) {
+    console.warn(`[FILE UPLOAD]: First attempt failed for ${file.name}, retrying in 1s...`, firstError)
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    try {
+      return await attemptUpload()
+    } catch (secondError) {
+      console.error(`[FILE UPLOAD]: Server upload permanently failed for ${file.name}:`, secondError)
+      throw secondError instanceof Error
+        ? secondError
+        : new Error(`Failed to upload ${file.name} to server storage.`)
+    }
   }
 }
 
@@ -214,6 +247,7 @@ export async function uploadFileWithProgress(
   onProgress?: (percent: number, loaded: number, total: number) => void,
   signal?: AbortSignal
 ): Promise<UploadResult> {
+  validateFileForUpload(file)
   const processedFile = file.type.startsWith("image/") ? await compressImageToFile(file) : file
 
   return new Promise((resolve, reject) => {
@@ -287,6 +321,43 @@ export async function uploadFileWithProgress(
 
     xhr.send(formData)
   })
+}
+
+/**
+ * Uploads multiple files with a strict concurrency ceiling (default max 2)
+ * to prevent saturating Nginx proxy buffers or starving server event loops.
+ */
+export async function uploadFilesConcurrently(
+  files: File[],
+  folder: UploadFolder = "general",
+  maxConcurrency = 2,
+  onProgress?: (completedCount: number, totalCount: number, currentFileName: string) => void,
+  signal?: AbortSignal
+): Promise<UploadResult[]> {
+  if (!files || files.length === 0) return []
+  const results: UploadResult[] = new Array(files.length)
+  let currentIndex = 0
+  let completedCount = 0
+
+  const worker = async (): Promise<void> => {
+    while (currentIndex < files.length) {
+      if (signal?.aborted) throw new Error("Upload aborted by user")
+      const index = currentIndex++
+      const file = files[index]
+      if (onProgress) onProgress(completedCount, files.length, file.name)
+
+      const res = await uploadFile(file, folder)
+      results[index] = res
+      completedCount++
+      if (onProgress) onProgress(completedCount, files.length, file.name)
+    }
+  }
+
+  const workerCount = Math.min(maxConcurrency, files.length)
+  const workers = Array.from({ length: workerCount }, () => worker())
+  await Promise.all(workers)
+
+  return results
 }
 
 /**

@@ -611,17 +611,13 @@ function EmployeeForm({
 
   const handleNationalIdImage = async (file: File | undefined) => {
     if (!file) return
-    if (file.size > 15_000_000) {
-      window.alert("National ID document must be 15 MB or smaller.")
-      return
-    }
     try {
       setUploadingId(true)
       const res = await uploadFile(file, "employees")
       setForm((prev) => ({ ...prev, national_id_image: res.url }))
-    } catch (err) {
+    } catch (err: any) {
       console.warn("National ID image upload failed:", err)
-      window.alert("Failed to upload National ID image. Please try again.")
+      window.alert(err?.message || "Failed to upload National ID image. Please try again.")
     } finally {
       setUploadingId(false)
     }

@@ -28,7 +28,7 @@ import {
   savePaymentAdvice,
   fetchTradeAndAdviceDocs,
 } from "@/lib/tradeDocumentService"
-import { uploadFile } from "@/lib/fileUpload"
+import { uploadFile, validateFileForUpload } from "@/lib/fileUpload"
 import { getLocalDateString } from "@/lib/dateUtils"
 import {
   fetchProcessingServices,
@@ -326,6 +326,7 @@ export default function SalesIssued() {
   const [payAdviceFile, setPayAdviceFile] = useState<File | null>(null)
   const [payNotes, setPayNotes] = useState("")
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false)
+  const [isUploadingAdvice, setIsUploadingAdvice] = useState(false)
 
   // Processing Services State (for EXP-WH Processing delivery issues)
   const [processedServices, setProcessedServices] = useState<ProcessingServiceOrder[]>([])
@@ -1356,14 +1357,10 @@ export default function SalesIssued() {
           const uploadRes = await uploadFile(payAdviceFile, "sales_issued")
           stagedSlipName = uploadRes.originalName
           stagedSlipUrl = uploadRes.url
-        } catch (uploadErr) {
-          console.warn("Server upload failed, falling back to data URL:", uploadErr)
-          stagedSlipName = payAdviceFile.name
-          stagedSlipUrl = await new Promise<string>((resolve) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(reader.result as string)
-            reader.readAsDataURL(payAdviceFile)
-          })
+        } catch (uploadErr: any) {
+          showToast("Upload Failed", "warning", uploadErr.message || "Failed to upload payment advice receipt. Please retry.")
+          setIsSubmittingPayment(false)
+          return
         }
 
         const linkedSoId = (payingIssue as any).sales_order_id || (payingIssue.reference_no?.startsWith("SO-") ? payingIssue.reference_no : undefined)
@@ -2918,10 +2915,18 @@ export default function SalesIssued() {
                                   <input
                                     type="file"
                                     className="hidden"
+                                    disabled={isUploadingAdvice}
                                     onChange={async (e) => {
                                       const f = e.target.files?.[0]
                                       if (f) {
+                                        const valErr = validateFileForUpload(f)
+                                        if (valErr) {
+                                          showToast("Invalid File", "warning", valErr)
+                                          e.target.value = ""
+                                          return
+                                        }
                                         try {
+                                          setIsUploadingAdvice(true)
                                           const uploadRes = await uploadFile(f, "sales_issued")
                                           setStagedPaymentAdviceName(uploadRes.originalName || f.name)
                                           setStagedPaymentAdviceUrl(uploadRes.url)
@@ -2930,9 +2935,12 @@ export default function SalesIssued() {
                                             delete next.paymentAdvice
                                             return next
                                           })
-                                        } catch (err) {
+                                        } catch (err: any) {
                                           console.warn("Payment advice upload failed:", err)
-                                          showToast("Upload Failed", "warning", "Could not upload payment advice.")
+                                          showToast("Upload Failed", "warning", err.message || "Could not upload payment advice.")
+                                        } finally {
+                                          setIsUploadingAdvice(false)
+                                          e.target.value = ""
                                         }
                                       }
                                     }}
@@ -3421,11 +3429,20 @@ export default function SalesIssued() {
                 </button>
                 <button
                   type="button"
-                  disabled={isSaving}
+                  disabled={isSaving || isUploadingAdvice}
                   onClick={() => void handleSave()}
-                  className="h-10 min-w-[90px] inline-flex items-center justify-center rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed px-5 text-xs font-black text-white transition-colors cursor-pointer"
+                  className="h-10 min-w-[90px] inline-flex items-center justify-center rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 disabled:cursor-not-allowed px-5 text-xs font-black text-white transition-colors cursor-pointer gap-2"
                 >
-                  {isSaving ? <LoadingDots color="bg-white" size="sm" /> : "Save"}
+                  {isSaving ? (
+                    <LoadingDots color="bg-white" size="sm" />
+                  ) : isUploadingAdvice ? (
+                    <>
+                      <LoadingDots color="bg-white" size="sm" />
+                      <span>Uploading advice...</span>
+                    </>
+                  ) : (
+                    "Save"
+                  )}
                 </button>
               </div>
             </div>
@@ -3577,9 +3594,17 @@ export default function SalesIssued() {
                           type="file"
                           accept=".pdf,.png,.jpg,.jpeg"
                           className="hidden"
+                          disabled={isSubmittingPayment}
                           onChange={(e) => {
                             if (e.target.files && e.target.files[0]) {
-                              setPayAdviceFile(e.target.files[0])
+                              const f = e.target.files[0]
+                              const valErr = validateFileForUpload(f)
+                              if (valErr) {
+                                showToast("Invalid File", "warning", valErr)
+                                e.target.value = ""
+                                return
+                              }
+                              setPayAdviceFile(f)
                             }
                           }}
                         />

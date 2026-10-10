@@ -49,6 +49,7 @@ export default function PartnersRegistry() {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [deletingCustomer, setDeletingCustomer] = useState<Customer | null>(null)
   const [isSubmittingCustomer, setIsSubmittingCustomer] = useState(false)
+  const [isUploadingCustFile, setIsUploadingCustFile] = useState(false)
 
   const [showAddSupplierModal, setShowAddSupplierModal] = useState(false)
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null)
@@ -146,6 +147,7 @@ export default function PartnersRegistry() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    setIsUploadingCustFile(true)
     try {
       const res = await uploadFile(file, "customers")
       setCustTradePaperName(res.originalName)
@@ -154,6 +156,9 @@ export default function PartnersRegistry() {
     } catch (err: any) {
       console.error("File upload failed:", err)
       showToast("Upload Failed", "warning", err.message || "Failed to upload file")
+    } finally {
+      setIsUploadingCustFile(false)
+      e.target.value = ""
     }
   }
 
@@ -989,9 +994,10 @@ export default function PartnersRegistry() {
                           </div>
                         )}
                         <div className="flex items-center gap-2 pt-1">
-                          <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
-                            <Upload className="size-3" /> Select File
-                            <input type="file" className="hidden" onChange={handleFileUpload} />
+                          <label className={`cursor-pointer px-3 py-1 rounded-lg text-white font-bold text-[11px] flex items-center gap-1 shrink-0 ${isUploadingCustFile ? "bg-zinc-400 cursor-not-allowed" : "bg-zinc-900 hover:bg-zinc-800"}`}>
+                            {isUploadingCustFile ? <LoadingDots color="bg-white" size="sm" /> : <Upload className="size-3" />}
+                            <span>{isUploadingCustFile ? "Uploading..." : "Select File"}</span>
+                            <input type="file" className="hidden" disabled={isUploadingCustFile} onChange={handleFileUpload} />
                           </label>
                           <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">{custTradePaperName || "No file chosen"}</span>
                           {custTradePaperUrl && (
@@ -1016,7 +1022,7 @@ export default function PartnersRegistry() {
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
                 <button
                   type="button"
-                  disabled={isSubmittingCustomer}
+                  disabled={isSubmittingCustomer || isUploadingCustFile}
                   onClick={() => setShowAddCustomerModal(false)}
                   className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
                 >
@@ -1024,10 +1030,18 @@ export default function PartnersRegistry() {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingCustomer}
+                  disabled={isSubmittingCustomer || isUploadingCustFile}
                   className="min-w-[130px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {isSubmittingCustomer ? <LoadingDots color="bg-white" size="sm" /> : (editingCustomer ? "Save Changes" : "Create Customer")}
+                  {isSubmittingCustomer ? (
+                    <LoadingDots color="bg-white" size="sm" />
+                  ) : isUploadingCustFile ? (
+                    "Uploading File..."
+                  ) : editingCustomer ? (
+                    "Save Changes"
+                  ) : (
+                    "Create Customer"
+                  )}
                 </button>
               </div>
             </form>

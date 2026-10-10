@@ -1802,7 +1802,7 @@ class FinanceStore {
         void this.saveToApi().catch((error) => {
           console.error("Failed to persist finance data to Database.", error)
         })
-      }, 350)
+      }, 750)
     }
     this.listeners.forEach((l) => l())
   }
@@ -4708,8 +4708,10 @@ class FinanceStore {
       this.invoices.unshift(invObj)
     }
 
-    persistResources([{ resource: "invoices", items: this.invoices }])
-    this.notify()
+    void persistResources([{ resource: "invoices", items: this.invoices }]).catch((err) =>
+      console.warn("[FinanceStore] Failed to persist purchase invoice:", err)
+    )
+    this.notify(false)
     return invObj
   }
 

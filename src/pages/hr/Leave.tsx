@@ -290,6 +290,7 @@ function Cell({ width, align = "left", children }: { width: number; align?: "lef
 }
 
 function LeaveForm({ form, setForm, employees, onClose, onSubmit }: { form: Omit<LeaveRequest, "id">; setForm: (form: Omit<LeaveRequest, "id">) => void; employees: Employee[]; onClose: () => void; onSubmit: (event: React.FormEvent) => void }) {
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false)
   const set = (key: keyof Omit<LeaveRequest, "id">, value: string | number) => setForm({ ...form, [key]: value, number_of_days: key === "start_date" || key === "end_date" ? leaveDays(key === "start_date" ? String(value) : form.start_date, key === "end_date" ? String(value) : form.end_date) : form.number_of_days })
   const handleDocument = async (file: File | undefined) => {
     if (!file) return
@@ -302,13 +303,17 @@ function LeaveForm({ form, setForm, employees, onClose, onSubmit }: { form: Omit
       return
     }
     try {
+      setIsUploadingDoc(true)
       const res = await uploadFile(file, "leave")
       set("document_path", res.url)
-    } catch {
-      set("document_path", name)
+    } catch (err: any) {
+      window.alert(err?.message || "Failed to upload document. Please retry.")
+      set("document_path", "")
+    } finally {
+      setIsUploadingDoc(false)
     }
   }
-  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"><div className="w-full max-w-3xl bg-white rounded-3xl p-6 shadow-2xl border border-black/10"><div className="flex items-center justify-between mb-5"><h3 className="text-lg font-black">Leave Request</h3><button onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div><form onSubmit={onSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"><div className="w-full max-w-3xl bg-white rounded-3xl p-6 shadow-2xl border border-black/10"><div className="flex items-center justify-between mb-5"><h3 className="text-lg font-black">Leave Request</h3><button onClick={onClose} disabled={isUploadingDoc} className="p-1.5 rounded-lg hover:bg-black/5"><X className="size-5" /></button></div><form onSubmit={onSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
     <label className="text-[10px] font-black uppercase tracking-wider text-zinc-500">Employee<select required value={form.employee_id} onChange={(event) => set("employee_id", event.target.value)} className="mt-1 w-full rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 text-xs font-bold outline-none"><option value="">Select employee</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.full_name} ({employee.employee_number})</option>)}</select></label>
     <Select label="Leave Type" value={form.leave_type} options={LEAVE_TYPES} onChange={(value) => set("leave_type", value)} />
     <Input label="Start Date" type="date" value={form.start_date} onChange={(value) => set("start_date", value)} required />
@@ -320,16 +325,16 @@ function LeaveForm({ form, setForm, employees, onClose, onSubmit }: { form: Omit
         <div className="flex min-h-10 items-center gap-3">
           <span className="size-9 rounded-lg bg-white border border-black/10 flex items-center justify-center text-zinc-500"><FileText className="size-4" /></span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-black text-zinc-900">{form.document_path || "No document selected"}</p>
+            <p className="truncate text-xs font-black text-zinc-900">{form.document_path || (isUploadingDoc ? "Uploading document..." : "No document selected")}</p>
             <p className="text-[10px] font-semibold text-zinc-500">PDF, DOCX, or PNG only.</p>
           </div>
         </div>
-        <input type="file" accept=".pdf,.docx,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png" onChange={(event) => handleDocument(event.target.files?.[0])} className="mt-3 w-full text-[10px] font-bold text-zinc-600 file:mr-2 file:rounded-full file:border-0 file:bg-black file:px-3 file:py-1.5 file:text-[10px] file:font-bold file:text-white" />
+        <input type="file" disabled={isUploadingDoc} accept=".pdf,.docx,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png" onChange={(event) => handleDocument(event.target.files?.[0])} className="mt-3 w-full text-[10px] font-bold text-zinc-600 file:mr-2 file:rounded-full file:border-0 file:bg-black file:px-3 file:py-1.5 file:text-[10px] file:font-bold file:text-white disabled:opacity-50" />
       </div>
     </label>
     <Input label="Reason" value={form.reason} onChange={(value) => set("reason", value)} required />
     <Input label="Notes" value={form.notes} onChange={(value) => set("notes", value)} />
-    <div className="md:col-span-2 flex justify-end gap-3 pt-2"><button type="button" onClick={onClose} className="px-4 py-2 rounded-full bg-black/5 text-xs font-bold">Cancel</button><button type="submit" className="px-5 py-2 rounded-full bg-black text-white text-xs font-bold">Save Leave Request</button></div>
+    <div className="md:col-span-2 flex justify-end gap-3 pt-2"><button type="button" disabled={isUploadingDoc} onClick={onClose} className="px-4 py-2 rounded-full bg-black/5 text-xs font-bold disabled:opacity-50">Cancel</button><button type="submit" disabled={isUploadingDoc} className="px-5 py-2 rounded-full bg-black text-white text-xs font-bold disabled:opacity-50">{isUploadingDoc ? "Uploading Document..." : "Save Leave Request"}</button></div>
   </form></div></div>
 }
 

@@ -35,7 +35,7 @@ import {
   savePaymentAdvice,
   fetchTradeAndAdviceDocs,
 } from "@/lib/tradeDocumentService"
-import { uploadFile } from "@/lib/fileUpload"
+import { uploadFile, validateFileForUpload } from "@/lib/fileUpload"
 import { updateSalesIssue } from "@/lib/salesIssuesApi"
 
 export type InvoiceAttachment = ShipmentDocAttachment
@@ -369,12 +369,11 @@ export default function Invoices() {
           const upRes = await uploadFile(editAdviceFile, "invoices")
           stagedSlipUrl = upRes.url
           stagedSlipName = upRes.filename || editAdviceFile.name
-        } catch {
-          stagedSlipUrl = await new Promise<string>((resolve) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(reader.result as string)
-            reader.readAsDataURL(editAdviceFile)
-          })
+        } catch (err: any) {
+          console.error("Payment advice upload failed:", err)
+          showToast("Upload Failed", "warning", err.message || "Failed to upload payment advice receipt. Please try again.")
+          setIsSavingEdit(false)
+          return
         }
 
         try {
@@ -1448,9 +1447,17 @@ export default function Invoices() {
                           type="file"
                           accept=".pdf,.png,.jpg,.jpeg"
                           className="hidden"
+                          disabled={isSavingEdit}
                           onChange={(e) => {
                             if (e.target.files && e.target.files[0]) {
-                              setEditAdviceFile(e.target.files[0])
+                              const file = e.target.files[0]
+                              const valErr = validateFileForUpload(file)
+                              if (valErr) {
+                                showToast("Invalid File", "warning", valErr)
+                                e.target.value = ""
+                                return
+                              }
+                              setEditAdviceFile(file)
                             }
                           }}
                         />

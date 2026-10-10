@@ -66,7 +66,7 @@ export default function HkcDocEditModal({
           const res = await fetch(item.fileUrl)
           const blob = await res.blob()
           const file = new File([blob], item.fileName, { type: blob.type || "image/jpeg" })
-          const upRes = await uploadFile(file, "hkc_docs", false)
+          const upRes = await uploadFile(file, "hkc_docs")
           if (!upRes.url || upRes.url.startsWith("data:")) {
             throw new Error(`Server returned invalid storage URL for ${item.fileName}`)
           }
