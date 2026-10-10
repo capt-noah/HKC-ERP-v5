@@ -80,7 +80,8 @@ export async function compressImageIfPossible(
  */
 export async function uploadFile(
   file: File,
-  folder: UploadFolder = "general"
+  folder: UploadFolder = "general",
+  allowDataUrlFallback = false
 ): Promise<UploadResult> {
   const authHeaders = getAuthHeaders()
 
@@ -97,8 +98,12 @@ export async function uploadFile(
     })
 
     if (!res.ok) {
-      const errData = await res.json().catch(() => ({}))
-      throw new Error(errData.error || `Server responded with status ${res.status}`)
+      let errorMsg = `Server responded with status ${res.status}`
+      try {
+        const errData = await res.json()
+        if (errData?.error) errorMsg = errData.error
+      } catch {}
+      throw new Error(errorMsg)
     }
 
     const data = await res.json()
@@ -111,19 +116,23 @@ export async function uploadFile(
       folder,
     }
   } catch (error) {
-    console.warn(`[FILE UPLOAD]: Server upload failed for ${file.name}, falling back to local encoding:`, error)
-
-    // Resilient fallback to compressed DataURL if server upload endpoint fails
-    const dataUrl = await compressImageIfPossible(file)
-
-    return {
-      url: dataUrl,
-      filename: file.name,
-      originalName: file.name,
-      size: file.size,
-      mimeType: file.type || "image/jpeg",
-      folder,
+    if (allowDataUrlFallback) {
+      console.warn(`[FILE UPLOAD]: Server upload failed for ${file.name}, falling back to local encoding:`, error)
+      const dataUrl = await compressImageIfPossible(file)
+      return {
+        url: dataUrl,
+        filename: file.name,
+        originalName: file.name,
+        size: file.size,
+        mimeType: file.type || "image/jpeg",
+        folder,
+      }
     }
+
+    console.error(`[FILE UPLOAD]: Server upload failed for ${file.name}:`, error)
+    throw error instanceof Error
+      ? error
+      : new Error(`Failed to upload ${file.name} to server storage.`)
   }
 }
 

@@ -25,6 +25,7 @@ interface HkcDocAttachmentPanelProps {
   onAddAttachments: (newFiles: { fileName: string; fileUrl: string }[]) => void
   onRemoveAttachment: (attachmentId: string) => void
   isEditing?: boolean
+  onUploadingChange?: (isUploading: boolean) => void
 }
 
 interface UploadQueueItem {
@@ -47,12 +48,18 @@ export default function HkcDocAttachmentPanel({
   attachments,
   onAddAttachments,
   onRemoveAttachment,
+  onUploadingChange,
 }: HkcDocAttachmentPanelProps) {
   const { confirm } = useFeedback()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [isCameraOpen, setIsCameraOpen] = useState(false)
   const [previewDoc, setPreviewDoc] = useState<{ fileName: string; fileUrl: string } | null>(null)
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([])
+
+  useEffect(() => {
+    const isBusy = uploadQueue.some((q) => q.status === "uploading" || q.status === "queued")
+    onUploadingChange?.(isBusy)
+  }, [uploadQueue, onUploadingChange])
 
   const handleDeleteAttachment = (file: HkcDocAttachment) => {
     confirm({

@@ -226,7 +226,11 @@ export default function CameraCaptureModal({
       const res = await fetch(capturedImage)
       const blob = await res.blob()
       const file = new File([blob], fileName, { type: "image/jpeg" })
-      const upRes = await uploadFile(file, "hkc_docs")
+      const upRes = await uploadFile(file, "hkc_docs", false)
+
+      if (!upRes.url || upRes.url.startsWith("data:")) {
+        throw new Error("Server storage unreachable. Could not upload photo.")
+      }
 
       onCapture({
         fileName: upRes.originalName || fileName,
@@ -235,7 +239,7 @@ export default function CameraCaptureModal({
       onClose()
     } catch (err: any) {
       console.warn("Camera photo upload failed:", err)
-      setCameraError("Failed to upload photo to server. Please try again.")
+      setCameraError(err?.message || "Failed to upload photo to server storage. Please try again.")
       setIsUploading(false)
       return
     } finally {

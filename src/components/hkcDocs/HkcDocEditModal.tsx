@@ -30,6 +30,7 @@ export default function HkcDocEditModal({
   const [attachments, setAttachments] = useState<HkcDocAttachment[]>([])
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
 
   useEffect(() => {
     if (record) {
@@ -65,14 +66,17 @@ export default function HkcDocEditModal({
           const res = await fetch(item.fileUrl)
           const blob = await res.blob()
           const file = new File([blob], item.fileName, { type: blob.type || "image/jpeg" })
-          const upRes = await uploadFile(file, "hkc_docs")
+          const upRes = await uploadFile(file, "hkc_docs", false)
+          if (!upRes.url || upRes.url.startsWith("data:")) {
+            throw new Error(`Server returned invalid storage URL for ${item.fileName}`)
+          }
           processed.push({
             ...item,
             fileUrl: upRes.url,
             fileName: upRes.originalName || item.fileName,
           })
         } catch (err: any) {
-          throw new Error(`Failed to upload ${item.fileName}. Please verify network connection and try again.`)
+          throw new Error(`Failed to upload ${item.fileName} to server storage (${err?.message || "network error"}). Please retry.`)
         }
       } else {
         processed.push(item)
@@ -83,6 +87,11 @@ export default function HkcDocEditModal({
 
   const handleSave = async (e?: React.FormEvent | React.MouseEvent) => {
     if (e && "preventDefault" in e) e.preventDefault()
+    if (isUploadingAttachments) {
+      showToast("Upload in progress", "warning", "Please wait for files to finish uploading before saving.")
+      return
+    }
+
     if (!shipmentId.trim() || !itemsDescription.trim()) {
       showToast("Validation failed", "warning", "Provide a shipment reference ID and items description.")
       return
@@ -91,6 +100,10 @@ export default function HkcDocEditModal({
     setIsSaving(true)
     try {
       const cleanAttachments = await ensureUploadedAttachments(attachments)
+      if (cleanAttachments.some((a) => a.fileUrl.startsWith("data:"))) {
+        throw new Error("One or more files could not be uploaded to server storage. Please remove or re-upload them.")
+      }
+
       const updated = await updateHkcDocRecord(record.id, {
         shipmentId: shipmentId.trim(),
         itemsDescription: itemsDescription.trim(),
@@ -194,6 +207,7 @@ export default function HkcDocEditModal({
             attachments={attachments}
             onAddAttachments={handleAddAttachments}
             onRemoveAttachment={handleRemoveAttachment}
+            onUploadingChange={setIsUploadingAttachments}
           />
         </div>
 
@@ -209,11 +223,26 @@ export default function HkcDocEditModal({
           </button>
           <button
             type="button"
-            disabled={isSaving || isDeleting}
+            disabled={isSaving || isDeleting || isUploadingAttachments}
             onClick={handleSave}
-            className="h-11 min-w-[130px] rounded-xl bg-zinc-950 text-white font-bold px-6 inline-flex items-center justify-center gap-1.5 shadow-md hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            className="h-11 min-w-[140px] rounded-xl bg-zinc-950 text-white font-bold px-6 inline-flex items-center justify-center gap-2 shadow-md hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
           >
-            {isSaving ? <LoadingDots color="bg-white" size="sm" /> : <><Save className="size-4" /> Save Changes</>}
+            {isSaving ? (
+              <>
+                <LoadingDots color="bg-white" size="sm" />
+                <span>Saving...</span>
+              </>
+            ) : isUploadingAttachments ? (
+              <>
+                <LoadingDots color="bg-white" size="sm" />
+                <span>Uploading files...</span>
+              </>
+            ) : (
+              <>
+                <Save className="size-4" />
+                <span>Save Changes</span>
+              </>
+            )}
           </button>
         </div>
       </div>
