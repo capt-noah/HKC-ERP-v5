@@ -75,21 +75,22 @@ export async function compressImageIfPossible(
 }
 
 /**
- * Compresses an image file in-browser into an optimized, compact File object.
- * Reduces 5-15MB camera photos down to ~200-400KB before uploading to prevent
- * Nginx HTTP/2 protocol errors (client_max_body_size), proxy buffer stalls, and timeouts.
+ * For business documents, receipts, and screenshots, preserving original clarity and preventing
+ * browser memory saturation is critical.
+ * Files under 20MB are uploaded as authentic originals (since server/Nginx accepts up to 25MB).
+ * Only exceptionally oversized camera photos (> 20MB) are resized.
  */
 export async function compressImageToFile(
   file: File,
-  maxWidth = 1920,
-  maxHeight = 1080,
-  quality = 0.85
+  maxWidth = 2560,
+  maxHeight = 1440,
+  quality = 0.88
 ): Promise<File> {
   if (typeof window === "undefined" || !file.type.startsWith("image/")) {
     return file
   }
-  // Keep tiny images / SVGs / GIFs untouched
-  if (file.size <= 350 * 1024 || file.type.includes("svg") || file.type.includes("gif")) {
+  // Authentic passthrough for standard images / screenshots up to 20MB
+  if (file.size <= 20 * 1024 * 1024 || file.type.includes("svg") || file.type.includes("gif")) {
     return file
   }
 
@@ -175,7 +176,7 @@ export function validateFileForUpload(file: File): string | null {
 
 /**
  * Uploads a local file to server storage organized under the specified folder category.
- * Enforces client-side validation, in-browser compression, and safe 1-shot retry.
+ * Enforces client-side validation, authentic stream upload, and safe retry.
  */
 export async function uploadFile(
   file: File,
@@ -225,8 +226,8 @@ export async function uploadFile(
   try {
     return await attemptUpload()
   } catch (firstError) {
-    console.warn(`[FILE UPLOAD]: First attempt failed for ${file.name}, retrying in 1s...`, firstError)
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    console.warn(`[FILE UPLOAD]: First attempt failed for ${file.name}, retrying in 1.2s...`, firstError)
+    await new Promise((resolve) => setTimeout(resolve, 1200))
     try {
       return await attemptUpload()
     } catch (secondError) {
@@ -240,6 +241,7 @@ export async function uploadFile(
 
 /**
  * Uploads a local file to server storage with real-time byte and percentage progress events.
+ * Features progress event throttling, cleanup guards, and backoff retries.
  */
 export async function uploadFileWithProgress(
   file: File,
@@ -252,6 +254,19 @@ export async function uploadFileWithProgress(
     throw new Error(validationError)
   }
   const processedFile = file.type.startsWith("image/") ? await compressImageToFile(file) : file
+
+  let lastProgressTick = 0
+  let lastPercent = -1
+
+  const throttledProgress = (pct: number, loaded: number, total: number) => {
+    if (!onProgress) return
+    const now = performance.now()
+    if (pct === 100 || pct === 0 || pct !== lastPercent || now - lastProgressTick > 60) {
+      lastProgressTick = now
+      lastPercent = pct
+      onProgress(pct, loaded, total)
+    }
+  }
 
   const doAttempt = (): Promise<UploadResult> => {
     return new Promise((resolve, reject) => {
@@ -266,11 +281,19 @@ export async function uploadFileWithProgress(
       const uploadUrl = `${API_BASE}/api/upload?folder=${encodeURIComponent(folder)}`
       const xhr = new XMLHttpRequest()
 
+      const abortHandler = () => {
+        xhr.abort()
+        reject(new Error("Upload aborted"))
+      }
+
       if (signal) {
-        signal.addEventListener("abort", () => {
-          xhr.abort()
-          reject(new Error("Upload aborted"))
-        })
+        signal.addEventListener("abort", abortHandler, { once: true })
+      }
+
+      const cleanup = () => {
+        if (signal) {
+          signal.removeEventListener("abort", abortHandler)
+        }
       }
 
       xhr.open("POST", uploadUrl)
@@ -282,17 +305,18 @@ export async function uploadFileWithProgress(
         }
       }
 
-      // Set timeout to 90 seconds
-      xhr.timeout = 90000
+      // 120-second timeout for large files on slower connections
+      xhr.timeout = 120000
 
       xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable && onProgress) {
+        if (event.lengthComputable) {
           const percent = Math.min(100, Math.round((event.loaded / event.total) * 100))
-          onProgress(percent, event.loaded, event.total)
+          throttledProgress(percent, event.loaded, event.total)
         }
       }
 
       xhr.onload = () => {
+        cleanup()
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const data = JSON.parse(xhr.responseText)
@@ -319,11 +343,18 @@ export async function uploadFileWithProgress(
       }
 
       xhr.onerror = () => {
+        cleanup()
         reject(new Error(`Network error while uploading ${file.name}. Please check connection.`))
       }
 
       xhr.ontimeout = () => {
+        cleanup()
         reject(new Error(`Upload timed out for ${file.name}. Please retry.`))
+      }
+
+      xhr.onabort = () => {
+        cleanup()
+        reject(new Error("Upload aborted"))
       }
 
       xhr.send(formData)
@@ -341,10 +372,19 @@ export async function uploadFileWithProgress(
       if (onProgress) onProgress(0, 0, file.size)
       return await doAttempt()
     } catch (secondError) {
-      console.error(`[FILE UPLOAD PROGRESS]: Server upload permanently failed for ${file.name}:`, secondError)
-      throw secondError instanceof Error
-        ? secondError
-        : new Error(`Failed to upload ${file.name} to server storage.`)
+      if (signal?.aborted) throw secondError
+      console.warn(`[FILE UPLOAD PROGRESS]: Second attempt failed for ${file.name}, final retry in 3.0s...`, secondError)
+      await new Promise((resolve) => setTimeout(resolve, 3000))
+      if (signal?.aborted) throw new Error("Upload aborted")
+      try {
+        if (onProgress) onProgress(0, 0, file.size)
+        return await doAttempt()
+      } catch (thirdError) {
+        console.error(`[FILE UPLOAD PROGRESS]: Server upload permanently failed for ${file.name}:`, thirdError)
+        throw thirdError instanceof Error
+          ? thirdError
+          : new Error(`Failed to upload ${file.name} to server storage.`)
+      }
     }
   }
 }

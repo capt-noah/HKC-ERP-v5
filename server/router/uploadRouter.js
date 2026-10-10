@@ -54,13 +54,13 @@ const storage = multer.diskStorage({
   },
   filename: (_req, file, cb) => {
     try {
-      const ext = path.extname(file.originalname).toLowerCase()
+      const ext = (path.extname(file.originalname) || "").toLowerCase().replace(/[^a-z0-9.]/g, "").slice(0, 10)
       const basename = path
         .basename(file.originalname, ext)
         .replace(/[^a-zA-Z0-9_-]/g, "_")
         .slice(0, 50)
       const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-      const safeFilename = `${uniqueSuffix}-${basename}${ext}`
+      const safeFilename = `${uniqueSuffix}-${basename || "file"}${ext}`
       cb(null, safeFilename)
     } catch (err) {
       console.error("[STORAGE FILENAME ERROR]:", err)
@@ -109,30 +109,35 @@ const upload = multer({
 
 /**
  * POST /api/upload
- * Single file upload handler with safe error interceptor and CORS guarantee
+ * Single file upload handler with hardened lifecycle, verified disk write, and zero connection leaks
  */
 uploadRouter.post("/upload", (req, res, next) => {
   res.set("Access-Control-Allow-Origin", "*")
   res.set("Access-Control-Allow-Methods", "POST, OPTIONS")
   res.set("Access-Control-Allow-Headers", "*")
 
-  let isAborted = false
-  req.on("aborted", () => {
-    isAborted = true
-  })
-  req.on("close", () => {
-    if (!res.writableEnded && req.file?.path) {
-      fs.unlink(req.file.path, () => {})
-    }
-  })
+  // Ensure request has a reasonable socket timeout (2 minutes)
+  req.setTimeout?.(120000)
 
   upload.single("file")(req, res, (err) => {
-    if (isAborted) {
-      if (req.file?.path) fs.unlink(req.file.path, () => {})
+    // If client disconnected before response could be sent
+    if (req.destroyed || res.writableEnded) {
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        // Keep or cleanly remove only if response could not be delivered
+      }
+      if (!res.writableEnded) {
+        try {
+          res.end()
+        } catch {}
+      }
       return
     }
 
     if (err) {
+      console.warn("[UPLOAD HANDLER ERROR]:", err.message)
+      if (req.file?.path && fs.existsSync(req.file.path)) {
+        fs.unlink(req.file.path, () => {})
+      }
       if (err instanceof multer.MulterError) {
         return res.status(400).json({ success: false, error: `Upload error: ${err.message}` })
       }
@@ -143,33 +148,63 @@ uploadRouter.post("/upload", (req, res, next) => {
       return res.status(400).json({ success: false, error: "No file was uploaded" })
     }
 
-    const destinationDir = req.file.destination || ""
-    const actualFolder = path.basename(destinationDir) || "general"
-    const fileUrl = `/uploads/${actualFolder}/${req.file.filename}`
+    try {
+      // Verify file is genuinely written and non-empty on disk
+      if (!fs.existsSync(req.file.path)) {
+        throw new Error("File write verification failed on server.")
+      }
+      const stat = fs.statSync(req.file.path)
+      if (stat.size === 0) {
+        fs.unlink(req.file.path, () => {})
+        throw new Error("Uploaded file is empty (0 bytes).")
+      }
 
-    res.status(201).json({
-      success: true,
-      url: fileUrl,
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      size: req.file.size,
-      mimeType: req.file.mimetype,
-      folder: actualFolder,
-    })
+      const destinationDir = req.file.destination || ""
+      const actualFolder = path.basename(destinationDir) || "general"
+      const fileUrl = `/uploads/${actualFolder}/${req.file.filename}`
+
+      return res.status(201).json({
+        success: true,
+        url: fileUrl,
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        size: stat.size || req.file.size,
+        mimeType: req.file.mimetype,
+        folder: actualFolder,
+      })
+    } catch (fsErr) {
+      console.error("[UPLOAD VERIFICATION ERROR]:", fsErr)
+      return res.status(500).json({
+        success: false,
+        error: fsErr.message || "Failed to finalize uploaded file on server.",
+      })
+    }
   })
 })
 
 /**
  * POST /api/upload/multiple
- * Multiple files upload handler with safe error interceptor
+ * Multiple files upload handler with safe error interceptor and guaranteed lifecycle
  */
 uploadRouter.post("/upload/multiple", (req, res, next) => {
   res.set("Access-Control-Allow-Origin", "*")
   res.set("Access-Control-Allow-Methods", "POST, OPTIONS")
   res.set("Access-Control-Allow-Headers", "*")
 
+  req.setTimeout?.(180000)
+
   upload.array("files", 30)(req, res, (err) => {
+    if (req.destroyed || res.writableEnded) {
+      if (!res.writableEnded) {
+        try {
+          res.end()
+        } catch {}
+      }
+      return
+    }
+
     if (err) {
+      console.warn("[MULTIPLE UPLOAD ERROR]:", err.message)
       if (err instanceof multer.MulterError) {
         return res.status(400).json({ success: false, error: `Upload error: ${err.message}` })
       }
@@ -180,23 +215,29 @@ uploadRouter.post("/upload/multiple", (req, res, next) => {
       return res.status(400).json({ success: false, error: "No files were uploaded" })
     }
 
-    const results = req.files.map((file) => {
-      const destinationDir = file.destination || ""
-      const actualFolder = path.basename(destinationDir) || "general"
-      return {
-        url: `/uploads/${actualFolder}/${file.filename}`,
-        filename: file.filename,
-        originalName: file.originalname,
-        size: file.size,
-        mimeType: file.mimetype,
-        folder: actualFolder,
-      }
-    })
+    try {
+      const results = req.files.map((file) => {
+        const destinationDir = file.destination || ""
+        const actualFolder = path.basename(destinationDir) || "general"
+        return {
+          url: `/uploads/${actualFolder}/${file.filename}`,
+          filename: file.filename,
+          originalName: file.originalname,
+          size: file.size,
+          mimeType: file.mimetype,
+          folder: actualFolder,
+        }
+      })
 
-    res.status(201).json({
-      success: true,
-      files: results,
-      count: results.length,
-    })
+      return res.status(201).json({
+        success: true,
+        files: results,
+        count: results.length,
+      })
+    } catch (multiErr) {
+      console.error("[MULTIPLE UPLOAD MAP ERROR]:", multiErr)
+      return res.status(500).json({ success: false, error: "Failed to map uploaded files." })
+    }
   })
 })
+

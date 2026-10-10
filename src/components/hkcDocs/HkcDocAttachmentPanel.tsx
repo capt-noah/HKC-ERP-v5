@@ -74,11 +74,13 @@ export default function HkcDocAttachmentPanel({
     })
   }
 
+  const activeUploadsRef = useRef<Set<string>>(new Set())
+
   // Upload runner for a single item
   const runUpload = useCallback(
     async (item: UploadQueueItem) => {
       setUploadQueue((prev) =>
-        prev.map((q) => (q.id === item.id ? { ...q, status: "uploading", progress: Math.max(q.progress, 5) } : q))
+        prev.map((q) => (q.id === item.id ? { ...q, status: "uploading", progress: 0 } : q))
       )
 
       try {
@@ -145,15 +147,21 @@ export default function HkcDocAttachmentPanel({
     [onAddAttachments]
   )
 
-  // Concurrency queue processor
+  // Concurrency queue processor strictly decoupled via activeUploadsRef
   useEffect(() => {
-    const uploadingCount = uploadQueue.filter((q) => q.status === "uploading").length
-    if (uploadingCount >= MAX_CONCURRENT_UPLOADS) return
+    if (activeUploadsRef.current.size >= MAX_CONCURRENT_UPLOADS) return
 
-    const nextQueued = uploadQueue.find((q) => q.status === "queued")
-    if (nextQueued) {
-      void runUpload(nextQueued)
-    }
+    const nextQueued = uploadQueue.find((q) => q.status === "queued" && !activeUploadsRef.current.has(q.id))
+    if (!nextQueued) return
+
+    activeUploadsRef.current.add(nextQueued.id)
+    void (async () => {
+      try {
+        await runUpload(nextQueued)
+      } finally {
+        activeUploadsRef.current.delete(nextQueued.id)
+      }
+    })()
   }, [uploadQueue, runUpload])
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -427,7 +435,12 @@ export default function HkcDocAttachmentPanel({
                         : "bg-gradient-to-r from-sky-500 via-teal-400 to-emerald-500"
                     }`}
                     style={{
-                      width: `${item.status === "queued" ? 8 : Math.max(8, item.progress)}%`,
+                      width:
+                        item.status === "queued"
+                          ? "0%"
+                          : item.status === "success" || item.status === "error"
+                          ? "100%"
+                          : `${Math.max(0, Math.min(100, item.progress))}%`,
                     }}
                   >
                     {item.status === "uploading" && (

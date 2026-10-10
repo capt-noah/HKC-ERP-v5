@@ -602,6 +602,7 @@ function EmployeeForm({
   onClose: () => void
   onSubmit: (event: React.FormEvent) => void
 }) {
+  const { showToast } = useFeedback()
   const [uploadingId, setUploadingId] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -615,9 +616,10 @@ function EmployeeForm({
       setUploadingId(true)
       const res = await uploadFile(file, "employees")
       setForm((prev) => ({ ...prev, national_id_image: res.url }))
+      showToast("Document Attached", "success", "National ID image uploaded successfully.")
     } catch (err: any) {
       console.warn("National ID image upload failed:", err)
-      window.alert(err?.message || "Failed to upload National ID image. Please try again.")
+      showToast("Upload Error", "warning", err?.message || "Failed to upload National ID image. Please try again.")
     } finally {
       setUploadingId(false)
     }
