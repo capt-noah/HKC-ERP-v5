@@ -247,80 +247,106 @@ export async function uploadFileWithProgress(
   onProgress?: (percent: number, loaded: number, total: number) => void,
   signal?: AbortSignal
 ): Promise<UploadResult> {
-  validateFileForUpload(file)
+  const validationError = validateFileForUpload(file)
+  if (validationError) {
+    throw new Error(validationError)
+  }
   const processedFile = file.type.startsWith("image/") ? await compressImageToFile(file) : file
 
-  return new Promise((resolve, reject) => {
-    const authHeaders = getAuthHeaders()
-    const formData = new FormData()
-    formData.append("folder", folder)
-    formData.append("file", processedFile)
-
-    const uploadUrl = `${API_BASE}/api/upload?folder=${encodeURIComponent(folder)}`
-    const xhr = new XMLHttpRequest()
-
-    if (signal) {
-      signal.addEventListener("abort", () => {
-        xhr.abort()
-        reject(new Error("Upload aborted"))
-      })
-    }
-
-    xhr.open("POST", uploadUrl)
-
-    // Set auth headers
-    for (const [key, value] of Object.entries(authHeaders)) {
-      if (value) {
-        xhr.setRequestHeader(key, value)
+  const doAttempt = (): Promise<UploadResult> => {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        return reject(new Error("Upload aborted"))
       }
-    }
+      const authHeaders = getAuthHeaders()
+      const formData = new FormData()
+      formData.append("folder", folder)
+      formData.append("file", processedFile)
 
-    // Set timeout to 90 seconds
-    xhr.timeout = 90000
+      const uploadUrl = `${API_BASE}/api/upload?folder=${encodeURIComponent(folder)}`
+      const xhr = new XMLHttpRequest()
 
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && onProgress) {
-        const percent = Math.min(100, Math.round((event.loaded / event.total) * 100))
-        onProgress(percent, event.loaded, event.total)
+      if (signal) {
+        signal.addEventListener("abort", () => {
+          xhr.abort()
+          reject(new Error("Upload aborted"))
+        })
       }
-    }
 
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const data = JSON.parse(xhr.responseText)
-          if (onProgress) onProgress(100, file.size, file.size)
-          resolve({
-            url: data.url,
-            filename: data.filename,
-            originalName: data.originalName || file.name,
-            size: data.size || file.size,
-            mimeType: data.mimeType || file.type || "application/octet-stream",
-            folder,
-          })
-        } catch (parseErr) {
-          reject(new Error("Failed to parse server upload response"))
+      xhr.open("POST", uploadUrl)
+
+      // Set auth headers
+      for (const [key, value] of Object.entries(authHeaders)) {
+        if (value) {
+          xhr.setRequestHeader(key, value)
         }
-      } else {
-        let errorMsg = `Server responded with status ${xhr.status}`
-        try {
-          const errData = JSON.parse(xhr.responseText)
-          if (errData.error) errorMsg = errData.error
-        } catch {}
-        reject(new Error(errorMsg))
       }
-    }
 
-    xhr.onerror = () => {
-      reject(new Error(`Network error while uploading ${file.name}. Please check connection.`))
-    }
+      // Set timeout to 90 seconds
+      xhr.timeout = 90000
 
-    xhr.ontimeout = () => {
-      reject(new Error(`Upload timed out for ${file.name}. Please retry.`))
-    }
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const percent = Math.min(100, Math.round((event.loaded / event.total) * 100))
+          onProgress(percent, event.loaded, event.total)
+        }
+      }
 
-    xhr.send(formData)
-  })
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText)
+            if (onProgress) onProgress(100, file.size, file.size)
+            resolve({
+              url: data.url,
+              filename: data.filename,
+              originalName: data.originalName || file.name,
+              size: data.size || file.size,
+              mimeType: data.mimeType || file.type || "application/octet-stream",
+              folder,
+            })
+          } catch {
+            reject(new Error("Failed to parse server upload response"))
+          }
+        } else {
+          let errorMsg = `Server responded with status ${xhr.status}`
+          try {
+            const errData = JSON.parse(xhr.responseText)
+            if (errData.error) errorMsg = errData.error
+          } catch {}
+          reject(new Error(errorMsg))
+        }
+      }
+
+      xhr.onerror = () => {
+        reject(new Error(`Network error while uploading ${file.name}. Please check connection.`))
+      }
+
+      xhr.ontimeout = () => {
+        reject(new Error(`Upload timed out for ${file.name}. Please retry.`))
+      }
+
+      xhr.send(formData)
+    })
+  }
+
+  try {
+    return await doAttempt()
+  } catch (firstError) {
+    if (signal?.aborted) throw firstError
+    console.warn(`[FILE UPLOAD PROGRESS]: First attempt failed for ${file.name}, auto-retrying in 1.5s...`, firstError)
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    if (signal?.aborted) throw new Error("Upload aborted")
+    try {
+      if (onProgress) onProgress(0, 0, file.size)
+      return await doAttempt()
+    } catch (secondError) {
+      console.error(`[FILE UPLOAD PROGRESS]: Server upload permanently failed for ${file.name}:`, secondError)
+      throw secondError instanceof Error
+        ? secondError
+        : new Error(`Failed to upload ${file.name} to server storage.`)
+    }
+  }
 }
 
 /**
