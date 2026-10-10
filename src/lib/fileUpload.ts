@@ -349,19 +349,43 @@ export async function uploadFileWithProgress(
   }
 }
 
+export interface ConcurrentUploadOptions {
+  maxConcurrency?: number
+  onProgress?: (completedCount: number, totalCount: number, currentFileName: string) => void
+  onFileSuccess?: (result: UploadResult, file: File, index: number) => void
+  onFileError?: (error: Error, file: File, index: number) => void
+  signal?: AbortSignal
+}
+
 /**
- * Uploads multiple files with a strict concurrency ceiling (default max 2)
+ * Uploads multiple files strictly one-by-one (concurrency = 1 by default)
  * to prevent saturating Nginx proxy buffers or starving server event loops.
+ * Commits each file progressively via onFileSuccess, and isolates failures so
+ * previously succeeded files are never lost if a subsequent item fails.
  */
 export async function uploadFilesConcurrently(
   files: File[],
   folder: UploadFolder = "general",
-  maxConcurrency = 2,
-  onProgress?: (completedCount: number, totalCount: number, currentFileName: string) => void,
-  signal?: AbortSignal
+  optionsOrConcurrency: number | ConcurrentUploadOptions = 1,
+  legacyOnProgress?: (completedCount: number, totalCount: number, currentFileName: string) => void,
+  legacySignal?: AbortSignal
 ): Promise<UploadResult[]> {
   if (!files || files.length === 0) return []
-  const results: UploadResult[] = new Array(files.length)
+
+  const options: ConcurrentUploadOptions =
+    typeof optionsOrConcurrency === "object"
+      ? optionsOrConcurrency
+      : {
+          maxConcurrency: optionsOrConcurrency,
+          onProgress: legacyOnProgress,
+          signal: legacySignal,
+        }
+
+  const maxConcurrency = Math.max(1, options.maxConcurrency ?? 1)
+  const signal = options.signal
+
+  const succeeded: UploadResult[] = []
+  const failed: { file: File; error: string; index: number }[] = []
   let currentIndex = 0
   let completedCount = 0
 
@@ -370,12 +394,29 @@ export async function uploadFilesConcurrently(
       if (signal?.aborted) throw new Error("Upload aborted by user")
       const index = currentIndex++
       const file = files[index]
-      if (onProgress) onProgress(completedCount, files.length, file.name)
 
-      const res = await uploadFile(file, folder)
-      results[index] = res
-      completedCount++
-      if (onProgress) onProgress(completedCount, files.length, file.name)
+      if (options.onProgress) {
+        options.onProgress(completedCount, files.length, file.name)
+      }
+
+      try {
+        const res = await uploadFile(file, folder)
+        succeeded.push(res)
+        completedCount++
+        if (options.onFileSuccess) {
+          options.onFileSuccess(res, file, index)
+        }
+        if (options.onProgress) {
+          options.onProgress(completedCount, files.length, file.name)
+        }
+      } catch (err: any) {
+        const errMsg = err?.message || `Failed to upload ${file.name}`
+        console.warn(`[BATCH UPLOAD ITEM FAILED]: ${file.name} - ${errMsg}`)
+        failed.push({ file, error: errMsg, index })
+        if (options.onFileError) {
+          options.onFileError(err instanceof Error ? err : new Error(errMsg), file, index)
+        }
+      }
     }
   }
 
@@ -383,7 +424,11 @@ export async function uploadFilesConcurrently(
   const workers = Array.from({ length: workerCount }, () => worker())
   await Promise.all(workers)
 
-  return results
+  if (succeeded.length === 0 && failed.length > 0) {
+    throw new Error(failed[0].error || "Failed to upload files.")
+  }
+
+  return succeeded
 }
 
 /**

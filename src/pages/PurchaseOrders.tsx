@@ -11,6 +11,8 @@ import {
   ChevronDown,
   FileCheck,
   Receipt,
+  RotateCw,
+  AlertCircle,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -99,9 +101,16 @@ export default function PurchaseOrders() {
   const [isUploadingPaymentAdvice, setIsUploadingPaymentAdvice] = useState(false)
 
   // Optional Supporting Attachments
+  interface FailedSupportingUpload {
+    id: string
+    file: File
+    error: string
+  }
   const [attachments, setAttachments] = useState<PurchaseOrderAttachment[]>([])
   const [isUploadingSupporting, setIsUploadingSupporting] = useState(false)
   const [supportingUploadStatus, setSupportingUploadStatus] = useState("")
+  const [failedSupportingUploads, setFailedSupportingUploads] = useState<FailedSupportingUpload[]>([])
+  const [retryingSupportingId, setRetryingSupportingId] = useState<string | null>(null)
 
   // Load ERP inventory, sales data, and finance data on mount / page refresh
   useEffect(() => {
@@ -352,6 +361,8 @@ export default function PurchaseOrders() {
     setStatus("PAID")
     setPaymentAdvice(null)
     setAttachments([])
+    setFailedSupportingUploads([])
+    setRetryingSupportingId(null)
     setEditingPo(null)
 
     // Initialize COA debit & credit split
@@ -503,6 +514,8 @@ export default function PurchaseOrders() {
     } else {
       setAttachments([])
     }
+    setFailedSupportingUploads([])
+    setRetryingSupportingId(null)
 
     setIsEditModalOpen(true)
   }
@@ -627,43 +640,101 @@ export default function PurchaseOrders() {
     }
   }
 
-  // Supporting Files Upload Handler with Concurrency Throttling (Max 2)
+  // Supporting Files Upload Handler with Strictly Sequential (One-by-One) Processing & Progressive Commits
   const handleSupportingFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
     const fileList = Array.from(files)
 
-    try {
-      setIsUploadingSupporting(true)
-      setSupportingUploadStatus(`Uploading 1 of ${fileList.length}...`)
+    setIsUploadingSupporting(true)
+    setSupportingUploadStatus(`Uploading 1 of ${fileList.length} (${fileList[0].name})...`)
 
-      const uploadedResults = await uploadFilesConcurrently(
+    let successCount = 0
+    let failCount = 0
+
+    try {
+      await uploadFilesConcurrently(
         fileList,
         "purchase_orders",
-        2,
-        (completed, total, currentName) => {
-          setSupportingUploadStatus(`Uploading ${completed + 1} of ${total} (${currentName})...`)
+        {
+          maxConcurrency: 1, // Strictly one by one
+          onProgress: (completed, total, currentName) => {
+            const nextIdx = Math.min(total, completed + 1)
+            setSupportingUploadStatus(`Uploading ${nextIdx} of ${total}: ${currentName}...`)
+          },
+          onFileSuccess: (res, file) => {
+            successCount++
+            const newAtt: PurchaseOrderAttachment = {
+              id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              name: res.originalName || file.name,
+              size: res.size || file.size,
+              url: res.url,
+              uploadedAt: new Date().toISOString(),
+            }
+            setAttachments((prev) => [...prev, newAtt])
+          },
+          onFileError: (err, file) => {
+            failCount++
+            const failedId = `fail-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+            setFailedSupportingUploads((prev) => [
+              ...prev,
+              {
+                id: failedId,
+                file,
+                error: err.message || "Failed to upload file to server.",
+              },
+            ])
+          },
         }
       )
 
-      const newAttachments: PurchaseOrderAttachment[] = uploadedResults.map((res) => ({
-        id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        name: res.originalName,
-        size: res.size,
-        url: res.url,
-        uploadedAt: new Date().toISOString(),
-      }))
-
-      setAttachments((prev) => [...prev, ...newAttachments])
-      showToast("Files Attached", "success", `${newAttachments.length} supporting file(s) uploaded successfully.`)
+      if (successCount > 0 && failCount === 0) {
+        showToast("Files Attached", "success", `${successCount} supporting file(s) uploaded successfully.`)
+      } else if (successCount > 0 && failCount > 0) {
+        showToast("Partial Upload", "warning", `${successCount} file(s) attached. ${failCount} file(s) failed and can be retried.`)
+      }
     } catch (err: any) {
-      console.warn("Supporting file upload failed:", err)
-      showToast("Upload Error", "warning", err.message || "Failed to upload one or more files.")
+      if (successCount === 0) {
+        showToast("Upload Error", "warning", err.message || "Failed to upload supporting files.")
+      }
     } finally {
       setIsUploadingSupporting(false)
       setSupportingUploadStatus("")
       e.target.value = ""
     }
+  }
+
+  // Retry an individual failed supporting file upload
+  const handleRetrySupportingFile = async (failedId: string) => {
+    const item = failedSupportingUploads.find((f) => f.id === failedId)
+    if (!item) return
+
+    setRetryingSupportingId(failedId)
+    try {
+      const res = await uploadFile(item.file, "purchase_orders")
+      const newAtt: PurchaseOrderAttachment = {
+        id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        name: res.originalName || item.file.name,
+        size: res.size || item.file.size,
+        url: res.url,
+        uploadedAt: new Date().toISOString(),
+      }
+      setAttachments((prev) => [...prev, newAtt])
+      setFailedSupportingUploads((prev) => prev.filter((f) => f.id !== failedId))
+      showToast("File Uploaded", "success", `${item.file.name} uploaded and attached.`)
+    } catch (err: any) {
+      console.warn("Retry failed:", err)
+      setFailedSupportingUploads((prev) =>
+        prev.map((f) => (f.id === failedId ? { ...f, error: err.message || "Retry failed. Server still unreachable." } : f))
+      )
+      showToast("Retry Failed", "warning", err.message || "Retry failed. Please check network.")
+    } finally {
+      setRetryingSupportingId(null)
+    }
+  }
+
+  const handleDismissFailedSupportingFile = (failedId: string) => {
+    setFailedSupportingUploads((prev) => prev.filter((f) => f.id !== failedId))
   }
 
   const handleRemoveSupportingAttachment = (id: string) => {
@@ -1769,6 +1840,60 @@ export default function PurchaseOrders() {
                           ))}
                         </div>
                       )}
+
+                      {/* Upload Progress Indicator */}
+                      {isUploadingSupporting && (
+                        <div className="flex items-center gap-2 p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+                          <LoadingDots color="bg-emerald-600" size="sm" />
+                          <span className="truncate">{supportingUploadStatus || "Uploading files one by one..."}</span>
+                        </div>
+                      )}
+
+                      {/* Failed Supporting Uploads with Retry / Dismiss */}
+                      {failedSupportingUploads.length > 0 && (
+                        <div className="space-y-1.5 pt-1">
+                          <div className="text-[10px] font-bold text-rose-600 uppercase tracking-wider flex items-center gap-1">
+                            <AlertCircle className="size-3 text-rose-600" />
+                            Failed Uploads ({failedSupportingUploads.length})
+                          </div>
+                          {failedSupportingUploads.map((failedItem) => (
+                            <div
+                              key={failedItem.id}
+                              className="flex items-center justify-between gap-2 p-2 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-900"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <span className="font-semibold block truncate">{failedItem.file.name}</span>
+                                <span className="text-[10px] text-rose-600 block truncate">{failedItem.error}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  disabled={isUploadingSupporting || retryingSupportingId === failedItem.id}
+                                  onClick={() => handleRetrySupportingFile(failedItem.id)}
+                                  className="px-2 py-1 bg-white hover:bg-rose-100 border border-rose-300 rounded text-[11px] font-bold text-rose-700 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                >
+                                  {retryingSupportingId === failedItem.id ? (
+                                    <LoadingDots color="bg-rose-600" size="sm" />
+                                  ) : (
+                                    <>
+                                      <RotateCw className="size-3" />
+                                      Retry
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDismissFailedSupportingFile(failedItem.id)}
+                                  className="p-1 hover:bg-rose-100 rounded text-rose-500 hover:text-rose-700 cursor-pointer"
+                                  title="Dismiss"
+                                >
+                                  <X className="size-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1777,7 +1902,7 @@ export default function PurchaseOrders() {
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
                   <button 
                     type="button" 
-                    disabled={isSubmittingVoucher || isUploadingSupporting || isUploadingPaymentAdvice}
+                    disabled={isSubmittingVoucher || isUploadingSupporting || isUploadingPaymentAdvice || retryingSupportingId !== null}
                     onClick={() => setIsCreateModalOpen(false)}
                     className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 cursor-pointer"
                   >
@@ -1785,15 +1910,15 @@ export default function PurchaseOrders() {
                   </button>
                   <button 
                     type="submit" 
-                    disabled={isSubmittingVoucher || isUploadingSupporting || isUploadingPaymentAdvice}
+                    disabled={isSubmittingVoucher || isUploadingSupporting || isUploadingPaymentAdvice || retryingSupportingId !== null}
                     className="min-w-[150px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer gap-2"
                   >
                     {isSubmittingVoucher ? (
                       <LoadingDots color="bg-white" size="sm" />
-                    ) : isUploadingSupporting || isUploadingPaymentAdvice ? (
+                    ) : isUploadingSupporting || isUploadingPaymentAdvice || retryingSupportingId !== null ? (
                       <>
                         <LoadingDots color="bg-white" size="sm" />
-                        <span>{supportingUploadStatus || "Uploading file..."}</span>
+                        <span>{supportingUploadStatus || (retryingSupportingId ? "Retrying file..." : "Uploading file...")}</span>
                       </>
                     ) : (
                       paymentType === "Credit" ? "Create Credit Purchase" : "Create Cheque Voucher"
@@ -2272,6 +2397,60 @@ export default function PurchaseOrders() {
                           ))}
                         </div>
                       )}
+
+                      {/* Upload Progress Indicator */}
+                      {isUploadingSupporting && (
+                        <div className="flex items-center gap-2 p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+                          <LoadingDots color="bg-emerald-600" size="sm" />
+                          <span className="truncate">{supportingUploadStatus || "Uploading files one by one..."}</span>
+                        </div>
+                      )}
+
+                      {/* Failed Supporting Uploads with Retry / Dismiss */}
+                      {failedSupportingUploads.length > 0 && (
+                        <div className="space-y-1.5 pt-1">
+                          <div className="text-[10px] font-bold text-rose-600 uppercase tracking-wider flex items-center gap-1">
+                            <AlertCircle className="size-3 text-rose-600" />
+                            Failed Uploads ({failedSupportingUploads.length})
+                          </div>
+                          {failedSupportingUploads.map((failedItem) => (
+                            <div
+                              key={failedItem.id}
+                              className="flex items-center justify-between gap-2 p-2 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-900"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <span className="font-semibold block truncate">{failedItem.file.name}</span>
+                                <span className="text-[10px] text-rose-600 block truncate">{failedItem.error}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  disabled={isUploadingSupporting || retryingSupportingId === failedItem.id}
+                                  onClick={() => handleRetrySupportingFile(failedItem.id)}
+                                  className="px-2 py-1 bg-white hover:bg-rose-100 border border-rose-300 rounded text-[11px] font-bold text-rose-700 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                >
+                                  {retryingSupportingId === failedItem.id ? (
+                                    <LoadingDots color="bg-rose-600" size="sm" />
+                                  ) : (
+                                    <>
+                                      <RotateCw className="size-3" />
+                                      Retry
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDismissFailedSupportingFile(failedItem.id)}
+                                  className="p-1 hover:bg-rose-100 rounded text-rose-500 hover:text-rose-700 cursor-pointer"
+                                  title="Dismiss"
+                                >
+                                  <X className="size-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2280,7 +2459,7 @@ export default function PurchaseOrders() {
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-zinc-100">
                   <button 
                     type="button" 
-                    disabled={isSavingEditVoucher || isUploadingSupporting || isUploadingPaymentAdvice}
+                    disabled={isSavingEditVoucher || isUploadingSupporting || isUploadingPaymentAdvice || retryingSupportingId !== null}
                     onClick={() => setIsEditModalOpen(false)}
                     className="px-4 py-2 rounded-full border border-zinc-200 text-xs font-bold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 cursor-pointer"
                   >
@@ -2288,15 +2467,15 @@ export default function PurchaseOrders() {
                   </button>
                   <button 
                     type="submit" 
-                    disabled={isSavingEditVoucher || isUploadingSupporting || isUploadingPaymentAdvice}
+                    disabled={isSavingEditVoucher || isUploadingSupporting || isUploadingPaymentAdvice || retryingSupportingId !== null}
                     className="min-w-[150px] inline-flex items-center justify-center px-5 py-2 rounded-full bg-zinc-950 text-white text-xs font-bold hover:bg-zinc-800 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer gap-2"
                   >
                     {isSavingEditVoucher ? (
                       <LoadingDots color="bg-white" size="sm" />
-                    ) : isUploadingSupporting || isUploadingPaymentAdvice ? (
+                    ) : isUploadingSupporting || isUploadingPaymentAdvice || retryingSupportingId !== null ? (
                       <>
                         <LoadingDots color="bg-white" size="sm" />
-                        <span>{supportingUploadStatus || "Uploading file..."}</span>
+                        <span>{supportingUploadStatus || (retryingSupportingId ? "Retrying file..." : "Uploading file...")}</span>
                       </>
                     ) : (
                       "Save Changes"

@@ -42,7 +42,7 @@ interface UploadQueueItem {
   errorMessage?: string
 }
 
-const MAX_CONCURRENT_UPLOADS = 2
+const MAX_CONCURRENT_UPLOADS = 1
 
 export default function HkcDocAttachmentPanel({
   attachments,
