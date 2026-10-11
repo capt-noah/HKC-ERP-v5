@@ -42,7 +42,7 @@ interface UploadQueueItem {
   errorMessage?: string
 }
 
-const MAX_CONCURRENT_UPLOADS = 1
+const MAX_CONCURRENT_UPLOADS = 2
 
 export default function HkcDocAttachmentPanel({
   attachments,
@@ -55,7 +55,6 @@ export default function HkcDocAttachmentPanel({
   const [isCameraOpen, setIsCameraOpen] = useState(false)
   const [previewDoc, setPreviewDoc] = useState<{ fileName: string; fileUrl: string } | null>(null)
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([])
-  const [isQueuePaused, setIsQueuePaused] = useState(false)
 
   useEffect(() => {
     const isBusy = uploadQueue.some((q) => q.status === "uploading" || q.status === "queued")
@@ -132,7 +131,6 @@ export default function HkcDocAttachmentPanel({
           setUploadQueue((prev) => prev.filter((q) => q.id !== item.id))
         }, 1200)
       } catch (err: any) {
-        setIsQueuePaused(true)
         setUploadQueue((prev) =>
           prev.map((q) =>
             q.id === item.id
@@ -149,9 +147,8 @@ export default function HkcDocAttachmentPanel({
     [onAddAttachments]
   )
 
-  // Concurrency queue processor strictly decoupled via activeUploadsRef and circuit-breaker paused check
+  // Non-blocking concurrency queue processor
   useEffect(() => {
-    if (isQueuePaused) return
     if (activeUploadsRef.current.size >= MAX_CONCURRENT_UPLOADS) return
 
     const nextQueued = uploadQueue.find((q) => q.status === "queued" && !activeUploadsRef.current.has(q.id))
@@ -165,7 +162,7 @@ export default function HkcDocAttachmentPanel({
         activeUploadsRef.current.delete(nextQueued.id)
       }
     })()
-  }, [uploadQueue, runUpload, isQueuePaused])
+  }, [uploadQueue, runUpload])
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return
@@ -194,26 +191,13 @@ export default function HkcDocAttachmentPanel({
       }
     })
 
-    setIsQueuePaused(false)
     setUploadQueue((prev) => [...prev, ...newQueueItems])
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
   const handleRetryItem = (itemId: string) => {
-    const item = uploadQueue.find((q) => q.id === itemId)
-    if (!item) return
-    setIsQueuePaused(false)
     setUploadQueue((prev) =>
       prev.map((q) => (q.id === itemId ? { ...q, status: "queued", progress: 0, errorMessage: undefined } : q))
-    )
-  }
-
-  const handleResumeQueue = () => {
-    setIsQueuePaused(false)
-    setUploadQueue((prev) =>
-      prev.map((q) =>
-        q.status === "error" ? { ...q, status: "queued", progress: 0, errorMessage: undefined } : q
-      )
     )
   }
 
@@ -333,22 +317,6 @@ export default function HkcDocAttachmentPanel({
       `}</style>
 
       {/* Circuit breaker pause banner */}
-      {isQueuePaused && uploadQueue.some((q) => q.status === "error" || q.status === "queued") && (
-        <div className="mb-3 p-2.5 rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950/30 flex items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 font-medium">
-            <AlertCircle className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
-            <span>Upload paused due to network error. Click Resume once connection is stable.</span>
-          </div>
-          <button
-            type="button"
-            onClick={handleResumeQueue}
-            className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-2xs"
-          >
-            <RotateCw className="size-3" />
-            <span>Resume Uploads</span>
-          </button>
-        </div>
-      )}
 
       {attachments.length === 0 && uploadQueue.length === 0 ? (
         <div className="text-center py-6 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl">
