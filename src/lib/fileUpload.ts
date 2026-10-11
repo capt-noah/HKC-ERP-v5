@@ -81,15 +81,69 @@ export async function compressImageIfPossible(
 /**
  * For business documents, receipts, and screenshots, preserving original clarity and preventing
  * browser memory saturation is critical.
- * Authentic passthrough eliminates CPU/RAM canvas freezing on older PCs.
+ * Pure authentic passthrough for files under 10 MB (0% CPU work on older PCs).
+ * Lightweight native canvas resize executes ONLY for rare oversized photos (> 10 MB) to fit Cloudinary.
  */
 export async function compressImageToFile(
   file: File,
-  _maxWidth = 2560,
-  _maxHeight = 1440,
-  _quality = 0.88
+  maxWidth = 2560,
+  maxHeight = 1440,
+  quality = 0.85
 ): Promise<File> {
-  return file
+  // Pure authentic passthrough for files under 10 MB (0% CPU work on older PCs)
+  if (!file.type.startsWith("image/") || file.size <= 10 * 1024 * 1024) {
+    return file
+  }
+
+  // Lightweight native canvas resize executes ONLY for rare oversized photos (> 10 MB)
+  return new Promise<File>((resolve) => {
+    try {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        let { width, height } = img
+        if (width > maxWidth || height > maxHeight) {
+          if (width / maxWidth > height / maxHeight) {
+            height = Math.round((height * maxWidth) / width)
+            width = maxWidth
+          } else {
+            width = Math.round((width * maxHeight) / height)
+            height = maxHeight
+          }
+        }
+        const canvas = document.createElement("canvas")
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext("2d")
+        if (!ctx) return resolve(file)
+
+        ctx.drawImage(img, 0, 0, width, height)
+        canvas.toBlob(
+          (blob) => {
+            if (blob && blob.size < file.size) {
+              const downsized = new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), {
+                type: "image/jpeg",
+                lastModified: Date.now(),
+              })
+              resolve(downsized)
+            } else {
+              resolve(file)
+            }
+          },
+          "image/jpeg",
+          quality
+        )
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(url)
+        resolve(file)
+      }
+      img.src = url
+    } catch {
+      resolve(file)
+    }
+  })
 }
 
 export const CHUNK_SIZE = 2 * 1024 * 1024 // 2 MB compatibility constant
@@ -113,8 +167,14 @@ const ALLOWED_EXTENSIONS = new Set([
 ])
 
 export function validateFileForUpload(file: File): string | null {
-  if (file.size > MAX_FILE_SIZE) {
-    return `File '${file.name}' (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 10 MB limit. Please select a file under 10 MB.`
+  const isImage = file.type.startsWith("image/") || /\.(jpg|jpeg|png|webp|heic|bmp)$/i.test(file.name)
+  // Images > 10 MB will be downsized automatically, so allow selection up to 50 MB
+  const maxAllowed = isImage ? 50 * 1024 * 1024 : MAX_FILE_SIZE
+  if (file.size > maxAllowed) {
+    if (isImage) {
+      return `Image '${file.name}' (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds 50 MB. Please select a smaller photo.`
+    }
+    return `Document '${file.name}' (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 10 MB limit. Please compress the PDF or scan at 150-200 DPI.`
   }
   const extMatch = file.name.match(/\.[^.]+$/)
   const ext = extMatch ? extMatch[0].toLowerCase() : ""
@@ -135,7 +195,13 @@ async function uploadToCloudinary(
   onProgress?: (percent: number, loaded: number, total: number) => void,
   signal?: AbortSignal
 ): Promise<UploadResult> {
-  const validationError = validateFileForUpload(file)
+  // If image exceeds 10 MB, downsize it cleanly first so it fits into Cloudinary
+  let uploadableFile = file
+  if (file.type.startsWith("image/") && file.size > MAX_FILE_SIZE) {
+    uploadableFile = await compressImageToFile(file)
+  }
+
+  const validationError = validateFileForUpload(uploadableFile)
   if (validationError) {
     throw new Error(validationError)
   }
