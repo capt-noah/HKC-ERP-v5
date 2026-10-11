@@ -19,6 +19,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   const [resolvedUrl, setResolvedUrl] = useState<string>("")
   const [isPdf, setIsPdf] = useState<boolean>(false)
   const [isImage, setIsImage] = useState<boolean>(false)
+  const [isDownloading, setIsDownloading] = useState<boolean>(false)
 
   // ESC key listener & body scroll lock
   useEffect(() => {
@@ -92,11 +93,46 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
     }
   }, [isOpen, fileUrl, fileName])
 
-  const handleDownload = () => {
-    if (!resolvedUrl) return
+  const handleDownload = async () => {
+    if (!resolvedUrl || isDownloading) return
+    setIsDownloading(true)
+    try {
+      if (resolvedUrl.startsWith("blob:")) {
+        const link = document.createElement("a")
+        link.href = resolvedUrl
+        link.download = fileName || "document"
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        return
+      }
+
+      // Fetch as blob for native browser download prompt on cross-origin CDN URLs
+      const response = await fetch(resolvedUrl)
+      if (response.ok) {
+        const blob = await response.blob()
+        const blobUrl = URL.createObjectURL(blob)
+        const link = document.createElement("a")
+        link.href = blobUrl
+        link.download = fileName || "document"
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000)
+        return
+      }
+    } catch (err) {
+      console.warn("Direct blob download failed, falling back to new tab:", err)
+    } finally {
+      setIsDownloading(false)
+    }
+
+    // Direct link fallback
     const link = document.createElement("a")
     link.href = resolvedUrl
     link.download = fileName || "document"
+    link.target = "_blank"
+    link.rel = "noopener noreferrer"
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -134,11 +170,12 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                   <>
                     <button
                       onClick={handleDownload}
-                      className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors flex items-center gap-1.5 text-xs font-bold"
+                      disabled={isDownloading}
+                      className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors flex items-center gap-1.5 text-xs font-bold disabled:opacity-50"
                       title="Download Document"
                     >
-                      <Download className="w-4 h-4" />
-                      <span className="hidden sm:inline">Download</span>
+                      <Download className={`w-4 h-4 ${isDownloading ? "animate-pulse text-emerald-400" : ""}`} />
+                      <span className="hidden sm:inline">{isDownloading ? "Downloading..." : "Download"}</span>
                     </button>
                     <a
                       href={resolvedUrl}

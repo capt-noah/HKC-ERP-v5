@@ -30,6 +30,7 @@ import PurchaseOrderPrintModal from "@/components/purchase/PurchaseOrderPrintMod
 import PurchaseOrderGLSplitModal from "@/components/purchase/PurchaseOrderGLSplitModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { uploadFile, uploadFilesConcurrently } from "@/lib/fileUpload"
+import { savePaymentAdvice, savePurchaseOrderDocument } from "@/lib/tradeDocumentService"
 import COAAccountSelector from "@/components/finance/COAAccountSelector"
 import PurchaseCOASplitSection, { type SplitLineItem } from "@/components/purchase/PurchaseCOASplitSection"
 import { 
@@ -600,6 +601,16 @@ export default function PurchaseOrders() {
         notes: payNotes,
       })
 
+      // Sync canonical record to shipment_documents table
+      if (stagedSlipUrl && stagedSlipName) {
+        savePaymentAdvice({
+          purchaseOrderId: payingPo.id,
+          fileName: stagedSlipName,
+          fileUrl: stagedSlipUrl,
+          uploadedBy: "Purchasing / Finance Officer",
+        }).catch((syncErr) => console.warn("Failed syncing PO installment advice to shipment_documents:", syncErr))
+      }
+
       const newDue = Number(Math.max(0, currentDue - numAmount).toFixed(2))
       showToast(
         "Payment Recorded",
@@ -849,6 +860,31 @@ export default function PurchaseOrders() {
     try {
       setIsSubmittingVoucher(true)
       erp.addPurchaseOrder(newPo)
+
+      // Sync payment advice and supporting documents to shipment_documents table
+      if (paymentAdvice?.url) {
+        savePaymentAdvice({
+          purchaseOrderId: newPo.id,
+          fileName: paymentAdvice.name,
+          fileUrl: paymentAdvice.url,
+          fileSize: paymentAdvice.size,
+          uploadedBy: "Purchasing Officer",
+        }).catch((err) => console.warn("Failed syncing PO payment advice to shipment_documents:", err))
+      }
+      if (Array.isArray(attachments)) {
+        for (const att of attachments) {
+          if (att?.url) {
+            savePurchaseOrderDocument({
+              purchaseOrderId: newPo.id,
+              fileName: att.name,
+              fileUrl: att.url,
+              fileSize: att.size,
+              uploadedBy: "Purchasing Officer",
+            }).catch((err) => console.warn("Failed syncing PO attachment to shipment_documents:", err))
+          }
+        }
+      }
+
       showToast(
         "Voucher Created",
         "success",
@@ -966,6 +1002,30 @@ export default function PurchaseOrders() {
         paymentAdviceAttachment: paymentAdvice,
         attachments,
       })
+
+      // Sync payment advice and supporting documents to shipment_documents table
+      if (paymentAdvice?.url) {
+        savePaymentAdvice({
+          purchaseOrderId: editingPo.id,
+          fileName: paymentAdvice.name,
+          fileUrl: paymentAdvice.url,
+          fileSize: paymentAdvice.size,
+          uploadedBy: "Purchasing Officer",
+        }).catch((err) => console.warn("Failed syncing PO payment advice to shipment_documents:", err))
+      }
+      if (Array.isArray(attachments)) {
+        for (const att of attachments) {
+          if (att?.url) {
+            savePurchaseOrderDocument({
+              purchaseOrderId: editingPo.id,
+              fileName: att.name,
+              fileUrl: att.url,
+              fileSize: att.size,
+              uploadedBy: "Purchasing Officer",
+            }).catch((err) => console.warn("Failed syncing PO attachment to shipment_documents:", err))
+          }
+        }
+      }
 
       // Bidirectional sync: sync JE-PO and linked Purchase Invoice GL distribution
       try {

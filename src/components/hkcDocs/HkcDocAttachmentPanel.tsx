@@ -223,7 +223,7 @@ export default function HkcDocAttachmentPanel({
     fileInputRef.current?.click()
   }
 
-  const downloadAttachment = (fileName: string, fileUrl: string) => {
+  const downloadAttachment = async (fileName: string, fileUrl: string) => {
     const resolved = resolveFileUrl(fileUrl)
     if (resolved.startsWith("data:")) {
       try {
@@ -251,10 +251,30 @@ export default function HkcDocAttachmentPanel({
       }
     }
 
+    // Try fetching remote/Cloudinary asset as blob for native file download prompt
+    try {
+      const response = await fetch(resolved)
+      if (response.ok) {
+        const blob = await response.blob()
+        const blobUrl = URL.createObjectURL(blob)
+        const link = document.createElement("a")
+        link.href = blobUrl
+        link.download = fileName
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000)
+        return
+      }
+    } catch {
+      // Fallback
+    }
+
     const link = document.createElement("a")
     link.href = resolved
     link.download = fileName
     link.target = "_blank"
+    link.rel = "noopener noreferrer"
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)

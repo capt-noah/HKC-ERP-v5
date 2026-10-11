@@ -121,6 +121,7 @@ export async function deleteProcessingService(id: string): Promise<void> {
 }
 
 import { uploadFile } from "./fileUpload"
+import { saveProcessingContractDocument } from "./tradeDocumentService"
 
 export async function uploadProcessingServiceContract(
   id: string,
@@ -141,6 +142,16 @@ export async function uploadProcessingServiceContract(
     const err = await res.json().catch(() => ({}))
     throw new Error(err.error || "Failed to upload contract.")
   }
+
+  // Mirror to shipment_documents table as canonical trade document
+  saveProcessingContractDocument({
+    orderId: id,
+    fileName: file.name,
+    fileUrl: contractUrl,
+    fileSize: file.size,
+    uploadedBy: "Processing Officer",
+  }).catch((syncErr) => console.warn("Notice: Failed syncing contract to shipment_documents:", syncErr))
+
   return await res.json()
 }
 

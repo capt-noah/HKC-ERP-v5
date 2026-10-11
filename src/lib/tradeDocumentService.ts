@@ -421,24 +421,27 @@ export async function savePaymentAdvice(params: {
   salesOrderId?: string
   salesIssueId?: string
   invoiceId?: string
+  purchaseOrderId?: string
   fsNo?: string
   fileName: string
   fileUrl: string
   fileSize?: number
   uploadedBy?: string
 }): Promise<void> {
-  const { salesOrderId, salesIssueId, invoiceId, fsNo, fileName, fileUrl, fileSize, uploadedBy } = params
+  const { salesOrderId, salesIssueId, invoiceId, purchaseOrderId, fsNo, fileName, fileUrl, fileSize, uploadedBy } = params
   if (!fileName || !fileUrl) return
 
   const now = new Date().toISOString()
   const user = uploadedBy || "Finance / Sales Officer"
 
-  const primaryId = salesIssueId || invoiceId || salesOrderId || fsNo
+  const primaryId = salesIssueId || invoiceId || salesOrderId || purchaseOrderId || fsNo
   const primaryType: ShipmentDocAttachment["record_type"] = salesIssueId
     ? "sales_issue"
     : invoiceId
       ? "invoice"
-      : "sales_order"
+      : purchaseOrderId
+        ? "purchase_order"
+        : "sales_order"
 
   if (primaryId) {
     try {
@@ -457,3 +460,63 @@ export async function savePaymentAdvice(params: {
     }
   }
 }
+
+/**
+ * Persists a supporting document for a Purchase Order to shipment_documents.
+ */
+export async function savePurchaseOrderDocument(params: {
+  purchaseOrderId: string
+  fileName: string
+  fileUrl: string
+  fileSize?: number
+  documentType?: string
+  uploadedBy?: string
+}): Promise<void> {
+  const { purchaseOrderId, fileName, fileUrl, fileSize, documentType = "Supporting Document", uploadedBy } = params
+  if (!purchaseOrderId || !fileName || !fileUrl) return
+
+  try {
+    await uploadShipmentDoc({
+      record_id: purchaseOrderId,
+      record_type: "purchase_order",
+      document_type: documentType,
+      file_name: fileName,
+      file_url: fileUrl,
+      file_size: fileSize || 102400,
+      uploaded_at: new Date().toISOString(),
+      uploaded_by: uploadedBy || "Purchasing Officer",
+    })
+  } catch (err) {
+    console.warn(`Failed saving Purchase Order document for ${purchaseOrderId}:`, err)
+  }
+}
+
+/**
+ * Persists a Toll Processing Service contract to shipment_documents.
+ */
+export async function saveProcessingContractDocument(params: {
+  orderId: string
+  fileName: string
+  fileUrl: string
+  fileSize?: number
+  uploadedBy?: string
+}): Promise<void> {
+  const { orderId, fileName, fileUrl, fileSize, uploadedBy } = params
+  if (!orderId || !fileName || !fileUrl) return
+
+  try {
+    await uploadShipmentDoc({
+      record_id: orderId,
+      record_type: "processing_service",
+      document_type: "Processing Contract",
+      file_name: fileName,
+      file_url: fileUrl,
+      file_size: fileSize || 102400,
+      uploaded_at: new Date().toISOString(),
+      uploaded_by: uploadedBy || "Processing Officer",
+    })
+  } catch (err) {
+    console.warn(`Failed saving Processing Contract for ${orderId}:`, err)
+  }
+}
+

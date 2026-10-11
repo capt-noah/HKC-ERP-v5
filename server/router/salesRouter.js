@@ -76,6 +76,21 @@ salesRouter.post(["/processing-services/:id/upload-contract", "/processing_servi
       { contract_url, contract_file_name },
       req.params.id
     )
+
+    // Mirror to shipment_documents table
+    try {
+      await salesService.saveShipmentDoc({
+        record_id: req.params.id,
+        record_type: "processing_service",
+        document_type: "Processing Contract",
+        file_name: contract_file_name,
+        file_url: contract_url,
+        uploaded_by: req.user?.username || "Processing Officer",
+      })
+    } catch (docErr) {
+      console.warn("Failed mirroring processing contract to shipment_documents:", docErr.message)
+    }
+
     res.status(result.status).json(result.body)
   } catch (err) {
     next(err)
