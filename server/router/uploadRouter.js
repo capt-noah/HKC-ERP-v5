@@ -120,15 +120,10 @@ uploadRouter.post("/upload", (req, res, next) => {
   req.setTimeout?.(120000)
 
   upload.single("file")(req, res, (err) => {
-    // If client disconnected before response could be sent
-    if (req.destroyed || res.writableEnded) {
+    // If response was already sent or client aborted TCP socket connection
+    if (res.writableEnded || res.destroyed || (res.socket && !res.socket.writable)) {
       if (req.file?.path && fs.existsSync(req.file.path)) {
-        // Keep or cleanly remove only if response could not be delivered
-      }
-      if (!res.writableEnded) {
-        try {
-          res.end()
-        } catch {}
+        fs.unlink(req.file.path, () => {})
       }
       return
     }
@@ -194,17 +189,26 @@ uploadRouter.post("/upload/multiple", (req, res, next) => {
   req.setTimeout?.(180000)
 
   upload.array("files", 30)(req, res, (err) => {
-    if (req.destroyed || res.writableEnded) {
-      if (!res.writableEnded) {
-        try {
-          res.end()
-        } catch {}
+    if (res.writableEnded || res.destroyed || (res.socket && !res.socket.writable)) {
+      if (Array.isArray(req.files)) {
+        for (const file of req.files) {
+          if (file?.path && fs.existsSync(file.path)) {
+            fs.unlink(file.path, () => {})
+          }
+        }
       }
       return
     }
 
     if (err) {
       console.warn("[MULTIPLE UPLOAD ERROR]:", err.message)
+      if (Array.isArray(req.files)) {
+        for (const file of req.files) {
+          if (file?.path && fs.existsSync(file.path)) {
+            fs.unlink(file.path, () => {})
+          }
+        }
+      }
       if (err instanceof multer.MulterError) {
         return res.status(400).json({ success: false, error: `Upload error: ${err.message}` })
       }

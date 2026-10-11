@@ -622,6 +622,9 @@ function EmployeeForm({
       showToast("Upload Error", "warning", err?.message || "Failed to upload National ID image. Please try again.")
     } finally {
       setUploadingId(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
     }
   }
 

@@ -82,65 +82,13 @@ export async function compressImageIfPossible(
  */
 export async function compressImageToFile(
   file: File,
-  maxWidth = 2560,
-  maxHeight = 1440,
-  quality = 0.88
+  _maxWidth = 2560,
+  _maxHeight = 1440,
+  _quality = 0.88
 ): Promise<File> {
-  if (typeof window === "undefined" || !file.type.startsWith("image/")) {
-    return file
-  }
-  // Authentic passthrough for standard images / screenshots up to 20MB
-  if (file.size <= 20 * 1024 * 1024 || file.type.includes("svg") || file.type.includes("gif")) {
-    return file
-  }
-
-  return new Promise<File>((resolve) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const img = new Image()
-      img.onload = () => {
-        let { width, height } = img
-        if (width > maxWidth || height > maxHeight) {
-          if (width / maxWidth > height / maxHeight) {
-            height = Math.round((height * maxWidth) / width)
-            width = maxWidth
-          } else {
-            width = Math.round((width * maxHeight) / height)
-            height = maxHeight
-          }
-        }
-        const canvas = document.createElement("canvas")
-        canvas.width = width
-        canvas.height = height
-        const ctx = canvas.getContext("2d")
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height)
-          canvas.toBlob(
-            (blob) => {
-              if (blob && blob.size < file.size) {
-                const cleanName = file.name.replace(/\.[^.]+$/, ".jpg")
-                const compressedFile = new File([blob], cleanName, {
-                  type: "image/jpeg",
-                  lastModified: Date.now(),
-                })
-                resolve(compressedFile)
-              } else {
-                resolve(file)
-              }
-            },
-            "image/jpeg",
-            quality
-          )
-        } else {
-          resolve(file)
-        }
-      }
-      img.onerror = () => resolve(file)
-      img.src = e.target?.result as string
-    }
-    reader.onerror = () => resolve(file)
-    reader.readAsDataURL(file)
-  })
+  // Direct authentic passthrough: eliminates CPU/RAM canvas freezing on older PCs,
+  // preserves 100% original document and photo fidelity, and streams directly as raw bytes (identical to PDFs).
+  return file
 }
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25 MB
@@ -203,16 +151,27 @@ export async function uploadFile(
       body: formData,
     })
 
+    const rawText = await res.text()
+    let data: any = null
+    try {
+      data = rawText ? JSON.parse(rawText) : null
+    } catch {}
+
     if (!res.ok) {
-      let errorMsg = `Server responded with status ${res.status}`
-      try {
-        const errData = await res.json()
-        if (errData?.error) errorMsg = errData.error
-      } catch {}
+      const errorMsg =
+        data?.error ||
+        (rawText && rawText.length < 200 ? rawText : `Server responded with status ${res.status}`)
       throw new Error(errorMsg)
     }
 
-    const data = await res.json()
+    if (!data || typeof data !== "object") {
+      throw new Error(
+        rawText && rawText.length < 200
+          ? `Server returned non-JSON response: ${rawText}`
+          : "Server returned an invalid or empty response."
+      )
+    }
+
     return {
       url: data.url,
       filename: data.filename,
@@ -317,27 +276,32 @@ export async function uploadFileWithProgress(
 
       xhr.onload = () => {
         cleanup()
+        const rawText = (xhr.responseText || "").trim()
+        let data: any = null
+        try {
+          data = rawText ? JSON.parse(rawText) : null
+        } catch {}
+
         if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const data = JSON.parse(xhr.responseText)
-            if (onProgress) onProgress(100, file.size, file.size)
-            resolve({
-              url: data.url,
-              filename: data.filename,
-              originalName: data.originalName || file.name,
-              size: data.size || file.size,
-              mimeType: data.mimeType || file.type || "application/octet-stream",
-              folder,
-            })
-          } catch {
-            reject(new Error("Failed to parse server upload response"))
+          if (!data || typeof data !== "object") {
+            return reject(new Error("Server returned an invalid or empty response."))
           }
+          if (onProgress) onProgress(100, file.size, file.size)
+          resolve({
+            url: data.url,
+            filename: data.filename,
+            originalName: data.originalName || file.name,
+            size: data.size || file.size,
+            mimeType: data.mimeType || file.type || "application/octet-stream",
+            folder,
+          })
         } else {
           let errorMsg = `Server responded with status ${xhr.status}`
-          try {
-            const errData = JSON.parse(xhr.responseText)
-            if (errData.error) errorMsg = errData.error
-          } catch {}
+          if (data?.error) {
+            errorMsg = data.error
+          } else if (rawText && rawText.length < 200) {
+            errorMsg = rawText
+          }
           reject(new Error(errorMsg))
         }
       }
