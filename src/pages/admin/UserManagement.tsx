@@ -1030,7 +1030,7 @@ export default function UserManagement() {
                         className={cn(
                           "rounded-2xl border transition-all overflow-hidden",
                           isChecked
-                            ? "bg-white border-amber-500/30 shadow-2xs"
+                            ? "bg-white border-green-700/40 shadow-2xs"
                             : "bg-white/40 border-black/5 hover:bg-white"
                         )}
                       >
@@ -1051,15 +1051,10 @@ export default function UserManagement() {
                                   setIsNewUserSalesOpen(true)
                                 }
                               }}
-                              className="accent-amber-600 size-4 cursor-pointer"
+                              className="accent-green-700 size-4 cursor-pointer"
                             />
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-bold text-zinc-950">{roleLabels["sales"]}</span>
-                                <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-200">
-                                  Commercial
-                                </span>
-                              </div>
+                              <span className="text-xs font-bold text-zinc-950 block">{roleLabels["sales"]}</span>
                               <span className="text-[10px] text-zinc-500 block leading-tight mt-0.5">
                                 Customer orders, store dispatch issues, stock availability &amp; purchase vouchers
                               </span>
@@ -1068,7 +1063,7 @@ export default function UserManagement() {
 
                           {isChecked && (
                             <div className="flex items-center gap-2 shrink-0 ml-2">
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 hidden sm:inline-block">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 hidden sm:inline-block">
                                 {activePermsCount}/3 Modules • {isSpecificWh ? `${newUser.warehouse_ids.length} WH` : "All WH"}
                               </span>
                               <button
@@ -1085,7 +1080,7 @@ export default function UserManagement() {
 
                         {/* Collapsible Dropdown Content */}
                         {isChecked && isNewUserSalesOpen && (
-                          <div className="p-3 border-t border-amber-500/15 bg-amber-500/[0.02] space-y-3.5">
+                          <div className="p-3 border-t border-green-700/15 bg-green-700/[0.02] space-y-3.5">
                             {/* ROW 1: Sales Sub-permissions */}
                             <div className="space-y-2">
                               <div className="flex items-center justify-between">
@@ -1093,7 +1088,7 @@ export default function UserManagement() {
                                   <span className="text-[11px] font-black uppercase tracking-wider text-zinc-600">
                                     Row 1: Sales Sub-Modules
                                   </span>
-                                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800">
+                                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800">
                                     {activePermsCount} of 3 active
                                   </span>
                                 </div>
@@ -1132,7 +1127,7 @@ export default function UserManagement() {
                                       className={cn(
                                         "flex items-start gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer",
                                         isPermChecked
-                                          ? "bg-white border-amber-500/40 shadow-2xs ring-1 ring-amber-500/20"
+                                          ? "bg-white border-green-700/40 shadow-2xs ring-1 ring-green-700/20"
                                           : "bg-white/50 border-black/5 hover:bg-white"
                                       )}
                                     >
@@ -1145,7 +1140,7 @@ export default function UserManagement() {
                                             : [...(newUser.permissions || []), perm.id]
                                           setNewUser({ ...newUser, permissions: nextPerms })
                                         }}
-                                        className="accent-amber-600 size-3.5 mt-0.5 cursor-pointer"
+                                        className="accent-green-700 size-3.5 mt-0.5 cursor-pointer"
                                       />
                                       <div className="min-w-0 flex-1">
                                         <span className="text-xs font-bold text-zinc-900 block">{perm.label}</span>
@@ -1158,7 +1153,7 @@ export default function UserManagement() {
                             </div>
 
                             {/* ROW 2: Warehouse Access Scope */}
-                            <div className="space-y-2 pt-2 border-t border-amber-500/10">
+                            <div className="space-y-2 pt-2 border-t border-green-700/10">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                   <span className="text-[11px] font-black uppercase tracking-wider text-zinc-600">
@@ -1331,12 +1326,7 @@ export default function UserManagement() {
                               className="accent-green-700 size-4 cursor-pointer"
                             />
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-bold text-zinc-950">{roleLabels["inventory"]}</span>
-                                <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                  Warehouse Ops
-                                </span>
-                              </div>
+                              <span className="text-xs font-bold text-zinc-950 block">{roleLabels["inventory"]}</span>
                               <span className="text-[10px] text-zinc-500 block leading-tight mt-0.5">
                                 Stock products, processing services (WH1), store transfers &amp; quarantine (WH2/WH3)
                               </span>
@@ -1683,7 +1673,7 @@ export default function UserManagement() {
                         className={cn(
                           "rounded-2xl border transition-all overflow-hidden",
                           isChecked
-                            ? "bg-white border-amber-500/30 shadow-2xs"
+                            ? "bg-white border-green-700/40 shadow-2xs"
                             : "bg-white/40 border-black/5 hover:bg-white"
                         )}
                       >
@@ -1704,15 +1694,10 @@ export default function UserManagement() {
                                   setIsEditUserSalesOpen(true)
                                 }
                               }}
-                              className="accent-amber-600 size-4 cursor-pointer"
+                              className="accent-green-700 size-4 cursor-pointer"
                             />
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-bold text-zinc-950">{roleLabels["sales"]}</span>
-                                <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-200">
-                                  Commercial
-                                </span>
-                              </div>
+                              <span className="text-xs font-bold text-zinc-950 block">{roleLabels["sales"]}</span>
                               <span className="text-[10px] text-zinc-500 block leading-tight mt-0.5">
                                 Customer orders, store dispatch issues, stock availability &amp; purchase vouchers
                               </span>
@@ -1721,7 +1706,7 @@ export default function UserManagement() {
 
                           {isChecked && (
                             <div className="flex items-center gap-2 shrink-0 ml-2">
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 hidden sm:inline-block">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 hidden sm:inline-block">
                                 {activePermsCount}/3 Modules • {isSpecificWh ? `${(editingUser.warehouse_ids || []).length} WH` : "All WH"}
                               </span>
                               <button
@@ -1738,7 +1723,7 @@ export default function UserManagement() {
 
                         {/* Collapsible Dropdown Content */}
                         {isChecked && isEditUserSalesOpen && (
-                          <div className="p-3 border-t border-amber-500/15 bg-amber-500/[0.02] space-y-3.5">
+                          <div className="p-3 border-t border-green-700/15 bg-green-700/[0.02] space-y-3.5">
                             {/* ROW 1: Sales Sub-permissions */}
                             <div className="space-y-2">
                               <div className="flex items-center justify-between">
@@ -1746,7 +1731,7 @@ export default function UserManagement() {
                                   <span className="text-[11px] font-black uppercase tracking-wider text-zinc-600">
                                     Row 1: Sales Sub-Modules
                                   </span>
-                                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800">
+                                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800">
                                     {activePermsCount} of 3 active
                                   </span>
                                 </div>
@@ -1785,7 +1770,7 @@ export default function UserManagement() {
                                       className={cn(
                                         "flex items-start gap-2.5 p-2.5 rounded-xl border transition-all cursor-pointer",
                                         isPermChecked
-                                          ? "bg-white border-amber-500/40 shadow-2xs ring-1 ring-amber-500/20"
+                                          ? "bg-white border-green-700/40 shadow-2xs ring-1 ring-green-700/20"
                                           : "bg-white/50 border-black/5 hover:bg-white"
                                       )}
                                     >
@@ -1798,7 +1783,7 @@ export default function UserManagement() {
                                             : [...(editingUser.permissions || []), perm.id]
                                           setEditingUser({ ...editingUser, permissions: nextPerms })
                                         }}
-                                        className="accent-amber-600 size-3.5 mt-0.5 cursor-pointer"
+                                        className="accent-green-700 size-3.5 mt-0.5 cursor-pointer"
                                       />
                                       <div className="min-w-0 flex-1">
                                         <span className="text-xs font-bold text-zinc-900 block">{perm.label}</span>
@@ -1811,7 +1796,7 @@ export default function UserManagement() {
                             </div>
 
                             {/* ROW 2: Warehouse Access Scope */}
-                            <div className="space-y-2 pt-2 border-t border-amber-500/10">
+                            <div className="space-y-2 pt-2 border-t border-green-700/10">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                   <span className="text-[11px] font-black uppercase tracking-wider text-zinc-600">
@@ -1986,12 +1971,7 @@ export default function UserManagement() {
                               className="accent-green-700 size-4 cursor-pointer"
                             />
                             <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-bold text-zinc-950">{roleLabels["inventory"]}</span>
-                                <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                  Warehouse Ops
-                                </span>
-                              </div>
+                              <span className="text-xs font-bold text-zinc-950 block">{roleLabels["inventory"]}</span>
                               <span className="text-[10px] text-zinc-500 block leading-tight mt-0.5">
                                 Stock products, processing services (WH1), store transfers &amp; quarantine (WH2/WH3)
                               </span>

@@ -11,7 +11,6 @@ export async function migrateUsersSchema() {
 
     if (!existingCols.has("permissions")) {
       await pool.query("ALTER TABLE `users` ADD COLUMN `permissions` JSON DEFAULT NULL")
-      console.log("[DB Migration] Added `permissions` JSON column to `users` table.")
     }
   } catch (err) {
     console.warn("[DB Migration] Users schema check notice:", err.message)

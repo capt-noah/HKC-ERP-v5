@@ -7,8 +7,6 @@ import {
   ChevronRight,
   Package,
   Printer,
-  Warehouse as WarehouseIcon,
-  Layers,
   AlertTriangle,
   CheckCircle2,
   XCircle,
@@ -31,7 +29,8 @@ import {
   getUserPermittedWarehouses, 
   isProductInWarehouseScope, 
   isExportWarehouse, 
-  isPharmaWarehouse 
+  isPharmaWarehouse,
+  matchesWarehouse
 } from "@/lib/warehouses"
 import { exportToExcel } from "@/lib/exportUtils"
 
@@ -54,6 +53,17 @@ export default function SalesStock() {
     }
     return "ALL"
   })
+
+  // Synchronize single permitted warehouse when warehouses load
+  useEffect(() => {
+    if (isScoped && permittedWarehouses.length === 1) {
+      const singleCode = permittedWarehouses[0].code || permittedWarehouses[0].id
+      if (selectedWarehouse !== singleCode) {
+        setSelectedWarehouse(singleCode)
+      }
+    }
+  }, [isScoped, permittedWarehouses, selectedWarehouse])
+
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL")
   const [expiryFilter, setExpiryFilter] = useState<string>("ALL")
   const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(new Set())
@@ -122,8 +132,7 @@ export default function SalesStock() {
     return scopedProducts.filter((prod) => {
       // Warehouse filter
       if (selectedWarehouse !== "ALL") {
-        const prodWh = String(prod.warehouse || "").toUpperCase()
-        if (prodWh !== selectedWarehouse.toUpperCase()) return false
+        if (!matchesWarehouse(prod.warehouse, selectedWarehouse)) return false
       }
 
       // Category filter
@@ -311,92 +320,90 @@ export default function SalesStock() {
           </GlassCard>
         </div>
 
-        {/* Filters and Controls Card */}
-        <GlassCard className="p-4 mb-6 rounded-2xl border border-zinc-200/80 bg-white/80 shadow-2xs">
-          <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
-            {/* Search Input */}
-            <div className="relative w-full md:w-96">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
-              <input
-                type="text"
-                placeholder="Search SKU, item name, batch, customer..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 text-xs rounded-xl bg-zinc-50 border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-900 font-medium"
-              />
-            </div>
-
-            {/* Selector Filters */}
-            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-              {/* Warehouse Filter */}
-              <div className="relative flex items-center">
-                <WarehouseIcon className="absolute left-3 size-3.5 text-zinc-400 pointer-events-none" />
-                <select
-                  value={selectedWarehouse}
-                  onChange={(e) => setSelectedWarehouse(e.target.value)}
-                  className="pl-8 pr-8 py-2 text-xs rounded-xl bg-zinc-50 border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 font-bold text-zinc-800 appearance-none cursor-pointer"
-                >
-                  {!isScoped && <option value="ALL">All Warehouses &amp; Facilities</option>}
-                  {permittedWarehouses.map((wh) => (
-                    <option key={wh.id} value={wh.code || wh.id}>
-                      {wh.name || wh.code || wh.id}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-2.5 size-3.5 text-zinc-400 pointer-events-none" />
-              </div>
-
-              {/* Category Filter */}
-              <div className="relative flex items-center">
-                <Layers className="absolute left-3 size-3.5 text-zinc-400 pointer-events-none" />
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="pl-8 pr-8 py-2 text-xs rounded-xl bg-zinc-50 border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 font-bold text-zinc-800 appearance-none cursor-pointer"
-                >
-                  <option value="ALL">All Categories</option>
-                  <option value="EXPORT">Export Commodities (WH1)</option>
-                  <option value="PHARMA">Veterinary Pharmaceuticals (WH2/WH3)</option>
-                </select>
-                <ChevronDown className="absolute right-2.5 size-3.5 text-zinc-400 pointer-events-none" />
-              </div>
-
-              {/* Expiry Tier Filter */}
-              <select
-                value={expiryFilter}
-                onChange={(e) => setExpiryFilter(e.target.value)}
-                className="px-3 py-2 text-xs rounded-xl bg-zinc-50 border border-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 font-bold text-zinc-800 appearance-none cursor-pointer"
-              >
-                <option value="ALL">All Expiry Status</option>
-                <option value="EXPIRED">Expired</option>
-                <option value="CRITICAL">Critical (&le; 90 Days)</option>
-                <option value="WARNING">Warning (3-6 Months)</option>
-                <option value="SAFE">Safe (&gt; 6 Months)</option>
-              </select>
-
-              {/* Action Buttons */}
-              <button
-                type="button"
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-zinc-200 bg-white hover:bg-zinc-100 text-zinc-800 font-bold text-xs shadow-2xs transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
-                title="Refresh inventory from database"
-              >
-                <RefreshCw className={`size-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
-                <span>Sync</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleExportExcel}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-black text-white font-bold text-xs shadow-2xs transition-all active:scale-95 cursor-pointer"
-              >
-                <Download className="size-3.5" />
-                <span>Export Excel</span>
-              </button>
-            </div>
+        {/* Toolbar & Filters */}
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 mb-6 bg-white/70 p-3 rounded-2xl border border-zinc-200/70 shadow-2xs">
+          {/* Left: Search input */}
+          <div className="relative flex-1 min-w-[240px]">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-zinc-400" />
+            <input
+              type="text"
+              placeholder="Search by SKU, product name, batch, voucher, or party..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 bg-white rounded-xl border border-zinc-200 text-xs font-semibold placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 transition-all"
+            />
           </div>
-        </GlassCard>
+
+          {/* Right: Dropdowns & Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Warehouse Filter */}
+            <select
+              value={selectedWarehouse}
+              onChange={(e) => setSelectedWarehouse(e.target.value)}
+              className="px-3 py-2 bg-white rounded-xl border border-zinc-200 text-xs font-bold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 cursor-pointer shadow-2xs"
+            >
+              {permittedWarehouses.length > 1 && (
+                <option value="ALL">{isScoped ? "All Permitted Warehouses" : "All Warehouses"}</option>
+              )}
+              {permittedWarehouses.map((wh) => {
+                const code = wh.code || wh.id
+                const shortName = wh.name ? wh.name.replace(/^WH\d+\s*[-—–]\s*/i, "") : code
+                return (
+                  <option key={wh.id} value={code}>
+                    {code} — {shortName}
+                  </option>
+                )
+              })}
+            </select>
+
+            {/* Category Filter */}
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="px-3 py-2 bg-white rounded-xl border border-zinc-200 text-xs font-bold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 cursor-pointer shadow-2xs"
+            >
+              <option value="ALL">All Categories</option>
+              <option value="EXPORT">Export Commodities</option>
+              <option value="PHARMA">Veterinary Medicines</option>
+            </select>
+
+            {/* Expiry Filter */}
+            <select
+              value={expiryFilter}
+              onChange={(e) => setExpiryFilter(e.target.value)}
+              className="px-3 py-2 bg-white rounded-xl border border-zinc-200 text-xs font-bold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 cursor-pointer shadow-2xs"
+            >
+              <option value="ALL">All Expiry Status</option>
+              <option value="CRITICAL">Critical (≤30d)</option>
+              <option value="WARNING">Watchlist (≤90d)</option>
+              <option value="EXPIRED">Expired</option>
+              <option value="GOOD">Good Status</option>
+            </select>
+
+            {/* Refresh Button */}
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="px-3 py-2 bg-white hover:bg-zinc-50 border border-zinc-200 rounded-xl text-xs font-bold text-zinc-700 flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer disabled:opacity-60"
+              title="Reload live inventory data"
+            >
+              <RefreshCw className={`size-3.5 text-zinc-500 ${isRefreshing ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+
+            {/* Export Excel Button */}
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer active:scale-95"
+              title="Export Stock to Excel"
+            >
+              <Download className="size-3.5 text-white" />
+              <span>Export Excel</span>
+            </button>
+          </div>
+        </div>
 
         {/* Inventory Register Table */}
         <div className="rounded-2xl border border-zinc-200/80 bg-white shadow-2xs overflow-hidden">
