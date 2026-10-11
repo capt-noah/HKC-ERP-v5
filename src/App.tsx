@@ -19,6 +19,7 @@ function ScrollToTop() {
 
 import Login from "@/pages/auth/Login"
 import SalesDashboard from "@/pages/sales/SalesDashboard"
+import SalesStock from "@/pages/sales/SalesStock"
 import SalesIssued from "@/pages/sales/SalesIssued"
 import HkcDocs from "@/pages/sales/HkcDocs"
 import ProcessingServices from "@/pages/sales/ProcessingServices"
@@ -88,6 +89,7 @@ export function App() {
 
         {/* Sales section */}
         <Route path="/sales" element={<ProtectedRoute allowedRoles={["superadmin", "sales"]}><SalesDashboard /></ProtectedRoute>} />
+        <Route path="/sales/stock" element={<ProtectedRoute allowedRoles={["superadmin", "sales"]}><SalesStock /></ProtectedRoute>} />
         <Route path="/sales/hkc-docs" element={<ProtectedRoute allowedRoles={["superadmin", "hkc_docs"]}><HkcDocs /></ProtectedRoute>} />
         <Route path="/sales/processing-services" element={<Navigate to="/inventory/processing-services" replace />} />
         <Route path="/sales/sales-issued" element={<ProtectedRoute allowedRoles={["superadmin", "sales"]} requiredPermission="sales_issue"><SalesIssued /></ProtectedRoute>} />

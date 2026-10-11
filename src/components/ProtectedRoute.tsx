@@ -94,15 +94,11 @@ export function ProtectedRoute({ children, allowedRoles, requiredPermission }: P
   }
 
   // Check granular permission if required
-  if (
-    !userRoles.includes("superadmin") &&
-    requiredPermission &&
-    user?.permissions &&
-    Array.isArray(user.permissions) &&
-    user.permissions.length > 0 &&
-    !user.permissions.includes(requiredPermission)
-  ) {
-    return <Navigate to="/sales" replace />
+  if (!userRoles.includes("superadmin") && requiredPermission) {
+    const perms = Array.isArray(user?.permissions) ? user.permissions : ["sales_issue", "sales_order", "purchase_order"]
+    if (!perms.includes(requiredPermission)) {
+      return <Navigate to="/sales" replace />
+    }
   }
 
   return <>{children}</>

@@ -319,6 +319,9 @@ export function unwrapRow(row, storage) {
     "line_items",
     "gl_distribution",
     "multi_accounts",
+    "roles",
+    "permissions",
+    "warehouse_ids",
   ]) {
     if (out[k] !== undefined) {
       out[k] = parseJsonField(out[k])

@@ -8,6 +8,8 @@ import { navSections, getSectionChildren } from "@/lib/nav-config"
 import { useErpStore } from "@/lib/erpStore"
 import { listSalesIssues, type SalesIssue } from "@/lib/salesIssuesApi"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useAuthStore } from "@/lib/authStore"
+import { getUserPermittedWarehouses } from "@/lib/warehouses"
 
 function money(value: number) {
   return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -46,6 +48,12 @@ function RowSkeleton() {
 export default function SalesDashboard() {
   const navigate = useNavigate()
   const erp = useErpStore()
+  const { user } = useAuthStore()
+  const allWarehouses = erp.getWarehouses()
+  const permittedWarehouses = useMemo(() => getUserPermittedWarehouses(user, allWarehouses), [user, allWarehouses])
+  const isSuperAdmin = (user?.roles || []).includes("superadmin")
+  const isScoped = !isSuperAdmin && (user?.warehouse_ids || []).length > 0
+
   const salesOrders = erp.getSalesOrders()
   const [salesIssues, setSalesIssues] = useState<SalesIssue[]>([])
   const [salesLoading, setSalesLoading] = useState(true)
@@ -64,7 +72,25 @@ export default function SalesDashboard() {
       .finally(() => setSalesLoading(false))
   }, [erp])
 
-  const safeIssues = Array.isArray(salesIssues) ? salesIssues : []
+  const scopedSalesOrders = useMemo(() => {
+    if (!isScoped) return salesOrders
+    const allowedKeys = new Set(permittedWarehouses.flatMap(w => [w.id, w.code, w.name].filter(Boolean).map(x => String(x).toLowerCase())))
+    return salesOrders.filter(so => {
+      const wh = String(so.warehouse || "").toLowerCase()
+      return !wh || allowedKeys.has(wh)
+    })
+  }, [salesOrders, isScoped, permittedWarehouses])
+
+  const safeIssues = useMemo(() => {
+    const raw = Array.isArray(salesIssues) ? salesIssues : []
+    if (!isScoped) return raw
+    const allowedKeys = new Set(permittedWarehouses.flatMap(w => [w.id, w.code, w.name].filter(Boolean).map(x => String(x).toLowerCase())))
+    return raw.filter(issue => {
+      const wh = String(issue?.warehouse_id || (issue as any)?.warehouse || "").toLowerCase()
+      return !wh || allowedKeys.has(wh)
+    })
+  }, [salesIssues, isScoped, permittedWarehouses])
+
   const postedIssues = safeIssues.filter((issue) => issue?.status === "Posted")
   const draftIssues = safeIssues.filter((issue) => issue?.status === "Draft")
   const creditIssues = safeIssues.filter((issue) => (issue?.payment_type || "Cash").toLowerCase() === "credit")
@@ -76,7 +102,7 @@ export default function SalesDashboard() {
   }, 0)
   const issuedAmount = postedIssues.reduce((sum, issue) => sum + Number(issue?.total_amount || 0), 0)
   const postedIssueCount = postedIssues.length
-  const openSalesOrders = salesOrders.filter(
+  const openSalesOrders = scopedSalesOrders.filter(
     (order) => order?.stage !== "Delivered" && order?.stage !== "Shipped" && order?.deliveryStatus !== "Fully Delivered"
   )
   const openOrderAmount = openSalesOrders.reduce((sum, order) => sum + Number(order?.amount || 0), 0)

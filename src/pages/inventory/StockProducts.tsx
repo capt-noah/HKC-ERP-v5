@@ -115,29 +115,29 @@ export default function StockProducts() {
     return resolveWarehouseScope(userWarehouseIds, erp.getWarehouses())
   }, [userWarehouseIds, erp])
 
-  const isInventoryAdminOnly = userRoles.includes("inventory") && !userRoles.includes("superadmin")
+  const isSuperAdmin = userRoles.includes("superadmin")
+  const isWarehouseScoped = !isSuperAdmin && resolvedWarehouseIds.length > 0
 
   const allProducts = erp.getProducts()
-  const products = (isInventoryAdminOnly && resolvedWarehouseIds.length > 0)
+  const products = isWarehouseScoped
     ? allProducts.filter(p => isProductInWarehouseScope(p, resolvedWarehouseIds))
     : allProducts
 
   const isLoading = erp.isInventoryLoading()
-  const warehouseRecords = (isInventoryAdminOnly && resolvedWarehouseIds.length > 0)
+  const warehouseRecords = isWarehouseScoped
     ? allWarehouses.filter(w => isWarehouseInScope(w.id, resolvedWarehouseIds) || isWarehouseInScope(w.code, resolvedWarehouseIds))
     : allWarehouses
   const isWH1 = (w: string) => isExportWarehouse(w, allWarehouses)
 
   const hasCommercialStoreAccess =
-    !isInventoryAdminOnly ||
-    resolvedWarehouseIds.length === 0 ||
+    !isWarehouseScoped ||
     resolvedWarehouseIds.some((id) => isPharmaWarehouse(id, allWarehouses))
 
   const [searchParams] = useSearchParams()
   const initialSearch = searchParams.get("search") || ""
   const [activeTab, setActiveTab] = useState<"Register" | "Store Transfer" | "Quarantine">("Register")
 
-  const defaultWarehouse = (isInventoryAdminOnly && warehouseRecords.length === 1)
+  const defaultWarehouse = (isWarehouseScoped && warehouseRecords.length === 1)
     ? (warehouseRecords[0].code || warehouseRecords[0].id)
     : "ALL"
   const [selectedWarehouse, setSelectedWarehouse] = useState(defaultWarehouse)
@@ -169,12 +169,12 @@ export default function StockProducts() {
   const [expiryFilter, setExpiryFilter] = useState<string>("ALL")
   
   useEffect(() => {
-    if (isInventoryAdminOnly && warehouseRecords.length === 1) {
+    if (isWarehouseScoped && warehouseRecords.length === 1) {
       const singleWh = warehouseRecords[0].code || warehouseRecords[0].id
       setSelectedWarehouse(singleWh)
       setAddWarehouse(singleWh)
     }
-  }, [isInventoryAdminOnly, warehouseRecords])
+  }, [isWarehouseScoped, warehouseRecords])
   
   // Expanded rows for WH1 items
   const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(new Set())

@@ -2100,7 +2100,17 @@ export default function SalesIssued() {
     })
   }
 
-  const salesTable = useResizableTable<SalesIssue>(salesIssueColumns, rows, {
+  const isSuperAdmin = (user?.roles || []).includes("superadmin")
+  const permittedRows = useMemo(() => {
+    if (isSuperAdmin || (user?.warehouse_ids || []).length === 0) return rows
+    const allowedKeys = new Set(warehouses.flatMap(w => [w.id, w.code, w.name].filter(Boolean).map(x => String(x).toLowerCase())))
+    return rows.filter(r => {
+      const wh = String(r.warehouse_id || (r as any).warehouse || "").toLowerCase()
+      return !wh || allowedKeys.has(wh)
+    })
+  }, [rows, isSuperAdmin, user, warehouses])
+
+  const salesTable = useResizableTable<SalesIssue>(salesIssueColumns, permittedRows, {
     fs_no: 110,
     reference_no: 120,
     sale_date: 100,

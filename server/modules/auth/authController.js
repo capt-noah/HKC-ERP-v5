@@ -281,15 +281,22 @@ export async function login(req, res) {
     }
 
     let permissions = user.permissions
+    let isExplicitPermissions = false
     if (typeof permissions === "string") {
       try {
         permissions = JSON.parse(permissions)
+        isExplicitPermissions = true
       } catch {
         permissions = []
       }
+    } else if (Array.isArray(permissions)) {
+      isExplicitPermissions = true
     }
     if (!Array.isArray(permissions)) {
       permissions = []
+    }
+    if (!isExplicitPermissions && roles.includes("sales") && (user.permissions === null || user.permissions === undefined)) {
+      permissions = ["sales_issue", "sales_order", "purchase_order"]
     }
 
     // Create database-backed session (6 hours expiration per security mandate)

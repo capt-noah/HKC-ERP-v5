@@ -6,6 +6,7 @@ export const navSections: NavSection[] = [
     path: "/sales",
     children: [
       { label: "Dashboard", path: "/sales" },
+      { label: "Stock", path: "/sales/stock" },
       { label: "Sales Issued", path: "/sales/sales-issued" },
       { label: "Sales Orders", path: "/sales/sales-orders" },
       { label: "Purchase Orders", path: "/sales/purchase-orders" },
