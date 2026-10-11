@@ -195,7 +195,7 @@ export function FloatingNav({
 
   return (
     <>
-      <div className="fixed top-3 sm:top-4 left-0 right-0 z-50 w-full px-3 sm:px-4 md:px-6 lg:px-8">
+      <div className="fixed top-3 sm:top-4 left-0 right-0 z-50 w-full px-3 sm:px-4 md:px-6 lg:px-8 print:hidden floating-nav">
         <div className="flex items-center justify-between gap-2 sm:gap-3 w-full max-w-[100%] mx-auto">
           {/* 1. Left Pill: Brand Logo */}
           <Link

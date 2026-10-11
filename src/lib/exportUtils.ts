@@ -1409,3 +1409,430 @@ export function exportStoreTransferExcel(transfer: PrintStoreTransferOptions): v
   })
 }
 
+export interface ExportPayrollOptions {
+  periodName: string
+  startDate: string
+  endDate: string
+  records: Array<{
+    employeeName: string
+    employeeNumber: string
+    warehouse: string
+    basicSalary: number
+    taxableAllowances: number
+    nonTaxableAllowances: number
+    overtimePay: number
+    bonus: number
+    grossPay: number
+    incomeTax: number
+    pension: number
+    otherDeductions: number
+    totalDeductions: number
+    netPay: number
+    paymentStatus: string
+  }>
+}
+
+/**
+ * Export Monthly Payroll Register to Excel (.xls)
+ */
+export function exportPayrollRegisterToExcel(options: ExportPayrollOptions): void {
+  const sanitize = (s: string) => s.replace(/[^\w-]/g, "_")
+  exportToExcel({
+    fileName: `Payroll_Register_${sanitize(options.periodName || "Monthly")}.xls`,
+    sheetName: "Payroll Register",
+    title: "HKC TRADING PLC",
+    subtitle: `MONTHLY STAFF PAYROLL REGISTER & STATUTORY BREAKDOWN - ${options.periodName || ""}`,
+    metadata: [
+      { label: "Payroll Period", value: options.periodName },
+      { label: "Date Range", value: `${options.startDate} to ${options.endDate}` },
+      { label: "Total Staff", value: `${options.records.length} Employees` },
+      { label: "Export Date", value: new Date().toLocaleDateString() },
+    ],
+    headers: [
+      "No",
+      "Employee Name",
+      "Employee No",
+      "Warehouse / Dept",
+      "Basic Salary (ETB)",
+      "Taxable Allow. (ETB)",
+      "Tax-Free Allow. (ETB)",
+      "Overtime / Bonus (ETB)",
+      "Gross Pay (ETB)",
+      "Income Tax (Proc. 1395)",
+      "Pension 7% (ETB)",
+      "Other Deduct. (ETB)",
+      "Total Deduct. (ETB)",
+      "Net Take-Home Pay (ETB)",
+      "Status",
+    ],
+    rows: options.records.map((r, idx) => [
+      idx + 1,
+      r.employeeName,
+      r.employeeNumber,
+      r.warehouse,
+      Number(r.basicSalary || 0),
+      Number(r.taxableAllowances || 0),
+      Number(r.nonTaxableAllowances || 0),
+      Number(r.overtimePay || 0) + Number(r.bonus || 0),
+      Number(r.grossPay || 0),
+      Number(r.incomeTax || 0),
+      Number(r.pension || 0),
+      Number(r.otherDeductions || 0),
+      Number(r.totalDeductions || 0),
+      Number(r.netPay || 0),
+      r.paymentStatus || "Draft",
+    ]),
+  })
+}
+
+export interface PrintPayslipOptions {
+  employeeName: string
+  employeeNumber: string
+  warehouse: string
+  periodName: string
+  paymentStatus: string
+  basicSalary: number
+  taxableAllowances: number
+  nonTaxableAllowances: number
+  overtimePay: number
+  bonus: number
+  otherEarnings: number
+  grossPay: number
+  incomeTax: number
+  pension: number
+  absenceDeduction: number
+  loanDeduction: number
+  otherDeductions: number
+  totalDeductions: number
+  netPay: number
+}
+
+/**
+ * Open clean, dedicated print document window for Payslips (A4 Portrait)
+ * Eliminates website navigation, background gradients, and modal screenshot artifacts.
+ */
+export function printPayslipDocument(data: PrintPayslipOptions): void {
+  const printWindow = window.open("", "_blank", "width=850,height=950")
+  if (!printWindow) {
+    window.print()
+    return
+  }
+
+  const logoUrl = typeof window !== "undefined" && window.location?.origin ? `${window.location.origin}/hkc_logo.png` : "/hkc_logo.png"
+  const money = (val: number) => Number(val || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Salary Payslip - ${data.employeeName} (${data.periodName})</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #09090b; margin: 0; padding: 24px; background: #ffffff; }
+    .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #09090b; padding-bottom: 12px; margin-bottom: 20px; }
+    .logo-container { display: flex; align-items: center; gap: 14px; }
+    .logo { height: 50px; width: auto; object-fit: contain; }
+    .company-name { font-size: 18px; font-weight: 900; text-transform: uppercase; margin: 0; color: #09090b; letter-spacing: -0.2px; }
+    .dept-title { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #71717a; letter-spacing: 0.5px; margin-top: 3px; }
+    .badge-box { text-align: right; }
+    .payslip-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: 900; text-transform: uppercase; background: #f4f4f5; border: 1px solid #d4d4d8; color: #09090b; }
+    .period-text { font-size: 11px; font-weight: 700; color: #52525b; margin-top: 4px; }
+
+    .meta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; background: #fafafa; border: 1px solid #e4e4e7; border-radius: 12px; padding: 12px 16px; margin-bottom: 20px; font-size: 11px; }
+    .meta-label { font-size: 9px; text-transform: uppercase; font-weight: 800; color: #71717a; margin-bottom: 2px; }
+    .meta-val { font-size: 12px; font-weight: 900; color: #09090b; }
+
+    .tables-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 20px; font-size: 11px; }
+    .section-title { font-size: 11px; font-weight: 900; text-transform: uppercase; padding-bottom: 6px; margin-bottom: 8px; }
+    .earnings-title { color: #047857; border-bottom: 1.5px solid #a7f3d0; }
+    .deductions-title { color: #b91c1c; border-bottom: 1.5px solid #fecdd3; }
+
+    .line-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px dashed #f4f4f5; font-size: 11px; }
+    .line-label { color: #52525b; font-weight: 600; }
+    .line-val { font-weight: 800; font-family: monospace; }
+    .line-total { display: flex; justify-content: space-between; padding-top: 8px; margin-top: 8px; border-top: 2px solid #e4e4e7; font-weight: 900; font-size: 12px; }
+
+    .net-banner { background: #09090b; color: #ffffff; border-radius: 12px; padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+    .net-label { font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; color: #34d399; }
+    .net-sub { font-size: 11px; color: #a1a1aa; font-weight: 500; margin-top: 2px; }
+    .net-amount { font-size: 24px; font-weight: 900; font-family: monospace; color: #34d399; }
+
+    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; padding-top: 20px; border-top: 1px solid #e4e4e7; font-size: 11px; color: #52525b; }
+    .sig-line { border-bottom: 1px solid #71717a; padding-bottom: 35px; margin-bottom: 6px; }
+    .sig-name { font-weight: 800; color: #09090b; }
+    .sig-desc { font-size: 10px; color: #a1a1aa; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-container">
+      <img src="${logoUrl}" class="logo" alt="HKC Logo" />
+      <div>
+        <h1 class="company-name">HKC Trading PLC</h1>
+        <div class="dept-title">Human Resources &amp; Payroll Administration</div>
+      </div>
+    </div>
+    <div class="badge-box">
+      <span class="payslip-badge">Salary Payslip</span>
+      <div class="period-text">Period: ${data.periodName}</div>
+    </div>
+  </div>
+
+  <div class="meta-grid">
+    <div>
+      <div class="meta-label">Employee Name</div>
+      <div class="meta-val">${data.employeeName}</div>
+    </div>
+    <div>
+      <div class="meta-label">Employee Number</div>
+      <div class="meta-val">${data.employeeNumber}</div>
+    </div>
+    <div>
+      <div class="meta-label">Warehouse / Department</div>
+      <div class="meta-val">${data.warehouse}</div>
+    </div>
+    <div>
+      <div class="meta-label">Payment Status</div>
+      <div class="meta-val" style="color: #047857;">${data.paymentStatus}</div>
+    </div>
+  </div>
+
+  <div class="tables-grid">
+    <div>
+      <div class="section-title earnings-title">Earnings Breakdown</div>
+      <div class="line-row"><span class="line-label">Basic Salary</span><span class="line-val">ETB ${money(data.basicSalary)}</span></div>
+      ${data.taxableAllowances > 0 ? `<div class="line-row"><span class="line-label">Taxable Allowances</span><span class="line-val">ETB ${money(data.taxableAllowances)}</span></div>` : ""}
+      ${data.nonTaxableAllowances > 0 ? `<div class="line-row"><span class="line-label">Tax-Free Allowances</span><span class="line-val">ETB ${money(data.nonTaxableAllowances)}</span></div>` : ""}
+      ${data.overtimePay > 0 ? `<div class="line-row"><span class="line-label">Overtime Pay</span><span class="line-val">ETB ${money(data.overtimePay)}</span></div>` : ""}
+      ${data.bonus > 0 ? `<div class="line-row"><span class="line-label">Bonus</span><span class="line-val">ETB ${money(data.bonus)}</span></div>` : ""}
+      ${data.otherEarnings > 0 ? `<div class="line-row"><span class="line-label">Other Earnings</span><span class="line-val">ETB ${money(data.otherEarnings)}</span></div>` : ""}
+      <div class="line-total" style="color: #047857;"><span>Gross Earnings</span><span>ETB ${money(data.grossPay)}</span></div>
+    </div>
+
+    <div>
+      <div class="section-title deductions-title">Statutory &amp; Deductions</div>
+      <div class="line-row"><span class="line-label">Income Tax (Proc. 1395/2025)</span><span class="line-val">ETB ${money(data.incomeTax)}</span></div>
+      <div class="line-row"><span class="line-label">Pension Contribution (7%)</span><span class="line-val">ETB ${money(data.pension)}</span></div>
+      ${data.absenceDeduction > 0 ? `<div class="line-row"><span class="line-label">Absence Deduction</span><span class="line-val">ETB ${money(data.absenceDeduction)}</span></div>` : ""}
+      ${data.loanDeduction > 0 ? `<div class="line-row"><span class="line-label">Loan Deduction</span><span class="line-val">ETB ${money(data.loanDeduction)}</span></div>` : ""}
+      ${data.otherDeductions > 0 ? `<div class="line-row"><span class="line-label">Other Deductions</span><span class="line-val">ETB ${money(data.otherDeductions)}</span></div>` : ""}
+      <div class="line-total" style="color: #b91c1c;"><span>Total Deductions</span><span>ETB ${money(data.totalDeductions)}</span></div>
+    </div>
+  </div>
+
+  <div class="net-banner">
+    <div>
+      <div class="net-label">Net Take-Home Pay</div>
+      <div class="net-sub">Bank / Cash Transfer Disbursement Amount</div>
+    </div>
+    <div class="net-amount">ETB ${money(data.netPay)}</div>
+  </div>
+
+  <div class="signatures">
+    <div>
+      <div class="sig-line"></div>
+      <div class="sig-name">Employee Signature</div>
+      <div class="sig-desc">Received &amp; Verified</div>
+    </div>
+    <div>
+      <div class="sig-line"></div>
+      <div class="sig-name">Authorized HR / Finance Officer</div>
+      <div class="sig-desc">HKC Trading PLC Management</div>
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 200);
+    };
+  </script>
+</body>
+</html>`
+
+  printWindow.document.open()
+  printWindow.document.write(htmlContent)
+  printWindow.document.close()
+}
+
+export interface PrintPayrollRegisterOptions {
+  periodName: string
+  startDate: string
+  endDate: string
+  status: string
+  records: Array<{
+    employeeName: string
+    employeeNumber: string
+    warehouse: string
+    basicSalary: number
+    allowances: number
+    overtimeAndBonus: number
+    grossPay: number
+    incomeTax: number
+    pension: number
+    otherDeductions: number
+    totalDeductions: number
+    netPay: number
+    paymentStatus: string
+  }>
+}
+
+/**
+ * Open clean, dedicated print document window for Monthly Payroll Register (A4 Landscape)
+ * Eliminates website navigation, background gradients, and modal screenshot artifacts.
+ */
+export function printPayrollRegisterDocument(data: PrintPayrollRegisterOptions): void {
+  const printWindow = window.open("", "_blank", "width=1200,height=900")
+  if (!printWindow) {
+    window.print()
+    return
+  }
+
+  const logoUrl = typeof window !== "undefined" && window.location?.origin ? `${window.location.origin}/hkc_logo.png` : "/hkc_logo.png"
+  const money = (val: number) => Number(val || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  const totals = {
+    basic: data.records.reduce((s, r) => s + Number(r.basicSalary || 0), 0),
+    allow: data.records.reduce((s, r) => s + Number(r.allowances || 0), 0),
+    ot: data.records.reduce((s, r) => s + Number(r.overtimeAndBonus || 0), 0),
+    gross: data.records.reduce((s, r) => s + Number(r.grossPay || 0), 0),
+    tax: data.records.reduce((s, r) => s + Number(r.incomeTax || 0), 0),
+    pension: data.records.reduce((s, r) => s + Number(r.pension || 0), 0),
+    deduct: data.records.reduce((s, r) => s + Number(r.totalDeductions || 0), 0),
+    net: data.records.reduce((s, r) => s + Number(r.netPay || 0), 0),
+  }
+
+  const rowsHtml = data.records.length === 0
+    ? `<tr><td colspan="12" style="padding: 16px; text-align: center; color: #71717a;">No payroll records found for this period.</td></tr>`
+    : data.records.map((r, idx) => `
+      <tr style="border-bottom: 1px solid #e4e4e7;">
+        <td style="padding: 6px 8px; text-align: center; font-weight: bold; color: #71717a;">${idx + 1}</td>
+        <td style="padding: 6px 8px; font-weight: 800; color: #09090b;">${r.employeeName}</td>
+        <td style="padding: 6px 8px; font-family: monospace; color: #52525b;">${r.employeeNumber}</td>
+        <td style="padding: 6px 8px; color: #52525b;">${r.warehouse}</td>
+        <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${money(r.basicSalary)}</td>
+        <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${money(r.allowances)}</td>
+        <td style="padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 800; background: #fafafa;">${money(r.grossPay)}</td>
+        <td style="padding: 6px 8px; text-align: right; font-family: monospace; color: #b91c1c;">${money(r.incomeTax)}</td>
+        <td style="padding: 6px 8px; text-align: right; font-family: monospace; color: #b91c1c;">${money(r.pension)}</td>
+        <td style="padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 800; color: #b91c1c; background: #fef2f2;">${money(r.totalDeductions)}</td>
+        <td style="padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 900; color: #047857; background: #f0fdf4;">${money(r.netPay)}</td>
+        <td style="padding: 6px 8px; text-align: center; font-weight: bold; font-size: 10px;">${r.paymentStatus}</td>
+      </tr>
+    `).join("")
+
+  const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Payroll Register - ${data.periodName}</title>
+  <style>
+    @page { size: A4 landscape; margin: 8mm; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #09090b; margin: 0; padding: 14px; background: #ffffff; }
+    .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #09090b; padding-bottom: 10px; margin-bottom: 12px; }
+    .logo-container { display: flex; align-items: center; gap: 12px; }
+    .logo { height: 42px; width: auto; object-fit: contain; }
+    .company-name { font-size: 18px; font-weight: 900; text-transform: uppercase; margin: 0; color: #09090b; }
+    .dept-title { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #71717a; margin-top: 2px; }
+    .period-box { text-align: right; font-size: 11px; }
+    .period-title { font-weight: 900; font-size: 13px; color: #09090b; }
+    .period-sub { color: #52525b; font-size: 10px; margin-top: 2px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 10px; margin-bottom: 16px; }
+    th { background: #f4f4f5; color: #09090b; font-weight: 900; text-transform: uppercase; font-size: 9px; padding: 6px 8px; border: 1px solid #d4d4d8; }
+    td { border: 1px solid #e4e4e7; }
+    tfoot td { background: #f4f4f5; font-weight: 900; border-top: 2px solid #09090b; }
+
+    .signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; margin-top: 20px; font-size: 10px; }
+    .sig-line { border-bottom: 1px solid #71717a; padding-bottom: 25px; margin-bottom: 4px; }
+    .sig-title { font-weight: 800; color: #09090b; }
+    .sig-sub { color: #a1a1aa; font-size: 9px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-container">
+      <img src="${logoUrl}" class="logo" alt="HKC Logo" />
+      <div>
+        <h1 class="company-name">HKC Trading PLC</h1>
+        <div class="dept-title">Monthly Staff Payroll Register &amp; Statutory Breakdown</div>
+      </div>
+    </div>
+    <div class="period-box">
+      <div class="period-title">${data.periodName}</div>
+      <div class="period-sub">Date Range: ${data.startDate} to ${data.endDate} • Status: ${data.status}</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 3%;">#</th>
+        <th style="width: 14%; text-align: left;">Employee Name</th>
+        <th style="width: 8%; text-align: left;">Emp No</th>
+        <th style="width: 11%; text-align: left;">Warehouse / Dept</th>
+        <th style="width: 8%; text-align: right;">Basic (ETB)</th>
+        <th style="width: 8%; text-align: right;">Allowances</th>
+        <th style="width: 9%; text-align: right; background: #e4e4e7;">Gross Pay</th>
+        <th style="width: 8%; text-align: right; color: #b91c1c;">Income Tax</th>
+        <th style="width: 7%; text-align: right; color: #b91c1c;">Pension 7%</th>
+        <th style="width: 8%; text-align: right; color: #b91c1c; background: #fee2e2;">Total Deduct.</th>
+        <th style="width: 10%; text-align: right; color: #047857; background: #dcfce7;">Net Pay (ETB)</th>
+        <th style="width: 6%;">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="4" style="padding: 6px 8px; text-align: right; font-weight: 900; text-transform: uppercase;">Register Totals (${data.records.length} Staff):</td>
+        <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${money(totals.basic)}</td>
+        <td style="padding: 6px 8px; text-align: right; font-family: monospace;">${money(totals.allow)}</td>
+        <td style="padding: 6px 8px; text-align: right; font-family: monospace; font-weight: 900; background: #e4e4e7;">${money(totals.gross)}</td>
+        <td style="padding: 6px 8px; text-align: right; font-family: monospace; color: #b91c1c;">${money(totals.tax)}</td>
+        <td style="padding: 6px 8px; text-align: right; font-family: monospace; color: #b91c1c;">${money(totals.pension)}</td>
+        <td style="padding: 6px 8px; text-align: right; font-family: monospace; color: #b91c1c; font-weight: 900; background: #fee2e2;">${money(totals.deduct)}</td>
+        <td style="padding: 6px 8px; text-align: right; font-family: monospace; color: #047857; font-weight: 900; background: #dcfce7;">${money(totals.net)}</td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="signatures">
+    <div>
+      <div class="sig-line"></div>
+      <div class="sig-title">Prepared By: HR Officer</div>
+      <div class="sig-sub">Payroll Calculations &amp; Deductions Verified</div>
+    </div>
+    <div>
+      <div class="sig-line"></div>
+      <div class="sig-title">Reviewed By: Finance Manager</div>
+      <div class="sig-sub">Tax &amp; Pension Statutory Compliance Certified</div>
+    </div>
+    <div>
+      <div class="sig-line"></div>
+      <div class="sig-title">Approved By: General Manager / Director</div>
+      <div class="sig-sub">Bank Disbursement Authorized</div>
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 200);
+    };
+  </script>
+</body>
+</html>`
+
+  printWindow.document.open()
+  printWindow.document.write(htmlContent)
+  printWindow.document.close()
+}
+
+

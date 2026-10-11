@@ -4,6 +4,7 @@ import {
   Calendar,
   CheckCircle2,
   CreditCard,
+  Download,
   Eye,
   FileSpreadsheet,
   Loader2,
@@ -13,6 +14,11 @@ import {
   Trash2,
   X,
 } from "lucide-react"
+import {
+  exportPayrollRegisterToExcel,
+  printPayslipDocument,
+  printPayrollRegisterDocument,
+} from "@/lib/exportUtils"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { HRPageSkeleton } from "@/components/HRSkeleton"
@@ -552,8 +558,60 @@ export default function Payroll() {
   }
 
   const printPayslip = (record: PayrollRecord) => {
-    setPayslip(record)
-    window.setTimeout(() => window.print(), 120)
+    const emp = employeeById.get(record.employee_id)
+    const period = periods.find((p) => p.id === record.payroll_period_id)
+    const taxAllow = Number(record.taxable_allowances ?? record.allowances ?? 0)
+    const nonTaxAllow = Number(record.non_taxable_allowances || 0)
+    printPayslipDocument({
+      employeeName: emp?.full_name || record.employee_id,
+      employeeNumber: emp?.employee_number || "-",
+      warehouse: resolveWarehouseFullName(emp?.warehouse_id, warehouses),
+      periodName: period?.name || "Monthly Payroll",
+      paymentStatus: record.payment_status,
+      basicSalary: Number(record.basic_salary || 0),
+      taxableAllowances: taxAllow,
+      nonTaxableAllowances: nonTaxAllow,
+      overtimePay: Number(record.overtime_pay || 0),
+      bonus: Number(record.bonus || 0),
+      otherEarnings: Number(record.other_earnings || 0),
+      grossPay: Number(record.gross_pay || 0),
+      incomeTax: Number(record.tax || 0),
+      pension: Number(record.pension || 0),
+      absenceDeduction: Number(record.absence_deduction || 0),
+      loanDeduction: Number(record.loan_deduction || 0),
+      otherDeductions: Number(record.other_deductions || 0),
+      totalDeductions: Number(record.total_deductions || 0),
+      netPay: Number(record.net_pay || 0),
+    })
+  }
+
+  const handleExportRegisterExcel = () => {
+    if (!currentPeriod || currentRecords.length === 0) return
+    exportPayrollRegisterToExcel({
+      periodName: currentPeriod.name,
+      startDate: currentPeriod.start_date,
+      endDate: currentPeriod.end_date,
+      records: currentRecords.map((rec) => {
+        const emp = employeeById.get(rec.employee_id)
+        return {
+          employeeName: emp ? emp.full_name : rec.employee_id,
+          employeeNumber: emp?.employee_number || "-",
+          warehouse: resolveWarehouseFullName(emp?.warehouse_id, warehouses),
+          basicSalary: Number(rec.basic_salary || 0),
+          taxableAllowances: Number(rec.taxable_allowances ?? rec.allowances ?? 0),
+          nonTaxableAllowances: Number(rec.non_taxable_allowances || 0),
+          overtimePay: Number(rec.overtime_pay || 0),
+          bonus: Number(rec.bonus || 0),
+          grossPay: Number(rec.gross_pay || 0),
+          incomeTax: Number(rec.tax || 0),
+          pension: Number(rec.pension || 0),
+          otherDeductions: Number(rec.absence_deduction || 0) + Number(rec.loan_deduction || 0) + Number(rec.other_deductions || 0),
+          totalDeductions: Number(rec.total_deductions || 0),
+          netPay: Number(rec.net_pay || 0),
+          paymentStatus: rec.payment_status,
+        }
+      }),
+    })
   }
 
   // Available year options (wide range from 2020 to 2040)
@@ -752,7 +810,10 @@ export default function Payroll() {
                       ]
                     : []),
                   ...(currentRecords.length > 0
-                    ? [{ label: "Print Register", onClick: () => setShowRegisterPrint(true), variant: "secondary" as const }]
+                    ? [
+                        { label: "Print Register", onClick: () => setShowRegisterPrint(true), variant: "secondary" as const },
+                        { label: "Export Excel", onClick: handleExportRegisterExcel, variant: "secondary" as const },
+                      ]
                     : []),
                 ]}
                 onReload={refresh}
@@ -1592,7 +1653,29 @@ function Payslip({
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => window.print()}
+              onClick={() => {
+                printPayslipDocument({
+                  employeeName: employee?.full_name || record.employee_id,
+                  employeeNumber: employee?.employee_number || "-",
+                  warehouse: resolveWarehouseFullName(employee?.warehouse_id, warehouses),
+                  periodName: period?.name || "Monthly Payroll",
+                  paymentStatus: record.payment_status,
+                  basicSalary: Number(record.basic_salary || 0),
+                  taxableAllowances: taxAllow,
+                  nonTaxableAllowances: nonTaxAllow,
+                  overtimePay: Number(record.overtime_pay || 0),
+                  bonus: Number(record.bonus || 0),
+                  otherEarnings: Number(record.other_earnings || 0),
+                  grossPay: Number(record.gross_pay || 0),
+                  incomeTax: Number(record.tax || 0),
+                  pension: Number(record.pension || 0),
+                  absenceDeduction: Number(record.absence_deduction || 0),
+                  loanDeduction: Number(record.loan_deduction || 0),
+                  otherDeductions: Number(record.other_deductions || 0),
+                  totalDeductions: Number(record.total_deductions || 0),
+                  netPay: Number(record.net_pay || 0),
+                })
+              }}
               className="px-4 py-2 rounded-xl bg-zinc-950 hover:bg-black text-white text-xs font-black flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
             >
               <Printer className="size-3.5" /> Print Payslip
@@ -1768,7 +1851,68 @@ function PayrollRegisterPrintModal({
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => window.print()}
+              onClick={() => {
+                exportPayrollRegisterToExcel({
+                  periodName: period.name,
+                  startDate: period.start_date,
+                  endDate: period.end_date,
+                  records: records.map((rec) => {
+                    const emp = employeeById.get(rec.employee_id)
+                    return {
+                      employeeName: emp ? emp.full_name : rec.employee_id,
+                      employeeNumber: emp?.employee_number || "-",
+                      warehouse: resolveWarehouseFullName(emp?.warehouse_id, warehouses),
+                      basicSalary: Number(rec.basic_salary || 0),
+                      taxableAllowances: Number(rec.taxable_allowances ?? rec.allowances ?? 0),
+                      nonTaxableAllowances: Number(rec.non_taxable_allowances || 0),
+                      overtimePay: Number(rec.overtime_pay || 0),
+                      bonus: Number(rec.bonus || 0),
+                      grossPay: Number(rec.gross_pay || 0),
+                      incomeTax: Number(rec.tax || 0),
+                      pension: Number(rec.pension || 0),
+                      otherDeductions: Number(rec.absence_deduction || 0) + Number(rec.loan_deduction || 0) + Number(rec.other_deductions || 0),
+                      totalDeductions: Number(rec.total_deductions || 0),
+                      netPay: Number(rec.net_pay || 0),
+                      paymentStatus: rec.payment_status,
+                    }
+                  }),
+                })
+              }}
+              className="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
+              title="Download Excel Spreadsheet (.xls)"
+            >
+              <Download className="size-3.5" /> Export Excel
+            </button>
+            <button
+              onClick={() => {
+                printPayrollRegisterDocument({
+                  periodName: period.name,
+                  startDate: period.start_date,
+                  endDate: period.end_date,
+                  status: period.status,
+                  records: records.map((rec) => {
+                    const emp = employeeById.get(rec.employee_id)
+                    const allow = Number(rec.allowances || (Number(rec.taxable_allowances || 0) + Number(rec.non_taxable_allowances || 0)))
+                    const otAndBonus = Number(rec.overtime_pay || 0) + Number(rec.bonus || 0) + Number(rec.other_earnings || 0)
+                    const otherDed = Number(rec.absence_deduction || 0) + Number(rec.loan_deduction || 0) + Number(rec.other_deductions || 0)
+                    return {
+                      employeeName: emp ? emp.full_name : rec.employee_id,
+                      employeeNumber: emp?.employee_number || "-",
+                      warehouse: resolveWarehouseFullName(emp?.warehouse_id, warehouses),
+                      basicSalary: Number(rec.basic_salary || 0),
+                      allowances: allow,
+                      overtimeAndBonus: otAndBonus,
+                      grossPay: Number(rec.gross_pay || 0),
+                      incomeTax: Number(rec.tax || 0),
+                      pension: Number(rec.pension || 0),
+                      otherDeductions: otherDed,
+                      totalDeductions: Number(rec.total_deductions || 0),
+                      netPay: Number(rec.net_pay || 0),
+                      paymentStatus: rec.payment_status,
+                    }
+                  }),
+                })
+              }}
               className="px-4 py-2 rounded-xl bg-zinc-950 hover:bg-black text-white text-xs font-black flex items-center gap-1.5 shadow-sm active:scale-95 transition-all cursor-pointer"
             >
               <Printer className="size-3.5" /> Print Sheet
