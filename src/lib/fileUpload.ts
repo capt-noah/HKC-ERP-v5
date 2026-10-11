@@ -91,7 +91,8 @@ export async function compressImageToFile(
   return file
 }
 
-const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25 MB
+export const CHUNK_SIZE = 2 * 1024 * 1024 // 2 MB per chunk
+export const MAX_FILE_SIZE = 500 * 1024 * 1024 // 500 MB max total file size
 const ALLOWED_EXTENSIONS = new Set([
   ".pdf",
   ".png",
@@ -112,7 +113,7 @@ const ALLOWED_EXTENSIONS = new Set([
 
 export function validateFileForUpload(file: File): string | null {
   if (file.size > MAX_FILE_SIZE) {
-    return `File '${file.name}' (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 25 MB limit. Please select a smaller file.`
+    return `File '${file.name}' (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 500 MB limit. Please select a smaller file.`
   }
   const extMatch = file.name.match(/\.[^.]+$/)
   const ext = extMatch ? extMatch[0].toLowerCase() : ""
@@ -123,8 +124,220 @@ export function validateFileForUpload(file: File): string | null {
 }
 
 /**
+ * Uploads an isolated 2 MB chunk via XHR with granular byte progress and abort support.
+ */
+function uploadSingleChunk(
+  chunkBlob: Blob,
+  uploadId: string,
+  chunkIndex: number,
+  totalChunks: number,
+  originalName: string,
+  folder: UploadFolder,
+  onChunkProgress?: (loaded: number) => void,
+  signal?: AbortSignal
+): Promise<{ success: boolean; size: number }> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error("Upload aborted"))
+
+    const formData = new FormData()
+    formData.append("uploadId", uploadId)
+    formData.append("chunkIndex", chunkIndex.toString())
+    formData.append("totalChunks", totalChunks.toString())
+    formData.append("originalName", originalName)
+    formData.append("folder", folder)
+    formData.append("chunk", chunkBlob, `chunk_${chunkIndex}`)
+
+    const xhr = new XMLHttpRequest()
+    const chunkUrl = `${API_BASE}/api/upload/chunk?uploadId=${encodeURIComponent(uploadId)}&chunkIndex=${chunkIndex}&folder=${encodeURIComponent(folder)}`
+
+    const abortHandler = () => {
+      xhr.abort()
+      reject(new Error("Upload aborted"))
+    }
+    if (signal) {
+      signal.addEventListener("abort", abortHandler, { once: true })
+    }
+    const cleanup = () => {
+      if (signal) signal.removeEventListener("abort", abortHandler)
+    }
+
+    xhr.open("POST", chunkUrl)
+    const authHeaders = getAuthHeaders()
+    for (const [key, val] of Object.entries(authHeaders)) {
+      if (val) xhr.setRequestHeader(key, val)
+    }
+    xhr.timeout = 60000 // 60s timeout is ample for 2 MB even on slow networks
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onChunkProgress) {
+        onChunkProgress(e.loaded)
+      }
+    }
+
+    xhr.onload = () => {
+      cleanup()
+      let data: any = null
+      try {
+        data = JSON.parse(xhr.responseText || "{}")
+      } catch {}
+
+      if (xhr.status >= 200 && xhr.status < 300 && data?.success) {
+        resolve(data)
+      } else {
+        reject(new Error(data?.error || `Chunk ${chunkIndex + 1} failed with status ${xhr.status}`))
+      }
+    }
+
+    xhr.onerror = () => {
+      cleanup()
+      reject(new Error(`Network error uploading chunk ${chunkIndex + 1}/${totalChunks}`))
+    }
+    xhr.ontimeout = () => {
+      cleanup()
+      reject(new Error(`Chunk ${chunkIndex + 1}/${totalChunks} timed out`))
+    }
+    xhr.onabort = () => {
+      cleanup()
+      reject(new Error("Upload aborted"))
+    }
+
+    xhr.send(formData)
+  })
+}
+
+/**
+ * Uploads large files in robust 2 MB chunks with automatic single-chunk retry,
+ * streaming server assembly, and real-time progress reporting.
+ */
+export async function uploadFileChunked(
+  file: File,
+  folder: UploadFolder = "general",
+  onProgress?: (percent: number, loaded: number, total: number) => void,
+  signal?: AbortSignal
+): Promise<UploadResult> {
+  const validationError = validateFileForUpload(file)
+  if (validationError) {
+    throw new Error(validationError)
+  }
+
+  const totalSize = file.size
+  const totalChunks = Math.max(1, Math.ceil(totalSize / CHUNK_SIZE))
+  const uploadId = `upl_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+
+  const chunkLoaded = new Array(totalChunks).fill(0)
+  let lastProgressTick = 0
+
+  const notifyProgress = () => {
+    if (!onProgress) return
+    const now = performance.now()
+    if (now - lastProgressTick < 50) return
+    lastProgressTick = now
+    const aggregateLoaded = Math.min(totalSize, chunkLoaded.reduce((a, b) => a + b, 0))
+    const aggregatePct = Math.min(99, Math.round((aggregateLoaded / totalSize) * 100))
+    onProgress(aggregatePct, aggregateLoaded, totalSize)
+  }
+
+  try {
+    for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+      if (signal?.aborted) throw new Error("Upload aborted")
+
+      const start = chunkIndex * CHUNK_SIZE
+      const end = Math.min(totalSize, start + CHUNK_SIZE)
+      const chunkBlob = file.slice(start, end)
+
+      // Single-chunk retry up to 2 times with 1.2s backoff
+      let attempt = 0
+      let chunkSucceeded = false
+      let lastChunkError: any = null
+
+      while (attempt < 3 && !chunkSucceeded) {
+        if (signal?.aborted) throw new Error("Upload aborted")
+        try {
+          await uploadSingleChunk(
+            chunkBlob,
+            uploadId,
+            chunkIndex,
+            totalChunks,
+            file.name,
+            folder,
+            (bytesInChunk) => {
+              chunkLoaded[chunkIndex] = bytesInChunk
+              notifyProgress()
+            },
+            signal
+          )
+          chunkLoaded[chunkIndex] = chunkBlob.size
+          chunkSucceeded = true
+          notifyProgress()
+        } catch (err: any) {
+          lastChunkError = err
+          attempt++
+          if (signal?.aborted || attempt >= 3) break
+          console.warn(`[CHUNK RETRY]: Chunk ${chunkIndex + 1}/${totalChunks} failed, retrying in 1.2s...`, err)
+          await new Promise((r) => setTimeout(r, 1200))
+        }
+      }
+
+      if (!chunkSucceeded) {
+        throw lastChunkError || new Error(`Failed to upload chunk ${chunkIndex + 1} of ${totalChunks}`)
+      }
+    }
+
+    if (signal?.aborted) throw new Error("Upload aborted")
+
+    // All chunks uploaded: assemble on server
+    const completeRes = await fetch(`${API_BASE}/api/upload/chunk/complete`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({
+        uploadId,
+        totalChunks,
+        originalName: file.name,
+        folder,
+        totalSize,
+      }),
+      signal,
+    })
+
+    const rawText = await completeRes.text()
+    let completeData: any = null
+    try {
+      completeData = rawText ? JSON.parse(rawText) : null
+    } catch {}
+
+    if (!completeRes.ok || !completeData?.success) {
+      throw new Error(completeData?.error || `Server assembly failed with status ${completeRes.status}`)
+    }
+
+    if (onProgress) {
+      onProgress(100, totalSize, totalSize)
+    }
+
+    return {
+      url: completeData.url,
+      filename: completeData.filename,
+      originalName: completeData.originalName || file.name,
+      size: completeData.size || totalSize,
+      mimeType: completeData.mimeType || file.type || "application/octet-stream",
+      folder,
+    }
+  } catch (err) {
+    void fetch(`${API_BASE}/api/upload/chunk/abort`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ uploadId }),
+    }).catch(() => {})
+    throw err
+  }
+}
+
+/**
  * Uploads a local file to server storage organized under the specified folder category.
  * Enforces client-side validation, authentic stream upload, and safe retry.
+ * Automatically delegates to 2 MB chunked uploads for files exceeding 2 MB.
  */
 export async function uploadFile(
   file: File,
@@ -134,6 +347,11 @@ export async function uploadFile(
   const validationError = validateFileForUpload(file)
   if (validationError) {
     throw new Error(validationError)
+  }
+
+  // Files exceeding 2 MB automatically use chunked uploads
+  if (file.size > CHUNK_SIZE) {
+    return uploadFileChunked(file, folder)
   }
 
   const attemptUpload = async (): Promise<UploadResult> => {
@@ -212,6 +430,12 @@ export async function uploadFileWithProgress(
   if (validationError) {
     throw new Error(validationError)
   }
+
+  // Files exceeding 2 MB automatically use chunked uploads
+  if (file.size > CHUNK_SIZE) {
+    return uploadFileChunked(file, folder, onProgress, signal)
+  }
+
   const processedFile = file.type.startsWith("image/") ? await compressImageToFile(file) : file
 
   let lastProgressTick = 0
@@ -413,6 +637,8 @@ export async function uploadFilesConcurrently(
         if (options.onProgress) {
           options.onProgress(completedCount, files.length, file.name)
         }
+        // Inter-file pacing to allow server sockets to recycle cleanly
+        await new Promise((r) => setTimeout(r, 350))
       } catch (err: any) {
         const errMsg = err?.message || `Failed to upload ${file.name}`
         console.warn(`[BATCH UPLOAD ITEM FAILED]: ${file.name} - ${errMsg}`)
