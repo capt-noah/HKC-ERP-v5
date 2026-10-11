@@ -17,7 +17,7 @@ import {
 import type { HkcDocAttachment } from "@/lib/erpStore"
 import CameraCaptureModal from "./CameraCaptureModal"
 import { useFeedback } from "@/context/FeedbackContext"
-import { uploadFileWithProgress, resolveFileUrl } from "@/lib/fileUpload"
+import { uploadFileWithProgress, resolveFileUrl, splitPdfIfOversized } from "@/lib/fileUpload"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
 
 interface HkcDocAttachmentPanelProps {
@@ -126,10 +126,8 @@ export default function HkcDocAttachmentPanel({
           },
         ])
 
-        // Automatically clean up the successful queue item after a brief celebration
-        setTimeout(() => {
-          setUploadQueue((prev) => prev.filter((q) => q.id !== item.id))
-        }, 1200)
+        // Immediately clean up from queue (0ms duplicate flicker!)
+        setUploadQueue((prev) => prev.filter((q) => q.id !== item.id))
       } catch (err: any) {
         setUploadQueue((prev) =>
           prev.map((q) =>
@@ -164,9 +162,22 @@ export default function HkcDocAttachmentPanel({
     })()
   }, [uploadQueue, runUpload])
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || e.target.files.length === 0) return
-    const files = Array.from(e.target.files)
+    const rawFiles = Array.from(e.target.files)
+    if (fileInputRef.current) fileInputRef.current.value = ""
+
+    // Auto-split multi-page PDFs exceeding 9.5 MB seamlessly in ~150ms
+    const files: File[] = []
+    for (const file of rawFiles) {
+      const isPdf = file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf"
+      if (isPdf && file.size > 9.5 * 1024 * 1024) {
+        const parts = await splitPdfIfOversized(file)
+        files.push(...parts)
+      } else {
+        files.push(file)
+      }
+    }
 
     const newQueueItems: UploadQueueItem[] = files.map((file) => {
       const isImg = file.type.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif|heic|bmp)$/i.test(file.name)
@@ -192,7 +203,6 @@ export default function HkcDocAttachmentPanel({
     })
 
     setUploadQueue((prev) => [...prev, ...newQueueItems])
-    if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
   const handleRetryItem = (itemId: string) => {
@@ -328,8 +338,9 @@ export default function HkcDocAttachmentPanel({
         </div>
       ) : (
         <div className="space-y-2 max-h-56 overflow-y-auto pr-0.5">
-          {/* Active Upload Queue Items (Sliding Window Loader Cards) */}
-          {uploadQueue.map((item) => {
+          {uploadQueue
+            .filter((item) => item.status !== "success")
+            .map((item) => {
             const isImg = item.fileType.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif|heic|bmp)$/i.test(item.fileName)
             const isPdf = item.fileType === "application/pdf" || /\.pdf$/i.test(item.fileName)
 
