@@ -93,7 +93,7 @@ export async function compressImageToFile(
 }
 
 export const CHUNK_SIZE = 2 * 1024 * 1024 // 2 MB compatibility constant
-export const MAX_FILE_SIZE = 500 * 1024 * 1024 // 500 MB max total file size
+export const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB maximum allowed on Cloudinary free tier
 const ALLOWED_EXTENSIONS = new Set([
   ".pdf",
   ".png",
@@ -114,7 +114,7 @@ const ALLOWED_EXTENSIONS = new Set([
 
 export function validateFileForUpload(file: File): string | null {
   if (file.size > MAX_FILE_SIZE) {
-    return `File '${file.name}' (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 500 MB limit. Please select a smaller file.`
+    return `File '${file.name}' (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 10 MB limit. Please select a file under 10 MB.`
   }
   const extMatch = file.name.match(/\.[^.]+$/)
   const ext = extMatch ? extMatch[0].toLowerCase() : ""
