@@ -1,4 +1,4 @@
-import { createResource, deleteResource, loadResource, updateResource, API_BASE } from "./apiPersistence"
+import { createResource, deleteResource, loadResource, updateResource, API_BASE, getAuthHeaders } from "./apiPersistence"
 import { sortNewestFirst } from "./utils"
 
 export const WAREHOUSE_OPTIONS = [
@@ -409,8 +409,12 @@ export const hrApi = {
   createPayrollRecord: (record: PayrollRecord) => createResource<PayrollRecord>("payroll_records", record),
   updatePayrollRecord: (id: string, record: Partial<PayrollRecord>) => updateResource<PayrollRecord>("payroll_records", id, record),
   deletePayrollRecord: (id: string) => deleteResource("payroll_records", id),
-  payPayrollRecord: async (id: string) => {
-    const response = await fetch(`${API_BASE}/api/payroll-records/${encodeURIComponent(id)}/pay`, { method: "POST" })
+  payPayrollRecord: async (id: string, options?: { bankAccountCode?: string }) => {
+    const response = await fetch(`${API_BASE}/api/payroll-records/${encodeURIComponent(id)}/pay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify(options || {}),
+    })
     const body = await response.json().catch(() => null)
     if (!response.ok) throw new Error(body?.error || "Could not post payroll payment.")
     return body

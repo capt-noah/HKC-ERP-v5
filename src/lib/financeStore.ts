@@ -1627,7 +1627,8 @@ class FinanceStore {
               this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
 
               const salaryAcc = this.getMappedAccount("payroll_gross_salary_expense", "8000-01")
-              const cashAcc = this.getMappedAccount("supplier_payment_bank", "1000-02-26")
+              const cashAcc = (pr.bank_account && this.accounts.find((a) => a.code === pr.bank_account || a.id === pr.bank_account)) ||
+                this.getMappedAccount("payroll_cash_bank", "1000-02-26")
 
               if (!salaryAcc || !cashAcc) {
                 console.warn(`[FinanceSync] Missing accounts for Payroll Record ${pr.id} — skipping.`)

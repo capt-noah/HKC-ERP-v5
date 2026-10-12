@@ -382,6 +382,16 @@ export const CORE_SYSTEM_GL_MAPPINGS = [
     isSystemDefault: true,
     description: "Net salary liability credited on accrual, cleared upon payroll bank transfer.",
   },
+  {
+    id: "payroll_cash_bank",
+    label: "Payroll Disbursement Cash / Bank Account",
+    category: "Payroll & HR",
+    defaultCode: "1000-02-26",
+    defaultName: "CBE_ECB_AC_1000465135224",
+    normalPosting: "Credit",
+    isSystemDefault: true,
+    description: "Operating bank or cash account credited upon employee net salary disbursement.",
+  },
 
   // ── BANK RECONCILIATION & FX (3 rules) ──
   {

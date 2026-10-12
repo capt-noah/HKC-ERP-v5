@@ -9,7 +9,7 @@ financeRouter.post(
   authorizeRoles("superadmin", "finance"),
   async (req, res, next) => {
     try {
-      const result = await financeService.payPayrollRecord(req.params.id)
+      const result = await financeService.payPayrollRecord(req.params.id, req.body)
       res.status(result.status).json(result.body)
     } catch (err) {
       next(err)

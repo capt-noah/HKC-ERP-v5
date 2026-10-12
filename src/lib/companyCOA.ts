@@ -1177,6 +1177,26 @@ export const DEFAULT_GL_ACCOUNT_MAPPINGS: GlAccountMapping[] = [
     is_system_default: true,
     description: "Net salary liability credited on accrual, cleared upon payroll bank transfer.",
   },
+  {
+    id: "payroll_cash_bank",
+    label: "Payroll Disbursement Cash / Bank Account",
+    category: "Payroll & HR",
+    transaction_type: "payroll_cash_disbursement",
+    warehouse_scope: "ALL",
+    account_id: "1000-02-26",
+    account_code: "1000-02-26",
+    account_name: "CBE_ECB_AC_1000465135224",
+    normal_posting: "Credit",
+    multi_accounts: [
+      { account_id: "1000-02-26", account_code: "1000-02-26", account_name: "CBE_ECB_AC_1000465135224", is_default: true },
+      { account_id: "1000-02-13", account_code: "1000-02-13", account_name: "AIB_GFB_AC_01304807538500", is_default: false },
+      { account_id: "1000-02-10", account_code: "1000-02-10", account_name: "ABAY_TAB_AC_1722015651591011", is_default: false },
+      { account_id: "1000-02-17", account_code: "1000-02-17", account_name: "BOA_RDB_35292853", is_default: false },
+      { account_id: "1000-01-01", account_code: "1000-01-01", account_name: "PETTY CASH-HEAD OFFICE", is_default: false },
+    ],
+    is_system_default: true,
+    description: "Operating bank or cash account credited upon employee net salary disbursement.",
+  },
 
   // ── CASH & BANK ACCOUNTS ──
   {

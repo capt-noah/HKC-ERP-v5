@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
   BadgeCheck,
+  Building,
   Calendar,
   CheckCircle2,
   CreditCard,
@@ -496,13 +497,14 @@ export default function Payroll() {
     }
   }
 
-  const handleConfirmPayments = async () => {
+  const handleConfirmPayments = async (bankAccountCode?: string) => {
     if (!paymentModalRecords || paymentModalRecords.length === 0) return
     setIsPaying(true)
     const recordsToPay = paymentModalRecords
+    const bankCodeToUse = bankAccountCode || financeStore.getMappedAccount("payroll_cash_bank", "1000-02-26")?.code || "1000-02-26"
     try {
       const results = await Promise.allSettled(
-        recordsToPay.map((rec) => hrApi.payPayrollRecord(rec.id))
+        recordsToPay.map((rec) => hrApi.payPayrollRecord(rec.id, { bankAccountCode: bankCodeToUse }))
       )
       const succeeded = results.filter((r) => r.status === "fulfilled").length
       const failed = results.filter((r) => r.status === "rejected").length
@@ -2145,7 +2147,7 @@ interface PayrollPaymentConfirmationModalProps {
   period?: PayrollPeriod
   isProcessing: boolean
   onClose: () => void
-  onConfirm: () => Promise<void>
+  onConfirm: (bankAccountCode?: string) => Promise<void>
 }
 
 function PayrollPaymentConfirmationModal({
@@ -2157,6 +2159,34 @@ function PayrollPaymentConfirmationModal({
   onClose,
   onConfirm,
 }: PayrollPaymentConfirmationModalProps) {
+  const bankAccounts = useMemo(() => {
+    const raw = financeStore.getAccounts().filter((a) => !a.is_group && ((a?.code || "").startsWith("1000") || a.account_type === "Asset"))
+    if (raw.length > 0) return raw
+    return [
+      { id: "1000-02-26", code: "1000-02-26", name: "Commercial Bank of Ethiopia (CBE)", account_type: "Asset" },
+      { id: "1000-02-13", code: "1000-02-13", name: "Awash International Bank (AIB)", account_type: "Asset" },
+      { id: "1000-02-10", code: "1000-02-10", name: "Abay Bank", account_type: "Asset" },
+      { id: "1000-02-17", code: "1000-02-17", name: "Bank of Abyssinia (BOA)", account_type: "Asset" },
+      { id: "1000-01-01", code: "1000-01-01", name: "Cash on Hand / Main Cash", account_type: "Asset" },
+    ]
+  }, [])
+
+  const defaultBankCode = useMemo(() => {
+    const mapped = financeStore.getMappedAccount("payroll_cash_bank", "1000-02-26")
+    return mapped?.code || "1000-02-26"
+  }, [])
+
+  const [selectedBankCode, setSelectedBankCode] = useState<string>(defaultBankCode)
+
+  const selectedBankAcc = useMemo(() => {
+    return (
+      bankAccounts.find((a) => a.code === selectedBankCode) || {
+        code: selectedBankCode,
+        name: "Cash / Bank Account",
+      }
+    )
+  }, [bankAccounts, selectedBankCode])
+
   const totals = useMemo(() => {
     return {
       grossBasic: records.reduce((sum, r) => sum + Number(r.basic_salary || 0), 0),
@@ -2249,6 +2279,37 @@ function PayrollPaymentConfirmationModal({
             <span className="text-xl font-black text-emerald-700 dark:text-emerald-400 mt-1 block font-mono">
               ETB {money(totals.netPay)}
             </span>
+          </div>
+        </div>
+
+        {/* Cash / Bank Account Selector (matching Sales Issue pay modal pattern) */}
+        <div className="bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-700/60 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-blue-50 dark:bg-blue-950/40 rounded-xl border border-blue-200 dark:border-blue-800/50 text-blue-600 dark:text-blue-400 shrink-0">
+              <Building className="size-5" />
+            </div>
+            <div>
+              <label className="text-xs font-black text-zinc-900 dark:text-white block">
+                Disbursement Cash / Bank Account
+              </label>
+              <p className="text-[11px] text-zinc-500 font-medium">
+                Default loaded from GL Mapping. Select the cash or bank account to credit for this payout.
+              </p>
+            </div>
+          </div>
+          <div className="min-w-[280px] sm:max-w-md w-full">
+            <select
+              value={selectedBankCode}
+              onChange={(e) => setSelectedBankCode(e.target.value)}
+              disabled={isProcessing}
+              className="w-full p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-semibold text-xs text-zinc-900 dark:text-zinc-100 cursor-pointer shadow-2xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none disabled:opacity-50"
+            >
+              {bankAccounts.map((a) => (
+                <option key={a.id || a.code} value={a.code}>
+                  {a.code} — {a.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -2372,7 +2433,7 @@ function PayrollPaymentConfirmationModal({
             <span className="font-extrabold text-zinc-900 dark:text-white block mb-0.5">
               Automated General Ledger &amp; Finance Transaction Posting
             </span>
-            Clicking <strong className="text-zinc-900 dark:text-white font-bold">Confirm &amp; Pay</strong> will immediately mark the selected record(s) as <strong className="text-emerald-600 dark:text-emerald-400 font-bold">Paid</strong> in the database and post balanced debit/credit journal vouchers in the Finance module for Salaries Expense, Income Tax Payable, Pension Payable, and Cash/Bank accounts.
+            Clicking <strong className="text-zinc-900 dark:text-white font-bold">Confirm &amp; Pay</strong> will immediately mark the selected record(s) as <strong className="text-emerald-600 dark:text-emerald-400 font-bold">Paid</strong> in the database and post balanced debit/credit journal vouchers in the Finance module for Salaries Expense, Income Tax Payable, Pension Payable, and credit <strong className="text-emerald-700 dark:text-emerald-400 font-bold font-mono">{selectedBankCode} ({selectedBankAcc.name})</strong>.
           </div>
         </div>
 
@@ -2392,7 +2453,7 @@ function PayrollPaymentConfirmationModal({
             </button>
             <button
               type="button"
-              onClick={onConfirm}
+              onClick={() => onConfirm(selectedBankCode)}
               disabled={isProcessing}
               className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-600/25 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
