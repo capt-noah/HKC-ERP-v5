@@ -227,6 +227,10 @@ export interface SalesOrderItem {
   warehouse?: string
   warehouse_id?: string
   deliveredQty?: number
+  batch?: string
+  batch_no?: string
+  batch_id?: string
+  expiry?: string
 }
 
 export interface Quotation {

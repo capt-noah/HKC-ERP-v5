@@ -527,7 +527,7 @@ export default function SalesIssued() {
       newItems.push({
         item_id: item.productId || item.item_id || item.id,
         item_name: item.name || item.item_name || prod?.name || "Contract Item",
-        batch_id: autoBatch,
+        batch_id: item.batch_id || autoBatch,
         batch_no: autoBatch,
         packaging_unit: item.unit || item.packaging_unit || (targetIsWh1 ? "Quintal" : "Box"),
         available_quantity: availQty,
@@ -536,9 +536,26 @@ export default function SalesIssued() {
         amount: (item.qty || item.quantity || 1) * (item.unitPrice || item.unit_price || 0),
       })
 
-      if (!targetIsWh1 && item.productId) {
-        void getAvailableBatches(item.productId, canonicalWarehouseId(targetWhId)).then((batches) => {
+      if (!targetIsWh1 && (item.productId || item.item_id || item.id)) {
+        const prodId = item.productId || item.item_id || item.id
+        void getAvailableBatches(prodId, canonicalWarehouseId(targetWhId)).then((batches) => {
           setBatchOptions((prev) => ({ ...prev, [idx]: batches }))
+          if (autoBatch && autoBatch !== "N/A" && Array.isArray(batches)) {
+            const matched = batches.find((b) => b.batch_no === autoBatch || b.batch_id === item.batch_id || b.batch_id === autoBatch)
+            if (matched) {
+              setItems((prev) => {
+                if (!prev[idx]) return prev
+                const copy = [...prev]
+                copy[idx] = {
+                  ...copy[idx],
+                  batch_id: matched.batch_id || matched.id || autoBatch,
+                  batch_no: matched.batch_no || autoBatch,
+                  available_quantity: matched.available_quantity ?? copy[idx].available_quantity,
+                }
+                return copy
+              })
+            }
+          }
         }).catch(() => {})
       }
     })
@@ -965,16 +982,33 @@ export default function SalesIssued() {
               : (i.batch_no || i.batch || prod?.batches?.[0]?.batchNo || prod?.batch || "")
             const availQty = prod?.quantity || i.available_quantity || 1000
 
-            if (!targetIsWh1 && i.productId) {
-              void getAvailableBatches(i.productId, canonicalWarehouseId(targetWhId)).then((batches) => {
+            if (!targetIsWh1 && (i.productId || i.item_id || i.id)) {
+              const prodId = i.productId || i.item_id || i.id
+              void getAvailableBatches(prodId, canonicalWarehouseId(targetWhId)).then((batches) => {
                 setBatchOptions((prev) => ({ ...prev, [idx]: batches }))
+                if (autoBatch && autoBatch !== "N/A" && Array.isArray(batches)) {
+                  const matched = batches.find((b) => b.batch_no === autoBatch || b.batch_id === i.batch_id || b.batch_id === autoBatch)
+                  if (matched) {
+                    setItems((prev) => {
+                      if (!prev[idx]) return prev
+                      const copy = [...prev]
+                      copy[idx] = {
+                        ...copy[idx],
+                        batch_id: matched.batch_id || matched.id || autoBatch,
+                        batch_no: matched.batch_no || autoBatch,
+                        available_quantity: matched.available_quantity ?? copy[idx].available_quantity,
+                      }
+                      return copy
+                    })
+                  }
+                }
               }).catch(() => {})
             }
 
             return {
               item_id: i.productId || i.item_id || i.id,
               item_name: i.name || i.item_name || prod?.name || "Contract Item",
-              batch_id: autoBatch,
+              batch_id: i.batch_id || autoBatch,
               batch_no: autoBatch,
               packaging_unit: i.unit || i.packaging_unit || (targetIsWh1 ? "Quintal" : "Box"),
               available_quantity: availQty,

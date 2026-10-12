@@ -388,11 +388,18 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     setStagedPaymentAdviceUrl("")
     setIsNewlyUploadedTradeLicense(false)
 
+    const defaultBatches = defaultProduct?.batches && defaultProduct.batches.length > 0 ? defaultProduct.batches : []
+    const defaultBatchNo = isWh1Target ? "N/A" : (defaultBatches[0]?.batchNo || defaultProduct?.batch || "")
+
     setOrderItems([
       {
         warehouse: targetWh,
         productId: defaultProduct.id,
         name: defaultProduct.name,
+        batch_no: defaultBatchNo,
+        batch: defaultBatchNo,
+        batch_id: defaultBatches[0]?.id || defaultBatchNo,
+        expiry: defaultBatches[0]?.expiry || defaultProduct?.expiry || "",
         qty: 10,
         unit: defaultUnit,
         unitPrice: loadedPrice,
@@ -420,11 +427,17 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         )
         const loadedPrice = resolveItemSellingPrice(nextProd) || 1500
         const prodUnit = isWh1Row ? (nextProd.unit === "Ton" ? "Ton" : "Quintal") : (nextProd.unit || "Box")
+        const nextBatches = nextProd.batches && nextProd.batches.length > 0 ? nextProd.batches : []
+        const nextBatchNo = isWh1Row ? "N/A" : (nextBatches[0]?.batchNo || nextProd.batch || "")
 
         current.productId = nextProd.id
         current.name = nextProd.name
         current.unit = prodUnit
         current.unitPrice = loadedPrice
+        current.batch_no = nextBatchNo
+        current.batch = nextBatchNo
+        current.batch_id = nextBatches[0]?.id || nextBatchNo
+        current.expiry = nextBatches[0]?.expiry || nextProd.expiry || ""
         current.total = (Number(current.qty) || 1) * loadedPrice
       } else if (field === "productId") {
         const currentWh = current.warehouse || (isEditing ? editingOrder?.warehouse : newWarehouse) || permittedWarehouses[0]?.code || "WH1"
@@ -435,12 +448,32 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           const targetWh = current.warehouse || resolveWarehouseCode(prod.warehouse, warehouses)
           const targetIsWh1 = isWH1(targetWh)
           const prodUnit = targetIsWh1 ? (prod.unit === "Ton" ? "Ton" : "Quintal") : (prod.unit || "Box")
+          const prodBatches = prod.batches && prod.batches.length > 0 ? prod.batches : []
+          const defaultBatchNo = targetIsWh1 ? "N/A" : (prodBatches[0]?.batchNo || prod.batch || "")
 
           current.productId = prod.id
           current.name = prod.name
           current.unit = prodUnit
           current.unitPrice = loadedPrice
+          current.batch_no = defaultBatchNo
+          current.batch = defaultBatchNo
+          current.batch_id = prodBatches[0]?.id || defaultBatchNo
+          current.expiry = prodBatches[0]?.expiry || prod.expiry || ""
           current.total = (Number(current.qty) || 1) * current.unitPrice
+        }
+      } else if (field === "batch_no" || (field as string) === "batch") {
+        const batchVal = String(value || "")
+        current.batch_no = batchVal
+        current.batch = batchVal
+        const currentWh = current.warehouse || (isEditing ? editingOrder?.warehouse : newWarehouse) || permittedWarehouses[0]?.code || "WH1"
+        const availableForWh = getProductsForWarehouse(currentWh)
+        const prod = availableForWh.find((p) => p.id === current.productId) || products.find((p) => p.id === current.productId)
+        const matchingBatch = prod?.batches?.find((b) => b.batchNo === batchVal)
+        if (matchingBatch) {
+          current.batch_id = matchingBatch.id || batchVal
+          current.expiry = matchingBatch.expiry || ""
+        } else {
+          current.batch_id = batchVal
         }
       } else if (field === "qty") {
         const parsed = Math.max(0, Number(value) || 0)
@@ -545,6 +578,8 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     )
     const loadedPrice = resolveItemSellingPrice(p) || 1500
     const defaultUnit = targetIsWh1 ? (p.unit === "Ton" ? "Ton" : "Quintal") : (p.unit || "Box")
+    const pBatches = p?.batches && p.batches.length > 0 ? p.batches : []
+    const defaultBatchNo = targetIsWh1 ? "N/A" : (pBatches[0]?.batchNo || p?.batch || "")
     const setter = isEditing ? setEditingOrderItems : setOrderItems
 
     setter((prev) => [
@@ -553,6 +588,10 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         warehouse: activeTopWh,
         productId: p.id,
         name: p.name,
+        batch_no: defaultBatchNo,
+        batch: defaultBatchNo,
+        batch_id: pBatches[0]?.id || defaultBatchNo,
+        expiry: pBatches[0]?.expiry || p?.expiry || "",
         qty: 10,
         unit: defaultUnit,
         unitPrice: loadedPrice,
@@ -579,15 +618,30 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     setEditingPaymentType(so.paymentType || (isWh1 ? "Credit" : "Cash"))
     setEditingOrderItems(
       so.items.length > 0
-        ? so.items.map((i) => ({
-            ...i,
-            warehouse: i.warehouse || so.warehouse || permittedWarehouses[0]?.code || "WH1",
-          }))
+        ? so.items.map((i) => {
+            const itemWh = i.warehouse || so.warehouse || permittedWarehouses[0]?.code || "WH1"
+            const isWh1Item = isWH1(itemWh)
+            const prod = products.find((p) => p.id === i.productId)
+            const prodBatches = prod?.batches && prod.batches.length > 0 ? prod.batches : []
+            const defaultBatchNo = isWh1Item ? "N/A" : (i.batch_no || i.batch || prodBatches[0]?.batchNo || prod?.batch || "")
+            return {
+              ...i,
+              warehouse: itemWh,
+              batch_no: defaultBatchNo,
+              batch: defaultBatchNo,
+              batch_id: i.batch_id || prodBatches.find((b) => b.batchNo === defaultBatchNo)?.id || defaultBatchNo,
+              expiry: i.expiry || prodBatches.find((b) => b.batchNo === defaultBatchNo)?.expiry || prod?.expiry || "",
+            }
+          })
         : [
             {
               warehouse: so.warehouse || permittedWarehouses[0]?.code || "WH1",
               productId: products[0]?.id || "PRD-001",
               name: products[0]?.name || (isWh1 ? "Sesame Seed" : "Amoxicillin 500mg"),
+              batch_no: isWh1 ? "N/A" : (products[0]?.batches?.[0]?.batchNo || products[0]?.batch || ""),
+              batch: isWh1 ? "N/A" : (products[0]?.batches?.[0]?.batchNo || products[0]?.batch || ""),
+              batch_id: isWh1 ? "N/A" : (products[0]?.batches?.[0]?.id || products[0]?.batches?.[0]?.batchNo || products[0]?.batch || ""),
+              expiry: isWh1 ? "" : (products[0]?.batches?.[0]?.expiry || products[0]?.expiry || ""),
               qty: 10,
               unit: isWh1 ? "Quintal" : (products[0]?.unit || "Box"),
               unitPrice: products[0]?.valuationRate || 1500,
@@ -1166,11 +1220,17 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                       const name = itm.name || itm.item_name || itm.productName || "Item"
                       const qty = Number(itm.qty ?? itm.quantity ?? 0)
                       const unit = itm.unit || itm.packaging_unit || ""
+                      const batchVal = itm.batch_no || itm.batch || ""
                       return (
                         <div key={idx} className="flex items-center gap-1.5 leading-snug">
                           <span className="font-black text-zinc-950 truncate" title={name}>
                             {name}
                           </span>
+                          {batchVal && batchVal !== "N/A" && (
+                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-700 border border-zinc-200 shrink-0">
+                              Lot: {batchVal}
+                            </span>
+                          )}
                           {qty > 0 && (
                             <span className="text-[10px] font-bold text-zinc-500 shrink-0">
                               ({qty.toLocaleString()} {unit})
@@ -1977,18 +2037,19 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                         </button>
                       </div>
 
-                      <div className={`border rounded-2xl overflow-hidden text-xs transition-colors ${
+                      <div className={`border rounded-2xl overflow-x-auto text-xs transition-colors ${
                         createFormErrors.items ? "border-rose-400 bg-rose-50/10" : "border-zinc-200"
                       }`}>
-                        <table className="w-full text-left">
+                        <table className="w-full text-left table-fixed">
                           <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[9px]">
                             <tr>
-                              <th className="px-3 py-2 w-[22%]">Warehouse</th>
-                              <th className="px-3 py-2 w-[32%]">Product Item</th>
-                              <th className="px-3 py-2 w-[14%] text-center">Qty</th>
-                              <th className="px-3 py-2 w-[14%] text-center">Unit</th>
-                              <th className="px-3 py-2 w-[14%] text-right">Unit Price</th>
-                              <th className="px-3 py-2 w-[4%] text-center"></th>
+                              <th className="px-2 py-2 w-[15%]">Warehouse</th>
+                              <th className="px-2 py-2 w-[24%]">Product Item</th>
+                              <th className="px-2 py-2 w-[19%]">Batch / Lot</th>
+                              <th className="px-2 py-2 w-[11%] text-center">Qty</th>
+                              <th className="px-2 py-2 w-[13%] text-center">Unit</th>
+                              <th className="px-2 py-2 w-[14%] text-right">Unit Price</th>
+                              <th className="px-2 py-2 w-[4%] text-center"></th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-zinc-100">
@@ -2002,19 +2063,26 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                               const isOver = item.qty > avail
                               const whInfo = warehouses.find((w) => w.code === itemWh || w.id === itemWh)
                               const whDisplay = whInfo ? `${whInfo.code} (${whInfo.name})` : itemWh
+                              const prodBatches = p?.batches && p.batches.length > 0
+                                ? p.batches
+                                : (p?.batch ? [{ batchNo: p.batch, qty: avail, expiry: p.expiry, status: "Released" as const }] : [])
+                              const currentBatchNo = item.batch_no || item.batch || ""
+                              const selectedBatch = prodBatches.find((b) => b.batchNo === currentBatchNo) || (prodBatches.length > 0 ? prodBatches[0] : null)
+                              const selectedBatchQty = selectedBatch?.qty !== undefined ? selectedBatch.qty : avail
+
                               return (
                                 <tr key={index}>
                                   <td className="p-2 align-top">
-                                    <div className="px-2.5 py-1.5 rounded-lg bg-zinc-100 border border-zinc-200 text-xs font-bold text-zinc-800 flex items-center justify-between" title={whDisplay}>
+                                    <div className="px-2 py-1.5 rounded-lg bg-zinc-100 border border-zinc-200 text-xs font-bold text-zinc-800 flex items-center justify-between truncate" title={whDisplay}>
                                       <span className="font-mono text-[11px] font-black text-emerald-700">{whInfo?.code || itemWh}</span>
-                                      {whInfo?.name && <span className="text-[10px] text-zinc-500 font-medium truncate max-w-[80px]">{whInfo.name}</span>}
+                                      {whInfo?.name && <span className="text-[10px] text-zinc-500 font-medium truncate max-w-[50px]">{whInfo.name}</span>}
                                     </div>
                                   </td>
                                   <td className="p-2 align-top">
                                     <select
                                       value={item.productId}
                                       onChange={(e) => handleOrderItemChange(index, "productId", e.target.value, false)}
-                                      className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold focus:border-emerald-600 focus:outline-none"
+                                      className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold focus:border-emerald-600 focus:outline-none truncate"
                                     >
                                       <option value="">Select item</option>
                                       {scopedProducts.map((prod) => (
@@ -2022,14 +2090,47 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                       ))}
                                     </select>
                                     <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
-                                      <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail}{isWh1Item ? ` ${item.unit}` : ""}</span></span>
+                                      <span className="text-zinc-500 font-bold truncate">Store Avail: <span className="font-mono font-black text-zinc-900">{avail}{isWh1Item ? ` ${item.unit}` : ""}</span></span>
                                       {isOver && (
-                                        <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md mt-0.5">
-                                          <AlertTriangle className="size-3 text-amber-600 shrink-0" />
-                                          <span>Insufficient Stock ({item.qty} &gt; {avail})</span>
+                                        <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-md mt-0.5 text-[9.5px]">
+                                          <AlertTriangle className="size-2.5 text-amber-600 shrink-0" />
+                                          <span className="truncate">Short ({item.qty}&gt;{avail})</span>
                                         </span>
                                       )}
                                     </div>
+                                  </td>
+                                  <td className="p-2 align-top">
+                                    {isWh1Item && prodBatches.length === 0 ? (
+                                      <div className="px-2 py-1.5 rounded-lg bg-zinc-100 border border-zinc-200 text-xs font-medium text-zinc-500 italic text-center">
+                                        N/A (Bulk)
+                                      </div>
+                                    ) : (
+                                      <div className="min-w-0">
+                                        <select
+                                          value={currentBatchNo}
+                                          onChange={(e) => handleOrderItemChange(index, "batch_no", e.target.value, false)}
+                                          className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold font-mono focus:border-emerald-600 focus:outline-none cursor-pointer truncate"
+                                        >
+                                          <option value="">Select batch</option>
+                                          {prodBatches.map((b) => (
+                                            <option key={b.id || b.batchNo} value={b.batchNo}>
+                                              {b.batchNo} {b.qty !== undefined ? `(${b.qty})` : ""} {b.expiry ? `· ${b.expiry}` : ""}
+                                            </option>
+                                          ))}
+                                          {currentBatchNo && !prodBatches.some((b) => b.batchNo === currentBatchNo) && (
+                                            <option value={currentBatchNo}>{currentBatchNo}</option>
+                                          )}
+                                        </select>
+                                        {selectedBatch && (
+                                          <div className="mt-1 flex items-center gap-1 text-[9.5px] font-mono text-zinc-500 font-semibold truncate">
+                                            <span>Avail: <strong className="text-zinc-800">{selectedBatchQty}</strong></span>
+                                            {selectedBatch.expiry && (
+                                              <span className="truncate">• Exp: <strong className="text-zinc-800">{selectedBatch.expiry}</strong></span>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
                                   </td>
                                   <td className="p-2 align-top">
                                     <input
@@ -2037,14 +2138,14 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                       min="1"
                                       value={item.qty === 0 ? "" : item.qty}
                                       onChange={(e) => handleOrderItemChange(index, "qty", e.target.value, false)}
-                                      className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-center"
+                                      className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold font-mono text-center"
                                     />
                                   </td>
                                   <td className="p-2 align-top">
                                     <select
                                       value={item.unit}
                                       onChange={(e) => handleOrderItemChange(index, "unit", e.target.value, false)}
-                                      className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-center"
+                                      className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-center truncate"
                                     >
                                       {availableUnits.map((u) => (
                                         <option key={u} value={u}>{u}</option>
@@ -2058,7 +2159,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                       step="0.01"
                                       value={item.unitPrice === 0 ? "" : item.unitPrice}
                                       onChange={(e) => handleOrderItemChange(index, "unitPrice", e.target.value, false)}
-                                      className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-right"
+                                      className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-mono font-bold text-right"
                                     />
                                   </td>
                                   <td className="p-2 align-top text-center">
@@ -2517,18 +2618,19 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                 </button>
               </div>
 
-              <div className={`border rounded-2xl overflow-hidden text-xs transition-colors ${
+              <div className={`border rounded-2xl overflow-x-auto text-xs transition-colors ${
                 editFormErrors.items ? "border-rose-400 bg-rose-50/10" : "border-zinc-200"
               }`}>
-                <table className="w-full text-left">
+                <table className="w-full text-left table-fixed">
                   <thead className="bg-zinc-100 text-zinc-600 font-bold uppercase text-[9px]">
                     <tr>
-                      <th className="px-3 py-2 w-[22%]">Warehouse</th>
-                      <th className="px-3 py-2 w-[32%]">Product Item</th>
-                      <th className="px-3 py-2 w-[14%] text-center">Qty</th>
-                      <th className="px-3 py-2 w-[14%] text-center">Unit</th>
-                      <th className="px-3 py-2 w-[14%] text-right">Unit Price</th>
-                      <th className="px-3 py-2 w-[4%] text-center"></th>
+                      <th className="px-2 py-2 w-[15%]">Warehouse</th>
+                      <th className="px-2 py-2 w-[24%]">Product Item</th>
+                      <th className="px-2 py-2 w-[19%]">Batch / Lot</th>
+                      <th className="px-2 py-2 w-[11%] text-center">Qty</th>
+                      <th className="px-2 py-2 w-[13%] text-center">Unit</th>
+                      <th className="px-2 py-2 w-[14%] text-right">Unit Price</th>
+                      <th className="px-2 py-2 w-[4%] text-center"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
@@ -2542,19 +2644,26 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                       const isOver = item.qty > avail
                       const whInfo = warehouses.find((w) => w.code === itemWh || w.id === itemWh)
                       const whDisplay = whInfo ? `${whInfo.code} (${whInfo.name})` : itemWh
+                      const prodBatches = p?.batches && p.batches.length > 0
+                        ? p.batches
+                        : (p?.batch ? [{ batchNo: p.batch, qty: avail, expiry: p.expiry, status: "Released" as const }] : [])
+                      const currentBatchNo = item.batch_no || item.batch || ""
+                      const selectedBatch = prodBatches.find((b) => b.batchNo === currentBatchNo) || (prodBatches.length > 0 ? prodBatches[0] : null)
+                      const selectedBatchQty = selectedBatch?.qty !== undefined ? selectedBatch.qty : avail
+
                       return (
                         <tr key={index}>
                           <td className="p-2 align-top">
-                            <div className="px-2.5 py-1.5 rounded-lg bg-zinc-100 border border-zinc-200 text-xs font-bold text-zinc-800 flex items-center justify-between" title={whDisplay}>
+                            <div className="px-2.5 py-1.5 rounded-lg bg-zinc-100 border border-zinc-200 text-xs font-bold text-zinc-800 flex items-center justify-between truncate" title={whDisplay}>
                               <span className="font-mono text-[11px] font-black text-emerald-700">{whInfo?.code || itemWh}</span>
-                              {whInfo?.name && <span className="text-[10px] text-zinc-500 font-medium truncate max-w-[80px]">{whInfo.name}</span>}
+                              {whInfo?.name && <span className="text-[10px] text-zinc-500 font-medium truncate max-w-[50px]">{whInfo.name}</span>}
                             </div>
                           </td>
                           <td className="p-2 align-top">
                             <select
                               value={item.productId}
                               onChange={(e) => handleOrderItemChange(index, "productId", e.target.value, true)}
-                              className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold focus:border-emerald-600 focus:outline-none"
+                              className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold focus:border-emerald-600 focus:outline-none truncate"
                             >
                               <option value="">Select item</option>
                               {scopedProducts.map((prod) => (
@@ -2562,14 +2671,47 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                               ))}
                             </select>
                             <div className="mt-1 flex flex-col gap-0.5 text-[10px]">
-                              <span className="text-zinc-500 font-bold">Store Available: <span className="font-mono font-black text-zinc-900">{avail}{isWh1Item ? ` ${item.unit}` : ""}</span></span>
+                              <span className="text-zinc-500 font-bold truncate">Store Avail: <span className="font-mono font-black text-zinc-900">{avail}{isWh1Item ? ` ${item.unit}` : ""}</span></span>
                               {isOver && (
-                                <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md mt-0.5">
-                                  <AlertTriangle className="size-3 text-amber-600 shrink-0" />
-                                  <span>Insufficient Stock ({item.qty} &gt; {avail})</span>
+                                <span className="flex items-center gap-1 font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-md mt-0.5 text-[9.5px]">
+                                  <AlertTriangle className="size-2.5 text-amber-600 shrink-0" />
+                                  <span className="truncate">Short ({item.qty}&gt;{avail})</span>
                                 </span>
                               )}
                             </div>
+                          </td>
+                          <td className="p-2 align-top">
+                            {isWh1Item && prodBatches.length === 0 ? (
+                              <div className="px-2 py-1.5 rounded-lg bg-zinc-100 border border-zinc-200 text-xs font-medium text-zinc-500 italic text-center">
+                                N/A (Bulk)
+                              </div>
+                            ) : (
+                              <div className="min-w-0">
+                                <select
+                                  value={currentBatchNo}
+                                  onChange={(e) => handleOrderItemChange(index, "batch_no", e.target.value, true)}
+                                  className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold font-mono focus:border-emerald-600 focus:outline-none cursor-pointer truncate"
+                                >
+                                  <option value="">Select batch</option>
+                                  {prodBatches.map((b) => (
+                                    <option key={b.id || b.batchNo} value={b.batchNo}>
+                                      {b.batchNo} {b.qty !== undefined ? `(${b.qty})` : ""} {b.expiry ? `· ${b.expiry}` : ""}
+                                    </option>
+                                  ))}
+                                  {currentBatchNo && !prodBatches.some((b) => b.batchNo === currentBatchNo) && (
+                                    <option value={currentBatchNo}>{currentBatchNo}</option>
+                                  )}
+                                </select>
+                                {selectedBatch && (
+                                  <div className="mt-1 flex items-center gap-1 text-[9.5px] font-mono text-zinc-500 font-semibold truncate">
+                                    <span>Avail: <strong className="text-zinc-800">{selectedBatchQty}</strong></span>
+                                    {selectedBatch.expiry && (
+                                      <span className="truncate">• Exp: <strong className="text-zinc-800">{selectedBatch.expiry}</strong></span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </td>
                           <td className="p-2 align-top">
                             <input
@@ -2584,7 +2726,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                             <select
                               value={item.unit}
                               onChange={(e) => handleOrderItemChange(index, "unit", e.target.value, true)}
-                              className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-center"
+                              className="w-full px-2 py-1.5 rounded-lg bg-zinc-50 border border-zinc-200 text-xs font-bold text-center truncate"
                             >
                               {availableUnits.map((unit) => (
                                 <option key={unit} value={unit}>{unit}</option>
