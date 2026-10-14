@@ -2158,7 +2158,19 @@ export default function SalesIssued() {
     const allowedKeys = new Set(warehouses.flatMap(w => [w.id, w.code, w.name].filter(Boolean).map(x => String(x).toLowerCase())))
     return rows.filter(r => {
       const wh = String(r.warehouse_id || (r as any).warehouse || "").toLowerCase()
-      return !wh || allowedKeys.has(wh)
+      if (!wh) return true
+      if (allowedKeys.has(wh)) return true
+      if (wh.includes("multi")) {
+        if (Array.isArray(r.items) && r.items.length > 0) {
+          const hasItemMatch = r.items.some(i => {
+            const itemWh = String(i.warehouse_id || i.warehouse || "").toLowerCase()
+            return itemWh && allowedKeys.has(itemWh)
+          })
+          if (hasItemMatch) return true
+        }
+        return true
+      }
+      return false
     })
   }, [rows, isSuperAdmin, user, warehouses])
 
@@ -2195,7 +2207,7 @@ export default function SalesIssued() {
           <div className="px-6 pt-6">
             <FinanceTableToolbar
               title="Issued Sales Register"
-              subtitle={`${total} records from the sales issue register`}
+              subtitle={`${permittedRows.length} records from the sales issue register`}
               searchValue={search}
               onSearchChange={(value) => { setSearch(value); setPage(1) }}
               searchPlaceholder="Search FS, reference, item, customer, batch..."

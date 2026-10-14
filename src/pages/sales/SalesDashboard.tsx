@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
-import { DollarSign, PackageCheck, Truck } from "lucide-react"
+import { useEffect, useMemo, useState, useCallback } from "react"
+import { DollarSign, PackageCheck, Truck, RotateCcw } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -58,11 +58,11 @@ export default function SalesDashboard() {
   const [salesIssues, setSalesIssues] = useState<SalesIssue[]>([])
   const [salesLoading, setSalesLoading] = useState(true)
 
-  useEffect(() => {
+  const loadDashboardData = useCallback(() => {
     const params = new URLSearchParams({ page: "1", pageSize: "100", sort: "sale_date.desc" })
     setSalesLoading(true)
-    void erp.loadSalesData()
-    void erp.loadInventoryData()
+    void erp.loadSalesData(true)
+    void erp.loadInventoryData(true)
     listSalesIssues(params)
       .then((result: any) => {
         const rows = Array.isArray(result) ? result : Array.isArray(result?.rows) ? result.rows : []
@@ -72,12 +72,27 @@ export default function SalesDashboard() {
       .finally(() => setSalesLoading(false))
   }, [erp])
 
+  useEffect(() => {
+    loadDashboardData()
+  }, [loadDashboardData])
+
   const scopedSalesOrders = useMemo(() => {
     if (!isScoped) return salesOrders
     const allowedKeys = new Set(permittedWarehouses.flatMap(w => [w.id, w.code, w.name].filter(Boolean).map(x => String(x).toLowerCase())))
     return salesOrders.filter(so => {
       const wh = String(so.warehouse || "").toLowerCase()
-      return !wh || allowedKeys.has(wh)
+      if (!wh || allowedKeys.has(wh)) return true
+      if (wh.includes("multi")) {
+        if (Array.isArray(so.items) && so.items.length > 0) {
+          const hasItemMatch = so.items.some(i => {
+            const itemWh = String(i.warehouse || "").toLowerCase()
+            return itemWh && allowedKeys.has(itemWh)
+          })
+          if (hasItemMatch) return true
+        }
+        return true
+      }
+      return false
     })
   }, [salesOrders, isScoped, permittedWarehouses])
 
@@ -87,7 +102,18 @@ export default function SalesDashboard() {
     const allowedKeys = new Set(permittedWarehouses.flatMap(w => [w.id, w.code, w.name].filter(Boolean).map(x => String(x).toLowerCase())))
     return raw.filter(issue => {
       const wh = String(issue?.warehouse_id || (issue as any)?.warehouse || "").toLowerCase()
-      return !wh || allowedKeys.has(wh)
+      if (!wh || allowedKeys.has(wh)) return true
+      if (wh.includes("multi")) {
+        if (Array.isArray(issue.items) && issue.items.length > 0) {
+          const hasItemMatch = issue.items.some(i => {
+            const itemWh = String(i.warehouse_id || i.warehouse || "").toLowerCase()
+            return itemWh && allowedKeys.has(itemWh)
+          })
+          if (hasItemMatch) return true
+        }
+        return true
+      }
+      return false
     })
   }, [salesIssues, isScoped, permittedWarehouses])
 
@@ -122,6 +148,15 @@ export default function SalesDashboard() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 self-end md:self-start">
+            <button
+              onClick={loadDashboardData}
+              disabled={salesLoading}
+              title="Refresh live sales metrics from database"
+              className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white/80 px-3.5 py-2 text-xs font-bold text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:opacity-50 cursor-pointer"
+            >
+              <RotateCcw className={`size-3.5 ${salesLoading ? "animate-spin" : ""}`} />
+              <span>Refresh</span>
+            </button>
             <SubPageNav items={getSectionChildren("/sales")} />
           </div>
         </div>

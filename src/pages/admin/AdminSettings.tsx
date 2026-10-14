@@ -19,7 +19,6 @@ import {
   Tag,
   UserCheck,
   MoreVertical,
-  ShieldAlert,
 } from "lucide-react"
 import { useErpStore, type Warehouse, type WarehouseType } from "@/lib/erpStore"
 import { useFinanceStore } from "@/lib/financeStore"
@@ -27,8 +26,6 @@ import { OPERATING_WAREHOUSES, isExportWarehouse, getWarehouseType } from "@/lib
 import { loadResource } from "@/lib/apiPersistence"
 import { cn } from "@/lib/utils"
 import { LoadingDots } from "@/components/ui/LoadingDots"
-import { DeletionRequestsPanel } from "@/components/admin/DeletionRequestsPanel"
-import { useDeletionStore } from "@/lib/deletionStore"
 
 function AdminSettingsSkeleton() {
   return (
@@ -83,14 +80,8 @@ export default function AdminSettings() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>(() => erp.getWarehouses())
 
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<"general" | "warehouses" | "rates" | "deletions">("general")
+  const [activeTab, setActiveTab] = useState<"general" | "warehouses" | "rates">("general")
   const [isSaved, setIsSaved] = useState(false)
-
-  const { pendingCount, fetchRequests: fetchDeletionRequests } = useDeletionStore()
-
-  useEffect(() => {
-    fetchDeletionRequests()
-  }, [fetchDeletionRequests])
 
   // 1. General & Entity Profile State
   const [companyName, setCompanyName] = useState(companySettings.company_name || "")
@@ -364,7 +355,6 @@ export default function AdminSettings() {
     { id: "general" as const, label: "Company Profile", icon: Building2, description: "Legal entity, TIN, address & currency" },
     { id: "warehouses" as const, label: "Warehouse Facilities", icon: WarehouseIcon, description: "Change warehouse names, codes & details" },
     { id: "rates" as const, label: "Processing & Storage", icon: SlidersHorizontal, description: "Toll fee rates & tiered monthly storage" },
-    { id: "deletions" as const, label: `Deletion Requests ${pendingCount > 0 ? `(${pendingCount})` : ""}`, icon: ShieldAlert, description: "Review and approve pending record deletions" },
   ]
 
   return (
@@ -743,11 +733,6 @@ export default function AdminSettings() {
                     </div>
                   </GlassCard>
                 </div>
-              )}
-
-              {/* Tab 4: Deletion Requests */}
-              {activeTab === "deletions" && (
-                <DeletionRequestsPanel />
               )}
 
               {/* Bottom Action Buttons (for tabs with general form inputs) */}

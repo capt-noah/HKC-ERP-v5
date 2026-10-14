@@ -244,6 +244,12 @@ function getInitialAuthState(): { user: User | null; token: string | null; sessi
   return { user: null, token: null, sessionExpiresAt: null }
 }
 
+const onLogoutHandlers = new Set<() => void>()
+export function registerLogoutHandler(handler: () => void): () => void {
+  onLogoutHandlers.add(handler)
+  return () => onLogoutHandlers.delete(handler)
+}
+
 const initialAuth = getInitialAuthState()
 
 export const useAuthStore = create<AuthState>()(
@@ -278,6 +284,13 @@ export const useAuthStore = create<AuthState>()(
       logout: () => {
         clearSessionTimers()
         set({ user: null, token: null, sessionExpiresAt: null, showExpiryWarning: false })
+        onLogoutHandlers.forEach((handler) => {
+          try {
+            handler()
+          } catch (err) {
+            console.error("[authStore] Logout handler error:", err)
+          }
+        })
       },
       isAuthenticated: () => {
         const { token, sessionExpiresAt } = get()

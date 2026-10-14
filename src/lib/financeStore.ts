@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { createResource, deleteResource, loadResource, persistResources, updateResource, postInvoiceGLDistribution, postBeginningBalances } from "./apiPersistence"
-import { useAuthStore, normalizeRole } from "./authStore"
+import { useAuthStore, normalizeRole, registerLogoutHandler } from "./authStore"
 import { erpStore, type PurchaseOrder } from "./erpStore"
 import { validateJournalVoucher } from "../core/finance/ledgerEngine"
 import { sortNewestFirst } from "./utils"
@@ -6205,6 +6205,7 @@ class FinanceStore {
 }
 
 export const financeStore = new FinanceStore()
+registerLogoutHandler(() => { void financeStore.reloadFromApi() })
 
 export function useFinanceStore() {
   const [, setTick] = useState(0)

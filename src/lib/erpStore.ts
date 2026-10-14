@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import { createResource, deleteResource, loadResource, updateResource, updateExportMovementDifference } from "./apiPersistence"
-import { useAuthStore } from "./authStore"
+import { useAuthStore, registerLogoutHandler } from "./authStore"
 import { financeStore, calculateMultiTax } from "./financeStore"
 import { evaluateStockStatus } from "../core/inventory/stockEngine"
 import { validateTransferNote } from "../core/inventory/transferEngine"
@@ -538,6 +538,23 @@ class ErpStore {
 
   public isSalesLoaded(): boolean {
     return this._salesLoaded
+  }
+
+  public reset(): void {
+    this.salesOrders = []
+    this.purchaseOrders = []
+    this.deliveryNotes = []
+    this.salesIssues = []
+    this.products = []
+    this.stockMovements = []
+    this.transfers = []
+    this._salesLoaded = false
+    this._inventoryLoaded = false
+    this._salesLoading = false
+    this._inventoryLoading = false
+    this.loading = false
+    this._loadError = null
+    this.notify()
   }
 
   /**
@@ -4572,6 +4589,7 @@ class ErpStore {
 }
 
 export const erpStore = new ErpStore()
+registerLogoutHandler(() => erpStore.reset())
 
 export function useErpStore() {
   const [, setTick] = useState(0)

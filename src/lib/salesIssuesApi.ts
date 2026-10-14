@@ -10,6 +10,8 @@ export interface SalesIssueItem {
   item_name: string
   batch_id: string
   batch_no: string
+  warehouse_id?: string
+  warehouse?: string
   packaging_unit?: string
   available_quantity?: number
   quantity: number
@@ -77,13 +79,18 @@ async function parseResponse(response: Response) {
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const authHeaders = getAuthHeaders()
-  const response = await fetch(`${API_BASE}${path}`, {
+  const sep = path.includes("?") ? "&" : "?"
+  const cacheBustPath = `${path}${sep}_t=${Date.now()}`
+  const response = await fetch(`${API_BASE}${cacheBustPath}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
       ...authHeaders,
       ...(init?.headers || {}),
     },
+    cache: "no-store",
   })
   const body = await parseResponse(response)
   if (!response.ok) {
