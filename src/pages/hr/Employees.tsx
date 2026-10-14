@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Plus,
+  FileText,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -45,7 +46,7 @@ import {
   type LeaveRequest,
   type PayrollRecord,
 } from "@/lib/hrApi"
-import { uploadFile, resolveFileUrl } from "@/lib/fileUpload"
+import { uploadFilesConcurrently, resolveFileUrl } from "@/lib/fileUpload"
 import { cn } from "@/lib/utils"
 
 export function parseNationalIdImages(raw: string | undefined | null): string[] {
@@ -61,6 +62,17 @@ export function parseNationalIdImages(raw: string | undefined | null): string[] 
     } catch {}
   }
   return [trimmed]
+}
+
+export function isPdfDocument(url: string | undefined | null): boolean {
+  if (!url || typeof url !== "string") return false
+  const clean = url.split("?")[0].toLowerCase()
+  return (
+    clean.endsWith(".pdf") ||
+    url.includes("/pdf/") ||
+    url.startsWith("data:application/pdf") ||
+    url.includes("application/pdf")
+  )
 }
 
 type FormState = Omit<Employee, "id">
@@ -641,11 +653,19 @@ function NationalIdPreviewModal({
 
         <div className="flex-1 overflow-auto bg-zinc-100 p-6 flex items-center justify-center min-h-[350px]">
           {currentUrl ? (
-            <img
-              src={resolveFileUrl(currentUrl)}
-              alt={`${employee.full_name} National ID page ${activeIdx + 1}`}
-              className="mx-auto max-h-[65vh] w-auto max-w-full rounded-2xl bg-white object-contain shadow-md border border-black/10"
-            />
+            isPdfDocument(currentUrl) ? (
+              <iframe
+                src={resolveFileUrl(currentUrl)}
+                title={`${employee.full_name} National ID page ${activeIdx + 1}`}
+                className="w-full h-[65vh] rounded-2xl bg-white border border-black/10 shadow-md"
+              />
+            ) : (
+              <img
+                src={resolveFileUrl(currentUrl)}
+                alt={`${employee.full_name} National ID page ${activeIdx + 1}`}
+                className="mx-auto max-h-[65vh] w-auto max-w-full rounded-2xl bg-white object-contain shadow-md border border-black/10"
+              />
+            )
           ) : (
             <div className="text-center py-16 px-4">
               <ImagePlus className="size-12 text-zinc-300 mx-auto mb-3" />
@@ -722,10 +742,12 @@ function EmployeeForm({
     const fileArray = Array.from(files).slice(0, remainingSlots)
     try {
       setUploadingId(true)
-      const uploadedUrls: string[] = []
-      for (const f of fileArray) {
-        const res = await uploadFile(f, "employees")
-        if (res.url) uploadedUrls.push(res.url)
+      const results = await uploadFilesConcurrently(fileArray, "employees", {
+        maxConcurrency: 2,
+      })
+      const uploadedUrls = results.map((r) => r.url).filter(Boolean)
+      if (uploadedUrls.length === 0) {
+        throw new Error("No files were successfully uploaded. Please try again.")
       }
       const nextImages = [...idImages, ...uploadedUrls]
       setForm((prev) => ({
@@ -800,14 +822,21 @@ function EmployeeForm({
                               setSelectedPreviewIdx(idx)
                               setPreviewOpen(true)
                             }}
-                            className="group relative size-14 shrink-0 overflow-hidden rounded-lg border border-black/10 bg-zinc-50 cursor-pointer"
+                            className="group relative size-14 shrink-0 overflow-hidden rounded-lg border border-black/10 bg-zinc-50 cursor-pointer flex items-center justify-center"
                             title="Click to preview"
                           >
-                            <img
-                              src={resolveFileUrl(imgUrl)}
-                              alt={`National ID ${label}`}
-                              className="h-full w-full object-cover group-hover:scale-105 transition-transform"
-                            />
+                            {isPdfDocument(imgUrl) ? (
+                              <div className="h-full w-full flex flex-col items-center justify-center bg-rose-50 text-rose-600">
+                                <FileText className="size-6" />
+                                <span className="text-[8px] font-black uppercase mt-0.5">PDF</span>
+                              </div>
+                            ) : (
+                              <img
+                                src={resolveFileUrl(imgUrl)}
+                                alt={`National ID ${label}`}
+                                className="h-full w-full object-cover group-hover:scale-105 transition-transform"
+                              />
+                            )}
                             <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
                               <ZoomIn className="size-3.5" />
                             </div>
@@ -1000,12 +1029,22 @@ function EmployeeForm({
               </div>
             )}
 
-            <div className="flex-1 overflow-auto bg-zinc-100 p-6 flex items-center justify-center">
-              <img
-                src={resolveFileUrl(idImages[selectedPreviewIdx])}
-                alt="National ID document"
-                className="mx-auto max-h-[65vh] w-auto max-w-full rounded-2xl bg-white object-contain shadow-md border border-black/10"
-              />
+            <div className="flex-1 overflow-auto bg-zinc-100 p-6 flex items-center justify-center min-h-[350px]">
+              {idImages[selectedPreviewIdx] ? (
+                isPdfDocument(idImages[selectedPreviewIdx]) ? (
+                  <iframe
+                    src={resolveFileUrl(idImages[selectedPreviewIdx])}
+                    title={`National ID document ${selectedPreviewIdx + 1}`}
+                    className="w-full h-[65vh] rounded-2xl bg-white border border-black/10 shadow-md"
+                  />
+                ) : (
+                  <img
+                    src={resolveFileUrl(idImages[selectedPreviewIdx])}
+                    alt={`National ID document ${selectedPreviewIdx + 1}`}
+                    className="mx-auto max-h-[65vh] w-auto max-w-full rounded-2xl bg-white object-contain shadow-md border border-black/10"
+                  />
+                )
+              ) : null}
             </div>
           </div>
         </div>

@@ -378,22 +378,33 @@ export interface ConcurrentUploadOptions {
 export async function uploadFilesConcurrently(
   files: File[],
   folder: UploadFolder = "general",
-  optionsOrConcurrency: number | ConcurrentUploadOptions = 2,
+  optionsOrConcurrency: number | ConcurrentUploadOptions | ((completedCount: number, totalCount: number, currentFileName: string) => void) = 2,
   legacyOnProgress?: (completedCount: number, totalCount: number, currentFileName: string) => void,
   legacySignal?: AbortSignal
 ): Promise<UploadResult[]> {
   if (!files || files.length === 0) return []
 
-  const options: ConcurrentUploadOptions =
-    typeof optionsOrConcurrency === "object"
-      ? optionsOrConcurrency
-      : {
-          maxConcurrency: optionsOrConcurrency,
-          onProgress: legacyOnProgress,
-          signal: legacySignal,
-        }
+  let options: ConcurrentUploadOptions
+  if (typeof optionsOrConcurrency === "function") {
+    options = {
+      maxConcurrency: 2,
+      onProgress: optionsOrConcurrency,
+      signal: legacySignal,
+    }
+  } else if (typeof optionsOrConcurrency === "object" && optionsOrConcurrency !== null) {
+    options = optionsOrConcurrency
+  } else {
+    options = {
+      maxConcurrency: typeof optionsOrConcurrency === "number" ? optionsOrConcurrency : 2,
+      onProgress: legacyOnProgress,
+      signal: legacySignal,
+    }
+  }
 
-  const maxConcurrency = Math.max(1, options.maxConcurrency ?? 2)
+  const rawConcurrency = typeof options.maxConcurrency === "number" && !isNaN(options.maxConcurrency)
+    ? options.maxConcurrency
+    : 2
+  const maxConcurrency = Math.max(1, rawConcurrency)
   const signal = options.signal
 
   const succeeded: UploadResult[] = []

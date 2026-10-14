@@ -32,11 +32,10 @@ import { InvoiceGLSplitModal } from "@/components/finance/InvoiceGLSplitModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import {
   type ShipmentDocAttachment,
-  savePaymentAdvice,
   savePaymentAdvices,
   fetchTradeAndAdviceDocs,
 } from "@/lib/tradeDocumentService"
-import { uploadFile, uploadFilesConcurrently, validateFileForUpload } from "@/lib/fileUpload"
+import { uploadFilesConcurrently, validateFileForUpload } from "@/lib/fileUpload"
 import { updateSalesIssue } from "@/lib/salesIssuesApi"
 
 export type InvoiceAttachment = ShipmentDocAttachment

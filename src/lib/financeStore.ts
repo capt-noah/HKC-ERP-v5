@@ -5106,7 +5106,7 @@ class FinanceStore {
     this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== id)
     this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
     this.expenses = this.expenses.map((e) => (e.id === id ? { ...e, status: "REJECTED" as const } : e))
-    void updateResource("expenses", id, { status: "REJECTED" }).catch((err) => console.warn("Notice: update expense:", err))
+    void updateResource("expenses", id, { status: "REJECTED" } as any).catch((err) => console.warn("Notice: update expense:", err))
     void deleteResource("journal_entries", jeId).catch((err) => console.warn("Notice: delete expense JE:", err))
     this.notify()
   }

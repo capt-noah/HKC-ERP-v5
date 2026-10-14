@@ -51,13 +51,13 @@ import { TableScrollWrapper } from "@/components/TableScrollWrapper"
 import { useResizableTable, ResizableTh, type TableColumn } from "@/components/ResizableTable"
 import { Skeleton } from "@/components/ui/skeleton"
 import { navSections, getSectionChildren } from "@/lib/nav-config"
-import { useErpStore, type SalesOrder } from "@/lib/erpStore"
+import { useErpStore, type SalesOrder, type Warehouse, type Customer } from "@/lib/erpStore"
 import { isWH1 } from "@/lib/warehouses"
 import { useFinanceStore, isCogsAccount } from "@/lib/financeStore"
 import { useAuthStore } from "@/lib/authStore"
 import { useFeedback } from "@/context/FeedbackContext"
 import { DocumentPreviewModal } from "@/components/DocumentPreviewModal"
-import { fetchAllShipmentDocs, type ShipmentDocAttachment } from "@/lib/tradeDocumentService"
+import { fetchAllShipmentDocs, fetchDocumentsForRecord, type ShipmentDocAttachment } from "@/lib/tradeDocumentService"
 import { type HRData, loadHRData, money } from "@/lib/hrApi"
 import { loadResource } from "@/lib/apiPersistence"
 import { listSalesIssues, type SalesIssue } from "@/lib/salesIssuesApi"
@@ -332,7 +332,11 @@ export default function ControlCenter() {
       setSalesOrders(erp.getSalesOrders() || [])
       setErpCustomers(erp.getCustomers() || [])
     })
-    return () => unsub()
+    return () => {
+      if (typeof unsub === "function") {
+        (unsub as any)()
+      }
+    }
   }, [])
 
   const pendingOrders = useMemo(() => (salesOrders || []).filter((so) => (so.approvalStatus || (so as any).approval_status || "Pending") === "Pending"), [salesOrders])
@@ -370,6 +374,16 @@ export default function ControlCenter() {
       loadShipmentDocs()
     }
   }, [activeTab, loadShipmentDocs])
+
+  useEffect(() => {
+    if (viewModalOrder?.id) {
+      fetchDocumentsForRecord(viewModalOrder.id, "sales_order").then((docs: ShipmentDocAttachment[]) => {
+        if (Array.isArray(docs) && docs.length > 0) {
+          setSoDocsMap((prev) => ({ ...prev, [viewModalOrder.id]: docs }))
+        }
+      }).catch(() => {})
+    }
+  }, [viewModalOrder?.id])
 
 
   // Outstanding Customer Receivables & Unsettled Sales Issues State
@@ -2740,6 +2754,25 @@ export default function ControlCenter() {
                             }
 
                             const adviceDocs = allOrderDocs.filter((d) => d.document_type === "Payment Advice" || d.document_type?.toLowerCase().includes("advice"))
+                            const directSoAdvices = Array.isArray(so.paymentAdvices)
+                              ? so.paymentAdvices
+                              : (Array.isArray((so as any).payment_advices) ? (so as any).payment_advices : [])
+                            directSoAdvices.forEach((da: any, idx: number) => {
+                              const u = da?.url || da?.fileUrl
+                              if (u && !adviceDocs.some((ad) => ad.file_url === u)) {
+                                adviceDocs.push({
+                                  id: da.id || `table-adv-${idx}`,
+                                  record_id: so.id,
+                                  record_type: "sales_order",
+                                  document_type: "Payment Advice",
+                                  file_name: da.name || da.fileName || `Payment Advice ${idx + 1}`,
+                                  file_url: u,
+                                  file_size: da.size || da.fileSize || 102400,
+                                  uploaded_at: new Date().toISOString(),
+                                  uploaded_by: "Sales Officer",
+                                })
+                              }
+                            })
                             const isCredit = (so.paymentType || (so as any).payment_type) === "Credit"
                             const isProcessing = isProcessingAction === so.id
                             const items = Array.isArray(so.items) ? so.items : []
@@ -3228,6 +3261,25 @@ export default function ControlCenter() {
                   }
 
                   const adviceDocs = allOrderDocs.filter((d) => d.document_type === "Payment Advice" || d.document_type?.toLowerCase().includes("advice"))
+                  const directModalAdvices = Array.isArray(viewModalOrder.paymentAdvices)
+                    ? viewModalOrder.paymentAdvices
+                    : (Array.isArray((viewModalOrder as any).payment_advices) ? (viewModalOrder as any).payment_advices : [])
+                  directModalAdvices.forEach((da: any, idx: number) => {
+                    const u = da?.url || da?.fileUrl
+                    if (u && !adviceDocs.some((ad) => ad.file_url === u)) {
+                      adviceDocs.push({
+                        id: da.id || `modal-adv-${idx}`,
+                        record_id: viewModalOrder.id,
+                        record_type: "sales_order",
+                        document_type: "Payment Advice",
+                        file_name: da.name || da.fileName || `Payment Advice ${idx + 1}`,
+                        file_url: u,
+                        file_size: da.size || da.fileSize || 102400,
+                        uploaded_at: new Date().toISOString(),
+                        uploaded_by: "Sales Officer",
+                      })
+                    }
+                  })
                   const isCredit = (viewModalOrder.paymentType || (viewModalOrder as any).payment_type) === "Credit"
 
                   return (

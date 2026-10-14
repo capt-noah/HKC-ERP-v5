@@ -34,7 +34,6 @@ import { LoadingDots } from "@/components/ui/LoadingDots"
 import {
   type ShipmentDocAttachment,
   saveTradeLicense,
-  savePaymentAdvice,
   savePaymentAdvices,
   fetchDocumentsForRecord,
   fetchAllShipmentDocs,
@@ -667,14 +666,27 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
     setStagedTradePaperName(resolved.tradeLicense?.file_name || "")
     setStagedTradePaperUrl(resolved.tradeLicense?.file_url || "")
-    setStagedPaymentAdvices(
-      (resolved.paymentAdvices || []).map((a) => ({
-        id: a.id,
-        name: a.file_name,
-        url: a.file_url,
-        size: a.file_size,
-      }))
-    )
+    const directSoAdvices = Array.isArray(so.paymentAdvices)
+      ? so.paymentAdvices
+      : (Array.isArray((so as any).payment_advices) ? (so as any).payment_advices : [])
+    const combinedAdvices = [...(resolved.paymentAdvices || []).map((a) => ({
+      id: a.id,
+      name: a.file_name,
+      url: a.file_url,
+      size: a.file_size,
+    }))]
+    directSoAdvices.forEach((da: any, idx: number) => {
+      const url = da.url || da.fileUrl
+      if (url && !combinedAdvices.some((ca) => ca.url === url)) {
+        combinedAdvices.push({
+          id: da.id || `so-adv-${idx}`,
+          name: da.name || da.fileName || `Payment Advice ${idx + 1}`,
+          url,
+          size: da.size || da.fileSize || 102400,
+        })
+      }
+    })
+    setStagedPaymentAdvices(combinedAdvices)
 
     // Open modal immediately without waiting on network
     setIsEditOrderOpen(true)
@@ -785,6 +797,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       amount: totalAmt,
       paymentType: editingPaymentType,
       paymentAdvices: stagedPaymentAdvices,
+      payment_advices: stagedPaymentAdvices,
     }
 
     erp.updateSalesOrder(updatedSo)
@@ -1001,6 +1014,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       paymentType: newPaymentType,
       approvalStatus: "Pending",
       paymentAdvices: stagedPaymentAdvices,
+      payment_advices: stagedPaymentAdvices,
     }
 
     // Persist Trade License / Bank Permit and Payment Advice via unified tradeDocumentService
@@ -1359,57 +1373,88 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                   const custDocs = cust ? (soAttachmentsMap[cust.id] || []) : []
                   const allDocs = [...docs, ...issueDocs, ...invoiceDocs, ...custDocs]
 
+                  // Add direct so.paymentAdvices / so.payment_advices
+                  const soAdvices = Array.isArray(so.paymentAdvices)
+                    ? so.paymentAdvices
+                    : (Array.isArray((so as any).payment_advices) ? (so as any).payment_advices : [])
+
                   const isWh1 = isWH1(so.warehouse)
                   const docName = isWh1 ? "Bank Permit" : "Trade License"
-                  const hasTrade = allDocs.some((d) =>
+
+                  let tradeDoc = allDocs.find((d) =>
                     isWh1
                       ? d.document_type === "Bank Permit" || d.document_type === "Trade Paper" || d.document_type === "Trade License" || d.document_type?.toLowerCase().includes("permit")
                       : d.document_type === "Trade License" || d.document_type === "Trade Paper" || d.document_type?.toLowerCase().includes("license")
-                  ) || !!cust?.tradePaperUrl
-                  const hasAdvice = allDocs.some((d) => d.document_type === "Payment Advice" || d.document_type?.toLowerCase().includes("advice"))
+                  )
+
+                  const tradeUrl = tradeDoc?.file_url || cust?.tradePaperUrl
+                  const tradeFileName = tradeDoc?.file_name || cust?.tradePaperFileName || (isWh1 ? "Bank Permit.pdf" : "Trade License.pdf")
+
+                  // Aggregate all advice docs uniquely
+                  const adviceMap = new Map<string, { name: string; url: string }>()
+                  allDocs.forEach((d) => {
+                    if ((d.document_type === "Payment Advice" || d.document_type?.toLowerCase().includes("advice")) && d.file_url) {
+                      adviceMap.set(d.file_url.trim(), { name: d.file_name || "Payment Slip", url: d.file_url })
+                    }
+                  })
+                  soAdvices.forEach((a: any, idx: number) => {
+                    const u = a?.url || a?.fileUrl
+                    if (u) {
+                      adviceMap.set(u.trim(), { name: a?.name || a?.fileName || `Payment Slip ${idx + 1}`, url: u })
+                    }
+                  })
+                  const resolvedAdvices = Array.from(adviceMap.values())
                   const isCredit = so.paymentType === "Credit"
 
-                  if (isCredit) {
-                    if (hasTrade) {
-                      return (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                          <CheckCircle2 className="size-3 text-emerald-600" /> Docs Complete
-                        </span>
-                      )
-                    }
-                    return (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                        <AlertTriangle className="size-3 text-amber-600" /> {docName} Missing
-                      </span>
-                    )
-                  }
-
-                  // Cash sale (default)
-                  if (hasTrade && hasAdvice) {
-                    return (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        <CheckCircle2 className="size-3 text-emerald-600" /> Docs Complete
-                      </span>
-                    )
-                  }
-                  if (!hasTrade && !hasAdvice) {
-                    return (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                        <AlertTriangle className="size-3 text-amber-600" /> {docName} & Advice Missing
-                      </span>
-                    )
-                  }
-                  if (hasTrade && !hasAdvice) {
-                    return (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                        <AlertTriangle className="size-3 text-amber-600" /> Payment Advice Missing
-                      </span>
-                    )
-                  }
                   return (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                      <AlertTriangle className="size-3 text-amber-600" /> {docName} Missing
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {tradeUrl ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setPreviewUrl(tradeUrl)
+                            setPreviewName(tradeFileName)
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200 transition-colors cursor-pointer shadow-2xs"
+                          title={`Preview ${tradeFileName}`}
+                        >
+                          <FileCheck className="size-3 text-emerald-700" />
+                          <span>{isWh1 ? "Permit" : "License"}</span>
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                          <AlertTriangle className="size-3 text-amber-600" /> {docName} Missing
+                        </span>
+                      )}
+
+                      {resolvedAdvices.length > 0 ? (
+                        resolvedAdvices.map((slip, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setPreviewUrl(slip.url)
+                              setPreviewName(slip.name)
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 hover:bg-blue-200 transition-colors cursor-pointer shadow-2xs"
+                            title={`Preview ${slip.name}`}
+                          >
+                            <FileText className="size-3 text-blue-700" />
+                            <span>{resolvedAdvices.length === 1 ? "Advice Slip" : `Advice #${idx + 1}`}</span>
+                          </button>
+                        ))
+                      ) : isCredit ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-zinc-100 text-zinc-500 border border-zinc-200">
+                          Credit Sale
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                          <AlertTriangle className="size-3 text-amber-600" /> Advice Missing
+                        </span>
+                      )}
+                    </div>
                   )
                 })()}
               </td>

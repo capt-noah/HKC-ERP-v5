@@ -30,7 +30,7 @@ import PurchaseOrderPrintModal from "@/components/purchase/PurchaseOrderPrintMod
 import PurchaseOrderGLSplitModal from "@/components/purchase/PurchaseOrderGLSplitModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { uploadFile, uploadFilesConcurrently } from "@/lib/fileUpload"
-import { savePaymentAdvice, savePaymentAdvices, savePurchaseOrderDocument } from "@/lib/tradeDocumentService"
+import { savePaymentAdvices, savePurchaseOrderDocument } from "@/lib/tradeDocumentService"
 import COAAccountSelector from "@/components/finance/COAAccountSelector"
 import PurchaseCOASplitSection, { type SplitLineItem } from "@/components/purchase/PurchaseCOASplitSection"
 import { 
@@ -99,7 +99,6 @@ export default function PurchaseOrders() {
 
   // Dedicated Payment Advice (Up to 10 Attachments)
   const [paymentAdvices, setPaymentAdvices] = useState<PurchaseOrderAttachment[]>([])
-  const paymentAdvice = paymentAdvices[0] || null
   const [isUploadingPaymentAdvice, setIsUploadingPaymentAdvice] = useState(false)
 
   // Optional Supporting Attachments
@@ -881,6 +880,7 @@ export default function PurchaseOrders() {
       statusColor: status === "PAID" ? "bg-emerald-500" : "bg-amber-500",
       paymentAdviceAttachment: paymentAdvices[0] || null,
       paymentAdviceAttachments: paymentAdvices,
+      payment_advice_attachment: paymentAdvices,
       attachments,
     }
 
@@ -1029,6 +1029,7 @@ export default function PurchaseOrders() {
         status: isCredit ? (settlement === "Fully Settled" ? "PAID" : "PAID") : status,
         paymentAdviceAttachment: paymentAdvices[0] || null,
         paymentAdviceAttachments: paymentAdvices,
+        payment_advice_attachment: paymentAdvices,
         attachments,
       })
 

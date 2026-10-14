@@ -72,6 +72,7 @@ export const salesOrders = mysqlTable("sales_orders", {
   currency: varchar("currency", { length: 10 }).default("ETB").notNull(),
   urgent: boolean("urgent").default(false).notNull(),
   description: text("description"),
+  paymentAdvices: json("payment_advices"),
   items: json("items"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

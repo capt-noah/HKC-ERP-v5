@@ -286,6 +286,7 @@ export interface SalesOrder {
   customerPhone?: string
   customerGroup?: string
   paymentAdvices?: Array<{ id?: string; name: string; url: string; size?: number }>
+  payment_advices?: Array<{ id?: string; name: string; url: string; size?: number }>
   warehouse: string
   warehouseName?: string
   date: string
@@ -399,6 +400,7 @@ export interface PurchaseOrder {
   paymentMethod?: "Cheque" | "Bank Transfer" | "RTGS" | "Cash" | string
   paymentAdviceAttachment?: PurchaseOrderAttachment | null
   paymentAdviceAttachments?: PurchaseOrderAttachment[]
+  payment_advice_attachment?: any
   attachments?: PurchaseOrderAttachment[] | string[]
   installmentPayments?: Array<{
     id: string
@@ -408,6 +410,7 @@ export interface PurchaseOrder {
     reference: string
     paymentAdviceUrl?: string
     paymentAdviceFilename?: string
+    paymentAdviceUrls?: string[]
     notes?: string
   }>
   receivedAmount?: number
@@ -1055,18 +1058,29 @@ class ErpStore {
         this.stockMovements = sortNewestFirst(stockMovements)
       }
 
-      this.salesOrders = sortNewestFirst((salesOrders || []).map((so: any) => ({
-        ...so,
-        customerId: so.customerId || so.customer_id || undefined,
-        customer_id: so.customer_id || so.customerId || undefined,
-        customer: so.customer || so.customer_name || "Customer",
-        customer_name: so.customer_name || so.customer || "Customer",
-        warehouse: so.warehouse || so.warehouse_id || "WH2-VET-ALEM",
-        amount: Number(so.amount ?? so.grand_total ?? so.total_amount ?? so.subtotal ?? 0),
-        items: Array.isArray(so.items) ? so.items : [],
-        approvalStatus: so.approvalStatus || so.approval_status || "Pending",
-        paymentType: so.paymentType || so.payment_type || "Credit",
-      })))
+      this.salesOrders = sortNewestFirst((salesOrders || []).map((so: any) => {
+        const rawAdvices = so.paymentAdvices || so.payment_advices
+        let paymentAdvices: any[] = []
+        if (Array.isArray(rawAdvices)) {
+          paymentAdvices = rawAdvices
+        } else if (typeof rawAdvices === "string" && rawAdvices.trim().startsWith("[")) {
+          try { paymentAdvices = JSON.parse(rawAdvices) } catch {}
+        }
+        return {
+          ...so,
+          customerId: so.customerId || so.customer_id || undefined,
+          customer_id: so.customer_id || so.customerId || undefined,
+          customer: so.customer || so.customer_name || "Customer",
+          customer_name: so.customer_name || so.customer || "Customer",
+          warehouse: so.warehouse || so.warehouse_id || "WH2-VET-ALEM",
+          amount: Number(so.amount ?? so.grand_total ?? so.total_amount ?? so.subtotal ?? 0),
+          items: Array.isArray(so.items) ? so.items : [],
+          approvalStatus: so.approvalStatus || so.approval_status || "Pending",
+          paymentType: so.paymentType || so.payment_type || "Credit",
+          paymentAdvices,
+          payment_advices: paymentAdvices,
+        }
+      }))
       if (purchaseOrders && purchaseOrders.length > 0) {
         const poStatusColorMap: Record<string, string> = {
           DRAFT: "bg-zinc-600 text-white",
@@ -1077,16 +1091,35 @@ class ErpStore {
           CANCELLED: "bg-red-600 text-white",
         }
         this.purchaseOrders = sortNewestFirst(
-          purchaseOrders.map((po: any) => ({
-            ...po,
-            status: po.status || "DRAFT",
-            statusColor: po.statusColor || poStatusColorMap[po.status] || "bg-zinc-600 text-white",
-            amount: Number(po.amount || 0),
-            amountPaid: Number(po.amountPaid ?? po.amount_paid ?? 0),
-            amount_paid: Number(po.amountPaid ?? po.amount_paid ?? 0),
-            balanceDue: Number(po.balanceDue ?? po.balance_due ?? 0),
-            balance_due: Number(po.balanceDue ?? po.balance_due ?? 0),
-          }))
+          purchaseOrders.map((po: any) => {
+            const rawAdv = po.payment_advice_attachment ?? po.paymentAdviceAttachment ?? po.paymentAdviceAttachments
+            let parsedAdv = rawAdv
+            if (typeof rawAdv === "string" && (rawAdv.trim().startsWith("{") || rawAdv.trim().startsWith("["))) {
+              try { parsedAdv = JSON.parse(rawAdv) } catch {}
+            }
+            const paymentAdviceAttachments = Array.isArray(parsedAdv)
+              ? parsedAdv
+              : (Array.isArray(po.paymentAdviceAttachments)
+                ? po.paymentAdviceAttachments
+                : (parsedAdv?.url ? [parsedAdv] : []))
+            const paymentAdviceAttachment = Array.isArray(parsedAdv)
+              ? (parsedAdv[0] || null)
+              : (parsedAdv || po.paymentAdviceAttachment || null)
+
+            return {
+              ...po,
+              status: po.status || "DRAFT",
+              statusColor: po.statusColor || poStatusColorMap[po.status] || "bg-zinc-600 text-white",
+              amount: Number(po.amount || 0),
+              amountPaid: Number(po.amountPaid ?? po.amount_paid ?? 0),
+              amount_paid: Number(po.amountPaid ?? po.amount_paid ?? 0),
+              balanceDue: Number(po.balanceDue ?? po.balance_due ?? 0),
+              balance_due: Number(po.balanceDue ?? po.balance_due ?? 0),
+              paymentAdviceAttachment,
+              paymentAdviceAttachments,
+              payment_advice_attachment: paymentAdviceAttachments.length > 0 ? paymentAdviceAttachments : paymentAdviceAttachment,
+            }
+          })
         )
       }
       this.customers = sortNewestFirst(customers)
@@ -3758,7 +3791,7 @@ class ErpStore {
       id: dnId,
       salesOrderId: so.id,
       customer: so.customer,
-      customerId: so.customerId,
+      customerId: so.customerId || "",
       warehouse: so.warehouse,
       warehouseName: so.warehouseName,
       postingDate: new Date().toISOString().split("T")[0],
@@ -4121,6 +4154,7 @@ class ErpStore {
     reference: string
     paymentAdviceUrl?: string
     paymentAdviceFilename?: string
+    paymentAdviceUrls?: string[]
     notes?: string
   }) {
     const target = this.purchaseOrders.find((p) => p.id === poId)

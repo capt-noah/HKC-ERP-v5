@@ -25,7 +25,6 @@ import { resolveCommodityAccounts } from "@/lib/commodityAccounts"
 
 import {
   saveTradeLicense,
-  savePaymentAdvice,
   savePaymentAdvices,
   fetchTradeAndAdviceDocs,
 } from "@/lib/tradeDocumentService"
@@ -324,7 +323,6 @@ export default function SalesIssued() {
   const [payBank, setPayBank] = useState("1000-02-26")
   const [payRef, setPayRef] = useState("")
   const [payAdviceFiles, setPayAdviceFiles] = useState<File[]>([])
-  const payAdviceFile = payAdviceFiles[0] || null
   const [payNotes, setPayNotes] = useState("")
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false)
   const [isUploadingAdvice, setIsUploadingAdvice] = useState(false)
@@ -455,8 +453,7 @@ export default function SalesIssued() {
       setWarehouseId("")
       setReferenceNo("")
       setPaymentType("Cash")
-      setStagedPaymentAdviceName("")
-      setStagedPaymentAdviceUrl("")
+      setStagedPaymentAdvices([])
       setStagedTradePaperName("")
       setStagedTradePaperUrl("")
       setItems([blankItem()])
@@ -598,8 +595,7 @@ export default function SalesIssued() {
       setWarehouseId("")
       setReferenceNo("")
       setPaymentType("Cash")
-      setStagedPaymentAdviceName("")
-      setStagedPaymentAdviceUrl("")
+      setStagedPaymentAdvices([])
       setStagedTradePaperName("")
       setStagedTradePaperUrl("")
       setItems([blankItem()])
@@ -637,13 +633,11 @@ export default function SalesIssued() {
           setStagedTradePaperUrl("")
         }
       }
-      setStagedPaymentAdviceName("")
-      setStagedPaymentAdviceUrl("")
+      setStagedPaymentAdvices([])
     } catch {
       setStagedTradePaperName("")
       setStagedTradePaperUrl("")
-      setStagedPaymentAdviceName("")
-      setStagedPaymentAdviceUrl("")
+      setStagedPaymentAdvices([])
     } finally {
       setIsDocsLoading(false)
     }
@@ -958,8 +952,7 @@ export default function SalesIssued() {
     setSelectedPsOrder(null)
     setStagedTradePaperName("")
     setStagedTradePaperUrl("")
-    setStagedPaymentAdviceName("")
-    setStagedPaymentAdviceUrl("")
+    setStagedPaymentAdvices([])
 
     if (preselectedSo && preselectedSo.id) {
       setSelectedSoId(preselectedSo.id)
