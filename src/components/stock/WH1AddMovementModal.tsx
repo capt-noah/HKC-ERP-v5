@@ -2,7 +2,6 @@ import { useState, useEffect } from "react"
 import { X, ArrowDownLeft, MinusCircle, ChevronDown, CheckCircle2, Package } from "lucide-react"
 import { useFeedback } from "@/context/FeedbackContext"
 import { useErpStore, type Product, type WH1Entry } from "@/lib/erpStore"
-import { financeStore } from "@/lib/financeStore"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 
 interface WH1AddMovementModalProps {
@@ -162,24 +161,6 @@ export default function WH1AddMovementModal({
         sellingPrice: Number(sellingPrice) > 0 ? Number(sellingPrice) : undefined,
         notes: notes.trim(),
       })
-
-      // Automatically post GL stock intake for inbound movement
-      try {
-        await financeStore.recordStockIntake({
-          productId: product.id,
-          productName: product.name,
-          sku: product.sku,
-          warehouseId: product.warehouse,
-          quantity: finalQty,
-          unitCost: costPrice,
-          unit: "Quintal",
-          entryDate,
-          entryId: voucherNo.trim() ? `GRV-${voucherNo.trim()}` : undefined,
-          isChild: true,
-        })
-      } catch (finErr) {
-        console.warn("Failed to record inbound truckload stock GL intake:", finErr)
-      }
 
       showToast("Success", "success", `Inbound entry of ${finalQty.toLocaleString()} Quintals recorded.`)
       setIsConfirmEntryOpen(false)

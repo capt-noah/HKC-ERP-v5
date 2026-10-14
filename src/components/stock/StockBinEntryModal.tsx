@@ -5,7 +5,6 @@ import { EditModalHeader } from "@/components/EditModalHeader"
 import { RecordDeleteModal } from "@/components/RecordDeleteModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { useErpStore, type BinCardMovementEntry, type Product } from "@/lib/erpStore"
-import { financeStore } from "@/lib/financeStore"
 
 interface StockBinEntryModalProps {
   isOpen: boolean
@@ -152,26 +151,6 @@ export default function StockBinEntryModal({
               console.warn("Failed to auto-register supplier from bin card entry:", suppErr)
             }
           }
-        }
-      }
-
-      // Automatically post GL stock intake for new inbound receipts
-      if (!isEditing && isRec && effectiveUnitPrice && effectiveUnitPrice > 0) {
-        try {
-          await financeStore.recordStockIntake({
-            productId: product.id,
-            productName: product.name,
-            sku: product.sku,
-            warehouseId: product.warehouse,
-            quantity: qtyNum,
-            unitCost: effectiveUnitPrice,
-            unit: product.unit,
-            entryDate: date,
-            batchNo: batchNo.trim().toUpperCase(),
-            isChild: true,
-          })
-        } catch (finErr) {
-          console.warn("Failed to record bin card movement intake to GL:", finErr)
         }
       }
 

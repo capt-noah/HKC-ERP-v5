@@ -2442,11 +2442,11 @@ class ErpStore {
     return mergedProduct
   }
 
-  public async addWH1Entry(productId: string, entry: Omit<WH1Entry, "entryId">) {
+  public async addWH1Entry(productId: string, entry: Omit<WH1Entry, "entryId"> & { entryId?: string; id?: string }): Promise<{ entry: WH1Entry }> {
     const prod = this.products.find((p) => p.id === productId)
     if (!prod) throw new Error("Product not found")
 
-    const entryId = `EWM-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+    const entryId = entry.entryId || entry.id || (entry.voucherNo ? `GRV-${entry.voucherNo}` : `EWM-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`)
     const qtyReceived = Number(entry.quantityReceived || entry.quantity || 0)
     const unitPrice = Number(entry.unitPrice ?? prod.unitCost ?? 0)
     const effectiveSellingPrice = (entry.sellingPrice !== undefined && Number(entry.sellingPrice) > 0)
@@ -2529,6 +2529,7 @@ class ErpStore {
     })
 
     this.notify()
+    return { entry: newEntry }
   }
 
   public async addWH1LeaveEntry(
@@ -3062,7 +3063,10 @@ class ErpStore {
     }
   }
 
-  public async addBinCardEntry(productId: string, entry: Omit<BinCardMovementEntry, "id" | "balance">) {
+  public async addBinCardEntry(
+    productId: string,
+    entry: Omit<BinCardMovementEntry, "id" | "balance"> & { id?: string }
+  ): Promise<{ entry: BinCardMovementEntry }> {
     const prod = this.products.find((p) => p.id === productId)
     if (!prod) throw new Error("Product not found")
 
@@ -3072,7 +3076,7 @@ class ErpStore {
 
     const newEntry: BinCardMovementEntry = {
       ...entry,
-      id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: entry.id || `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       type: isQuarantine ? "quarantine" : isReject ? "reject" : isRec ? "entry" : "leave",
       qtyReceived: isRec ? Number(entry.qtyReceived || 0) : 0,
       qtyIssued: !isRec ? Number(entry.qtyIssued || 0) : 0,
@@ -3240,7 +3244,7 @@ class ErpStore {
       })
     }
 
-    return await this.updateProductDetails(productId, {
+    await this.updateProductDetails(productId, {
       quantity: totalQuantity,
       totalQuantity: totalQuantity + (prod.quantitySold || 0),
       unitCost: unitCost,
@@ -3253,6 +3257,8 @@ class ErpStore {
       batches: updatedBatches,
       binCardEntries: recalculatedEntries,
     })
+
+    return { entry: newEntry }
   }
 
   public async updateBinCardEntry(productId: string, entryId: string, patch: Partial<BinCardMovementEntry>) {

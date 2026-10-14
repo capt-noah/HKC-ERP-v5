@@ -1772,6 +1772,18 @@ class FinanceStore {
     })
   }
 
+  public async persistJournal(): Promise<void> {
+    try {
+      await persistResources([
+        { resource: "journal_entries", items: this.entries },
+        { resource: "journal_entry_lines", items: this.lines },
+      ])
+    } catch (err) {
+      console.error("[FinanceStore] Failed to persist journal entries to Database:", err)
+      throw err
+    }
+  }
+
   public async reloadFromApi() {
     this._isLoaded = false
     this._loadInProgress = false
@@ -1793,7 +1805,7 @@ class FinanceStore {
     }
   }
 
-  private notify(persist = false) {
+  private notify(persist = true) {
     if (persist) {
       if (this._persistDebounceTimer) {
         clearTimeout(this._persistDebounceTimer)
@@ -2802,7 +2814,7 @@ class FinanceStore {
       this.lines = [...createdLines, ...this.lines]
     }
 
-    this.notify()
+    this.notify(true)
     return { success: true, entry: newEntry, reversalEntry: reversalEntry || undefined, autoRounded, roundOffAmount }
   }
 
@@ -3839,7 +3851,9 @@ class FinanceStore {
     const batchPart = params.batchNo ? ` [Batch: ${params.batchNo}]` : params.entryId ? ` [Entry: ${params.entryId}]` : ""
     const desc = `${labelPrefix}: ${params.productName}${batchPart} (+${qty} ${params.unit || "Units"} @ ETB ${cost.toFixed(2)})`
     const entryDate = params.entryDate || new Date().toISOString().split("T")[0]
-    const sourceId = `STK-IN-${params.entryId || params.batchNo || params.sku || params.productId}`
+    const sourceId = params.entryId
+      ? `STK-IN-${params.entryId}`
+      : `STK-IN-${params.productId}-${params.batchNo || "BATCH"}-${Date.now()}`
 
     const postRes = this.postJournalEntry(
       {
@@ -3868,6 +3882,12 @@ class FinanceStore {
       ]
     )
 
+    if (postRes.success) {
+      await this.persistJournal().catch((err) => {
+        console.error("[FinanceStore] Failed to persist stock intake journal voucher to DB:", err)
+      })
+    }
+
     return postRes
   }
 
@@ -3881,6 +3901,7 @@ class FinanceStore {
     unit?: string
     entryDate?: string
     batchNo?: string
+    entryId?: string
   }): Promise<{ success: boolean; error?: string; entry?: JournalEntry }> {
     return this.recordStockIntake(params)
   }

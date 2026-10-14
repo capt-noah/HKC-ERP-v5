@@ -196,6 +196,7 @@ export default function StockProducts() {
   const [addSellingPrice, setAddSellingPrice] = useState("")
   const [addMfgDate, setAddMfgDate] = useState("")
   const [addExpDate, setAddExpDate] = useState("")
+  const [addReceivedDate, setAddReceivedDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [addQtyPerPack, setAddQtyPerPack] = useState("")
   const [addNumCartons, setAddNumCartons] = useState("")
   const [addEntryDate, setAddEntryDate] = useState("")
@@ -291,6 +292,7 @@ export default function StockProducts() {
     batchNo: string
     mfgDate: string
     expDate: string
+    intakeDate: string
     quantity: number
     cartons?: number
     unitCost: number
@@ -358,6 +360,7 @@ export default function StockProducts() {
         addBatchNumber &&
         addMfgDate &&
         addExpDate &&
+        addReceivedDate &&
         Number(addQtyPerPack) >= 1 &&
         Number(addNumCartons) >= 1 &&
         addTotalQuantity > 0 &&
@@ -382,6 +385,7 @@ export default function StockProducts() {
     setAddSellingPrice("")
     setAddMfgDate("")
     setAddExpDate("")
+    setAddReceivedDate(new Date().toISOString().slice(0, 10))
     setAddQtyPerPack("")
     setAddNumCartons("")
     setAddEntryDate("")
@@ -566,6 +570,7 @@ export default function StockProducts() {
       batchNo: isWH1Form ? (addVoucherNo.trim() || "N/A") : (addBatchNumber.trim() || "N/A"),
       mfgDate: isWH1Form ? (addEntryDate || "N/A") : (addMfgDate || "N/A"),
       expDate: isWH1Form ? "N/A" : (addExpDate || "N/A"),
+      intakeDate: isWH1Form ? (addEntryDate || "N/A") : (addReceivedDate || "N/A"),
       quantity: addTotalQuantity,
       cartons: isWH1Form ? undefined : Number(addNumCartons || 0),
       unitCost: Number(addUnitPrice || (isChild ? selectedExistingProduct?.unitCost : 0) || 0),
@@ -617,7 +622,7 @@ export default function StockProducts() {
             sellingPrice: Number(addSellingPrice || 0) > 0 ? Number(addSellingPrice) : undefined,
             notes: addNotes.trim() || undefined,
           }
-          await erp.addWH1Entry(selectedExistingProduct.id, newEntryPayload)
+          const { entry: createdWH1Entry } = await erp.addWH1Entry(selectedExistingProduct.id, newEntryPayload)
 
           // Automatically record GL stock intake in General Ledger
           try {
@@ -630,7 +635,7 @@ export default function StockProducts() {
               unitCost: Number(addUnitPrice || 0),
               unit: targetUOM,
               entryDate: addEntryDate,
-              entryId: newEntryPayload.voucherNo ? `GRV-${newEntryPayload.voucherNo}` : undefined,
+              entryId: createdWH1Entry.id,
               isChild: true,
             })
           } catch (finErr) {
@@ -644,21 +649,24 @@ export default function StockProducts() {
           const packSize = Number(selectedExistingProduct.quantityPerPack || addQtyPerPack || 1)
           const addedCartons = Number(addNumCartons) || (packSize > 0 ? Math.round((addTotalQuantity / packSize) * 100) / 100 : 0)
           const effectiveUnitCost = Number(addUnitPrice || selectedExistingProduct.unitCost || 0)
+          const intakeDate = addReceivedDate || new Date().toISOString().slice(0, 10)
 
           const binEntryPayload: Omit<BinCardMovementEntry, "id"> = {
-            date: addMfgDate || new Date().toISOString().slice(0, 10),
+            date: intakeDate,
             batchNo: entryBatch || `BATCH-${Date.now().toString().slice(-4)}`,
             voucherNo: entryBatch ? `BATCH-${entryBatch}` : `RCV-${Date.now().toString().slice(-6)}`,
             type: "entry",
             party: addCustomer.trim() || undefined,
+            mfgDate: addMfgDate || undefined,
             expiryDate: addExpDate || "",
             qtyReceived: addTotalQuantity,
             qtyIssued: 0,
             balance: (Number(selectedExistingProduct.quantity || 0) + addTotalQuantity),
             unitPrice: effectiveUnitCost,
+            sellingPrice: Number(addSellingPrice || 0) > 0 ? Number(addSellingPrice) : undefined,
             remark: `Intake: +${addTotalQuantity} units (${addedCartons} ctns @ ${packSize}/pk)${addNotes.trim() ? ` - ${addNotes.trim()}` : ""}`,
           }
-          await erp.addBinCardEntry(selectedExistingProduct.id, binEntryPayload)
+          const { entry: createdBinEntry } = await erp.addBinCardEntry(selectedExistingProduct.id, binEntryPayload)
 
           // Automatically record GL stock intake in General Ledger
           try {
@@ -670,7 +678,8 @@ export default function StockProducts() {
               quantity: addTotalQuantity,
               unitCost: effectiveUnitCost,
               unit: selectedExistingProduct.unit,
-              entryDate: binEntryPayload.date,
+              entryDate: intakeDate,
+              entryId: createdBinEntry.id,
               batchNo: binEntryPayload.batchNo,
               isChild: true,
             })
@@ -685,8 +694,10 @@ export default function StockProducts() {
         const productId = `P-${Date.now()}`
         const parsedSellingPrice = Number(addSellingPrice || 0)
         const parsedUnitCost = Number(addUnitPrice || 0)
+        const initIntakeDate = isWH1Form ? addEntryDate : (addReceivedDate || now.slice(0, 10))
+        const initEntryId = isWH1Form ? `WH1E-${Date.now()}` : `BCE-${Date.now()}-init`
         const initialWH1Entries: WH1Entry[] = isWH1Form ? [{
-          entryId: `WH1E-${Date.now()}`,
+          entryId: initEntryId,
           voucherNo: addVoucherNo.trim() || undefined,
           customer: addCustomer.trim() || undefined,
           plateNumber: addPlateNumber.trim() || undefined,
@@ -727,7 +738,7 @@ export default function StockProducts() {
           manufacturingDate: isWH1Form ? undefined : addMfgDate,
           expiry: isWH1Form ? "" : addExpDate,
           shelfLifeMonths: isWH1Form ? undefined : addShelfLifeMonths,
-          entryDate: isWH1Form ? addEntryDate : undefined,
+          entryDate: initIntakeDate,
           leaveDate: undefined,
           status: addTotalQuantity > 0 ? "In Stock" : "Out of Stock",
           stockBreakdown: [{ warehouse: addWarehouse, qty: addTotalQuantity }],
@@ -743,9 +754,9 @@ export default function StockProducts() {
           }],
           wh1Entries: isWH1Form ? initialWH1Entries : undefined,
           binCardEntries: (!isWH1Form && addTotalQuantity > 0) ? [{
-            id: `BCE-${Date.now()}-init`,
+            id: initEntryId,
             type: "entry",
-            date: addMfgDate || now.slice(0, 10),
+            date: initIntakeDate,
             batchNo: addBatchNumber,
             qtyReceived: addTotalQuantity,
             qtyIssued: 0,
@@ -772,7 +783,7 @@ export default function StockProducts() {
         // Automatically record initial stock intake in General Ledger if initial stock exists
         if (addTotalQuantity > 0 && parsedUnitCost > 0) {
           try {
-            financeStore.recordInitialStockIntake({
+            await financeStore.recordInitialStockIntake({
               productId: product.id,
               productName: product.name,
               sku: product.sku,
@@ -780,7 +791,9 @@ export default function StockProducts() {
               quantity: addTotalQuantity,
               unitCost: parsedUnitCost,
               unit: targetUOM,
-              entryDate: isWH1Form ? addEntryDate : (addMfgDate || now.slice(0, 10)),
+              entryDate: initIntakeDate,
+              entryId: initEntryId,
+              batchNo: addBatchNumber,
             })
           } catch (finErr) {
             console.warn("Failed to record initial stock GL valuation:", finErr)
@@ -806,7 +819,7 @@ export default function StockProducts() {
 
   // Handle saving direct slim sub-entry modal (WH1)
   const handleSaveWH1Entry = async (productId: string, entryData: Omit<WH1Entry, "entryId">) => {
-    await erp.addWH1Entry(productId, entryData)
+    const { entry: createdWH1Entry } = await erp.addWH1Entry(productId, entryData)
     const prod = products.find((p) => p.id === productId)
     if (prod) {
       const qty = Number(entryData.quantityReceived || entryData.quantity || 0)
@@ -822,7 +835,7 @@ export default function StockProducts() {
             unitCost,
             unit: prod.unit || "Quintal",
             entryDate: entryData.entryDate || new Date().toISOString().slice(0, 10),
-            entryId: entryData.voucherNo ? `GRV-${entryData.voucherNo}` : undefined,
+            entryId: createdWH1Entry.id,
             isChild: true,
           })
         } catch (finErr) {
@@ -986,7 +999,7 @@ export default function StockProducts() {
     if (entryId) {
       await erp.updateBinCardEntry(productId, entryId, entryData)
     } else {
-      await erp.addBinCardEntry(productId, entryData)
+      const { entry: createdBinEntry } = await erp.addBinCardEntry(productId, entryData)
       const prod = products.find((p) => p.id === productId)
       if (prod && (entryData.type === "entry" || Number(entryData.qtyReceived || 0) > 0)) {
         const qty = Number(entryData.qtyReceived || 0)
@@ -1002,6 +1015,7 @@ export default function StockProducts() {
               unitCost,
               unit: prod.unit || "Unit",
               entryDate: entryData.date || new Date().toISOString().slice(0, 10),
+              entryId: createdBinEntry.id,
               batchNo: entryData.batchNo,
               isChild: true,
             })
@@ -2553,6 +2567,10 @@ export default function StockProducts() {
                           />
                         </label>
                         <label className="space-y-1">
+                          <span className="text-[11px] font-black uppercase text-zinc-700">Intake / Received Date <span className="text-rose-600">*</span></span>
+                          <input type="date" value={addReceivedDate} onChange={(e) => setAddReceivedDate(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
+                        </label>
+                        <label className="space-y-1">
                           <span className="text-[11px] font-black uppercase text-zinc-700">Manufacturing Date <span className="text-rose-600">*</span></span>
                           <input type="date" value={addMfgDate} onChange={(e) => setAddMfgDate(e.target.value)} className="h-11 w-full rounded-xl border border-zinc-200 px-3 text-xs font-mono" />
                         </label>
@@ -2743,6 +2761,10 @@ export default function StockProducts() {
               <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
                 <span className="font-semibold text-zinc-500">Batch / Voucher No</span>
                 <span className="font-mono font-black text-zinc-900 bg-white px-2 py-0.5 rounded-md border border-zinc-200">{pendingAddConfirm.batchNo}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-zinc-200/60">
+                <span className="font-semibold text-zinc-500">Intake / Received Date</span>
+                <span className="font-mono font-bold text-zinc-800">{pendingAddConfirm.intakeDate}</span>
               </div>
               <div className="grid grid-cols-2 gap-2 py-1 border-b border-zinc-200/60">
                 <div>
