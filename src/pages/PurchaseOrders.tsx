@@ -30,7 +30,7 @@ import PurchaseOrderPrintModal from "@/components/purchase/PurchaseOrderPrintMod
 import PurchaseOrderGLSplitModal from "@/components/purchase/PurchaseOrderGLSplitModal"
 import { LoadingDots } from "@/components/ui/LoadingDots"
 import { uploadFile, uploadFilesConcurrently } from "@/lib/fileUpload"
-import { savePaymentAdvice, savePurchaseOrderDocument } from "@/lib/tradeDocumentService"
+import { savePaymentAdvice, savePaymentAdvices, savePurchaseOrderDocument } from "@/lib/tradeDocumentService"
 import COAAccountSelector from "@/components/finance/COAAccountSelector"
 import PurchaseCOASplitSection, { type SplitLineItem } from "@/components/purchase/PurchaseCOASplitSection"
 import { 
@@ -69,7 +69,7 @@ export default function PurchaseOrders() {
   const [payMethod, setPayMethod] = useState("Bank Transfer")
   const [payRef, setPayRef] = useState("")
   const [payNotes, setPayNotes] = useState("")
-  const [payAdviceFile, setPayAdviceFile] = useState<File | null>(null)
+  const [payAdviceFiles, setPayAdviceFiles] = useState<File[]>([])
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false)
 
   // Document Preview State
@@ -97,8 +97,9 @@ export default function PurchaseOrders() {
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false)
   const supplierRef = useRef<HTMLDivElement>(null)
 
-  // Dedicated Payment Advice (Optional)
-  const [paymentAdvice, setPaymentAdvice] = useState<PurchaseOrderAttachment | null>(null)
+  // Dedicated Payment Advice (Up to 10 Attachments)
+  const [paymentAdvices, setPaymentAdvices] = useState<PurchaseOrderAttachment[]>([])
+  const paymentAdvice = paymentAdvices[0] || null
   const [isUploadingPaymentAdvice, setIsUploadingPaymentAdvice] = useState(false)
 
   // Optional Supporting Attachments
@@ -360,7 +361,7 @@ export default function PurchaseOrders() {
     setPaidAmount("")
     setPaymentType("Cash")
     setStatus("PAID")
-    setPaymentAdvice(null)
+    setPaymentAdvices([])
     setAttachments([])
     setFailedSupportingUploads([])
     setRetryingSupportingId(null)
@@ -491,10 +492,12 @@ export default function PurchaseOrders() {
     }
 
     // Process payment advice
-    if (po.paymentAdviceAttachment) {
-      setPaymentAdvice(po.paymentAdviceAttachment)
+    if (Array.isArray(po.paymentAdviceAttachments) && po.paymentAdviceAttachments.length > 0) {
+      setPaymentAdvices(po.paymentAdviceAttachments)
+    } else if (po.paymentAdviceAttachment) {
+      setPaymentAdvices([po.paymentAdviceAttachment])
     } else {
-      setPaymentAdvice(null)
+      setPaymentAdvices([])
     }
 
     // Process optional attachments
@@ -535,7 +538,7 @@ export default function PurchaseOrders() {
     setPayMethod("Bank Transfer")
     setPayRef(`PAY-PO-${Date.now().toString().slice(-4)}`)
     setPayNotes("")
-    setPayAdviceFile(null)
+    setPayAdviceFiles([])
   }
 
   // Submit Installment Payment
@@ -559,19 +562,28 @@ export default function PurchaseOrders() {
 
     setIsSubmittingPayment(true)
     try {
-      let stagedSlipUrl = ""
-      let stagedSlipName = ""
-      if (payAdviceFile) {
+      const stagedSlips: Array<{ fileName: string; fileUrl: string; fileSize?: number }> = []
+      if (payAdviceFiles.length > 0) {
         try {
-          const uploadRes = await uploadFile(payAdviceFile, "purchase_orders")
-          stagedSlipName = uploadRes.originalName
-          stagedSlipUrl = uploadRes.url
+          const uploadRes = await uploadFilesConcurrently(payAdviceFiles, "purchase_orders", () => {})
+          for (let i = 0; i < uploadRes.length; i++) {
+            const r = uploadRes[i]
+            if (r.url) {
+              stagedSlips.push({
+                fileName: r.originalName || payAdviceFiles[i]?.name || `Slip-${i + 1}`,
+                fileUrl: r.url,
+                fileSize: payAdviceFiles[i]?.size || 102400,
+              })
+            }
+          }
         } catch (uploadErr: any) {
           showToast("Upload Failed", "warning", uploadErr.message || "Failed to upload payment advice receipt. Please retry.")
           setIsSubmittingPayment(false)
           return
         }
       }
+
+      const primarySlip = stagedSlips[0]
 
       // Record in Finance Store (Accounts Payable GL Double Entry)
       financeStore.recordPayment({
@@ -585,8 +597,8 @@ export default function PurchaseOrders() {
         method: payMethod,
         bank_account_code: payBank,
         reference: payRef || `PAY-PO-${Date.now().toString().slice(-4)}`,
-        payment_advice_url: stagedSlipUrl || undefined,
-        payment_advice_filename: stagedSlipName || undefined,
+        payment_advice_url: primarySlip?.fileUrl || undefined,
+        payment_advice_filename: primarySlip?.fileName || undefined,
         notes: payNotes,
       })
 
@@ -596,19 +608,19 @@ export default function PurchaseOrders() {
         date: payDate,
         bankAccountCode: payBank,
         reference: payRef || `PAY-PO-${Date.now().toString().slice(-4)}`,
-        paymentAdviceUrl: stagedSlipUrl || undefined,
-        paymentAdviceFilename: stagedSlipName || undefined,
+        paymentAdviceUrl: primarySlip?.fileUrl || undefined,
+        paymentAdviceFilename: primarySlip?.fileName || undefined,
+        paymentAdviceUrls: stagedSlips.map((s) => s.fileUrl),
         notes: payNotes,
       })
 
-      // Sync canonical record to shipment_documents table
-      if (stagedSlipUrl && stagedSlipName) {
-        savePaymentAdvice({
+      // Sync all slips to shipment_documents table
+      if (stagedSlips.length > 0) {
+        savePaymentAdvices({
           purchaseOrderId: payingPo.id,
-          fileName: stagedSlipName,
-          fileUrl: stagedSlipUrl,
+          advices: stagedSlips,
           uploadedBy: "Purchasing / Finance Officer",
-        }).catch((syncErr) => console.warn("Failed syncing PO installment advice to shipment_documents:", syncErr))
+        }).catch((syncErr) => console.warn("Failed syncing PO installment advices to shipment_documents:", syncErr))
       }
 
       const newDue = Number(Math.max(0, currentDue - numAmount).toFixed(2))
@@ -625,23 +637,37 @@ export default function PurchaseOrders() {
     }
   }
 
-  // Payment Advice Upload Handler
+  // Payment Advice Upload Handler (Allows up to 10 files)
   const handlePaymentAdviceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
 
+    const remainingSlots = 10 - paymentAdvices.length
+    if (remainingSlots <= 0) {
+      showToast("Limit Reached", "warning", "Maximum of 10 payment advice files allowed.")
+      return
+    }
+
+    const filesToUpload = files.slice(0, remainingSlots)
     try {
       setIsUploadingPaymentAdvice(true)
-      const res = await uploadFile(file, "purchase_orders")
-      const newAdvice: PurchaseOrderAttachment = {
-        id: `adv-${Date.now()}`,
-        name: res.originalName || file.name,
-        size: file.size,
-        url: res.url,
-        uploadedAt: new Date().toISOString(),
+      const uploadResults = await uploadFilesConcurrently(filesToUpload, "purchase_orders", () => {})
+      const newItems: PurchaseOrderAttachment[] = []
+      uploadResults.forEach((r, idx) => {
+        if (r.url) {
+          newItems.push({
+            id: `adv-${Date.now()}-${idx}`,
+            name: r.originalName || filesToUpload[idx]?.name || `Payment Advice ${paymentAdvices.length + idx + 1}`,
+            size: filesToUpload[idx]?.size || 102400,
+            url: r.url,
+            uploadedAt: new Date().toISOString(),
+          })
+        }
+      })
+      if (newItems.length > 0) {
+        setPaymentAdvices((prev) => [...prev, ...newItems].slice(0, 10))
+        showToast("Payment Slips Attached", "success", `${newItems.length} payment slip(s) uploaded successfully.`)
       }
-      setPaymentAdvice(newAdvice)
-      showToast("Payment Slip Attached", "success", `${file.name} uploaded successfully.`)
     } catch (err: any) {
       console.warn("Payment advice upload failed:", err)
       showToast("Upload Error", "warning", err.message || "Failed to upload payment advice file.")
@@ -773,7 +799,7 @@ export default function PurchaseOrders() {
       return
     }
 
-    if (paymentType === "Cash" && !paymentAdvice) {
+    if (paymentType === "Cash" && paymentAdvices.length === 0) {
       showToast("Payment Advice Required", "warning", "Payment Advice receipt is mandatory for Cash purchases. Please upload a receipt or slip before submitting.")
       return
     }
@@ -853,7 +879,8 @@ export default function PurchaseOrders() {
       currency: "ETB",
       status: isCredit ? "PAID" : status,
       statusColor: status === "PAID" ? "bg-emerald-500" : "bg-amber-500",
-      paymentAdviceAttachment: paymentAdvice,
+      paymentAdviceAttachment: paymentAdvices[0] || null,
+      paymentAdviceAttachments: paymentAdvices,
       attachments,
     }
 
@@ -862,14 +889,16 @@ export default function PurchaseOrders() {
       erp.addPurchaseOrder(newPo)
 
       // Sync payment advice and supporting documents to shipment_documents table
-      if (paymentAdvice?.url) {
-        savePaymentAdvice({
+      if (paymentAdvices.length > 0) {
+        savePaymentAdvices({
           purchaseOrderId: newPo.id,
-          fileName: paymentAdvice.name,
-          fileUrl: paymentAdvice.url,
-          fileSize: paymentAdvice.size,
+          advices: paymentAdvices.map((a) => ({
+            fileName: a.name,
+            fileUrl: a.url,
+            fileSize: a.size,
+          })),
           uploadedBy: "Purchasing Officer",
-        }).catch((err) => console.warn("Failed syncing PO payment advice to shipment_documents:", err))
+        }).catch((err) => console.warn("Failed syncing PO payment advices to shipment_documents:", err))
       }
       if (Array.isArray(attachments)) {
         for (const att of attachments) {
@@ -912,7 +941,6 @@ export default function PurchaseOrders() {
 
     if (!paidTo.trim()) {
       showToast("Missing Information", "warning", "Please enter Paid To.")
-      return
     }
 
     const numericAmount = Number(paidAmount)
@@ -921,7 +949,7 @@ export default function PurchaseOrders() {
       return
     }
 
-    if (paymentType === "Cash" && !paymentAdvice) {
+    if (paymentType === "Cash" && paymentAdvices.length === 0) {
       showToast("Payment Advice Required", "warning", "Payment Advice receipt is mandatory for Cash purchases. Please upload a receipt or slip before saving.")
       return
     }
@@ -999,19 +1027,22 @@ export default function PurchaseOrders() {
         accountEntries,
         amountInWords,
         status: isCredit ? (settlement === "Fully Settled" ? "PAID" : "PAID") : status,
-        paymentAdviceAttachment: paymentAdvice,
+        paymentAdviceAttachment: paymentAdvices[0] || null,
+        paymentAdviceAttachments: paymentAdvices,
         attachments,
       })
 
       // Sync payment advice and supporting documents to shipment_documents table
-      if (paymentAdvice?.url) {
-        savePaymentAdvice({
+      if (paymentAdvices.length > 0) {
+        savePaymentAdvices({
           purchaseOrderId: editingPo.id,
-          fileName: paymentAdvice.name,
-          fileUrl: paymentAdvice.url,
-          fileSize: paymentAdvice.size,
+          advices: paymentAdvices.map((a) => ({
+            fileName: a.name,
+            fileUrl: a.url,
+            fileSize: a.size,
+          })),
           uploadedBy: "Purchasing Officer",
-        }).catch((err) => console.warn("Failed syncing PO payment advice to shipment_documents:", err))
+        }).catch((err) => console.warn("Failed syncing PO payment advices to shipment_documents:", err))
       }
       if (Array.isArray(attachments)) {
         for (const att of attachments) {
@@ -1132,7 +1163,7 @@ export default function PurchaseOrders() {
             },
           ]}
           onReload={async () => {
-            await erp.reloadFromApi()
+            await erp.loadSalesData(true)
           }}
           isReloading={isLoading}
           reloadTooltip="Reload purchase orders from server"
@@ -1240,40 +1271,52 @@ export default function PurchaseOrders() {
 
                 {/* Payment Advice Status */}
                 <td style={{ width: `${colWidths.adviceStatus}px` }} className="py-4 px-4 text-center overflow-hidden">
-                  {po.paymentAdviceAttachment ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setPreviewUrl(po.paymentAdviceAttachment!.url)
-                        setPreviewName(po.paymentAdviceAttachment!.name)
-                      }}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200 transition-colors cursor-pointer"
-                      title="Preview Payment Advice"
-                    >
-                      <FileCheck className="size-3 text-emerald-700" /> Attached
-                    </button>
-                  ) : po.installmentPayments?.some((ip) => ip.paymentAdviceUrl) ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        const slip = po.installmentPayments?.find((ip) => ip.paymentAdviceUrl)
-                        if (slip?.paymentAdviceUrl) {
-                          setPreviewUrl(slip.paymentAdviceUrl)
-                          setPreviewName(slip.paymentAdviceFilename || "Payment Slip")
+                  {(() => {
+                    const allSlips: Array<{ name: string; url: string }> = []
+                    if (Array.isArray(po.paymentAdviceAttachments) && po.paymentAdviceAttachments.length > 0) {
+                      po.paymentAdviceAttachments.forEach((a) => {
+                        if (a?.url) allSlips.push({ name: a.name || "Payment Slip", url: a.url })
+                      })
+                    } else if (po.paymentAdviceAttachment?.url) {
+                      allSlips.push({ name: po.paymentAdviceAttachment.name || "Payment Slip", url: po.paymentAdviceAttachment.url })
+                    }
+                    if (Array.isArray(po.installmentPayments)) {
+                      po.installmentPayments.forEach((ip) => {
+                        if (ip.paymentAdviceUrl) {
+                          allSlips.push({ name: ip.paymentAdviceFilename || "Installment Slip", url: ip.paymentAdviceUrl })
                         }
-                      }}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200 transition-colors cursor-pointer"
-                      title="Preview Installment Payment Slip"
-                    >
-                      <FileCheck className="size-3 text-emerald-700" /> Slip ({po.installmentPayments.filter((ip) => ip.paymentAdviceUrl).length})
-                    </button>
-                  ) : (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-100 text-zinc-500 border border-zinc-200">
-                      None
-                    </span>
-                  )}
+                      })
+                    }
+
+                    if (allSlips.length === 0) {
+                      return (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-100 text-zinc-500 border border-zinc-200">
+                          None
+                        </span>
+                      )
+                    }
+
+                    return (
+                      <div className="flex flex-wrap items-center justify-center gap-1">
+                        {allSlips.map((slip, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setPreviewUrl(slip.url)
+                              setPreviewName(slip.name)
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200 transition-colors cursor-pointer"
+                            title={`Preview ${slip.name}`}
+                          >
+                            <FileCheck className="size-3 text-emerald-700" />
+                            {allSlips.length === 1 ? "Attached" : `Slip ${idx + 1}`}
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </td>
 
                 {/* Supporting Documents Status */}
@@ -1488,15 +1531,49 @@ export default function PurchaseOrders() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-zinc-700 mb-1">
-                    Proof of Payment / Bank Slip (Optional)
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => setPayAdviceFile(e.target.files?.[0] || null)}
-                    className="w-full text-xs text-zinc-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-zinc-100 file:text-zinc-800 hover:file:bg-zinc-200 cursor-pointer"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-zinc-700">
+                      Proof of Payment / Bank Slip(s) (Optional)
+                    </label>
+                    <span className="text-[10px] font-bold text-zinc-500">
+                      {payAdviceFiles.length} / 10 attached
+                    </span>
+                  </div>
+                  {payAdviceFiles.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {payAdviceFiles.map((file, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-200"
+                        >
+                          <FileCheck className="size-3 text-emerald-600" />
+                          <span className="max-w-[150px] truncate">{file.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => setPayAdviceFiles((prev) => prev.filter((_, i) => i !== idx))}
+                            className="text-rose-500 hover:text-rose-700 ml-0.5 cursor-pointer"
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {payAdviceFiles.length < 10 && (
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,.pdf"
+                      onChange={(e) => {
+                        const newFiles = Array.from(e.target.files || [])
+                        if (newFiles.length > 0) {
+                          setPayAdviceFiles((prev) => [...prev, ...newFiles].slice(0, 10))
+                        }
+                        e.target.value = ""
+                      }}
+                      className="w-full text-xs text-zinc-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-zinc-100 file:text-zinc-800 hover:file:bg-zinc-200 cursor-pointer"
+                    />
+                  )}
                 </div>
 
                 <div>
@@ -1748,15 +1825,15 @@ export default function PurchaseOrders() {
                   </div>
 
                   <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
-                    {/* Payment Advice Dropzone */}
+                    {/* Payment Advice Dropzone (Up to 10 Attachments) */}
                     <div className="p-3 rounded-xl border border-zinc-200 bg-white shadow-2xs space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
                           <FileCheck className="size-3.5 text-emerald-600" /> Payment Advice Receipt {paymentType === "Cash" && <span className="text-rose-600">*</span>}
                         </span>
-                        {paymentAdvice ? (
+                        {paymentAdvices.length > 0 ? (
                           <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                            Attached
+                            Attached ({paymentAdvices.length} / 10)
                           </span>
                         ) : paymentType === "Cash" ? (
                           <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
@@ -1769,40 +1846,47 @@ export default function PurchaseOrders() {
                         )}
                       </div>
 
-                      {paymentAdvice ? (
-                        <div className="flex items-center justify-between p-2.5 bg-zinc-50 rounded-xl border border-zinc-200">
-                          <div className="truncate pr-2">
-                            <div className="text-xs font-bold text-zinc-900 truncate">{paymentAdvice.name}</div>
-                            <div className="text-[10px] text-zinc-500 font-mono">
-                              {(paymentAdvice.size / 1024).toFixed(1)} KB
+                      {paymentAdvices.length > 0 && (
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                          {paymentAdvices.map((adv, idx) => (
+                            <div key={adv.id || idx} className="flex items-center justify-between p-2 bg-zinc-50 rounded-xl border border-zinc-200">
+                              <div className="truncate pr-2">
+                                <div className="text-xs font-bold text-zinc-900 truncate">{adv.name}</div>
+                                <div className="text-[10px] text-zinc-500 font-mono">
+                                  {adv.size ? `${(adv.size / 1024).toFixed(1)} KB` : "Uploaded"}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPreviewUrl(adv.url)
+                                    setPreviewName(adv.name)
+                                  }}
+                                  className="p-1.5 rounded-lg text-emerald-700 hover:bg-emerald-100 transition-colors cursor-pointer"
+                                  title="Preview"
+                                >
+                                  <Eye className="size-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPaymentAdvices((prev) => prev.filter((_, i) => i !== idx))}
+                                  className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-100 transition-colors cursor-pointer"
+                                  title="Remove"
+                                >
+                                  <X className="size-3.5" />
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPreviewUrl(paymentAdvice.url)
-                                setPreviewName(paymentAdvice.name)
-                              }}
-                              className="p-1.5 rounded-lg text-emerald-700 hover:bg-emerald-100 transition-colors cursor-pointer"
-                              title="Preview"
-                            >
-                              <Eye className="size-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setPaymentAdvice(null)}
-                              className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-100 transition-colors cursor-pointer"
-                              title="Remove"
-                            >
-                              <X className="size-3.5" />
-                            </button>
-                          </div>
+                          ))}
                         </div>
-                      ) : (
+                      )}
+
+                      {paymentAdvices.length < 10 && (
                         <div className="border border-dashed border-zinc-300 hover:border-zinc-500 rounded-xl p-3 text-center transition-colors bg-zinc-50/50">
                           <input
                             type="file"
+                            multiple
                             id="create-payment-advice-upload"
                             accept="image/*,.pdf,.doc,.docx"
                             onChange={handlePaymentAdviceUpload}
@@ -1813,13 +1897,13 @@ export default function PurchaseOrders() {
                             className="cursor-pointer flex flex-col items-center justify-center gap-1"
                           >
                             <div className="size-7 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600">
-                              <Upload className="size-3.5" />
+                              {isUploadingPaymentAdvice ? <LoadingDots size="sm" color="bg-zinc-600" /> : <Upload className="size-3.5" />}
                             </div>
                             <span className="text-xs font-bold text-zinc-800">
-                              Upload Bank Deposit Slip / Cheque Advice
+                              {isUploadingPaymentAdvice ? "Uploading Slips..." : paymentAdvices.length > 0 ? `Attach More Slips (${paymentAdvices.length} / 10)` : "Upload Bank Deposit Slip / Cheque Advice"}
                             </span>
                             <span className="text-[10px] text-zinc-400">
-                              PDF, PNG, JPG up to 15MB
+                              PDF, PNG, JPG up to 10 files (15MB each)
                             </span>
                           </label>
                         </div>
@@ -2305,15 +2389,15 @@ export default function PurchaseOrders() {
                   </div>
 
                   <div className="grid gap-3 grid-cols-1 md:grid-cols-2">
-                    {/* Payment Advice Dropzone */}
+                    {/* Payment Advice Dropzone (Up to 10 Attachments) */}
                     <div className="p-3 rounded-xl border border-zinc-200 bg-white shadow-2xs space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
                           <FileCheck className="size-3.5 text-emerald-600" /> Payment Advice Receipt {paymentType === "Cash" && <span className="text-rose-600">*</span>}
                         </span>
-                        {paymentAdvice ? (
+                        {paymentAdvices.length > 0 ? (
                           <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                            Attached
+                            Attached ({paymentAdvices.length} / 10)
                           </span>
                         ) : paymentType === "Cash" ? (
                           <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
@@ -2326,40 +2410,47 @@ export default function PurchaseOrders() {
                         )}
                       </div>
 
-                      {paymentAdvice ? (
-                        <div className="flex items-center justify-between p-2.5 bg-zinc-50 rounded-xl border border-zinc-200">
-                          <div className="truncate pr-2">
-                            <div className="text-xs font-bold text-zinc-900 truncate">{paymentAdvice.name}</div>
-                            <div className="text-[10px] text-zinc-500 font-mono">
-                              {(paymentAdvice.size / 1024).toFixed(1)} KB
+                      {paymentAdvices.length > 0 && (
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                          {paymentAdvices.map((adv, idx) => (
+                            <div key={adv.id || idx} className="flex items-center justify-between p-2 bg-zinc-50 rounded-xl border border-zinc-200">
+                              <div className="truncate pr-2">
+                                <div className="text-xs font-bold text-zinc-900 truncate">{adv.name}</div>
+                                <div className="text-[10px] text-zinc-500 font-mono">
+                                  {adv.size ? `${(adv.size / 1024).toFixed(1)} KB` : "Uploaded"}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPreviewUrl(adv.url)
+                                    setPreviewName(adv.name)
+                                  }}
+                                  className="p-1.5 rounded-lg text-emerald-700 hover:bg-emerald-100 transition-colors cursor-pointer"
+                                  title="Preview"
+                                >
+                                  <Eye className="size-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPaymentAdvices((prev) => prev.filter((_, i) => i !== idx))}
+                                  className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-100 transition-colors cursor-pointer"
+                                  title="Remove"
+                                >
+                                  <X className="size-3.5" />
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPreviewUrl(paymentAdvice.url)
-                                setPreviewName(paymentAdvice.name)
-                              }}
-                              className="p-1.5 rounded-lg text-emerald-700 hover:bg-emerald-100 transition-colors cursor-pointer"
-                              title="Preview"
-                            >
-                              <Eye className="size-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setPaymentAdvice(null)}
-                              className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-100 transition-colors cursor-pointer"
-                              title="Remove"
-                            >
-                              <X className="size-3.5" />
-                            </button>
-                          </div>
+                          ))}
                         </div>
-                      ) : (
+                      )}
+
+                      {paymentAdvices.length < 10 && (
                         <div className="border border-dashed border-zinc-300 hover:border-zinc-500 rounded-xl p-3 text-center transition-colors bg-zinc-50/50">
                           <input
                             type="file"
+                            multiple
                             id="edit-payment-advice-upload"
                             accept="image/*,.pdf,.doc,.docx"
                             onChange={handlePaymentAdviceUpload}
@@ -2370,13 +2461,13 @@ export default function PurchaseOrders() {
                             className="cursor-pointer flex flex-col items-center justify-center gap-1"
                           >
                             <div className="size-7 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-600">
-                              <Upload className="size-3.5" />
+                              {isUploadingPaymentAdvice ? <LoadingDots size="sm" color="bg-zinc-600" /> : <Upload className="size-3.5" />}
                             </div>
                             <span className="text-xs font-bold text-zinc-800">
-                              Upload Bank Deposit Slip / Cheque Advice
+                              {isUploadingPaymentAdvice ? "Uploading Slips..." : paymentAdvices.length > 0 ? `Attach More Slips (${paymentAdvices.length} / 10)` : "Upload Bank Deposit Slip / Cheque Advice"}
                             </span>
                             <span className="text-[10px] text-zinc-400">
-                              PDF, PNG, JPG up to 15MB
+                              PDF, PNG, JPG up to 10 files (15MB each)
                             </span>
                           </label>
                         </div>

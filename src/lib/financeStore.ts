@@ -1793,7 +1793,7 @@ class FinanceStore {
     }
   }
 
-  private notify(persist = true) {
+  private notify(persist = false) {
     if (persist) {
       if (this._persistDebounceTimer) {
         clearTimeout(this._persistDebounceTimer)
@@ -2398,7 +2398,9 @@ class FinanceStore {
       ...this.companySettings,
       ...partial,
     }
-    this.saveToApi()
+    void updateResource("company_settings", "default", { id: "default", ...this.companySettings }).catch((err) =>
+      console.warn("Failed persisting company settings:", err)
+    )
     this.listeners.forEach((l) => l())
   }
 
@@ -3577,7 +3579,9 @@ class FinanceStore {
       fiscal_lock_date: lockedUntilDate,
       fiscal_lock_reason: reason || `Accounting period locked through ${lockedUntilDate}`,
     }
-    this.saveToApi()
+    void updateResource("company_settings", "default", { id: "default", ...this.companySettings }).catch((err) =>
+      console.warn("Failed persisting period lock:", err)
+    )
     this.notify()
   }
 
@@ -3587,7 +3591,9 @@ class FinanceStore {
       fiscal_lock_date: undefined,
       fiscal_lock_reason: undefined,
     }
-    this.saveToApi()
+    void updateResource("company_settings", "default", { id: "default", ...this.companySettings }).catch((err) =>
+      console.warn("Failed persisting period unlock:", err)
+    )
     this.notify()
   }
 
@@ -4552,7 +4558,12 @@ class FinanceStore {
       return inv
     })
     if (updated) {
-      persistResources([{ resource: "invoices", items: this.invoices }])
+      const invToPersist: Invoice = updated
+      void updateResource("invoices", invToPersist.id || id, invToPersist).catch(() => {
+        void persistResources([{ resource: "invoices", items: this.invoices }]).catch((err) =>
+          console.warn("Fallback persist invoices warning:", err)
+        )
+      })
       this.notify()
     }
     return updated
@@ -4709,9 +4720,11 @@ class FinanceStore {
       this.invoices.unshift(invObj)
     }
 
-    void persistResources([{ resource: "invoices", items: this.invoices }]).catch((err) =>
-      console.warn("[FinanceStore] Failed to persist purchase invoice:", err)
-    )
+    if (existingIdx >= 0) {
+      void updateResource("invoices", invId, invObj).catch(() => {})
+    } else {
+      void createResource("invoices", invObj).catch(() => {})
+    }
     this.notify(false)
     return invObj
   }
@@ -4983,10 +4996,10 @@ class FinanceStore {
       }
     }
 
-    persistResources([
-      { resource: "payments", items: this.payments },
-      { resource: "invoices", items: this.invoices },
-    ])
+    void createResource("payments", newPayment).catch((err) => console.warn("Notice: persist payment:", err))
+    if (updatedInv) {
+      void updateResource("invoices", updatedInv.id, updatedInv).catch((err) => console.warn("Notice: update invoice:", err))
+    }
     this.notify()
     return { payment: newPayment, invoice: updatedInv }
   }
@@ -5009,7 +5022,7 @@ class FinanceStore {
       net_disbursed: netDisbursed,
     }
     this.expenses = [newExp, ...this.expenses]
-    persistResources([{ resource: "expenses", items: this.expenses }])
+    void createResource("expenses", newExp).catch((err) => console.warn("Notice: persist expense:", err))
     this.notify()
     return newExp
   }
@@ -5081,7 +5094,10 @@ class FinanceStore {
       }
       return e
     })
-    persistResources([{ resource: "expenses", items: this.expenses }])
+    const approvedRec = this.expenses.find((e) => e.id === id)
+    if (approvedRec) {
+      void updateResource("expenses", id, approvedRec).catch((err) => console.warn("Notice: update expense:", err))
+    }
     this.notify()
   }
 
@@ -5090,11 +5106,8 @@ class FinanceStore {
     this.entries = this.entries.filter((e) => e.id !== jeId && e.source_id !== id)
     this.lines = this.lines.filter((l) => l.journal_entry_id !== jeId)
     this.expenses = this.expenses.map((e) => (e.id === id ? { ...e, status: "REJECTED" as const } : e))
-    persistResources([
-      { resource: "expenses", items: this.expenses },
-      { resource: "journal_entries", items: this.entries },
-      { resource: "journal_entry_lines", items: this.lines },
-    ])
+    void updateResource("expenses", id, { status: "REJECTED" }).catch((err) => console.warn("Notice: update expense:", err))
+    void deleteResource("journal_entries", jeId).catch((err) => console.warn("Notice: delete expense JE:", err))
     this.notify()
   }
 

@@ -24,21 +24,11 @@ export interface DocumentInfo {
 }
 
 /**
- * Reads a browser File object as a Base64 data URL with metadata.
+ * DEPRECATED: Files must be uploaded directly to cloud storage (Cloudinary)
+ * and persisted as clean URLs. In-memory Base64 data URLs are strictly banned.
  */
-export function readFileAsDataUrl(file: File): Promise<{ fileName: string; fileUrl: string; fileSize: number }> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      resolve({
-        fileName: file.name,
-        fileUrl: (reader.result as string) || "",
-        fileSize: file.size || 102400,
-      })
-    }
-    reader.onerror = (err) => reject(err)
-    reader.readAsDataURL(file)
-  })
+export function readFileAsDataUrl(_file: File): Promise<{ fileName: string; fileUrl: string; fileSize: number }> {
+  throw new Error("Base64 data URLs are strictly prohibited. Files must be uploaded to cloud storage.")
 }
 
 /**
@@ -94,6 +84,10 @@ export async function uploadShipmentDoc(doc: Partial<ShipmentDocAttachment>): Pr
     uploaded_by: doc.uploaded_by || "System User",
   }
 
+  if (payload.file_url && typeof payload.file_url === "string" && payload.file_url.startsWith("data:")) {
+    throw new Error("Base64 data URLs are strictly prohibited. Files must be uploaded to storage.")
+  }
+
   const res = await fetch(`${API_BASE}/api/shipment-documents`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -137,6 +131,7 @@ export async function fetchTradeAndAdviceDocs(params: {
 }): Promise<{
   tradeLicense: DocumentInfo | null
   paymentAdvice: DocumentInfo | null
+  paymentAdvices: DocumentInfo[]
   allDocs: ShipmentDocAttachment[]
 }> {
   const { customerId, customerName, salesOrderId, salesIssueId, invoiceId, fsNo, purchaseOrderId, voucherNo } = params
@@ -209,22 +204,31 @@ export async function fetchTradeAndAdviceDocs(params: {
         )
 
         if (matchedPo) {
-          // A. PO payment advice attachment
-          if (matchedPo.paymentAdviceAttachment?.url) {
-            const key = matchedPo.paymentAdviceAttachment.url.trim()
-            if (!seenUrls.has(key)) {
-              seenUrls.add(key)
-              attachedDocs.push({
-                id: matchedPo.paymentAdviceAttachment.id || `po-adv-${matchedPo.id}`,
-                record_id: matchedPo.id,
-                record_type: "purchase_order",
-                document_type: "Payment Advice",
-                file_name: matchedPo.paymentAdviceAttachment.name || "Payment Advice Slip",
-                file_url: matchedPo.paymentAdviceAttachment.url,
-                file_size: matchedPo.paymentAdviceAttachment.size || 102400,
-                uploaded_at: matchedPo.paymentAdviceAttachment.uploadedAt || matchedPo.date || new Date().toISOString(),
-                uploaded_by: "Procurement Officer",
-              })
+          // A. PO payment advice attachment(s)
+          const poAdvices: Array<{ id?: string; name: string; url: string; size?: number; uploadedAt?: string }> = []
+          if (Array.isArray(matchedPo.paymentAdviceAttachments)) {
+            poAdvices.push(...matchedPo.paymentAdviceAttachments)
+          } else if (matchedPo.paymentAdviceAttachment?.url) {
+            poAdvices.push(matchedPo.paymentAdviceAttachment)
+          }
+          for (let pIdx = 0; pIdx < poAdvices.length; pIdx++) {
+            const poAdv = poAdvices[pIdx]
+            if (poAdv?.url) {
+              const key = poAdv.url.trim()
+              if (!seenUrls.has(key)) {
+                seenUrls.add(key)
+                attachedDocs.push({
+                  id: poAdv.id || `po-adv-${matchedPo.id}-${pIdx + 1}`,
+                  record_id: matchedPo.id,
+                  record_type: "purchase_order",
+                  document_type: "Payment Advice",
+                  file_name: poAdv.name || "Payment Advice Slip",
+                  file_url: poAdv.url,
+                  file_size: poAdv.size || 102400,
+                  uploaded_at: poAdv.uploadedAt || matchedPo.date || new Date().toISOString(),
+                  uploaded_by: "Procurement Officer",
+                })
+              }
             }
           }
 
@@ -283,23 +287,21 @@ export async function fetchTradeAndAdviceDocs(params: {
   }
 
   // 1. Resolve Payment Advice (Order/Issue/Invoice specific)
-  let paymentAdvice: DocumentInfo | null = null
-  const adviceDoc = attachedDocs.find(
+  const adviceDocs = attachedDocs.filter(
     (d) =>
       d.document_type === "Payment Advice" ||
       d.document_type?.toLowerCase().includes("advice") ||
       d.file_name?.toLowerCase().includes("advice")
   )
-  if (adviceDoc && adviceDoc.file_url) {
-    paymentAdvice = {
-      id: adviceDoc.id,
-      name: adviceDoc.file_name,
-      url: adviceDoc.file_url,
-      uploadedAt: adviceDoc.uploaded_at,
-      uploadedBy: adviceDoc.uploaded_by,
-      fileSize: adviceDoc.file_size,
-    }
-  }
+  const paymentAdvices: DocumentInfo[] = adviceDocs.map((d) => ({
+    id: d.id,
+    name: d.file_name,
+    url: d.file_url,
+    uploadedAt: d.uploaded_at,
+    uploadedBy: d.uploaded_by,
+    fileSize: d.file_size,
+  }))
+  const paymentAdvice: DocumentInfo | null = paymentAdvices[0] || null
 
   // 2. Resolve Trade License / Bank Permit (Order/Issue specific or from Customer Registry)
   let tradeLicense: DocumentInfo | null = null
@@ -344,6 +346,7 @@ export async function fetchTradeAndAdviceDocs(params: {
   return {
     tradeLicense,
     paymentAdvice,
+    paymentAdvices,
     allDocs: attachedDocs,
   }
 }
@@ -363,7 +366,7 @@ export async function saveTradeLicense(params: {
   documentType?: string
 }): Promise<void> {
   const { customerId, customerName, salesOrderId, salesIssueId, fileName, fileUrl, fileSize, uploadedBy, documentType } = params
-  if (!fileName || !fileUrl) return
+  if (!fileName || !fileUrl || fileUrl.startsWith("data:") || fileUrl.startsWith("blob:")) return
 
   const now = new Date().toISOString()
   const user = uploadedBy || "Sales Officer"
@@ -429,7 +432,7 @@ export async function savePaymentAdvice(params: {
   uploadedBy?: string
 }): Promise<void> {
   const { salesOrderId, salesIssueId, invoiceId, purchaseOrderId, fsNo, fileName, fileUrl, fileSize, uploadedBy } = params
-  if (!fileName || !fileUrl) return
+  if (!fileName || !fileUrl || fileUrl.startsWith("data:") || fileUrl.startsWith("blob:")) return
 
   const now = new Date().toISOString()
   const user = uploadedBy || "Finance / Sales Officer"
@@ -462,6 +465,38 @@ export async function savePaymentAdvice(params: {
 }
 
 /**
+ * Persists multiple Payment Advice slips across records (up to 10).
+ */
+export async function savePaymentAdvices(params: {
+  salesOrderId?: string
+  salesIssueId?: string
+  invoiceId?: string
+  purchaseOrderId?: string
+  fsNo?: string
+  advices: Array<{ fileName: string; fileUrl: string; fileSize?: number }>
+  uploadedBy?: string
+}): Promise<void> {
+  const { salesOrderId, salesIssueId, invoiceId, purchaseOrderId, fsNo, advices, uploadedBy } = params
+  if (!Array.isArray(advices) || advices.length === 0) return
+
+  for (const item of advices) {
+    if (item.fileUrl && item.fileName) {
+      await savePaymentAdvice({
+        salesOrderId,
+        salesIssueId,
+        invoiceId,
+        purchaseOrderId,
+        fsNo,
+        fileName: item.fileName,
+        fileUrl: item.fileUrl,
+        fileSize: item.fileSize,
+        uploadedBy,
+      })
+    }
+  }
+}
+
+/**
  * Persists a supporting document for a Purchase Order to shipment_documents.
  */
 export async function savePurchaseOrderDocument(params: {
@@ -473,7 +508,7 @@ export async function savePurchaseOrderDocument(params: {
   uploadedBy?: string
 }): Promise<void> {
   const { purchaseOrderId, fileName, fileUrl, fileSize, documentType = "Supporting Document", uploadedBy } = params
-  if (!purchaseOrderId || !fileName || !fileUrl) return
+  if (!purchaseOrderId || !fileName || !fileUrl || fileUrl.startsWith("data:") || fileUrl.startsWith("blob:")) return
 
   try {
     await uploadShipmentDoc({
@@ -502,7 +537,7 @@ export async function saveProcessingContractDocument(params: {
   uploadedBy?: string
 }): Promise<void> {
   const { orderId, fileName, fileUrl, fileSize, uploadedBy } = params
-  if (!orderId || !fileName || !fileUrl) return
+  if (!orderId || !fileName || !fileUrl || fileUrl.startsWith("data:") || fileUrl.startsWith("blob:")) return
 
   try {
     await uploadShipmentDoc({

@@ -47,6 +47,10 @@ export async function saveShipmentDoc(input) {
     updated_at: new Date().toISOString(),
   }
 
+  if (doc.file_url && typeof doc.file_url === "string" && doc.file_url.startsWith("data:")) {
+    return { status: 400, body: { error: "Base64 data URLs are prohibited. Files must be uploaded to cloud storage." } }
+  }
+
   try {
     const resource = getResource("shipment_documents")
     const res = await drizzleCreateRow({ resource, body: doc })

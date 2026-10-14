@@ -6,8 +6,8 @@ export const salesRouter = Router()
 
 // RBAC Role Guard Helpers
 const requireProcessingMutation = authorizeRoles("superadmin", "inventory", "sales")
-const requireShipmentDocAccess = authorizeRoles("superadmin", "hkc_docs")
-const requireShipmentDocMutation = authorizeRoles("superadmin", "hkc_docs")
+const requireShipmentDocAccess = authorizeRoles("superadmin", "sales", "finance", "inventory", "hkc_docs")
+const requireShipmentDocMutation = authorizeRoles("superadmin", "sales", "finance", "inventory", "hkc_docs")
 const requireSalesIssueMutation = authorizeRoles("superadmin", "sales", "inventory")
 const requireSuperAdmin = authorizeRoles("superadmin")
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from "react"
 import { useSearchParams } from "react-router-dom"
-import { FileText, Plus, Send, Trash2, X, Download, Upload, CheckCircle2, Receipt, ArrowRight, Pencil, AlertCircle, Lock, ExternalLink } from "lucide-react"
+import { FileText, Plus, Send, Trash2, X, Download, Upload, CheckCircle2, Receipt, ArrowRight, Pencil, AlertCircle, Lock, ExternalLink, Eye, FileCheck } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -26,6 +26,7 @@ import { resolveCommodityAccounts } from "@/lib/commodityAccounts"
 import {
   saveTradeLicense,
   savePaymentAdvice,
+  savePaymentAdvices,
   fetchTradeAndAdviceDocs,
 } from "@/lib/tradeDocumentService"
 import { uploadFile, validateFileForUpload } from "@/lib/fileUpload"
@@ -309,8 +310,7 @@ export default function SalesIssued() {
   }
 
   // Staged documentation & payment advice
-  const [stagedPaymentAdviceName, setStagedPaymentAdviceName] = useState("")
-  const [stagedPaymentAdviceUrl, setStagedPaymentAdviceUrl] = useState("")
+  const [stagedPaymentAdvices, setStagedPaymentAdvices] = useState<Array<{ id?: string; name: string; url: string; size?: number }>>([])
   const [stagedTradePaperName, setStagedTradePaperName] = useState("")
   const [stagedTradePaperUrl, setStagedTradePaperUrl] = useState("")
   const [isDocsLoading, setIsDocsLoading] = useState(false)
@@ -323,7 +323,8 @@ export default function SalesIssued() {
   const [payDate, setPayDate] = useState(getLocalDateString())
   const [payBank, setPayBank] = useState("1000-02-26")
   const [payRef, setPayRef] = useState("")
-  const [payAdviceFile, setPayAdviceFile] = useState<File | null>(null)
+  const [payAdviceFiles, setPayAdviceFiles] = useState<File[]>([])
+  const payAdviceFile = payAdviceFiles[0] || null
   const [payNotes, setPayNotes] = useState("")
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false)
   const [isUploadingAdvice, setIsUploadingAdvice] = useState(false)
@@ -498,18 +499,22 @@ export default function SalesIssued() {
         setStagedTradePaperUrl("")
       }
 
-      if (resolved.paymentAdvice) {
-        setStagedPaymentAdviceName(resolved.paymentAdvice.name)
-        setStagedPaymentAdviceUrl(resolved.paymentAdvice.url)
+      if (resolved.paymentAdvices && resolved.paymentAdvices.length > 0) {
+        setStagedPaymentAdvices(
+          resolved.paymentAdvices.map((a) => ({
+            id: a.id,
+            name: a.name,
+            url: a.url,
+            size: a.fileSize,
+          }))
+        )
       } else {
-        setStagedPaymentAdviceName("")
-        setStagedPaymentAdviceUrl("")
+        setStagedPaymentAdvices([])
       }
     } catch {
       setStagedTradePaperName("")
       setStagedTradePaperUrl("")
-      setStagedPaymentAdviceName("")
-      setStagedPaymentAdviceUrl("")
+      setStagedPaymentAdvices([])
     } finally {
       setIsDocsLoading(false)
     }
@@ -1033,9 +1038,17 @@ export default function SalesIssued() {
             setStagedTradePaperName(res.tradeLicense.name)
             setStagedTradePaperUrl(res.tradeLicense.url)
           }
-          if (res.paymentAdvice) {
-            setStagedPaymentAdviceName(res.paymentAdvice.name)
-            setStagedPaymentAdviceUrl(res.paymentAdvice.url)
+          if (res.paymentAdvices && res.paymentAdvices.length > 0) {
+            setStagedPaymentAdvices(
+              res.paymentAdvices.map((a) => ({
+                id: a.id,
+                name: a.name,
+                url: a.url,
+                size: a.fileSize,
+              }))
+            )
+          } else {
+            setStagedPaymentAdvices([])
           }
         })
         .catch(() => {})
@@ -1275,19 +1288,23 @@ export default function SalesIssued() {
             setStagedTradePaperName("")
             setStagedTradePaperUrl("")
           }
-          if (res.paymentAdvice) {
-            setStagedPaymentAdviceName(res.paymentAdvice.name)
-            setStagedPaymentAdviceUrl(res.paymentAdvice.url)
+          if (res.paymentAdvices && res.paymentAdvices.length > 0) {
+            setStagedPaymentAdvices(
+              res.paymentAdvices.map((a) => ({
+                id: a.id,
+                name: a.name,
+                url: a.url,
+                size: a.fileSize,
+              }))
+            )
           } else {
-            setStagedPaymentAdviceName("")
-            setStagedPaymentAdviceUrl("")
+            setStagedPaymentAdvices([])
           }
         })
         .catch(() => {
           setStagedTradePaperName("")
           setStagedTradePaperUrl("")
-          setStagedPaymentAdviceName("")
-          setStagedPaymentAdviceUrl("")
+          setStagedPaymentAdvices([])
         })
         .finally(() => setIsDocsLoading(false))
 
@@ -1354,7 +1371,7 @@ export default function SalesIssued() {
     setPayDate(getLocalDateString())
     setPayBank("1000-02-26")
     setPayRef(`DEP-${Date.now().toString().slice(-4)}`)
-    setPayAdviceFile(null)
+    setPayAdviceFiles([])
     setPayNotes("")
   }
 
@@ -1377,40 +1394,48 @@ export default function SalesIssued() {
       return
     }
 
-    if (!payAdviceFile) {
-      showToast("Payment Advice Required", "warning", "Payment Advice / Bank Deposit Slip must be attached before recording an installment payment.")
+    if (payAdviceFiles.length === 0) {
+      showToast("Payment Advice Required", "warning", "At least one Payment Advice / Bank Deposit Slip must be attached before recording an installment payment.")
       return
     }
 
     setIsSubmittingPayment(true)
     try {
-      let stagedSlipUrl = ""
-      let stagedSlipName = ""
-      if (payAdviceFile) {
+      const uploadedSlips: Array<{ name: string; url: string; size?: number }> = []
+      for (const file of payAdviceFiles) {
         try {
-          const uploadRes = await uploadFile(payAdviceFile, "sales_issued")
-          stagedSlipName = uploadRes.originalName
-          stagedSlipUrl = uploadRes.url
+          const uploadRes = await uploadFile(file, "sales_issued")
+          if (uploadRes.url.startsWith("data:")) {
+            throw new Error("Base64 upload rejected. File must be hosted.")
+          }
+          uploadedSlips.push({
+            name: uploadRes.originalName || file.name,
+            url: uploadRes.url,
+            size: uploadRes.size,
+          })
         } catch (uploadErr: any) {
           showToast("Upload Failed", "warning", uploadErr.message || "Failed to upload payment advice receipt. Please retry.")
           setIsSubmittingPayment(false)
           return
         }
+      }
 
-        const linkedSoId = (payingIssue as any).sales_order_id || (payingIssue.reference_no?.startsWith("SO-") ? payingIssue.reference_no : undefined)
-        try {
-          await savePaymentAdvice({
-            salesIssueId: payingIssue.id,
-            salesOrderId: linkedSoId || payingIssue.reference_no.trim() || undefined,
-            fsNo: payingIssue.fs_no.trim(),
-            invoiceId: `INV-SI-${payingIssue.id}`,
-            fileName: stagedSlipName,
-            fileUrl: stagedSlipUrl,
-            uploadedBy: "Cashier",
-          })
-        } catch (err) {
-          console.warn("Advice upload note:", err)
-        }
+      const linkedSoId = (payingIssue as any).sales_order_id || (payingIssue.reference_no?.startsWith("SO-") ? payingIssue.reference_no : undefined)
+      try {
+        await savePaymentAdvices({
+          salesIssueId: payingIssue.id,
+          salesOrderId: linkedSoId || payingIssue.reference_no.trim() || undefined,
+          fsNo: payingIssue.fs_no.trim(),
+          invoiceId: `INV-SI-${payingIssue.id}`,
+          advices: uploadedSlips.map((s) => ({
+            fileName: s.name,
+            fileUrl: s.url,
+            fileSize: s.size,
+          })),
+          uploadedBy: "Cashier",
+        })
+      } catch (err) {
+        console.warn("Advice upload note:", err)
       }
 
       const resolvedSoId = (payingIssue as any).sales_order_id || (payingIssue.reference_no?.startsWith("SO-") ? payingIssue.reference_no : undefined)
@@ -1429,8 +1454,8 @@ export default function SalesIssued() {
         method: "Bank Deposit",
         bank_account_code: payBank,
         reference: payRef || `DEP-${Date.now().toString().slice(-4)}`,
-        payment_advice_url: stagedSlipUrl || undefined,
-        payment_advice_filename: stagedSlipName || undefined,
+        payment_advice_url: uploadedSlips[0]?.url || undefined,
+        payment_advice_filename: uploadedSlips[0]?.name || undefined,
         notes: payNotes,
         direction: "Received",
       })
@@ -1825,7 +1850,7 @@ export default function SalesIssued() {
       }
     }
 
-    if (paymentType === "Cash" && !isProcessingService && (!stagedPaymentAdviceUrl || !stagedPaymentAdviceName)) {
+    if (paymentType === "Cash" && !isProcessingService && stagedPaymentAdvices.length === 0) {
       errors.paymentAdvice = "Payment Advice (deposit receipt / bank slip) is mandatory for Cash sales issues."
     }
 
@@ -2000,15 +2025,18 @@ export default function SalesIssued() {
           }
         }
 
-        if (issueId && stagedPaymentAdviceName && stagedPaymentAdviceUrl) {
+        if (issueId && stagedPaymentAdvices.length > 0) {
           try {
-            await savePaymentAdvice({
+            await savePaymentAdvices({
               salesIssueId: issueId,
               salesOrderId: resolvedSoId || referenceNo.trim() || undefined,
               fsNo: fsNo.trim(),
               invoiceId: `INV-SI-${issueId}`,
-              fileName: stagedPaymentAdviceName,
-              fileUrl: stagedPaymentAdviceUrl,
+              advices: stagedPaymentAdvices.map((a) => ({
+                fileName: a.name,
+                fileUrl: a.url,
+                fileSize: a.size,
+              })),
               uploadedBy: "Sales Officer",
             })
           } catch (docErr) {
@@ -2037,8 +2065,7 @@ export default function SalesIssued() {
               if (resolvedSoId) {
                 erp.updateSalesOrderStage(resolvedSoId, "Shipped")
               }
-              await erp.reloadFromApi()
-              await financeStore.reloadFromApi()
+              await Promise.all([erp.loadInventoryData(true), erp.loadSalesData(true), financeStore.loadFromApi(true)])
             } catch (reloadErr) {
               console.warn("Background sync warning after post:", reloadErr)
             }
@@ -2053,8 +2080,7 @@ export default function SalesIssued() {
             erp.updateSalesOrderStage(resolvedSoId, "Shipped")
           }
           try {
-            await erp.reloadFromApi()
-            await financeStore.reloadFromApi()
+            await Promise.all([erp.loadSalesData(true), financeStore.loadFromApi(true)])
           } catch (reloadErr) {
             console.warn("Background sync warning after edit save:", reloadErr)
           }
@@ -2110,8 +2136,7 @@ export default function SalesIssued() {
           })
 
           showToast("Sales issue posted", "success", `${issue.fs_no || issue.id} posted, inventory stock reduced, and linked Sales Orders fulfilled.`)
-          await erp.reloadFromApi()
-          await financeStore.reloadFromApi()
+          await Promise.all([erp.loadInventoryData(true), erp.loadSalesData(true), financeStore.loadFromApi(true)])
           await load()
         } catch (err) {
           showToast("Posting failed", "warning", err instanceof Error ? err.message : "Could not post sales issue.")
@@ -2920,19 +2945,22 @@ export default function SalesIssued() {
                       </div>
 
                       {/* Payment Advice Dropzone - Shown when Cash and not processing */}
-                      {(paymentType === "Cash" || Boolean(stagedPaymentAdviceName || stagedPaymentAdviceUrl || (editing && (editing.payment_type || "Cash") === "Credit"))) && !isProcessingService && (
-                        <div className={`p-3 rounded-xl border shadow-sm space-y-1.5 transition-colors ${
+                      {(paymentType === "Cash" || Boolean(stagedPaymentAdvices.length > 0 || (editing && (editing.payment_type || "Cash") === "Credit"))) && !isProcessingService && (
+                        <div className={`p-3 rounded-xl border shadow-sm space-y-2 transition-colors ${
                           issueFormErrors.paymentAdvice 
                             ? "bg-rose-50/40 border-rose-400" 
                             : "bg-white border-zinc-200"
                         }`}>
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                              <CheckCircle2 className="size-3.5 text-emerald-600" /> Payment Advice Receipt
+                              <CheckCircle2 className="size-3.5 text-emerald-600" /> Payment Advice Receipts
+                              <span className="text-[10px] font-mono text-zinc-500 font-normal">
+                                ({stagedPaymentAdvices.length}/10 max)
+                              </span>
                             </span>
-                            {stagedPaymentAdviceName ? (
+                            {stagedPaymentAdvices.length > 0 ? (
                               <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                                Attached
+                                {stagedPaymentAdvices.length} Attached
                               </span>
                             ) : isDocsLoading ? (
                               <Skeleton className="h-4 w-16 bg-zinc-200/80 rounded-full" />
@@ -2946,68 +2974,106 @@ export default function SalesIssued() {
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 pt-1">
-                            {isDocsLoading && !stagedPaymentAdviceName ? (
-                              <div className="flex items-center gap-2 w-full">
-                                <Skeleton className="h-7 w-24 bg-zinc-200/80 rounded-lg" />
-                                <Skeleton className="h-4 flex-1 bg-zinc-200/80 rounded-md" />
-                              </div>
-                            ) : (
-                              <>
-                                <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
-                                  <Upload className="size-3" /> Select File
-                                  <input
-                                    type="file"
-                                    className="hidden"
-                                    disabled={isUploadingAdvice}
-                                    onChange={async (e) => {
-                                      const f = e.target.files?.[0]
-                                      if (f) {
-                                        const valErr = validateFileForUpload(f)
-                                        if (valErr) {
-                                          showToast("Invalid File", "warning", valErr)
-                                          e.target.value = ""
-                                          return
-                                        }
-                                        try {
-                                          setIsUploadingAdvice(true)
-                                          const uploadRes = await uploadFile(f, "sales_issued")
-                                          setStagedPaymentAdviceName(uploadRes.originalName || f.name)
-                                          setStagedPaymentAdviceUrl(uploadRes.url)
-                                          setIssueFormErrors((prev) => {
-                                            const next = { ...prev }
-                                            delete next.paymentAdvice
-                                            return next
-                                          })
-                                        } catch (err: any) {
-                                          console.warn("Payment advice upload failed:", err)
-                                          showToast("Upload Failed", "warning", err.message || "Could not upload payment advice.")
-                                        } finally {
-                                          setIsUploadingAdvice(false)
-                                          e.target.value = ""
-                                        }
-                                      }
+
+                          {/* List of uploaded advice documents */}
+                          {stagedPaymentAdvices.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {stagedPaymentAdvices.map((doc, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-center gap-1.5 bg-zinc-50 border border-zinc-200 rounded-lg px-2 py-1 text-[11px] font-medium text-zinc-700 shadow-2xs"
+                                >
+                                  <FileCheck className="size-3 text-blue-600 shrink-0" />
+                                  <span className="max-w-[140px] truncate font-mono text-[10px]" title={doc.name}>
+                                    {doc.name}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPreviewDocUrl(doc.url)
+                                      setPreviewDocName(doc.name || `Payment Advice ${idx + 1}`)
                                     }}
-                                  />
-                                </label>
-                                <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
-                                  {stagedPaymentAdviceName || "No slip uploaded"}
-                                </span>
-                              </>
-                            )}
-                            {stagedPaymentAdviceUrl && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setPreviewDocUrl(stagedPaymentAdviceUrl)
-                                  setPreviewDocName(stagedPaymentAdviceName || "Payment Advice")
-                                }}
-                                className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
-                              >
-                                View Doc <ExternalLink className="size-3" />
-                              </button>
-                            )}
-                          </div>
+                                    className="text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 rounded p-0.5 cursor-pointer"
+                                    title="Preview file"
+                                  >
+                                    <Eye className="size-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setStagedPaymentAdvices((prev) => prev.filter((_, i) => i !== idx))
+                                    }}
+                                    className="text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded p-0.5 cursor-pointer"
+                                    title="Remove attachment"
+                                  >
+                                    <X className="size-3" />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Add button if < 10 */}
+                          {stagedPaymentAdvices.length < 10 && (
+                            <div className="pt-1">
+                              <label className="cursor-pointer px-3 py-1.5 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 inline-flex items-center gap-1.5 shrink-0 transition-colors">
+                                <Upload className="size-3" />
+                                <span>{isUploadingAdvice ? "Uploading..." : stagedPaymentAdvices.length === 0 ? "Select Advice File (up to 10)" : "Add More Slips"}</span>
+                                <input
+                                  type="file"
+                                  multiple
+                                  accept="image/*,.pdf"
+                                  disabled={isUploadingAdvice}
+                                  className="hidden"
+                                  onChange={async (e) => {
+                                    const files = Array.from(e.target.files || [])
+                                    if (files.length === 0) return
+                                    if (stagedPaymentAdvices.length + files.length > 10) {
+                                      showToast("Limit Exceeded", "warning", "Maximum 10 Payment Advice files allowed.")
+                                      e.target.value = ""
+                                      return
+                                    }
+                                    for (const f of files) {
+                                      const valErr = validateFileForUpload(f)
+                                      if (valErr) {
+                                        showToast("Invalid File", "warning", valErr)
+                                        e.target.value = ""
+                                        return
+                                      }
+                                    }
+                                    try {
+                                      setIsUploadingAdvice(true)
+                                      const uploaded: Array<{ name: string; url: string; size?: number }> = []
+                                      for (const file of files) {
+                                        const uploadRes = await uploadFile(file, "sales_issued")
+                                        if (uploadRes.url.startsWith("data:")) {
+                                          throw new Error("Base64 upload rejected. File must be hosted.")
+                                        }
+                                        uploaded.push({
+                                          name: uploadRes.originalName || file.name,
+                                          url: uploadRes.url,
+                                          size: uploadRes.size,
+                                        })
+                                      }
+                                      setStagedPaymentAdvices((prev) => [...prev, ...uploaded])
+                                      setIssueFormErrors((prev) => {
+                                        const next = { ...prev }
+                                        delete next.paymentAdvice
+                                        return next
+                                      })
+                                    } catch (err: any) {
+                                      console.warn("Payment advice upload failed:", err)
+                                      showToast("Upload Failed", "warning", err.message || "Could not upload payment advice.")
+                                    } finally {
+                                      setIsUploadingAdvice(false)
+                                      e.target.value = ""
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          )}
+
                           {issueFormErrors.paymentAdvice && (
                             <span className="text-[10px] font-bold text-rose-600 mt-1 block">
                               ⚠️ {issueFormErrors.paymentAdvice}
@@ -3618,41 +3684,70 @@ export default function SalesIssued() {
                     {/* Payment Advice Receipt Attachment */}
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <label className="font-bold text-zinc-700">Attach Payment Advice / Deposit Slip *</label>
-                        {payAdviceFile && (
+                        <label className="font-bold text-zinc-700">Attach Payment Advice / Deposit Slips * ({payAdviceFiles.length}/10 max)</label>
+                        {payAdviceFiles.length > 0 && (
                           <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                            Attached
+                            {payAdviceFiles.length} Attached
                           </span>
                         )}
                       </div>
-                      <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
-                        payAdviceFile
-                          ? "border-emerald-400 bg-emerald-50/40 hover:bg-emerald-50/70"
-                          : "border-amber-300 bg-amber-50/30 hover:bg-amber-50/60"
-                      }`}>
-                        <Upload className={`size-4 mb-1 ${payAdviceFile ? "text-emerald-600" : "text-amber-500"}`} />
-                        <span className={`text-xs font-bold ${payAdviceFile ? "text-emerald-800" : "text-amber-900"}`}>
-                          {payAdviceFile ? payAdviceFile.name : "Choose bank slip (PDF, PNG, JPG) *"}
-                        </span>
-                        <input
-                          type="file"
-                          accept=".pdf,.png,.jpg,.jpeg"
-                          className="hidden"
-                          disabled={isSubmittingPayment}
-                          onChange={(e) => {
-                            if (e.target.files && e.target.files[0]) {
-                              const f = e.target.files[0]
-                              const valErr = validateFileForUpload(f)
-                              if (valErr) {
-                                showToast("Invalid File", "warning", valErr)
+
+                      {payAdviceFiles.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {payAdviceFiles.map((file, idx) => (
+                            <div key={idx} className="flex items-center gap-1.5 bg-white border border-zinc-200 rounded-lg px-2 py-1 text-[11px] font-medium text-zinc-700 shadow-2xs">
+                              <FileCheck className="size-3 text-blue-600 shrink-0" />
+                              <span className="max-w-[140px] truncate font-mono text-[10px]" title={file.name}>{file.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => setPayAdviceFiles((prev) => prev.filter((_, i) => i !== idx))}
+                                className="text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded p-0.5 cursor-pointer"
+                              >
+                                <X className="size-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {payAdviceFiles.length < 10 && (
+                        <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
+                          payAdviceFiles.length > 0
+                            ? "border-emerald-400 bg-emerald-50/40 hover:bg-emerald-50/70"
+                            : "border-amber-300 bg-amber-50/30 hover:bg-amber-50/60"
+                        }`}>
+                          <Upload className={`size-4 mb-1 ${payAdviceFiles.length > 0 ? "text-emerald-600" : "text-amber-500"}`} />
+                          <span className={`text-xs font-bold ${payAdviceFiles.length > 0 ? "text-emerald-800" : "text-amber-900"}`}>
+                            {payAdviceFiles.length > 0 ? "+ Add More Bank Slips (up to 10)" : "Choose bank slip(s) (PDF, PNG, JPG) *"}
+                          </span>
+                          <input
+                            type="file"
+                            multiple
+                            accept=".pdf,.png,.jpg,.jpeg"
+                            className="hidden"
+                            disabled={isSubmittingPayment}
+                            onChange={(e) => {
+                              const files = Array.from(e.target.files || [])
+                              if (files.length === 0) return
+                              if (payAdviceFiles.length + files.length > 10) {
+                                showToast("Limit Exceeded", "warning", "Maximum 10 slips allowed.")
                                 e.target.value = ""
                                 return
                               }
-                              setPayAdviceFile(f)
-                            }
-                          }}
-                        />
-                      </label>
+                              for (const f of files) {
+                                const valErr = validateFileForUpload(f)
+                                if (valErr) {
+                                  showToast("Invalid File", "warning", valErr)
+                                  e.target.value = ""
+                                  return
+                                }
+                              }
+                              setPayAdviceFiles((prev) => [...prev, ...files])
+                              e.target.value = ""
+                            }}
+                          />
+                        </label>
+                      )}
                       <span className="text-[10px] text-zinc-500 mt-1 block">
                         Payment Advice / bank deposit receipt is mandatory when recording an installment payment.
                       </span>

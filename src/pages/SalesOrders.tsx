@@ -14,6 +14,7 @@ import {
   ExternalLink,
   Clock,
   AlertCircle,
+  Eye,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { SubPageNav } from "@/components/SubPageNav"
@@ -34,6 +35,7 @@ import {
   type ShipmentDocAttachment,
   saveTradeLicense,
   savePaymentAdvice,
+  savePaymentAdvices,
   fetchDocumentsForRecord,
   fetchAllShipmentDocs,
 } from "@/lib/tradeDocumentService"
@@ -62,7 +64,8 @@ function resolveSalesOrderDocs(
       d.document_type === "Trade Paper" ||
       d.document_type?.toLowerCase().includes("permit")
   )
-  const paymentAdvice = docsList.find((d) => d.document_type === "Payment Advice" || d.document_type?.toLowerCase().includes("advice"))
+  const paymentAdvices = docsList.filter((d) => d.document_type === "Payment Advice" || d.document_type?.toLowerCase().includes("advice"))
+  const paymentAdvice = paymentAdvices[0] || null
 
   if (!tradeLicense && tradePaperUrl) {
     tradeLicense = {
@@ -83,6 +86,7 @@ function resolveSalesOrderDocs(
     docsList,
     tradeLicense,
     paymentAdvice,
+    paymentAdvices,
   }
 }
 
@@ -243,8 +247,7 @@ export default function SalesOrders() {
   const [stagedTradePaperName, setStagedTradePaperName] = useState("")
   const [stagedTradePaperUrl, setStagedTradePaperUrl] = useState("")
   const [isNewlyUploadedTradeLicense, setIsNewlyUploadedTradeLicense] = useState(false)
-  const [stagedPaymentAdviceName, setStagedPaymentAdviceName] = useState("")
-  const [stagedPaymentAdviceUrl, setStagedPaymentAdviceUrl] = useState("")
+  const [stagedPaymentAdvices, setStagedPaymentAdvices] = useState<Array<{ id?: string; name: string; url: string; size?: number }>>([])
 
   // Document Preview Modal States
   const [previewUrl, setPreviewUrl] = useState("")
@@ -384,8 +387,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
     setNewDesc("")
     setStagedTradePaperName("")
     setStagedTradePaperUrl("")
-    setStagedPaymentAdviceName("")
-    setStagedPaymentAdviceUrl("")
+    setStagedPaymentAdvices([])
     setIsNewlyUploadedTradeLicense(false)
 
     const defaultBatches = defaultProduct?.batches && defaultProduct.batches.length > 0 ? defaultProduct.batches : []
@@ -665,8 +667,14 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
     setStagedTradePaperName(resolved.tradeLicense?.file_name || "")
     setStagedTradePaperUrl(resolved.tradeLicense?.file_url || "")
-    setStagedPaymentAdviceName(resolved.paymentAdvice?.file_name || "")
-    setStagedPaymentAdviceUrl(resolved.paymentAdvice?.file_url || "")
+    setStagedPaymentAdvices(
+      (resolved.paymentAdvices || []).map((a) => ({
+        id: a.id,
+        name: a.file_name,
+        url: a.file_url,
+        size: a.file_size,
+      }))
+    )
 
     // Open modal immediately without waiting on network
     setIsEditOrderOpen(true)
@@ -687,9 +695,15 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
           setStagedTradePaperName(updatedResolved.tradeLicense.file_name || "")
           setStagedTradePaperUrl(updatedResolved.tradeLicense.file_url || "")
         }
-        if (updatedResolved.paymentAdvice) {
-          setStagedPaymentAdviceName(updatedResolved.paymentAdvice.file_name || "")
-          setStagedPaymentAdviceUrl(updatedResolved.paymentAdvice.file_url || "")
+        if (updatedResolved.paymentAdvices && updatedResolved.paymentAdvices.length > 0) {
+          setStagedPaymentAdvices(
+            updatedResolved.paymentAdvices.map((a) => ({
+              id: a.id,
+              name: a.file_name,
+              url: a.file_url,
+              size: a.file_size,
+            }))
+          )
         }
       }
     }).catch(() => {})
@@ -716,7 +730,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       }
     }
 
-    if (editingPaymentType === "Cash" && (!stagedPaymentAdviceUrl || !stagedPaymentAdviceName)) {
+    if (editingPaymentType === "Cash" && stagedPaymentAdvices.length === 0) {
       errors.paymentAdvice = "Payment Advice deposit receipt is mandatory when saving or converting to a Cash order."
     }
 
@@ -770,6 +784,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       items: sanitizedItems,
       amount: totalAmt,
       paymentType: editingPaymentType,
+      paymentAdvices: stagedPaymentAdvices,
     }
 
     erp.updateSalesOrder(updatedSo)
@@ -791,16 +806,19 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       }
     }
 
-    if (stagedPaymentAdviceUrl && stagedPaymentAdviceName) {
+    if (stagedPaymentAdvices.length > 0) {
       try {
-        await savePaymentAdvice({
+        await savePaymentAdvices({
           salesOrderId: editingOrder.id,
-          fileName: stagedPaymentAdviceName,
-          fileUrl: stagedPaymentAdviceUrl,
+          advices: stagedPaymentAdvices.map((a) => ({
+            fileName: a.name,
+            fileUrl: a.url,
+            fileSize: a.size,
+          })),
           uploadedBy: "Sales Officer",
         })
       } catch (err) {
-        console.error("Failed uploading Payment Advice:", err)
+        console.error("Failed uploading Payment Advices:", err)
       }
     }
 
@@ -864,7 +882,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         : "Trade License file is required for new customer orders."
     }
 
-    if (newPaymentType === "Cash" && (!stagedPaymentAdviceUrl || !stagedPaymentAdviceName)) {
+    if (newPaymentType === "Cash" && stagedPaymentAdvices.length === 0) {
       errors.paymentAdvice = "Payment Advice (bank deposit receipt) is mandatory for Cash orders."
     }
 
@@ -902,25 +920,25 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
     try {
       if (!selectedCust) {
-        const newCustId = `CUST-${Date.now().toString().slice(-4)}`
-        selectedCust = {
-          id: newCustId,
-          name: finalCustName,
-          country: "Ethiopia",
-          region: "Addis Ababa",
-          contactPerson: finalCustName,
-          phone: custPhone.trim(),
-          tin: custTin.trim() || undefined,
-          email: custEmail.trim() || `${finalCustName.toLowerCase().replace(/\s+/g, "")}@example.com`,
-          address: custAddress.trim() || "Addis Ababa, Ethiopia",
-          category: isWh1Order ? "Commodities Exporter / Union" : "Pharmaceutical Distributor",
-          warehouseTarget: targetWh,
-          tradePaperFileName: stagedTradePaperName || (isWh1Order ? "Bank Permit.pdf" : "Trade License.pdf"),
-          tradePaperUrl: stagedTradePaperUrl,
-          tradePaperUploadedAt: stagedTradePaperUrl ? new Date().toISOString() : undefined,
-          status: "Active",
-        }
         if (saveCustomerToRegistry) {
+          const newCustId = `CUST-${Date.now().toString().slice(-4)}`
+          selectedCust = {
+            id: newCustId,
+            name: finalCustName,
+            country: "Ethiopia",
+            region: "Addis Ababa",
+            contactPerson: finalCustName,
+            phone: custPhone.trim(),
+            tin: custTin.trim() || undefined,
+            email: custEmail.trim() || `${finalCustName.toLowerCase().replace(/\s+/g, "")}@example.com`,
+            address: custAddress.trim() || "Addis Ababa, Ethiopia",
+            category: isWh1Order ? "Commodities Exporter / Union" : "Pharmaceutical Distributor",
+            warehouseTarget: targetWh,
+            tradePaperFileName: stagedTradePaperName || (isWh1Order ? "Bank Permit.pdf" : "Trade License.pdf"),
+            tradePaperUrl: stagedTradePaperUrl,
+            tradePaperUploadedAt: stagedTradePaperUrl ? new Date().toISOString() : undefined,
+            status: "Active",
+          }
           await erp.addCustomer(selectedCust)
         }
       } else if (saveCustomerToRegistry) {
@@ -958,22 +976,22 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
     const newSo: SalesOrder = {
       id: soId,
-      customerId: selectedCust.id,
-      customer: selectedCust.name,
-      customerPhone: custPhone.trim() || selectedCust.phone || "",
-      customerGroup: selectedCust.category,
+      customerId: selectedCust?.id || undefined,
+      customer: selectedCust?.name || finalCustName,
+      customerPhone: custPhone.trim() || selectedCust?.phone || "",
+      customerGroup: selectedCust?.category || (isWh1Order ? "Commodities Exporter / Union" : "Pharmaceutical Distributor"),
       warehouse: finalHeaderWh,
       warehouseName: finalHeaderWhName,
       date: getLocalDateString(),
       amount: totalAmt,
       currency: "ETB",
       stage: "Quote",
-      desc: newDesc || `Sales Order contract for ${selectedCust.name}`,
-      initials: selectedCust.name.slice(0, 2).toUpperCase(),
-      label: selectedCust.contactPerson || selectedCust.name,
+      desc: newDesc || `Sales Order contract for ${selectedCust?.name || finalCustName}`,
+      initials: (selectedCust?.name || finalCustName).slice(0, 2).toUpperCase(),
+      label: selectedCust?.contactPerson || selectedCust?.name || finalCustName,
       avatarBg: "bg-emerald-100 text-emerald-800",
       urgent: false,
-      attachment: true,
+      attachment: Boolean(stagedTradePaperUrl || stagedPaymentAdvices.length > 0),
       items: finalItems,
       deliveredAmount: 0,
       billedAmount: 0,
@@ -982,17 +1000,18 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       paymentTerms,
       paymentType: newPaymentType,
       approvalStatus: "Pending",
+      paymentAdvices: stagedPaymentAdvices,
     }
 
     // Persist Trade License / Bank Permit and Payment Advice via unified tradeDocumentService
-    const activeTradeName = stagedTradePaperName || selectedCust.tradePaperFileName || (isWh1Order ? "Bank Permit.pdf" : "Trade License.pdf")
-    const activeTradeUrl = stagedTradePaperUrl || selectedCust.tradePaperUrl || ""
+    const activeTradeName = stagedTradePaperName || selectedCust?.tradePaperFileName || (isWh1Order ? "Bank Permit.pdf" : "Trade License.pdf")
+    const activeTradeUrl = stagedTradePaperUrl || selectedCust?.tradePaperUrl || ""
 
     if (activeTradeUrl && activeTradeName) {
       try {
         await saveTradeLicense({
-          customerId: selectedCust.id,
-          customerName: selectedCust.name,
+          customerId: saveCustomerToRegistry ? selectedCust?.id : undefined,
+          customerName: selectedCust?.name || finalCustName,
           salesOrderId: soId,
           fileName: activeTradeName,
           fileUrl: activeTradeUrl,
@@ -1004,16 +1023,19 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
       }
     }
 
-    if (stagedPaymentAdviceUrl && stagedPaymentAdviceName) {
+    if (stagedPaymentAdvices.length > 0) {
       try {
-        await savePaymentAdvice({
+        await savePaymentAdvices({
           salesOrderId: soId,
-          fileName: stagedPaymentAdviceName,
-          fileUrl: stagedPaymentAdviceUrl,
+          advices: stagedPaymentAdvices.map((a) => ({
+            fileName: a.name,
+            fileUrl: a.url,
+            fileSize: a.size,
+          })),
           uploadedBy: "Sales Officer",
         })
       } catch (err) {
-        console.error("Failed uploading Payment Advice:", err)
+        console.error("Failed uploading Payment Advices:", err)
       }
     }
 
@@ -1022,15 +1044,14 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
     erp.addSalesOrder(newSo)
 
-    showToast("Sales Order Created", "success", `Contract ${newSo.id} created under Quote stage for ${selectedCust.name}.`)
+    showToast("Sales Order Created", "success", `Contract ${newSo.id} created under Quote stage for ${selectedCust?.name || finalCustName}.`)
     setIsNewOrderOpen(false)
     setNewDesc("")
     setCustomerSearchInput("")
     setNewCustomerId("")
     setStagedTradePaperName("")
     setStagedTradePaperUrl("")
-    setStagedPaymentAdviceName("")
-    setStagedPaymentAdviceUrl("")
+    setStagedPaymentAdvices([])
   } catch (err) {
     showToast("Create Error", "warning", "Failed to create sales order.")
   } finally {
@@ -1173,7 +1194,7 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
             },
           ]}
           onReload={async () => {
-            await erp.reloadFromApi()
+            await erp.loadSalesData(true)
           }}
           isReloading={isLoading}
           reloadTooltip="Reload sales orders from server"
@@ -1328,11 +1349,24 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
               <td style={{ width: `${colWidths.docsStatus}px` }} className="py-4 px-4 overflow-hidden">
                 {(() => {
                   const docs = soAttachmentsMap[so.id] || []
-                  const cust = customers.find((c) => c.id === so.customerId || c.name === so.customer)
+                  const cust = customers.find((c) => (so.customerId && c.id === so.customerId) || (c.name && so.customer && c.name.trim().toLowerCase() === so.customer.trim().toLowerCase()))
+                  const linkedIssue = (erp.getSalesIssues() || []).find((si) => si.sales_order_id === so.id)
+                  const linkedInvoice = (financeStore.getInvoices() || []).find(
+                    (inv) => inv.sales_order_id === so.id || (linkedIssue && (inv.sales_issue_id === linkedIssue.id || inv.fs_no === linkedIssue.fs_no))
+                  )
+                  const issueDocs = linkedIssue ? (soAttachmentsMap[linkedIssue.id] || (linkedIssue.fs_no ? soAttachmentsMap[linkedIssue.fs_no] : []) || []) : []
+                  const invoiceDocs = linkedInvoice ? (soAttachmentsMap[linkedInvoice.id] || []) : []
+                  const custDocs = cust ? (soAttachmentsMap[cust.id] || []) : []
+                  const allDocs = [...docs, ...issueDocs, ...invoiceDocs, ...custDocs]
+
                   const isWh1 = isWH1(so.warehouse)
                   const docName = isWh1 ? "Bank Permit" : "Trade License"
-                  const hasTrade = docs.some((d) => d.document_type === "Bank Permit" || d.document_type === "Trade License" || d.document_type === "Trade Paper") || !!cust?.tradePaperUrl
-                  const hasAdvice = docs.some((d) => d.document_type === "Payment Advice")
+                  const hasTrade = allDocs.some((d) =>
+                    isWh1
+                      ? d.document_type === "Bank Permit" || d.document_type === "Trade Paper" || d.document_type === "Trade License" || d.document_type?.toLowerCase().includes("permit")
+                      : d.document_type === "Trade License" || d.document_type === "Trade Paper" || d.document_type?.toLowerCase().includes("license")
+                  ) || !!cust?.tradePaperUrl
+                  const hasAdvice = allDocs.some((d) => d.document_type === "Payment Advice" || d.document_type?.toLowerCase().includes("advice"))
                   const isCredit = so.paymentType === "Credit"
 
                   if (isCredit) {
@@ -1933,35 +1967,102 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
 
                         {/* Payment Advice Dropzone */}
                         {newPaymentType === "Cash" && (
-                          <div className={`p-3 rounded-xl border shadow-sm space-y-1.5 transition-colors ${
+                          <div className={`p-3 rounded-xl border shadow-sm space-y-2 transition-colors ${
                             createFormErrors.paymentAdvice 
                               ? "bg-rose-50/40 border-rose-400" 
                               : "bg-white border-zinc-200"
                           }`}>
                             <div className="flex items-center justify-between">
                               <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                                <CheckCircle2 className="size-3.5 text-emerald-600" /> Payment Advice Receipt
+                                <CheckCircle2 className="size-3.5 text-emerald-600" /> Payment Advice Receipts
+                                <span className="text-[10px] font-mono text-zinc-500 font-normal">
+                                  ({stagedPaymentAdvices.length}/10 max)
+                                </span>
                               </span>
-                              {stagedPaymentAdviceName ? (
-                                <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Attached</span>
+                              {stagedPaymentAdvices.length > 0 ? (
+                                <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                                  {stagedPaymentAdvices.length} Attached
+                                </span>
                               ) : (
-                                <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">Required for Cash</span>
+                                <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+                                  Required for Cash
+                                </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-2 pt-1">
-                              <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
-                                <FileCheck className="size-3" /> Select Advice File
-                                <input
-                                  type="file"
-                                  className="hidden"
-                                  onChange={async (e) => {
-                                    const f = e.target.files?.[0]
-                                    if (f) {
+
+                            {/* List of uploaded advice documents */}
+                            {stagedPaymentAdvices.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                {stagedPaymentAdvices.map((doc, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="flex items-center gap-1.5 bg-zinc-50 border border-zinc-200 rounded-lg px-2 py-1 text-[11px] font-medium text-zinc-700 shadow-2xs"
+                                  >
+                                    <FileCheck className="size-3 text-blue-600 shrink-0" />
+                                    <span className="max-w-[140px] truncate font-mono text-[10px]" title={doc.name}>
+                                      {doc.name}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setPreviewUrl(doc.url)
+                                        setPreviewName(doc.name || `Payment Advice ${idx + 1}`)
+                                      }}
+                                      className="text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 rounded p-0.5 cursor-pointer"
+                                      title="Preview file"
+                                    >
+                                      <Eye className="size-3" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setStagedPaymentAdvices((prev) => prev.filter((_, i) => i !== idx))
+                                      }}
+                                      className="text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded p-0.5 cursor-pointer"
+                                      title="Remove attachment"
+                                    >
+                                      <X className="size-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Add button if < 10 */}
+                            {stagedPaymentAdvices.length < 10 && (
+                              <div className="pt-1">
+                                <label className="cursor-pointer px-3 py-1.5 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 inline-flex items-center gap-1.5 shrink-0 transition-colors">
+                                  <Plus className="size-3" />
+                                  <span>{isUploadingPaymentAdvice ? "Uploading..." : stagedPaymentAdvices.length === 0 ? "Attach Payment Advice (up to 10)" : "Add More Slips"}</span>
+                                  <input
+                                    type="file"
+                                    multiple
+                                    accept="image/*,.pdf"
+                                    disabled={isUploadingPaymentAdvice}
+                                    className="hidden"
+                                    onChange={async (e) => {
+                                      const files = Array.from(e.target.files || [])
+                                      if (files.length === 0) return
+                                      if (stagedPaymentAdvices.length + files.length > 10) {
+                                        showToast("Limit Exceeded", "warning", "Maximum 10 Payment Advice files allowed.")
+                                        e.target.value = ""
+                                        return
+                                      }
                                       try {
                                         setIsUploadingPaymentAdvice(true)
-                                        const res = await uploadFile(f, "sales_orders")
-                                        setStagedPaymentAdviceName(res.originalName)
-                                        setStagedPaymentAdviceUrl(res.url)
+                                        const uploaded: Array<{ name: string; url: string; size?: number }> = []
+                                        for (const file of files) {
+                                          const res = await uploadFile(file, "sales_orders")
+                                          if (res.url.startsWith("data:")) {
+                                            throw new Error("Base64 upload rejected. File must be hosted.")
+                                          }
+                                          uploaded.push({
+                                            name: res.originalName,
+                                            url: res.url,
+                                            size: res.size,
+                                          })
+                                        }
+                                        setStagedPaymentAdvices((prev) => [...prev, ...uploaded])
                                         setCreateFormErrors((prev) => {
                                           const next = { ...prev }
                                           delete next.paymentAdvice
@@ -1973,26 +2074,12 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                         setIsUploadingPaymentAdvice(false)
                                         e.target.value = ""
                                       }
-                                    }
-                                  }}
-                                />
-                              </label>
-                              <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
-                                {stagedPaymentAdviceName || "No receipt attached"}
-                              </span>
-                              {stagedPaymentAdviceUrl && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setPreviewUrl(stagedPaymentAdviceUrl)
-                                    setPreviewName(stagedPaymentAdviceName || "Payment Advice")
-                                  }}
-                                  className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
-                                >
-                                  View Doc <ExternalLink className="size-3" />
-                                </button>
-                              )}
-                            </div>
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                            )}
+
                             {createFormErrors.paymentAdvice && (
                               <span className="text-[10px] font-bold text-rose-600 mt-1 block">
                                 ⚠️ {createFormErrors.paymentAdvice}
@@ -2515,35 +2602,102 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                 </div>
 
                 {editingPaymentType === "Cash" && (
-                  <div className={`p-3 rounded-xl border shadow-sm space-y-1.5 transition-colors ${
+                  <div className={`p-3 rounded-xl border shadow-sm space-y-2 transition-colors ${
                     editFormErrors.paymentAdvice 
                       ? "bg-rose-50/40 border-rose-400" 
                       : "bg-white border-zinc-200"
                   }`}>
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-zinc-800 flex items-center gap-1.5">
-                        <CheckCircle2 className="size-3.5 text-emerald-600" /> Payment Advice Receipt
+                        <CheckCircle2 className="size-3.5 text-emerald-600" /> Payment Advice Receipts
+                        <span className="text-[10px] font-mono text-zinc-500 font-normal">
+                          ({stagedPaymentAdvices.length}/10 max)
+                        </span>
                       </span>
-                      {stagedPaymentAdviceName ? (
-                        <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Attached</span>
+                      {stagedPaymentAdvices.length > 0 ? (
+                        <span className="text-[9px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                          {stagedPaymentAdvices.length} Attached
+                        </span>
                       ) : (
-                        <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">Required for Cash</span>
+                        <span className="text-[9px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+                          Required for Cash
+                        </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 pt-1">
-                      <label className="cursor-pointer px-3 py-1 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 flex items-center gap-1 shrink-0">
-                        <FileCheck className="size-3" /> Select Advice File
-                        <input
-                          type="file"
-                          className="hidden"
-                          onChange={async (e) => {
-                            const f = e.target.files?.[0]
-                            if (f) {
+
+                    {/* List of uploaded advice documents */}
+                    {stagedPaymentAdvices.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {stagedPaymentAdvices.map((doc, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center gap-1.5 bg-zinc-50 border border-zinc-200 rounded-lg px-2 py-1 text-[11px] font-medium text-zinc-700 shadow-2xs"
+                          >
+                            <FileCheck className="size-3 text-blue-600 shrink-0" />
+                            <span className="max-w-[140px] truncate font-mono text-[10px]" title={doc.name}>
+                              {doc.name}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreviewUrl(doc.url)
+                                setPreviewName(doc.name || `Payment Advice ${idx + 1}`)
+                              }}
+                              className="text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 rounded p-0.5 cursor-pointer"
+                              title="Preview file"
+                            >
+                              <Eye className="size-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStagedPaymentAdvices((prev) => prev.filter((_, i) => i !== idx))
+                              }}
+                              className="text-zinc-400 hover:text-rose-600 hover:bg-rose-50 rounded p-0.5 cursor-pointer"
+                              title="Remove attachment"
+                            >
+                              <X className="size-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Add button if < 10 */}
+                    {stagedPaymentAdvices.length < 10 && (
+                      <div className="pt-1">
+                        <label className="cursor-pointer px-3 py-1.5 rounded-lg bg-zinc-900 text-white font-bold text-[11px] hover:bg-zinc-800 inline-flex items-center gap-1.5 shrink-0 transition-colors">
+                          <Plus className="size-3" />
+                          <span>{isUploadingPaymentAdvice ? "Uploading..." : stagedPaymentAdvices.length === 0 ? "Attach Payment Advice (up to 10)" : "Add More Slips"}</span>
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*,.pdf"
+                            disabled={isUploadingPaymentAdvice}
+                            className="hidden"
+                            onChange={async (e) => {
+                              const files = Array.from(e.target.files || [])
+                              if (files.length === 0) return
+                              if (stagedPaymentAdvices.length + files.length > 10) {
+                                showToast("Limit Exceeded", "warning", "Maximum 10 Payment Advice files allowed.")
+                                e.target.value = ""
+                                return
+                              }
                               try {
                                 setIsUploadingPaymentAdvice(true)
-                                const res = await uploadFile(f, "sales_orders")
-                                setStagedPaymentAdviceName(res.originalName)
-                                setStagedPaymentAdviceUrl(res.url)
+                                const uploaded: Array<{ name: string; url: string; size?: number }> = []
+                                for (const file of files) {
+                                  const res = await uploadFile(file, "sales_orders")
+                                  if (res.url.startsWith("data:")) {
+                                    throw new Error("Base64 upload rejected. File must be hosted.")
+                                  }
+                                  uploaded.push({
+                                    name: res.originalName,
+                                    url: res.url,
+                                    size: res.size,
+                                  })
+                                }
+                                setStagedPaymentAdvices((prev) => [...prev, ...uploaded])
                                 setEditFormErrors((prev) => {
                                   const next = { ...prev }
                                   delete next.paymentAdvice
@@ -2555,26 +2709,12 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                                 setIsUploadingPaymentAdvice(false)
                                 e.target.value = ""
                               }
-                            }
-                          }}
-                        />
-                      </label>
-                      <span className="text-[11px] font-mono text-zinc-600 truncate flex-1">
-                        {stagedPaymentAdviceName || "No receipt attached"}
-                      </span>
-                      {stagedPaymentAdviceUrl && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewUrl(stagedPaymentAdviceUrl)
-                            setPreviewName(stagedPaymentAdviceName || "Payment Advice")
-                          }}
-                          className="px-2.5 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50 border border-emerald-200 rounded-md inline-flex items-center gap-1 shrink-0 cursor-pointer"
-                        >
-                          View Doc <ExternalLink className="size-3" />
-                        </button>
-                      )}
-                    </div>
+                            }}
+                          />
+                        </label>
+                      </div>
+                    )}
+
                     {editFormErrors.paymentAdvice && (
                       <span className="text-[10px] font-bold text-rose-600 mt-1 block">
                         ⚠️ {editFormErrors.paymentAdvice}

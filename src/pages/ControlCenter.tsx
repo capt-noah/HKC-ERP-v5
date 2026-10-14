@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useCallback } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import {
   DollarSign,
@@ -321,9 +321,20 @@ export default function ControlCenter() {
   const [auditPage, setAuditPage] = useState(1)
   const [auditPageSize, setAuditPageSize] = useState(10)
 
-  // Sales Order Approvals State
-  const warehouses = erp.getWarehouses() || []
-  const salesOrders = erp.getSalesOrders() || []
+  // Sales Order Approvals State & Reactive Sync
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => erp.getWarehouses() || [])
+  const [salesOrders, setSalesOrders] = useState<SalesOrder[]>(() => erp.getSalesOrders() || [])
+  const [erpCustomers, setErpCustomers] = useState<Customer[]>(() => erp.getCustomers() || [])
+
+  useEffect(() => {
+    const unsub = erp.subscribe(() => {
+      setWarehouses(erp.getWarehouses() || [])
+      setSalesOrders(erp.getSalesOrders() || [])
+      setErpCustomers(erp.getCustomers() || [])
+    })
+    return () => unsub()
+  }, [])
+
   const pendingOrders = useMemo(() => (salesOrders || []).filter((so) => (so.approvalStatus || (so as any).approval_status || "Pending") === "Pending"), [salesOrders])
   const approvedOrders = useMemo(() => (salesOrders || []).filter((so) => (so.approvalStatus || (so as any).approval_status) === "Approved"), [salesOrders])
   const declinedOrders = useMemo(() => (salesOrders || []).filter((so) => (so.approvalStatus || (so as any).approval_status) === "Declined"), [salesOrders])
@@ -341,7 +352,7 @@ export default function ControlCenter() {
   const [previewDocName, setPreviewDocName] = useState<string>("")
   const [soDocsMap, setSoDocsMap] = useState<Record<string, ShipmentDocAttachment[]>>({})
 
-  useEffect(() => {
+  const loadShipmentDocs = useCallback(() => {
     fetchAllShipmentDocs().then((docs) => {
       if (Array.isArray(docs)) {
         const map: Record<string, ShipmentDocAttachment[]> = {}
@@ -353,6 +364,12 @@ export default function ControlCenter() {
       }
     }).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (activeTab === "approvals" || activeTab === "overview") {
+      loadShipmentDocs()
+    }
+  }, [activeTab, loadShipmentDocs])
 
 
   // Outstanding Customer Receivables & Unsettled Sales Issues State
@@ -2683,14 +2700,46 @@ export default function ControlCenter() {
                         ) : (
                           filteredApprovals.map((so) => {
                             const status = so.approvalStatus || (so as any).approval_status || "Pending"
-                            const docs = soDocsMap[so.id] || []
                             const isWh1Order = isExportWarehouse(so.warehouse, warehouses)
-                            const tradeDoc = docs.find((d) => 
-                              isWh1Order 
-                                ? (d.document_type === "Bank Permit" || d.document_type === "Trade Paper" || d.document_type === "Trade License") 
-                                : (d.document_type === "Trade License" || d.document_type === "Trade Paper")
+                            const customers = erpCustomers.length > 0 ? erpCustomers : (erp.getCustomers() || [])
+                            const soCustId = so.customerId || (so as any).customer_id
+                            const soCustName = (so.customer || (so as any).customer_name || "").trim().toLowerCase()
+                            const matchedCust = customers.find(
+                              (c) =>
+                                (soCustId && (c.id === soCustId || c.id?.toLowerCase() === soCustId?.toLowerCase())) ||
+                                (c.name && soCustName && c.name.trim().toLowerCase() === soCustName)
                             )
-                            const adviceDoc = docs.find((d) => d.document_type === "Payment Advice")
+                            const directDocs = soDocsMap[so.id] || []
+                            const linkedIssue = (erp.getSalesIssues() || []).find((si) => si.sales_order_id === so.id)
+                            const linkedInvoice = (finance.getInvoices() || []).find(
+                              (inv) => inv.sales_order_id === so.id || (linkedIssue && (inv.sales_issue_id === linkedIssue.id || inv.fs_no === linkedIssue.fs_no))
+                            )
+                            const issueDocs = linkedIssue ? (soDocsMap[linkedIssue.id] || (linkedIssue.fs_no ? soDocsMap[linkedIssue.fs_no] : []) || []) : []
+                            const invoiceDocs = linkedInvoice ? (soDocsMap[linkedInvoice.id] || []) : []
+                            const custDocs = matchedCust ? (soDocsMap[matchedCust.id] || []) : []
+                            const allOrderDocs = [...directDocs, ...issueDocs, ...invoiceDocs, ...custDocs]
+
+                            let tradeDoc = allOrderDocs.find((d) =>
+                              isWh1Order
+                                ? d.document_type === "Bank Permit" || d.document_type === "Trade Paper" || d.document_type === "Trade License" || d.document_type?.toLowerCase().includes("permit")
+                                : d.document_type === "Trade License" || d.document_type === "Trade Paper" || d.document_type?.toLowerCase().includes("license")
+                            )
+
+                            if (!tradeDoc && matchedCust?.tradePaperUrl) {
+                              tradeDoc = {
+                                id: `CUST-REG-${so.id}`,
+                                record_id: so.id,
+                                record_type: "sales_order",
+                                document_type: isWh1Order ? "Bank Permit" : "Trade License",
+                                file_name: matchedCust.tradePaperFileName || (isWh1Order ? "Bank Permit.pdf" : "Trade License.pdf"),
+                                file_size: 102400,
+                                file_url: matchedCust.tradePaperUrl,
+                                uploaded_at: matchedCust.tradePaperUploadedAt || new Date().toISOString(),
+                                uploaded_by: matchedCust.name,
+                              }
+                            }
+
+                            const adviceDocs = allOrderDocs.filter((d) => d.document_type === "Payment Advice" || d.document_type?.toLowerCase().includes("advice"))
                             const isCredit = (so.paymentType || (so as any).payment_type) === "Credit"
                             const isProcessing = isProcessingAction === so.id
                             const items = Array.isArray(so.items) ? so.items : []
@@ -2732,7 +2781,6 @@ export default function ControlCenter() {
                                   <span className="text-[9px] text-zinc-400 font-medium">ETB Gross</span>
                                 </td>
 
-
                                 <td className="py-4 px-4">
                                   <div className="flex flex-col gap-1">
                                     {tradeDoc ? (
@@ -2745,7 +2793,7 @@ export default function ControlCenter() {
                                         className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:text-emerald-900 hover:underline cursor-pointer"
                                       >
                                         <FileText className="size-3 text-emerald-600" />
-                                        <span className="max-w-[100px] truncate">{tradeDoc.file_name || (isWh1Order ? "Bank Permit" : "Trade License")}</span>
+                                        <span className="max-w-[120px] truncate">{tradeDoc.file_name || (isWh1Order ? "Bank Permit" : "Trade License")}</span>
                                         <Eye className="size-2.5 opacity-60" />
                                       </button>
                                     ) : (
@@ -2754,22 +2802,27 @@ export default function ControlCenter() {
                                       </span>
                                     )}
 
-                                    {adviceDoc ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setPreviewDocUrl(adviceDoc.file_url)
-                                          setPreviewDocName(adviceDoc.file_name || "Payment Advice.pdf")
-                                        }}
-                                        className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 hover:text-blue-900 hover:underline cursor-pointer"
-                                      >
-                                        <FileText className="size-3 text-blue-600" />
-                                        <span className="max-w-[100px] truncate">{adviceDoc.file_name || "Payment Advice"}</span>
-                                        <Eye className="size-2.5 opacity-60" />
-                                      </button>
+                                    {adviceDocs.length > 0 ? (
+                                      adviceDocs.map((adv, idx) => (
+                                        <button
+                                          key={adv.id || idx}
+                                          type="button"
+                                          onClick={() => {
+                                            setPreviewDocUrl(adv.file_url)
+                                            setPreviewDocName(adv.file_name || `Payment Advice ${idx + 1}`)
+                                          }}
+                                          className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 hover:text-blue-900 hover:underline cursor-pointer"
+                                        >
+                                          <FileText className="size-3 text-blue-600" />
+                                          <span className="max-w-[120px] truncate">
+                                            {adv.file_name || (adviceDocs.length > 1 ? `Advice #${idx + 1}` : "Payment Advice")}
+                                          </span>
+                                          <Eye className="size-2.5 opacity-60" />
+                                        </button>
+                                      ))
                                     ) : (
                                       <span className="text-[10px] text-zinc-400 flex items-center gap-1">
-                                        <AlertCircle className="size-3 text-amber-500" /> No Payment Advice
+                                        <AlertCircle className="size-3 text-amber-500" /> {isCredit ? "Advice (Optional)" : "No Payment Advice"}
                                       </span>
                                     )}
                                   </div>
@@ -3135,10 +3188,47 @@ export default function ControlCenter() {
                   Attached Shipment Documents
                 </p>
                 {(() => {
-                  const docs = soDocsMap[viewModalOrder.id] || []
-                  const tradeDoc = docs.find((d) => d.document_type === "Trade License" || d.document_type === "Trade Paper")
-                  const adviceDoc = docs.find((d) => d.document_type === "Payment Advice")
-                  const isCredit = viewModalOrder.paymentType === "Credit"
+                  const isWh1Order = isExportWarehouse(viewModalOrder.warehouse, warehouses)
+                  const customers = erpCustomers.length > 0 ? erpCustomers : (erp.getCustomers() || [])
+                  const soCustId = viewModalOrder.customerId || (viewModalOrder as any).customer_id
+                  const soCustName = (viewModalOrder.customer || (viewModalOrder as any).customer_name || "").trim().toLowerCase()
+                  const matchedCust = customers.find(
+                    (c) =>
+                      (soCustId && (c.id === soCustId || c.id?.toLowerCase() === soCustId?.toLowerCase())) ||
+                      (c.name && soCustName && c.name.trim().toLowerCase() === soCustName)
+                  )
+                  const directDocs = soDocsMap[viewModalOrder.id] || []
+                  const linkedIssue = (erp.getSalesIssues() || []).find((si) => si.sales_order_id === viewModalOrder.id)
+                  const linkedInvoice = (finance.getInvoices() || []).find(
+                    (inv) => inv.sales_order_id === viewModalOrder.id || (linkedIssue && (inv.sales_issue_id === linkedIssue.id || inv.fs_no === linkedIssue.fs_no))
+                  )
+                  const issueDocs = linkedIssue ? (soDocsMap[linkedIssue.id] || (linkedIssue.fs_no ? soDocsMap[linkedIssue.fs_no] : []) || []) : []
+                  const invoiceDocs = linkedInvoice ? (soDocsMap[linkedInvoice.id] || []) : []
+                  const custDocs = matchedCust ? (soDocsMap[matchedCust.id] || []) : []
+                  const allOrderDocs = [...directDocs, ...issueDocs, ...invoiceDocs, ...custDocs]
+
+                  let tradeDoc = allOrderDocs.find((d) =>
+                    isWh1Order
+                      ? d.document_type === "Bank Permit" || d.document_type === "Trade Paper" || d.document_type === "Trade License" || d.document_type?.toLowerCase().includes("permit")
+                      : d.document_type === "Trade License" || d.document_type === "Trade Paper" || d.document_type?.toLowerCase().includes("license")
+                  )
+
+                  if (!tradeDoc && matchedCust?.tradePaperUrl) {
+                    tradeDoc = {
+                      id: `CUST-REG-${viewModalOrder.id}`,
+                      record_id: viewModalOrder.id,
+                      record_type: "sales_order",
+                      document_type: isWh1Order ? "Bank Permit" : "Trade License",
+                      file_name: matchedCust.tradePaperFileName || (isWh1Order ? "Bank Permit.pdf" : "Trade License.pdf"),
+                      file_size: 102400,
+                      file_url: matchedCust.tradePaperUrl,
+                      uploaded_at: matchedCust.tradePaperUploadedAt || new Date().toISOString(),
+                      uploaded_by: matchedCust.name,
+                    }
+                  }
+
+                  const adviceDocs = allOrderDocs.filter((d) => d.document_type === "Payment Advice" || d.document_type?.toLowerCase().includes("advice"))
+                  const isCredit = (viewModalOrder.paymentType || (viewModalOrder as any).payment_type) === "Credit"
 
                   return (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3147,7 +3237,7 @@ export default function ControlCenter() {
                         <div className="flex items-center gap-2">
                           <FileCheck className="size-4 text-emerald-600" />
                           <div>
-                            <p className="text-xs font-bold text-zinc-900">Trade License</p>
+                            <p className="text-xs font-bold text-zinc-900">{isWh1Order ? "Bank Permit" : "Trade License"}</p>
                             <p className="text-[10px] text-zinc-500">{tradeDoc?.file_name || "Document verification"}</p>
                           </div>
                         </div>
@@ -3156,7 +3246,7 @@ export default function ControlCenter() {
                             type="button"
                             onClick={() => {
                               setPreviewDocUrl(tradeDoc.file_url)
-                              setPreviewDocName(tradeDoc.file_name || "Trade License.pdf")
+                              setPreviewDocName(tradeDoc.file_name || (isWh1Order ? "Bank Permit.pdf" : "Trade License.pdf"))
                             }}
                             className="px-3 py-1 rounded-lg bg-white border border-zinc-200 hover:bg-zinc-100 text-[11px] font-bold text-emerald-700 transition-colors shadow-2xs cursor-pointer"
                           >
@@ -3170,31 +3260,40 @@ export default function ControlCenter() {
                       </div>
 
                       {/* Payment Advice Card */}
-                      <div className="p-3 rounded-2xl border border-zinc-200 bg-zinc-50 flex items-center justify-between">
+                      <div className="p-3 rounded-2xl border border-zinc-200 bg-zinc-50 flex flex-col justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <FileCheck className="size-4 text-blue-600" />
                           <div>
-                            <p className="text-xs font-bold text-zinc-900">Payment Advice</p>
-                            <p className="text-[10px] text-zinc-500">{adviceDoc?.file_name || (isCredit ? "Not required for credit sale" : "Mandatory for cash sales")}</p>
+                            <p className="text-xs font-bold text-zinc-900">Payment Advice {adviceDocs.length > 1 ? `(${adviceDocs.length} Slips)` : ""}</p>
+                            <p className="text-[10px] text-zinc-500">
+                              {adviceDocs.length > 0
+                                ? (adviceDocs.map((d) => d.file_name).filter(Boolean).join(", ") || "Bank transfer slip(s)")
+                                : (isCredit ? "Not required for credit sale" : "Mandatory for cash sales")}
+                            </p>
                           </div>
                         </div>
                         {isCredit ? (
-                          <span className="text-[10px] font-semibold text-zinc-500 bg-zinc-200 px-2 py-0.5 rounded-full">
+                          <span className="text-[10px] font-semibold text-zinc-500 bg-zinc-200 px-2 py-0.5 rounded-full w-fit">
                             Optional (Credit)
                           </span>
-                        ) : adviceDoc?.file_url ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPreviewDocUrl(adviceDoc.file_url)
-                              setPreviewDocName(adviceDoc.file_name || "Payment Advice.pdf")
-                            }}
-                            className="px-3 py-1 rounded-lg bg-white border border-zinc-200 hover:bg-zinc-100 text-[11px] font-bold text-blue-700 transition-colors shadow-2xs cursor-pointer"
-                          >
-                            Preview Doc
-                          </button>
+                        ) : adviceDocs.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {adviceDocs.map((doc, idx) => (
+                              <button
+                                key={doc.id || idx}
+                                type="button"
+                                onClick={() => {
+                                  setPreviewDocUrl(doc.file_url)
+                                  setPreviewDocName(doc.file_name || `Payment Advice ${idx + 1}.pdf`)
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-white border border-zinc-200 hover:bg-zinc-100 text-[11px] font-bold text-blue-700 transition-colors shadow-2xs cursor-pointer inline-flex items-center gap-1"
+                              >
+                                <span>Preview Slip {adviceDocs.length > 1 ? idx + 1 : ""}</span>
+                              </button>
+                            ))}
+                          </div>
                         ) : (
-                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full w-fit">
                             Missing
                           </span>
                         )}

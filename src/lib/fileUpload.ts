@@ -27,55 +27,16 @@ const CLOUDINARY_CLOUD_NAME = (import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "dz
 const CLOUDINARY_UPLOAD_PRESET = (import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || "hkc_erp").trim()
 
 /**
- * Compresses an image file in-browser for high quality and compact storage.
+ * DEPRECATED: In-memory Base64 data URLs are strictly prohibited.
+ * Use uploadFile or uploadFileWithProgress to upload files directly to Cloudinary.
  */
 export async function compressImageIfPossible(
-  file: File,
-  maxWidth = 1920,
-  maxHeight = 1080,
-  quality = 0.85
+  _file: File,
+  _maxWidth = 1920,
+  _maxHeight = 1080,
+  _quality = 0.85
 ): Promise<string> {
-  if (typeof window === "undefined" || !file.type.startsWith("image/")) {
-    return new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = reject
-      reader.readAsDataURL(file)
-    })
-  }
-
-  return new Promise<string>((resolve) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const img = new Image()
-      img.onload = () => {
-        let { width, height } = img
-        if (width > maxWidth || height > maxHeight) {
-          if (width / maxWidth > height / maxHeight) {
-            height = Math.round((height * maxWidth) / width)
-            width = maxWidth
-          } else {
-            width = Math.round((width * maxHeight) / height)
-            height = maxHeight
-          }
-        }
-        const canvas = document.createElement("canvas")
-        canvas.width = width
-        canvas.height = height
-        const ctx = canvas.getContext("2d")
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height)
-          resolve(canvas.toDataURL("image/jpeg", quality))
-        } else {
-          resolve(e.target?.result as string)
-        }
-      }
-      img.onerror = () => resolve(e.target?.result as string)
-      img.src = e.target?.result as string
-    }
-    reader.onerror = () => resolve("")
-    reader.readAsDataURL(file)
-  })
+  throw new Error("Base64 data URLs are strictly prohibited. Files must be uploaded to Cloudinary.")
 }
 
 /**
@@ -279,7 +240,7 @@ async function uploadToCloudinary(
       if (signal?.aborted) return reject(new Error("Upload aborted"))
 
       const formData = new FormData()
-      formData.append("file", file)
+      formData.append("file", uploadableFile)
       formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET)
       formData.append("folder", `hkc_${folder}`)
 
@@ -315,6 +276,10 @@ async function uploadToCloudinary(
         } catch {}
 
         if (xhr.status >= 200 && xhr.status < 300 && data?.secure_url) {
+          if (typeof data.secure_url === "string" && data.secure_url.startsWith("data:")) {
+            reject(new Error("Cloudinary returned an invalid Base64 data URL"))
+            return
+          }
           if (onProgress) onProgress(100, file.size, file.size)
           resolve({
             url: data.secure_url,

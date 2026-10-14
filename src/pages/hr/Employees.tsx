@@ -13,6 +13,9 @@ import {
   Trash2,
   UploadCloud,
   ExternalLink,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
 } from "lucide-react"
 import { FloatingNav } from "@/components/FloatingNav"
 import { GlassCard } from "@/components/GlassCard"
@@ -44,6 +47,21 @@ import {
 } from "@/lib/hrApi"
 import { uploadFile, resolveFileUrl } from "@/lib/fileUpload"
 import { cn } from "@/lib/utils"
+
+export function parseNationalIdImages(raw: string | undefined | null): string[] {
+  if (!raw || typeof raw !== "string") return []
+  const trimmed = raw.trim()
+  if (!trimmed) return []
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (Array.isArray(parsed)) {
+        return parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      }
+    } catch {}
+  }
+  return [trimmed]
+}
 
 type FormState = Omit<Employee, "id">
 
@@ -315,7 +333,8 @@ export default function Employees() {
                   {!loading && sortedEmployees.length === 0 ? (
                     <tr><td colSpan={9} className="py-12 text-center text-zinc-400 font-medium">No employees have been registered yet.</td></tr>
                   ) : displayedEmployees.map((employee) => {
-                    const hasIdImage = Boolean(employee.national_id_image && employee.national_id_image.trim())
+                    const idImages = parseNationalIdImages(employee.national_id_image)
+                    const hasIdImage = idImages.length > 0
                     return (
                       <tr key={employee.id} className="hover:bg-black/[0.02] transition-colors">
                         <Cell width={colWidths.full_name}>
@@ -331,10 +350,11 @@ export default function Employees() {
                                   e.stopPropagation()
                                   setShowIdModalFor(employee)
                                 }}
-                                className="inline-flex items-center text-emerald-600 hover:text-emerald-700 hover:scale-110 transition-transform cursor-pointer"
-                                title="National ID Document Attached (Click to view)"
+                                className="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-700 hover:scale-105 transition-transform cursor-pointer px-1.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200"
+                                title={`National ID Attached (${idImages.length} ${idImages.length === 1 ? "document" : "documents: Front & Back"}) - Click to view`}
                               >
-                                <ShieldCheck className="size-4" />
+                                <ShieldCheck className="size-3.5" />
+                                <span className="text-[10px] font-black">{idImages.length > 1 ? `${idImages.length} Docs` : "ID"}</span>
                               </button>
                             )}
                           </div>
@@ -506,70 +526,149 @@ export default function Employees() {
 
       {/* Standalone National ID Preview Modal from Table List */}
       {showIdModalFor && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-          <div className="w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl border border-black/10">
-            <div className="flex items-center justify-between border-b border-black/10 px-6 py-4 bg-zinc-50">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="size-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                  <ShieldCheck className="size-5" />
-                </div>
-                <div className="min-w-0">
-                  <h4 className="truncate text-sm font-black text-black">National ID Identification Document</h4>
-                  <p className="truncate text-xs font-bold text-zinc-500">{showIdModalFor.full_name} ({showIdModalFor.employee_number})</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {showIdModalFor.national_id_image && (
-                  <button
-                    type="button"
-                    onClick={() => window.open(resolveFileUrl(showIdModalFor.national_id_image), "_blank")}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-zinc-100 text-black text-xs font-bold transition-colors cursor-pointer"
-                    title="Open in new browser tab"
-                  >
-                    <ExternalLink className="size-3.5" /> Open Tab
-                  </button>
-                )}
-                <button
-                  onClick={() => setShowIdModalFor(null)}
-                  className="p-1.5 rounded-xl hover:bg-black/5 text-zinc-500 hover:text-black transition-colors cursor-pointer"
-                  aria-label="Close National ID preview"
-                >
-                  <X className="size-5" />
-                </button>
-              </div>
-            </div>
+        <NationalIdPreviewModal
+          employee={showIdModalFor}
+          onClose={() => setShowIdModalFor(null)}
+          onEdit={(emp) => {
+            setShowIdModalFor(null)
+            openEdit(emp)
+          }}
+        />
+      )}
+    </div>
+  )
+}
 
-            <div className="max-h-[75vh] overflow-auto bg-zinc-100 p-6 flex items-center justify-center">
-              {showIdModalFor.national_id_image ? (
-                <img
-                  src={resolveFileUrl(showIdModalFor.national_id_image)}
-                  alt={`${showIdModalFor.full_name} National ID document`}
-                  className="mx-auto max-h-[70vh] w-auto max-w-full rounded-2xl bg-white object-contain shadow-md border border-black/10"
-                />
-              ) : (
-                <div className="text-center py-16 px-4">
-                  <ImagePlus className="size-12 text-zinc-300 mx-auto mb-3" />
-                  <p className="text-sm font-bold text-zinc-700">No National ID Document Uploaded</p>
-                  <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">
-                    This employee does not have a National ID document on file. You can upload one by editing the employee details.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const emp = showIdModalFor
-                      setShowIdModalFor(null)
-                      openEdit(emp)
-                    }}
-                    className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-black text-white text-xs font-bold hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
-                  >
-                    <Pencil className="size-3.5" /> Edit & Upload National ID
-                  </button>
-                </div>
-              )}
+function NationalIdPreviewModal({
+  employee,
+  onClose,
+  onEdit,
+}: {
+  employee: Employee
+  onClose: () => void
+  onEdit?: (employee: Employee) => void
+}) {
+  const images = parseNationalIdImages(employee.national_id_image)
+  const [activeIdx, setActiveIdx] = useState(0)
+  const currentUrl = images[activeIdx] || ""
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
+      <div className="w-full max-w-4xl overflow-hidden rounded-3xl bg-white shadow-2xl border border-black/10 flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between border-b border-black/10 px-6 py-4 bg-zinc-50 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="size-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+              <ShieldCheck className="size-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h4 className="truncate text-sm font-black text-black">National ID Document</h4>
+                {images.length > 0 && (
+                  <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200">
+                    {images.length} {images.length === 1 ? "File" : "Files"}
+                  </span>
+                )}
+              </div>
+              <p className="truncate text-xs font-bold text-zinc-500">{employee.full_name} ({employee.employee_number})</p>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            {currentUrl && (
+              <button
+                type="button"
+                onClick={() => window.open(resolveFileUrl(currentUrl), "_blank")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-zinc-100 text-black text-xs font-bold transition-colors cursor-pointer"
+                title="Open in new browser tab"
+              >
+                <ExternalLink className="size-3.5" /> Open Tab
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-xl hover:bg-black/5 text-zinc-500 hover:text-black transition-colors cursor-pointer"
+              aria-label="Close National ID preview"
+            >
+              <X className="size-5" />
+            </button>
+          </div>
         </div>
-      )}
+
+        {images.length > 1 && (
+          <div className="flex items-center justify-between px-6 py-2.5 bg-zinc-50 border-b border-black/5 shrink-0">
+            <div className="flex items-center gap-1.5">
+              {images.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setActiveIdx(i)}
+                  className={cn(
+                    "px-3 py-1 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5",
+                    activeIdx === i
+                      ? "bg-zinc-900 text-white shadow-xs"
+                      : "bg-white text-zinc-700 hover:bg-zinc-200 border border-black/10"
+                  )}
+                >
+                  <span>{i === 0 ? "Front Side" : i === 1 ? "Back Side" : `Page ${i + 1}`}</span>
+                  <span className="text-[10px] opacity-70">({i + 1}/{images.length})</span>
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                disabled={activeIdx === 0}
+                onClick={() => setActiveIdx((prev) => Math.max(0, prev - 1))}
+                className="p-1 rounded-lg hover:bg-zinc-200 disabled:opacity-30 cursor-pointer"
+                title="Previous Document"
+              >
+                <ChevronLeft className="size-4" />
+              </button>
+              <span className="text-xs font-mono font-bold text-zinc-500 px-1">
+                {activeIdx + 1} of {images.length}
+              </span>
+              <button
+                type="button"
+                disabled={activeIdx === images.length - 1}
+                onClick={() => setActiveIdx((prev) => Math.min(images.length - 1, prev + 1))}
+                className="p-1 rounded-lg hover:bg-zinc-200 disabled:opacity-30 cursor-pointer"
+                title="Next Document"
+              >
+                <ChevronRight className="size-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1 overflow-auto bg-zinc-100 p-6 flex items-center justify-center min-h-[350px]">
+          {currentUrl ? (
+            <img
+              src={resolveFileUrl(currentUrl)}
+              alt={`${employee.full_name} National ID page ${activeIdx + 1}`}
+              className="mx-auto max-h-[65vh] w-auto max-w-full rounded-2xl bg-white object-contain shadow-md border border-black/10"
+            />
+          ) : (
+            <div className="text-center py-16 px-4">
+              <ImagePlus className="size-12 text-zinc-300 mx-auto mb-3" />
+              <p className="text-sm font-bold text-zinc-700">No National ID Document Uploaded</p>
+              <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">
+                This employee does not have a National ID document on file. You can upload Front and Back documents by editing the employee details.
+              </p>
+              {onEdit && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose()
+                    onEdit(employee)
+                  }}
+                  className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-black text-white text-xs font-bold hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
+                >
+                  <Pencil className="size-3.5" /> Edit & Upload National ID
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -610,29 +709,46 @@ function EmployeeForm({
   const field = (key: keyof FormState, value: string | number) =>
     setForm((prev) => ({ ...prev, [key]: value }))
 
-  const handleNationalIdImage = async (file: File | undefined) => {
-    if (!file) return
+  const idImages = parseNationalIdImages(form.national_id_image)
+  const [selectedPreviewIdx, setSelectedPreviewIdx] = useState(0)
+
+  const handleNationalIdFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    const remainingSlots = Math.max(0, 10 - idImages.length)
+    if (remainingSlots <= 0) {
+      showToast("Limit Reached", "warning", "Maximum of 10 ID attachments allowed.")
+      return
+    }
+    const fileArray = Array.from(files).slice(0, remainingSlots)
     try {
       setUploadingId(true)
-      const res = await uploadFile(file, "employees")
-      setForm((prev) => ({ ...prev, national_id_image: res.url }))
-      showToast("Document Attached", "success", "National ID image uploaded successfully.")
+      const uploadedUrls: string[] = []
+      for (const f of fileArray) {
+        const res = await uploadFile(f, "employees")
+        if (res.url) uploadedUrls.push(res.url)
+      }
+      const nextImages = [...idImages, ...uploadedUrls]
+      setForm((prev) => ({
+        ...prev,
+        national_id_image: JSON.stringify(nextImages),
+      }))
+      showToast("Attached", "success", `${uploadedUrls.length} ID document(s) uploaded successfully.`)
     } catch (err: any) {
-      console.warn("National ID image upload failed:", err)
-      showToast("Upload Error", "warning", err?.message || "Failed to upload National ID image. Please try again.")
+      console.warn("National ID upload failed:", err)
+      showToast("Upload Error", "warning", err?.message || "Failed to upload National ID.")
     } finally {
       setUploadingId(false)
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ""
-      }
+      if (fileInputRef.current) fileInputRef.current.value = ""
     }
   }
 
-  const handleRemoveId = () => {
-    setForm((prev) => ({ ...prev, national_id_image: "" }))
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
-    }
+  const handleRemoveIdAt = (index: number) => {
+    const nextImages = idImages.filter((_, i) => i !== index)
+    setForm((prev) => ({
+      ...prev,
+      national_id_image: nextImages.length > 0 ? JSON.stringify(nextImages) : "",
+    }))
+    if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
   return (
@@ -664,63 +780,91 @@ function EmployeeForm({
 
           {/* National ID Document Upload / Attached View Section */}
           <div className="md:col-span-3">
-            <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-500 mb-1.5">
-              National ID Document
-            </label>
-            <div className="rounded-2xl border border-dashed border-black/15 bg-black/[0.02] p-4 transition-all">
-              {form.national_id_image ? (
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="flex items-center gap-3.5 min-w-0">
-                    <div
-                      onClick={() => setPreviewOpen(true)}
-                      className="group relative size-16 shrink-0 overflow-hidden rounded-xl border border-black/10 bg-white cursor-pointer shadow-xs"
-                      title="Click to view full preview"
-                    >
-                      <img
-                        src={resolveFileUrl(form.national_id_image)}
-                        alt="National ID preview"
-                        className="h-full w-full object-cover group-hover:scale-105 transition-transform"
-                      />
-                      <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
-                        <ZoomIn className="size-4" />
-                      </div>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black uppercase tracking-wider">
-                          <CheckCircle2 className="size-3" /> Document Attached
-                        </span>
-                      </div>
-                      <p className="text-xs font-bold text-zinc-900 mt-1">National ID Image on file</p>
-                      <p className="text-[11px] text-zinc-500 truncate">Saved with employee profile</p>
-                    </div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-[10px] font-black uppercase tracking-wider text-zinc-500">
+                National ID Documents ({idImages.length}/10 Attached)
+              </label>
+              <span className="text-[10px] text-zinc-400 font-bold">Front & Back sides recommended</span>
+            </div>
+
+            <div className="rounded-2xl border border-dashed border-black/15 bg-black/[0.02] p-4 transition-all space-y-3">
+              {idImages.length > 0 ? (
+                <div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {idImages.map((imgUrl, idx) => {
+                      const label = idx === 0 ? "Front Side" : idx === 1 ? "Back Side" : `Attachment ${idx + 1}`
+                      return (
+                        <div key={idx} className="p-2.5 rounded-xl border border-black/10 bg-white flex items-center justify-between gap-2 shadow-2xs">
+                          <div
+                            onClick={() => {
+                              setSelectedPreviewIdx(idx)
+                              setPreviewOpen(true)
+                            }}
+                            className="group relative size-14 shrink-0 overflow-hidden rounded-lg border border-black/10 bg-zinc-50 cursor-pointer"
+                            title="Click to preview"
+                          >
+                            <img
+                              src={resolveFileUrl(imgUrl)}
+                              alt={`National ID ${label}`}
+                              className="h-full w-full object-cover group-hover:scale-105 transition-transform"
+                            />
+                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                              <ZoomIn className="size-3.5" />
+                            </div>
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1">
+                              <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-black uppercase">
+                                {label}
+                              </span>
+                            </div>
+                            <p className="text-[11px] font-bold text-zinc-800 truncate mt-0.5">National ID {idx + 1}</p>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedPreviewIdx(idx)
+                                setPreviewOpen(true)
+                              }}
+                              className="p-1.5 rounded-lg border border-black/10 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 cursor-pointer"
+                              title="View Document"
+                            >
+                              <Eye className="size-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={saving || uploadingId}
+                              onClick={() => handleRemoveIdAt(idx)}
+                              className="p-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 cursor-pointer disabled:opacity-50"
+                              title="Remove Document"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setPreviewOpen(true)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-zinc-50 text-black text-xs font-bold transition-all shadow-2xs cursor-pointer"
-                    >
-                      <Eye className="size-3.5 text-zinc-600" /> View Document
-                    </button>
-                    <button
-                      type="button"
-                      disabled={saving || uploadingId}
-                      onClick={() => fileInputRef.current?.click()}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-zinc-50 text-black text-xs font-bold transition-all shadow-2xs cursor-pointer disabled:opacity-50"
-                    >
-                      <Pencil className="size-3.5 text-zinc-600" /> Replace
-                    </button>
-                    <button
-                      type="button"
-                      disabled={saving || uploadingId}
-                      onClick={handleRemoveId}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
-                    >
-                      <Trash2 className="size-3.5" /> Remove
-                    </button>
-                  </div>
+                  {idImages.length < 10 && (
+                    <div className="mt-3 flex items-center justify-between pt-2 border-t border-black/5">
+                      <span className="text-[11px] font-semibold text-zinc-500">
+                        Need to add more? You can attach up to {10 - idImages.length} more images (e.g. Back Side).
+                      </span>
+                      <button
+                        type="button"
+                        disabled={saving || uploadingId}
+                        onClick={() => fileInputRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-bold cursor-pointer disabled:opacity-50"
+                      >
+                        {uploadingId ? <LoadingDots color="bg-white" size="sm" /> : <Plus className="size-3.5" />}
+                        {uploadingId ? "Uploading..." : "Add Back Side / More"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -730,10 +874,10 @@ function EmployeeForm({
                     </div>
                     <div>
                       <span className="block text-xs font-black text-zinc-900">
-                        {uploadingId ? "Uploading National ID Document..." : "Upload National ID Document"}
+                        {uploadingId ? "Uploading National ID Documents..." : "Upload National ID (Front & Back)"}
                       </span>
                       <span className="block text-[11px] font-semibold text-zinc-500">
-                        PNG, JPG, JPEG, WEBP or PDF document (Max 15 MB)
+                        Select Front and Back photos together (PNG, JPG, WEBP, PDF - Up to 10 files)
                       </span>
                     </div>
                   </div>
@@ -745,7 +889,7 @@ function EmployeeForm({
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-black hover:bg-zinc-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
                   >
                     {uploadingId ? <LoadingDots color="bg-white" size="sm" /> : <UploadCloud className="size-4" />}
-                    {uploadingId ? "Uploading..." : "Choose National ID File"}
+                    {uploadingId ? "Uploading..." : "Choose ID Files (Front & Back)"}
                   </button>
                 </div>
               )}
@@ -753,9 +897,10 @@ function EmployeeForm({
               <input
                 ref={fileInputRef}
                 type="file"
+                multiple
                 accept="image/*,application/pdf"
                 disabled={saving || uploadingId}
-                onChange={(e) => handleNationalIdImage(e.target.files?.[0])}
+                onChange={(e) => handleNationalIdFiles(e.target.files)}
                 className="hidden"
               />
             </div>
@@ -782,10 +927,10 @@ function EmployeeForm({
       </div>
 
       {/* Form In-Flight National ID Preview Modal */}
-      {previewOpen && form.national_id_image && (
+      {previewOpen && idImages.length > 0 && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-          <div className="w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl border border-black/10">
-            <div className="flex items-center justify-between border-b border-black/10 px-6 py-4 bg-zinc-50">
+          <div className="w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl border border-black/10 flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between border-b border-black/10 px-6 py-4 bg-zinc-50 shrink-0">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="size-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
                   <ShieldCheck className="size-5" />
@@ -796,24 +941,70 @@ function EmployeeForm({
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => window.open(resolveFileUrl(form.national_id_image), "_blank")}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-zinc-100 text-black text-xs font-bold transition-colors cursor-pointer"
-                  title="Open in new browser tab"
-                >
-                  <ExternalLink className="size-3.5" /> Open Tab
-                </button>
+                {idImages[selectedPreviewIdx] && (
+                  <button
+                    type="button"
+                    onClick={() => window.open(resolveFileUrl(idImages[selectedPreviewIdx]), "_blank")}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-zinc-100 text-black text-xs font-bold transition-colors cursor-pointer"
+                    title="Open in new browser tab"
+                  >
+                    <ExternalLink className="size-3.5" /> Open Tab
+                  </button>
+                )}
                 <button onClick={() => setPreviewOpen(false)} className="p-1.5 rounded-xl hover:bg-black/5 text-zinc-500 hover:text-black transition-colors cursor-pointer">
                   <X className="size-5" />
                 </button>
               </div>
             </div>
-            <div className="max-h-[75vh] overflow-auto bg-zinc-100 p-6 flex items-center justify-center">
+
+            {idImages.length > 1 && (
+              <div className="flex items-center justify-between px-6 py-2.5 bg-zinc-50 border-b border-black/5 shrink-0">
+                <div className="flex items-center gap-1.5">
+                  {idImages.map((_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setSelectedPreviewIdx(i)}
+                      className={cn(
+                        "px-3 py-1 rounded-lg text-xs font-extrabold transition-all cursor-pointer",
+                        selectedPreviewIdx === i
+                          ? "bg-zinc-900 text-white shadow-xs"
+                          : "bg-white text-zinc-700 hover:bg-zinc-200 border border-black/10"
+                      )}
+                    >
+                      {i === 0 ? "Front Side" : i === 1 ? "Back Side" : `Page ${i + 1}`}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={selectedPreviewIdx === 0}
+                    onClick={() => setSelectedPreviewIdx((p) => Math.max(0, p - 1))}
+                    className="p-1 rounded-lg hover:bg-zinc-200 disabled:opacity-30 cursor-pointer"
+                  >
+                    <ChevronLeft className="size-4" />
+                  </button>
+                  <span className="text-xs font-mono font-bold text-zinc-500 px-1">
+                    {selectedPreviewIdx + 1} of {idImages.length}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={selectedPreviewIdx === idImages.length - 1}
+                    onClick={() => setSelectedPreviewIdx((p) => Math.min(idImages.length - 1, p + 1))}
+                    className="p-1 rounded-lg hover:bg-zinc-200 disabled:opacity-30 cursor-pointer"
+                  >
+                    <ChevronRight className="size-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex-1 overflow-auto bg-zinc-100 p-6 flex items-center justify-center">
               <img
-                src={resolveFileUrl(form.national_id_image)}
+                src={resolveFileUrl(idImages[selectedPreviewIdx])}
                 alt="National ID document"
-                className="mx-auto max-h-[70vh] w-auto max-w-full rounded-2xl bg-white object-contain shadow-md border border-black/10"
+                className="mx-auto max-h-[65vh] w-auto max-w-full rounded-2xl bg-white object-contain shadow-md border border-black/10"
               />
             </div>
           </div>
@@ -925,71 +1116,19 @@ function EmployeeDetails({
 
       {/* Full-Screen National ID Document Viewer Modal */}
       {showNationalId && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-          <div className="w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl border border-black/10">
-            <div className="flex items-center justify-between border-b border-black/10 px-6 py-4 bg-zinc-50">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="size-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-                  <ShieldCheck className="size-5" />
-                </div>
-                <div className="min-w-0">
-                  <h4 className="truncate text-sm font-black text-black">National ID Identification Document</h4>
-                  <p className="truncate text-xs font-bold text-zinc-500">{employee.full_name} ({employee.employee_number})</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {hasNationalId && (
-                  <button
-                    type="button"
-                    onClick={() => window.open(resolveFileUrl(employee.national_id_image), "_blank")}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-black/10 bg-white hover:bg-zinc-100 text-black text-xs font-bold transition-colors cursor-pointer"
-                    title="Open in new browser tab"
-                  >
-                    <ExternalLink className="size-3.5" /> Open Tab
-                  </button>
-                )}
-                <button
-                  onClick={() => setShowNationalId(false)}
-                  className="p-1.5 rounded-xl hover:bg-black/5 text-zinc-500 hover:text-black transition-colors cursor-pointer"
-                  aria-label="Close National ID preview"
-                >
-                  <X className="size-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="max-h-[75vh] overflow-auto bg-zinc-100 p-6 flex items-center justify-center">
-              {hasNationalId ? (
-                <img
-                  src={resolveFileUrl(employee.national_id_image)}
-                  alt={`${employee.full_name} National ID document`}
-                  className="mx-auto max-h-[70vh] w-auto max-w-full rounded-2xl bg-white object-contain shadow-md border border-black/10"
-                />
-              ) : (
-                <div className="text-center py-16 px-4">
-                  <ImagePlus className="size-12 text-zinc-300 mx-auto mb-3" />
-                  <p className="text-sm font-bold text-zinc-700">No National ID Document Uploaded</p>
-                  <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">
-                    This employee does not have a National ID document on file. You can upload one by editing the employee details.
-                  </p>
-                  {onEdit && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowNationalId(false)
-                        onClose()
-                        onEdit(employee)
-                      }}
-                      className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-black text-white text-xs font-bold hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
-                    >
-                      <Pencil className="size-3.5" /> Edit & Upload National ID
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <NationalIdPreviewModal
+          employee={employee}
+          onClose={() => setShowNationalId(false)}
+          onEdit={
+            onEdit
+              ? (emp) => {
+                  setShowNationalId(false)
+                  onClose()
+                  onEdit(emp)
+                }
+              : undefined
+          }
+        />
       )}
     </div>
   )

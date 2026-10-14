@@ -33,9 +33,10 @@ import { LoadingDots } from "@/components/ui/LoadingDots"
 import {
   type ShipmentDocAttachment,
   savePaymentAdvice,
+  savePaymentAdvices,
   fetchTradeAndAdviceDocs,
 } from "@/lib/tradeDocumentService"
-import { uploadFile, validateFileForUpload } from "@/lib/fileUpload"
+import { uploadFile, uploadFilesConcurrently, validateFileForUpload } from "@/lib/fileUpload"
 import { updateSalesIssue } from "@/lib/salesIssuesApi"
 
 export type InvoiceAttachment = ShipmentDocAttachment
@@ -83,7 +84,7 @@ export default function Invoices() {
   const [editPayBank, setEditPayBank] = useState("1000-02-26")
   const [editPayRef, setEditPayRef] = useState("")
   const [editNotes, setEditNotes] = useState("")
-  const [editAdviceFile, setEditAdviceFile] = useState<File | null>(null)
+  const [editAdviceFiles, setEditAdviceFiles] = useState<File[]>([])
 
   // Create Invoice Slide-In Drawer State
   const [showCreateDrawer, setShowCreateDrawer] = useState(false)
@@ -332,7 +333,7 @@ export default function Invoices() {
     setEditPayBank("1000-02-26")
     setEditPayRef(`PAY-${Date.now().toString().slice(-4)}`)
     setEditNotes(inv.notes || "")
-    setEditAdviceFile(null)
+    setEditAdviceFiles([])
     setIsEditModalOpen(true)
   }
 
@@ -353,22 +354,28 @@ export default function Invoices() {
       return
     }
 
-    if (hasPayment && !editAdviceFile) {
+    if (hasPayment && editAdviceFiles.length === 0) {
       showToast("Payment Advice Required", "warning", "Payment Advice receipt must be attached before recording an installment payment.")
       return
     }
 
     setIsSavingEdit(true)
     try {
-      let stagedSlipUrl = ""
-      let stagedSlipName = ""
+      const stagedSlips: Array<{ fileName: string; fileUrl: string; fileSize?: number }> = []
 
-      if (editAdviceFile) {
-        stagedSlipName = editAdviceFile.name
+      if (editAdviceFiles.length > 0) {
         try {
-          const upRes = await uploadFile(editAdviceFile, "invoices")
-          stagedSlipUrl = upRes.url
-          stagedSlipName = upRes.filename || editAdviceFile.name
+          const upRes = await uploadFilesConcurrently(editAdviceFiles, "invoices", () => {})
+          for (let i = 0; i < upRes.length; i++) {
+            const r = upRes[i]
+            if (r.url) {
+              stagedSlips.push({
+                fileName: r.originalName || editAdviceFiles[i]?.name || `Slip-${i + 1}`,
+                fileUrl: r.url,
+                fileSize: editAdviceFiles[i]?.size || 102400,
+              })
+            }
+          }
         } catch (err: any) {
           console.error("Payment advice upload failed:", err)
           showToast("Upload Failed", "warning", err.message || "Failed to upload payment advice receipt. Please try again.")
@@ -377,19 +384,20 @@ export default function Invoices() {
         }
 
         try {
-          await savePaymentAdvice({
+          await savePaymentAdvices({
             invoiceId: editingInvoice.id,
             salesIssueId: editingInvoice.sales_issue_id || undefined,
             salesOrderId: editingInvoice.sales_order_id || undefined,
             fsNo: editingInvoice.fs_no || undefined,
-            fileName: stagedSlipName,
-            fileUrl: stagedSlipUrl,
+            advices: stagedSlips,
             uploadedBy: "Finance Officer",
           })
         } catch (err) {
           console.warn("Payment advice upload notice:", err)
         }
       }
+
+      const primarySlip = stagedSlips[0]
 
       if (hasPayment) {
         const paymentRef = editPayRef || `PAY-${Date.now().toString().slice(-4)}`
@@ -408,8 +416,8 @@ export default function Invoices() {
           method: "Bank Deposit",
           bank_account_code: editPayBank,
           reference: paymentRef,
-          payment_advice_url: stagedSlipUrl || undefined,
-          payment_advice_filename: stagedSlipName || undefined,
+          payment_advice_url: primarySlip?.fileUrl || undefined,
+          payment_advice_filename: primarySlip?.fileName || undefined,
           notes: editNotes,
           direction: isPurchase ? "Made" : "Received",
         })
@@ -423,8 +431,9 @@ export default function Invoices() {
               bankAccountCode: editPayBank,
               reference: paymentRef,
               notes: editNotes,
-              paymentAdviceUrl: stagedSlipUrl || undefined,
-              paymentAdviceFilename: stagedSlipName || undefined,
+              paymentAdviceUrl: primarySlip?.fileUrl || undefined,
+              paymentAdviceFilename: primarySlip?.fileName || undefined,
+              paymentAdviceUrls: stagedSlips.map((s) => s.fileUrl),
             })
           } catch (poErr) {
             console.warn("Cross-syncing PO installment notice:", poErr)
@@ -1128,7 +1137,7 @@ export default function Invoices() {
                 <button
                   type="button"
                   onClick={async () => {
-                    await Promise.all([store.reloadFromApi(), erpStore.reloadFromApi()])
+                    await Promise.all([store.loadFromApi(true), erpStore.loadSalesData(true)])
                   }}
                   disabled={isLoading}
                   title="Reload invoices from server"
@@ -1420,52 +1429,79 @@ export default function Invoices() {
                       />
                     </div>
 
-                    {/* Payment Advice Receipt Attachment */}
+                    {/* Payment Advice Receipt Attachment (Up to 10 Files) */}
                     <div>
                       <div className="flex items-center justify-between mb-1">
                         <label className="font-bold text-zinc-700">
                           Attach Payment Advice Receipt {currentInputAmt > 0 ? "*" : "(Required for installments)"}
                         </label>
-                        {editAdviceFile && (
-                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                            Attached
-                          </span>
-                        )}
-                      </div>
-                      <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
-                        editAdviceFile
-                          ? "border-emerald-400 bg-emerald-50/40 hover:bg-emerald-50/70"
-                          : currentInputAmt > 0
-                          ? "border-amber-300 bg-amber-50/30 hover:bg-amber-50/60"
-                          : "border-zinc-300 hover:border-zinc-400 bg-zinc-50/60 hover:bg-zinc-50"
-                      }`}>
-                        <Upload className={`size-4 mb-1 ${editAdviceFile ? "text-emerald-600" : (currentInputAmt > 0 ? "text-amber-500" : "text-zinc-400")}`} />
-                        <span className={`text-xs font-bold ${editAdviceFile ? "text-emerald-800" : (currentInputAmt > 0 ? "text-amber-900" : "text-zinc-700")}`}>
-                          {editAdviceFile ? editAdviceFile.name : `Choose bank slip (PDF, PNG, JPG) ${currentInputAmt > 0 ? "*" : ""}`}
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                          {editAdviceFiles.length} / 10 attached
                         </span>
-                        <input
-                          type="file"
-                          accept=".pdf,.png,.jpg,.jpeg"
-                          className="hidden"
-                          disabled={isSavingEdit}
-                          onChange={(e) => {
-                            if (e.target.files && e.target.files[0]) {
-                              const file = e.target.files[0]
-                              const valErr = validateFileForUpload(file)
-                              if (valErr) {
-                                showToast("Invalid File", "warning", valErr)
-                                e.target.value = ""
-                                return
+                      </div>
+
+                      {editAdviceFiles.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {editAdviceFiles.map((file, idx) => (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-800 border border-emerald-200"
+                            >
+                              <Paperclip className="size-3 text-emerald-600" />
+                              <span className="max-w-[150px] truncate">{file.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => setEditAdviceFiles((prev) => prev.filter((_, i) => i !== idx))}
+                                className="text-rose-500 hover:text-rose-700 ml-0.5 cursor-pointer"
+                              >
+                                <X className="size-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {editAdviceFiles.length < 10 && (
+                        <label className={`flex flex-col items-center justify-center p-3.5 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
+                          editAdviceFiles.length > 0
+                            ? "border-emerald-400 bg-emerald-50/40 hover:bg-emerald-50/70"
+                            : currentInputAmt > 0
+                            ? "border-amber-300 bg-amber-50/30 hover:bg-amber-50/60"
+                            : "border-zinc-300 hover:border-zinc-400 bg-zinc-50/60 hover:bg-zinc-50"
+                        }`}>
+                          <Upload className={`size-4 mb-1 ${editAdviceFiles.length > 0 ? "text-emerald-600" : (currentInputAmt > 0 ? "text-amber-500" : "text-zinc-400")}`} />
+                          <span className={`text-xs font-bold ${editAdviceFiles.length > 0 ? "text-emerald-800" : (currentInputAmt > 0 ? "text-amber-900" : "text-zinc-700")}`}>
+                            {editAdviceFiles.length > 0 ? `Attach More Slips (${editAdviceFiles.length} / 10)` : `Choose bank slips (PDF, PNG, JPG) ${currentInputAmt > 0 ? "*" : ""}`}
+                          </span>
+                          <input
+                            type="file"
+                            multiple
+                            accept=".pdf,.png,.jpg,.jpeg"
+                            className="hidden"
+                            disabled={isSavingEdit}
+                            onChange={(e) => {
+                              const files = Array.from(e.target.files || [])
+                              const validFiles: File[] = []
+                              for (const file of files) {
+                                const valErr = validateFileForUpload(file)
+                                if (valErr) {
+                                  showToast("Invalid File", "warning", `${file.name}: ${valErr}`)
+                                } else {
+                                  validFiles.push(file)
+                                }
                               }
-                              setEditAdviceFile(file)
-                            }
-                          }}
-                        />
-                      </label>
+                              if (validFiles.length > 0) {
+                                setEditAdviceFiles((prev) => [...prev, ...validFiles].slice(0, 10))
+                              }
+                              e.target.value = ""
+                            }}
+                          />
+                        </label>
+                      )}
                       <span className="text-[10px] text-zinc-500 mt-1 block">
                         {currentInputAmt > 0
-                          ? "Payment Advice / deposit receipt is mandatory when recording an installment payment."
-                          : "Upload bank deposit slip or advice receipt."}
+                          ? "Payment Advice / deposit receipt is mandatory when recording an installment payment (up to 10 files)."
+                          : "Upload bank deposit slip or advice receipt (up to 10 files)."}
                       </span>
                     </div>
 
@@ -1757,7 +1793,7 @@ export default function Invoices() {
         onClose={() => setSplittingInvoice(null)}
         onSaveSuccess={() => {
           setSplittingInvoice(null)
-          void store.reloadFromApi()
+          void store.loadFromApi(true)
         }}
       />
     </div>

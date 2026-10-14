@@ -282,9 +282,10 @@ export interface SalesOrder {
   id: string
   quotationId?: string
   customer: string
-  customerId: string
+  customerId?: string
   customerPhone?: string
   customerGroup?: string
+  paymentAdvices?: Array<{ id?: string; name: string; url: string; size?: number }>
   warehouse: string
   warehouseName?: string
   date: string
@@ -397,6 +398,7 @@ export interface PurchaseOrder {
   bankName?: string
   paymentMethod?: "Cheque" | "Bank Transfer" | "RTGS" | "Cash" | string
   paymentAdviceAttachment?: PurchaseOrderAttachment | null
+  paymentAdviceAttachments?: PurchaseOrderAttachment[]
   attachments?: PurchaseOrderAttachment[] | string[]
   installmentPayments?: Array<{
     id: string
@@ -1055,8 +1057,11 @@ class ErpStore {
 
       this.salesOrders = sortNewestFirst((salesOrders || []).map((so: any) => ({
         ...so,
-        warehouse: so.warehouse || so.warehouse_id || "WH2-VET-ALEM",
+        customerId: so.customerId || so.customer_id || undefined,
+        customer_id: so.customer_id || so.customerId || undefined,
         customer: so.customer || so.customer_name || "Customer",
+        customer_name: so.customer_name || so.customer || "Customer",
+        warehouse: so.warehouse || so.warehouse_id || "WH2-VET-ALEM",
         amount: Number(so.amount ?? so.grand_total ?? so.total_amount ?? so.subtotal ?? 0),
         items: Array.isArray(so.items) ? so.items : [],
         approvalStatus: so.approvalStatus || so.approval_status || "Pending",
@@ -1206,8 +1211,8 @@ class ErpStore {
     return () => this.listeners.delete(listener)
   }
 
-  public reloadFromApi() {
-    return this.loadFromApi("all")
+  public reloadFromApi(scope?: "inventory" | "sales" | "all") {
+    return this.loadFromApi(scope || "all")
   }
 
   public isLoading() {
