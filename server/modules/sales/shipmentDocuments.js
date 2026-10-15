@@ -53,6 +53,25 @@ export async function saveShipmentDoc(input) {
 
   try {
     const resource = getResource("shipment_documents")
+
+    // Idempotency safeguard: check if identical document already exists
+    if (doc.record_id && doc.file_url) {
+      const existing = await drizzleListRows({
+        resource,
+        query: {
+          record_id: `eq.${doc.record_id}`,
+          record_type: `eq.${doc.record_type}`,
+          document_type: `eq.${doc.document_type}`,
+        },
+      })
+      if (existing?.status === 200 && Array.isArray(existing?.body)) {
+        const match = existing.body.find((r) => r.file_url === doc.file_url)
+        if (match) {
+          return { status: 200, body: match }
+        }
+      }
+    }
+
     const res = await drizzleCreateRow({ resource, body: doc })
     return res
   } catch (err) {

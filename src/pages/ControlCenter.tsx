@@ -2753,13 +2753,23 @@ export default function ControlCenter() {
                               }
                             }
 
-                            const adviceDocs = allOrderDocs.filter((d) => d.document_type === "Payment Advice" || d.document_type?.toLowerCase().includes("advice"))
+                            const rawAdviceDocs = allOrderDocs.filter((d) => d.document_type === "Payment Advice" || d.document_type?.toLowerCase().includes("advice"))
+                            const seenAdviceUrls = new Set<string>()
+                            const adviceDocs: ShipmentDocAttachment[] = []
+                            for (const doc of rawAdviceDocs) {
+                              const norm = doc.file_url?.trim()
+                              if (norm && !seenAdviceUrls.has(norm)) {
+                                seenAdviceUrls.add(norm)
+                                adviceDocs.push(doc)
+                              }
+                            }
                             const directSoAdvices = Array.isArray(so.paymentAdvices)
                               ? so.paymentAdvices
                               : (Array.isArray((so as any).payment_advices) ? (so as any).payment_advices : [])
                             directSoAdvices.forEach((da: any, idx: number) => {
-                              const u = da?.url || da?.fileUrl
-                              if (u && !adviceDocs.some((ad) => ad.file_url === u)) {
+                              const u = (da?.url || da?.fileUrl)?.trim()
+                              if (u && !seenAdviceUrls.has(u)) {
+                                seenAdviceUrls.add(u)
                                 adviceDocs.push({
                                   id: da.id || `table-adv-${idx}`,
                                   record_id: so.id,
@@ -3260,13 +3270,23 @@ export default function ControlCenter() {
                     }
                   }
 
-                  const adviceDocs = allOrderDocs.filter((d) => d.document_type === "Payment Advice" || d.document_type?.toLowerCase().includes("advice"))
+                  const rawAdviceDocs = allOrderDocs.filter((d) => d.document_type === "Payment Advice" || d.document_type?.toLowerCase().includes("advice"))
+                  const seenAdviceUrls = new Set<string>()
+                  const adviceDocs: ShipmentDocAttachment[] = []
+                  for (const doc of rawAdviceDocs) {
+                    const norm = doc.file_url?.trim()
+                    if (norm && !seenAdviceUrls.has(norm)) {
+                      seenAdviceUrls.add(norm)
+                      adviceDocs.push(doc)
+                    }
+                  }
                   const directModalAdvices = Array.isArray(viewModalOrder.paymentAdvices)
                     ? viewModalOrder.paymentAdvices
                     : (Array.isArray((viewModalOrder as any).payment_advices) ? (viewModalOrder as any).payment_advices : [])
                   directModalAdvices.forEach((da: any, idx: number) => {
-                    const u = da?.url || da?.fileUrl
-                    if (u && !adviceDocs.some((ad) => ad.file_url === u)) {
+                    const u = (da?.url || da?.fileUrl)?.trim()
+                    if (u && !seenAdviceUrls.has(u)) {
+                      seenAdviceUrls.add(u)
                       adviceDocs.push({
                         id: da.id || `modal-adv-${idx}`,
                         record_id: viewModalOrder.id,
