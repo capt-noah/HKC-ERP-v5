@@ -21,7 +21,7 @@ export async function checkProductDeletable(productId) {
 
   // 2. Check stock movements for outbound sales / dispatch
   const [movements] = await pool.query(
-    "SELECT COUNT(*) as cnt FROM `stock_movements` WHERE product_id = ? AND movement_type IN ('OUTBOUND_SALE', 'DISPATCH', 'SALES_ISSUE')",
+    "SELECT COUNT(*) as cnt FROM `stock_movements` WHERE product_id = ? AND (movement_type IN ('ISSUE', 'OUTBOUND_SALE', 'DISPATCH', 'SALES_ISSUE') OR reference_type = 'SALES_ISSUE')",
     [cleanId]
   )
   if (movements[0].cnt > 0) {
@@ -35,7 +35,7 @@ export async function checkProductDeletable(productId) {
 
   // 3. Check export movements for dispatch / sales
   const [expMov] = await pool.query(
-    "SELECT COUNT(*) as cnt FROM `export_warehouse_movements` WHERE product_id = ? AND movement_type IN ('DISPATCH', 'SALE', 'OUTBOUND')",
+    "SELECT COUNT(*) as cnt FROM `export_warehouse_movements` WHERE product_id = ? AND movement_type IN ('OUTBOUND_DISPATCH', 'DISPATCH', 'SALE', 'OUTBOUND')",
     [cleanId]
   )
   if (expMov[0].cnt > 0) {
@@ -85,8 +85,8 @@ export async function checkBatchDeletable(batchId) {
 
   // 2. Check outbound stock movements
   const [movements] = await pool.query(
-    "SELECT COUNT(*) as cnt FROM `stock_movements` WHERE batch_no = ? AND movement_type IN ('OUTBOUND_SALE', 'DISPATCH', 'SALES_ISSUE')",
-    [batchNo]
+    "SELECT COUNT(*) as cnt FROM `stock_movements` WHERE (batch_no = ? OR batch_no = ?) AND (movement_type IN ('ISSUE', 'OUTBOUND_SALE', 'DISPATCH', 'SALES_ISSUE') OR reference_type = 'SALES_ISSUE')",
+    [batchNo, cleanId]
   )
   if (movements[0].cnt > 0) {
     return {
@@ -102,6 +102,65 @@ export async function checkBatchDeletable(batchId) {
     isPermanentlyBlocked: false,
     salesCount: 0,
     reason: `Batch '${batchNo}' has zero sales. Eligible for deletion.`,
+  }
+}
+
+export async function checkExportMovementDeletable(movementId) {
+  const cleanId = String(movementId).trim()
+
+  const [mRows] = await pool.query(
+    "SELECT id, product_id, movement_type, voucher_no, net_quantity FROM `export_warehouse_movements` WHERE id = ? LIMIT 1",
+    [cleanId]
+  )
+  if (mRows.length === 0) {
+    return { canDelete: true, isPermanentlyBlocked: false, reason: "Movement not found." }
+  }
+
+  const mov = mRows[0]
+  const mType = String(mov.movement_type || "").toUpperCase()
+
+  if (["DISPATCH", "SALE", "OUTBOUND", "OUTBOUND_DISPATCH"].includes(mType)) {
+    return {
+      canDelete: false,
+      isPermanentlyBlocked: true,
+      reason: `Movement '${mov.voucher_no || cleanId}' is an outbound dispatch/sale movement. Deletion is prohibited to preserve sales and export integrity.`,
+    }
+  }
+
+  return {
+    canDelete: true,
+    isPermanentlyBlocked: false,
+    reason: `Movement '${mov.voucher_no || cleanId}' has zero outbound sales. Eligible for deletion.`,
+  }
+}
+
+export async function checkStockMovementDeletable(movementId) {
+  const cleanId = String(movementId).trim()
+
+  const [mRows] = await pool.query(
+    "SELECT id, product_id, batch_no, movement_type, reference_type FROM `stock_movements` WHERE id = ? LIMIT 1",
+    [cleanId]
+  )
+  if (mRows.length === 0) {
+    return { canDelete: true, isPermanentlyBlocked: false, reason: "Movement not found." }
+  }
+
+  const mov = mRows[0]
+  const mType = String(mov.movement_type || "").toUpperCase()
+  const rType = String(mov.reference_type || "").toUpperCase()
+
+  if (["ISSUE", "OUTBOUND_SALE", "DISPATCH", "SALES_ISSUE"].includes(mType) || rType === "SALES_ISSUE") {
+    return {
+      canDelete: false,
+      isPermanentlyBlocked: true,
+      reason: `Stock movement '${cleanId}' is an outbound sale/dispatch movement. Deletion is prohibited.`,
+    }
+  }
+
+  return {
+    canDelete: true,
+    isPermanentlyBlocked: false,
+    reason: `Stock movement '${cleanId}' is eligible for deletion.`,
   }
 }
 
@@ -206,6 +265,12 @@ export async function validateRecordDeletable(resource, id) {
   }
   if (normResource === "pharma_product_batches") {
     return await checkBatchDeletable(id)
+  }
+  if (normResource === "export_warehouse_movements") {
+    return await checkExportMovementDeletable(id)
+  }
+  if (normResource === "stock_movements") {
+    return await checkStockMovementDeletable(id)
   }
   if (normResource === "sales_orders") {
     return await checkSalesOrderDeletable(id)

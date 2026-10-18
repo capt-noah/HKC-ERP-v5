@@ -102,7 +102,7 @@ export interface JournalEntryLine {
   currency: string
   exchange_rate_at_time: number
   warehouse_id: string | null
-  party_type?: "Customer" | "Supplier" | "Employee" | null
+  party_type?: "Customer" | "Supplier" | "Employee" | "Warehouse" | null
   party_id?: string | null
   party_name?: string | null
   description?: string
@@ -2606,7 +2606,7 @@ class FinanceStore {
       debit_amount: number
       credit_amount: number
       warehouse_id?: string | null
-      party_type?: "Customer" | "Supplier" | "Employee" | null
+      party_type?: "Customer" | "Supplier" | "Employee" | "Warehouse" | null
       party_id?: string | null
       party_name?: string | null
     }>
@@ -3824,6 +3824,11 @@ class FinanceStore {
 
     const cleanWh = String(params.warehouseId || "").trim().toUpperCase()
     const isExport = cleanWh.startsWith("WH1") || cleanWh.includes("EXP") || cleanWh.includes("AGRI")
+    const standardWhCode = isExport
+      ? "WH1-AGRI-EXP"
+      : cleanWh.includes("LEBU") || cleanWh === "WH3"
+      ? "WH3-VET-LEBU"
+      : "WH2-VET-ALEM"
 
     // Resolve Stock Asset Account
     let stockAccCode = isExport ? "1410-01" : "1400-01"
@@ -3832,9 +3837,9 @@ class FinanceStore {
       stockAccCode = commSet.inventoryCode
     }
     const stockAcc = this.getMappedAccount(
-      isExport ? "inventory_stock_in_hand" : "inventory_stock_pharma",
+      isExport ? "inventory_stock_in_hand" : "inventory_pharma_stock",
       stockAccCode,
-      { warehouseId: params.warehouseId, itemName: params.productName }
+      { warehouseId: standardWhCode, itemName: params.productName }
     )
 
     // Resolve Beginning Balance / Opening Equity Account (3200 Retained Earnings)
@@ -3871,13 +3876,17 @@ class FinanceStore {
           account_id: stockAcc.id,
           debit_amount: totalValuation,
           credit_amount: 0,
-          warehouse_id: params.warehouseId || null,
+          warehouse_id: standardWhCode,
+          party_name: standardWhCode,
+          party_type: "Warehouse",
         },
         {
           account_id: equityAcc.id,
           debit_amount: 0,
           credit_amount: totalValuation,
-          warehouse_id: params.warehouseId || null,
+          warehouse_id: standardWhCode,
+          party_name: standardWhCode,
+          party_type: "Warehouse",
         },
       ]
     )
@@ -3933,6 +3942,11 @@ class FinanceStore {
 
     const cleanWh = String(params.warehouseId || "").trim().toUpperCase()
     const isExport = cleanWh.startsWith("WH1") || cleanWh.includes("EXP") || cleanWh.includes("AGRI")
+    const standardWhCode = isExport
+      ? "WH1-AGRI-EXP"
+      : cleanWh.includes("LEBU") || cleanWh === "WH3"
+      ? "WH3-VET-LEBU"
+      : "WH2-VET-ALEM"
 
     // 1. Resolve Stock Asset Account (To be Credited)
     let stockAccCode = isExport ? "1410-01" : "1400-01"
@@ -3943,7 +3957,7 @@ class FinanceStore {
     const stockAcc = this.getMappedAccount(
       isExport ? "inventory_stock_in_hand" : "inventory_pharma_stock",
       stockAccCode,
-      { warehouseId: params.warehouseId, itemName: params.productName }
+      { warehouseId: standardWhCode, itemName: params.productName }
     )
 
     // 2. Resolve Loss / Shrinkage Account (To be Debited)
@@ -3951,7 +3965,7 @@ class FinanceStore {
     const lossAcc = this.getMappedAccount(
       "stock_shrinkage_loss",
       "6000-22",
-      { warehouseId: params.warehouseId, itemName: params.productName }
+      { warehouseId: standardWhCode, itemName: params.productName }
     )
 
     const typeLabel =
@@ -3983,16 +3997,26 @@ class FinanceStore {
           account_id: lossAcc.id,
           debit_amount: totalValuation,
           credit_amount: 0,
-          warehouse_id: params.warehouseId || null,
+          warehouse_id: standardWhCode,
+          party_name: standardWhCode,
+          party_type: "Warehouse",
         },
         {
           account_id: stockAcc.id,
           debit_amount: 0,
           credit_amount: totalValuation,
-          warehouse_id: params.warehouseId || null,
+          warehouse_id: standardWhCode,
+          party_name: standardWhCode,
+          party_type: "Warehouse",
         },
       ]
     )
+
+    if (postRes.success) {
+      await this.persistJournal().catch((err) => {
+        console.error("[FinanceStore] Failed to persist stock loss journal voucher to DB:", err)
+      })
+    }
 
     return postRes
   }

@@ -3109,8 +3109,10 @@ export default function StockProducts() {
       <RecordDeleteModal
         isOpen={!!deletingSubEntry}
         title="Delete Sub-Entry?"
-        recordId={deletingSubEntry?.entry.voucherNo ? `Voucher: ${deletingSubEntry.entry.voucherNo}` : deletingSubEntry?.entry.entryId}
-        recordName={deletingSubEntry ? `${deletingSubEntry.product.name} — ${Number(deletingSubEntry.entry.quantityReceived || deletingSubEntry.entry.quantity || 0).toLocaleString()} ${deletingSubEntry.product.unit || "Quintal"}` : ""}
+        recordId={deletingSubEntry?.entry.entryId || deletingSubEntry?.entry.id}
+        recordName={deletingSubEntry ? `${deletingSubEntry.product.name} — ${deletingSubEntry.entry.voucherNo ? `Voucher ${deletingSubEntry.entry.voucherNo} ` : ""}(${Number(deletingSubEntry.entry.quantityReceived || deletingSubEntry.entry.quantity || 0).toLocaleString()} ${deletingSubEntry.product.unit || "Quintal"})` : ""}
+        resourceType="export_warehouse_movements"
+        warehouseId={deletingSubEntry?.product.warehouse || "WH1"}
         description={(() => {
           if (!deletingSubEntry) return ""
           const isOnlyEntry = (deletingSubEntry.product.wh1Entries || []).length <= 1
@@ -3122,6 +3124,7 @@ export default function StockProducts() {
         isDeleting={isDeletingSubEntry}
         onClose={() => setDeletingSubEntry(null)}
         onConfirmDelete={handleConfirmDeleteSubEntry}
+        onRequestSubmitted={() => setDeletingSubEntry(null)}
       />
     </div>
   )

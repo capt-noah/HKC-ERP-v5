@@ -1004,10 +1004,12 @@ export default function QuarantineTab({ warehouseId = "ALL" }: QuarantineTabProp
         title="Delete Quarantine Record?"
         recordId={deletingRecord?.id}
         recordName={`${deletingRecord?.productName} (Batch: ${deletingRecord?.batchNo})`}
+        resourceType="quarantine_records"
         description="This will permanently delete this quarantine record. The deducted quantity will be restored back into the product's physical stock and lot/batch ledger."
         isDeleting={isDeleting}
         onClose={() => setDeletingRecord(null)}
         onConfirmDelete={handleConfirmDeleteQuarantine}
+        onRequestSubmitted={() => setDeletingRecord(null)}
       />
     </div>
   )

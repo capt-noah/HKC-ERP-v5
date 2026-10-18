@@ -612,10 +612,13 @@ export default function StockBinEntryModal({
           onClose={() => setIsDeleteModalOpen(false)}
           onConfirmDelete={handleDeleteConfirm}
           title="Delete Movement Entry"
-          recordName={product.name}
-          recordId={entry?.id ? `Entry #${entry.id.slice(0, 8)}` : undefined}
+          recordName={product.name ? `${product.name} — ${entry?.batchNo ? `Batch ${entry.batchNo} ` : ""}(${entry?.qtyReceived ? `+${entry.qtyReceived}` : `-${entry?.qtyIssued || 0}`} ${product.unit || "Unit"})` : "Movement Entry"}
+          recordId={entry?.id}
+          resourceType="stock_movements"
+          warehouseId={product.warehouse}
           description="Are you sure you want to delete this stock movement record? Subsequent running balances will automatically be recalculated."
           isDeleting={isSaving}
+          onRequestSubmitted={() => setIsDeleteModalOpen(false)}
         />
       )}
     </>

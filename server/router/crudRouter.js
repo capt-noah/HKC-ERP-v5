@@ -339,6 +339,8 @@ crudRouter.delete("/:resource/:id", async (req, res, next) => {
       "pharma_products",
       "export_products",
       "pharma_product_batches",
+      "export_warehouse_movements",
+      "stock_movements",
       "sales_orders",
       "purchase_orders",
     ]

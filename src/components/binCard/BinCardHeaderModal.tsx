@@ -216,10 +216,12 @@ export default function BinCardHeaderModal({
         title="Delete Bin Card Item"
         recordId={card?.cardNo}
         recordName={card?.description}
+        resourceType="stock_movements"
         description="Are you sure you want to delete this Bin Card? All associated stock movement transaction entries will be permanently removed."
         isDeleting={isDeleting}
         onClose={() => setIsDeleteModalOpen(false)}
         onConfirmDelete={handleConfirmDelete}
+        onRequestSubmitted={() => setIsDeleteModalOpen(false)}
       />
     </>
   )

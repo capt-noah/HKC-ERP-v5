@@ -6,7 +6,6 @@ import {
   Activity,
   Search,
   MapPin,
-  RefreshCw,
   TrendingUp,
   Coins,
   PieChart as PieChartIcon,
@@ -67,6 +66,7 @@ import { useDeletionStore } from "@/lib/deletionStore"
 import { getExpiringItemsSummary } from "@/lib/expiryUtils"
 import { formatDateTimeDisplay, parseSafeDate } from "@/lib/dateUtils"
 import { resolveActivityDetails, isAutoSyncActivityLog, type UserActivityLog } from "@/lib/activityUtils"
+import { CustomerReceivablesSection } from "@/components/receivables/CustomerReceivablesSection"
 import { cn } from "@/lib/utils"
 
 const emptyHRData: HRData = { employees: [], attendance: [], leaves: [], payrollPeriods: [], payrollRecords: [] }
@@ -388,23 +388,17 @@ export default function ControlCenter() {
 
   // Outstanding Customer Receivables & Unsettled Sales Issues State
   const [salesIssues, setSalesIssues] = useState<SalesIssue[]>([])
-  const [salesIssuesLoading, setSalesIssuesLoading] = useState<boolean>(true)
   const [creditSectionTab, setCreditSectionTab] = useState<"receivables" | "payables">("receivables")
-  const [receivableFilter, setReceivableFilter] = useState<"all" | "unpaid" | "ongoing">("all")
-  const [receivableSearch, setReceivableSearch] = useState<string>("")
   const [payableFilter, setPayableFilter] = useState<"all" | "unpaid" | "ongoing">("all")
   const [payableSearch, setPayableSearch] = useState<string>("")
 
   const fetchSalesIssuesData = async () => {
-    setSalesIssuesLoading(true)
     try {
       const res = await listSalesIssues(new URLSearchParams({ limit: "100" }))
       const rows = Array.isArray(res) ? res : (res.rows || [])
       setSalesIssues(rows)
     } catch (err: any) {
       console.error("[SALES ISSUES FETCH ERROR]:", err.message)
-    } finally {
-      setSalesIssuesLoading(false)
     }
   }
 
@@ -443,13 +437,7 @@ export default function ControlCenter() {
   }
 
   // Unsettled Invoices & Outstanding Customer Receivables Computation
-  const {
-    unsettledIssues,
-    filteredReceivables,
-    totalOutstandingReceivables,
-    unpaidCount,
-    ongoingCount,
-  } = useMemo(() => {
+  const unsettledIssues = useMemo(() => {
     // 1. Primary source: Active AR Invoices from Finance Store
     let list: ReceivableItem[] = []
     if (invoices.length > 0) {
@@ -509,34 +497,8 @@ export default function ControlCenter() {
     }
 
     list.sort((a, b) => new Date(b.sale_date || 0).getTime() - new Date(a.sale_date || 0).getTime())
-
-    const totalOutstanding = list.reduce((sum, item) => sum + item.calculatedDue, 0)
-    const unpaid = list.filter((item) => item.calculatedPaid === 0 || item.effectiveSettlement === "Unpaid").length
-    const ongoing = list.filter((item) => item.calculatedPaid > 0 && item.calculatedDue > 0).length
-
-    const filtered = list.filter((item) => {
-      if (receivableFilter === "unpaid" && (item.calculatedPaid > 0 || item.effectiveSettlement !== "Unpaid")) return false
-      if (receivableFilter === "ongoing" && (item.calculatedPaid <= 0 || item.effectiveSettlement !== "Ongoing")) return false
-
-      if (receivableSearch.trim()) {
-        const q = receivableSearch.toLowerCase()
-        const matchCustomer = item.customer_name?.toLowerCase().includes(q)
-        const matchFs = item.fs_no?.toLowerCase().includes(q)
-        const matchRef = item.reference_no?.toLowerCase().includes(q)
-        if (!matchCustomer && !matchFs && !matchRef) return false
-      }
-
-      return true
-    })
-
-    return {
-      unsettledIssues: list,
-      filteredReceivables: filtered,
-      totalOutstandingReceivables: totalOutstanding,
-      unpaidCount: unpaid,
-      ongoingCount: ongoing,
-    }
-  }, [invoices, salesIssues, receivableFilter, receivableSearch])
+    return list
+  }, [invoices, salesIssues])
 
   // Unsettled Purchase Orders & Outstanding Supplier Payables Computation (AP)
   interface PayableItem {
@@ -1839,162 +1801,7 @@ export default function ControlCenter() {
                     </div>
 
                     {creditSectionTab === "receivables" ? (
-                      <>
-                        {/* Receivables Total Metric Banner */}
-                        <div className="p-3.5 rounded-2xl bg-gradient-to-br from-amber-50/80 to-rose-50/80 border border-amber-200/50 mb-3.5 flex items-center justify-between">
-                          <div>
-                            <p className="text-[10px] font-bold text-amber-900/70 uppercase tracking-wider">Total Uncollected</p>
-                            <p className="text-base sm:text-lg font-black text-amber-950 tracking-tight">
-                              ETB {totalOutstandingReceivables.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-[10px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-md">
-                              {unpaidCount} Unpaid
-                            </span>
-                            {ongoingCount > 0 && (
-                              <span className="text-[10px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-md ml-1">
-                                {ongoingCount} Ongoing
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Receivables Filter Tabs & Search */}
-                        <div className="space-y-2 mb-3">
-                          <div className="flex items-center gap-1 p-1 bg-black/5 rounded-xl text-[11px] font-bold">
-                            <button
-                              onClick={() => setReceivableFilter("all")}
-                              className={cn(
-                                "flex-1 py-1 rounded-lg transition-all text-center cursor-pointer",
-                                receivableFilter === "all" ? "bg-white text-black shadow-xs font-black" : "text-gray-500 hover:text-black"
-                              )}
-                            >
-                              All ({unsettledIssues.length})
-                            </button>
-                            <button
-                              onClick={() => setReceivableFilter("unpaid")}
-                              className={cn(
-                                "flex-1 py-1 rounded-lg transition-all text-center cursor-pointer",
-                                receivableFilter === "unpaid" ? "bg-white text-rose-600 shadow-xs font-black" : "text-gray-500 hover:text-black"
-                              )}
-                            >
-                              Unpaid ({unpaidCount})
-                            </button>
-                            <button
-                              onClick={() => setReceivableFilter("ongoing")}
-                              className={cn(
-                                "flex-1 py-1 rounded-lg transition-all text-center cursor-pointer",
-                                receivableFilter === "ongoing" ? "bg-white text-amber-600 shadow-xs font-black" : "text-gray-500 hover:text-black"
-                              )}
-                            >
-                              Ongoing ({ongoingCount})
-                            </button>
-                          </div>
-
-                          {unsettledIssues.length > 2 && (
-                            <div className="relative flex items-center h-8 px-2.5 rounded-xl border border-black/5 bg-black/[0.02]">
-                              <Search className="size-3.5 text-gray-400 mr-1.5 shrink-0" />
-                              <input
-                                type="text"
-                                value={receivableSearch}
-                                onChange={(e) => setReceivableSearch(e.target.value)}
-                                placeholder="Filter customer, FS no..."
-                                className="bg-transparent border-none text-[11px] font-medium text-black outline-none w-full placeholder:text-gray-400"
-                              />
-                              {receivableSearch && (
-                                <button onClick={() => setReceivableSearch("")} className="text-gray-400 hover:text-black cursor-pointer">
-                                  <X className="size-3" />
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Scrollable Receivables Cards */}
-                        <div className="max-h-[220px] overflow-y-auto pr-1 space-y-2 divide-y divide-black/5">
-                          {salesIssuesLoading ? (
-                            <div className="py-8 flex flex-col items-center justify-center gap-2 text-xs text-gray-400">
-                              <RefreshCw className="size-4 animate-spin text-gray-400" />
-                              Loading receivables...
-                            </div>
-                          ) : filteredReceivables.length === 0 ? (
-                            <div className="py-8 text-center px-4">
-                              {unsettledIssues.length === 0 ? (
-                                <div className="flex flex-col items-center">
-                                  <div className="size-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-1.5">
-                                    <CheckCircle2 className="size-5" />
-                                  </div>
-                                  <p className="text-xs font-bold text-black">All Customer Accounts Settled</p>
-                                  <p className="text-[11px] text-gray-400 mt-0.5">No outstanding or partial customer balances.</p>
-                                </div>
-                              ) : (
-                                <p className="text-xs text-gray-400">No sales issues match your filter.</p>
-                              )}
-                            </div>
-                          ) : (
-                            filteredReceivables.map((si) => (
-                              <div
-                                key={si.id}
-                                onClick={() => {
-                                  const editTarget = si.sales_issue_id || si.id || si.fs_no || ""
-                                  const searchTarget = si.fs_no || si.customer_name || ""
-                                  navigate(`/sales/sales-issued?search=${encodeURIComponent(searchTarget)}&editId=${encodeURIComponent(editTarget)}`)
-                                }}
-                                className="pt-2 first:pt-0 group cursor-pointer hover:bg-black/[0.02] p-2 rounded-xl transition-all"
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-1.5">
-                                      <p className="text-xs font-bold text-black truncate group-hover:text-indigo-600 transition-colors">
-                                        {si.customer_name || "Unknown Customer"}
-                                      </p>
-                                      <span
-                                        className={cn(
-                                          "px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0",
-                                          si.effectiveSettlement === "Unpaid"
-                                            ? "bg-rose-100 text-rose-700"
-                                            : "bg-amber-100 text-amber-700"
-                                        )}
-                                      >
-                                        {si.effectiveSettlement === "Ongoing" ? `${si.percentPaid}% paid` : "Unpaid"}
-                                      </span>
-                                    </div>
-
-                                    <div className="flex items-center gap-2 text-[10px] text-gray-400 font-medium mt-0.5">
-                                      <span>{si.fs_no || si.id}</span>
-                                      {si.sale_date && <span>• {si.sale_date}</span>}
-                                      <span>• {si.payment_type || "Credit"}</span>
-                                    </div>
-                                  </div>
-
-                                  <div className="text-right shrink-0">
-                                    <p className="text-xs font-black text-rose-600">
-                                      ETB {si.calculatedDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </p>
-                                    <p className="text-[10px] text-gray-400 font-semibold">
-                                      of {si.calculatedTotal.toLocaleString()}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                {/* Progress bar */}
-                                <div className="w-full bg-black/5 rounded-full h-1.5 mt-2 overflow-hidden">
-                                  <div
-                                    className={cn(
-                                      "h-full rounded-full transition-all",
-                                      si.effectiveSettlement === "Unpaid"
-                                        ? "bg-rose-500 w-1"
-                                        : "bg-amber-500"
-                                    )}
-                                    style={{ width: `${Math.max(4, si.percentPaid)}%` }}
-                                  />
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </>
+                      <CustomerReceivablesSection showHeader={false} maxHeight="max-h-[220px]" />
                     ) : (
                       <>
                         {/* Payables Total Metric Banner */}

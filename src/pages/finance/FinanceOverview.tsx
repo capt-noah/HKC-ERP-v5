@@ -12,6 +12,7 @@ import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContai
 import { Link } from "react-router-dom"
 
 import { Skeleton } from "@/components/ui/skeleton"
+import { CustomerReceivablesSection } from "@/components/receivables/CustomerReceivablesSection"
 
 export default function FinanceOverview() {
   const store = useFinanceStore()
@@ -433,6 +434,7 @@ export default function FinanceOverview() {
     .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime())
 
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [receivablesTab, setReceivablesTab] = useState<"invoices" | "receivables">("invoices")
 
   const handleRefresh = async () => {
     setIsRefreshing(true)
@@ -1007,60 +1009,106 @@ export default function FinanceOverview() {
             )}
           </GlassCard>
 
-          {/* Unpaid Invoices List Card */}
+          {/* Unpaid Invoices & Customer Receivables List Card */}
           <GlassCard className="flex flex-col justify-between">
             <div>
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <div>
-                  <h3 className="font-semibold text-base text-black">Unpaid Invoices</h3>
-                  <p className="text-xs text-gray-400">Customer balances awaiting collection</p>
+                  <h3 className="font-semibold text-base text-black">
+                    {receivablesTab === "invoices" ? "Unpaid Invoices" : "Customer Receivables"}
+                  </h3>
+                  <p className="text-xs text-gray-400">
+                    {receivablesTab === "invoices"
+                      ? "Customer balances awaiting collection"
+                      : "Cumulative customer credit accounts (AR)"}
+                  </p>
                 </div>
-                <Link to="/finance/invoices" className="text-xs font-bold text-emerald-700 hover:underline flex items-center gap-0.5">
-                  View Invoices <ArrowUpRight className="size-3.5" />
-                </Link>
-              </div>
-
-              <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1 scrollbar-thin">
-                {unpaidInvoices.length === 0 ? (
-                  <p className="text-xs text-gray-400 py-6 text-center">No outstanding unpaid invoices.</p>
+                {receivablesTab === "invoices" ? (
+                  <Link to="/finance/invoices" className="text-xs font-bold text-emerald-700 hover:underline flex items-center gap-0.5">
+                    View Invoices <ArrowUpRight className="size-3.5" />
+                  </Link>
                 ) : (
-                  unpaidInvoices.map((inv) => {
-                    let statusClass = "bg-zinc-100 text-zinc-700"
-                    if (inv.status === "Overdue") statusClass = "bg-red-100 text-red-800"
-                    return (
-                      <div
-                        key={inv.id}
-                        className="p-3.5 rounded-2xl bg-black/[0.02] border border-black/5 hover:bg-black/[0.04] transition-all flex items-center justify-between"
-                      >
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-mono text-[10px] font-bold text-gray-400">{inv.invoice_number}</span>
-                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${statusClass}`}>
-                              {inv.status}
-                            </span>
-                          </div>
-                          <p className="text-xs font-bold text-black">{inv.customer_name}</p>
-                          <p className="text-[10px] text-gray-400 font-medium">Due: {inv.due_date}</p>
-                        </div>
-
-                        <div className="text-right">
-                          <span className="text-xs font-black font-mono block text-rose-700">
-                            ETB {Number(inv.balance_due || (inv as any).balanceDue || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  })
+                  <Link to="/sales/sales-issued" className="text-xs font-bold text-emerald-700 hover:underline flex items-center gap-0.5">
+                    View Issues <ArrowUpRight className="size-3.5" />
+                  </Link>
                 )}
               </div>
+
+              {/* Segmented Pill Switch */}
+              <div className="flex items-center gap-1 p-1 bg-zinc-100 rounded-xl text-xs font-bold mb-3">
+                <button
+                  type="button"
+                  onClick={() => setReceivablesTab("invoices")}
+                  className={cn(
+                    "flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer",
+                    receivablesTab === "invoices"
+                      ? "bg-white text-zinc-950 shadow-xs font-black"
+                      : "text-zinc-500 hover:text-zinc-950"
+                  )}
+                >
+                  Unpaid Invoices ({unpaidInvoices.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReceivablesTab("receivables")}
+                  className={cn(
+                    "flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer",
+                    receivablesTab === "receivables"
+                      ? "bg-white text-zinc-950 shadow-xs font-black"
+                      : "text-zinc-500 hover:text-zinc-950"
+                  )}
+                >
+                  Customer Receivables
+                </button>
+              </div>
+
+              {receivablesTab === "invoices" ? (
+                <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1 scrollbar-thin">
+                  {unpaidInvoices.length === 0 ? (
+                    <p className="text-xs text-gray-400 py-6 text-center">No outstanding unpaid invoices.</p>
+                  ) : (
+                    unpaidInvoices.map((inv) => {
+                      let statusClass = "bg-zinc-100 text-zinc-700"
+                      if (inv.status === "Overdue") statusClass = "bg-red-100 text-red-800"
+                      return (
+                        <div
+                          key={inv.id}
+                          className="p-3.5 rounded-2xl bg-black/[0.02] border border-black/5 hover:bg-black/[0.04] transition-all flex items-center justify-between"
+                        >
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-mono text-[10px] font-bold text-gray-400">{inv.invoice_number}</span>
+                              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${statusClass}`}>
+                                {inv.status}
+                              </span>
+                            </div>
+                            <p className="text-xs font-bold text-black">{inv.customer_name}</p>
+                            <p className="text-[10px] text-gray-400 font-medium">Due: {inv.due_date}</p>
+                          </div>
+
+                          <div className="text-right">
+                            <span className="text-xs font-black font-mono block text-rose-700">
+                              ETB {Number(inv.balance_due || (inv as any).balanceDue || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              ) : (
+                <CustomerReceivablesSection showHeader={false} maxHeight="max-h-[320px]" />
+              )}
             </div>
 
-            <div className="mt-4 pt-3 border-t border-black/5 flex items-center justify-between">
-              <span className="text-xs font-bold text-gray-400 uppercase">Total Receivables</span>
-              <span className="text-base font-black font-mono text-black">
-                ETB {totalReceivables.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </span>
-            </div>
+            {receivablesTab === "invoices" && (
+              <div className="mt-4 pt-3 border-t border-black/5 flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-400 uppercase">Total Receivables</span>
+                <span className="text-base font-black font-mono text-black">
+                  ETB {totalReceivables.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            )}
           </GlassCard>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { withTransaction } from "../../db/transactionHelper.js"
 import { getTableColumns, normalizeBodyToDbColumns, sanitizeSqlValue, unwrapRow } from "../../db/dbUtils.js"
 import { getLocalDateString } from "../../utils/dateUtils.js"
 import { getDefaultWarehouseForType } from "../../utils/warehouseUtils.js"
+import { checkExportMovementDeletable, checkStockMovementDeletable } from "../governance/deletionGuardrails.js"
 
 export async function listMovements(query = {}, tableName = "stock_movements") {
   let sql = `SELECT * FROM \`${tableName}\``
@@ -157,6 +158,14 @@ export async function updateMovement(id, updates = {}, tableName = "stock_moveme
 
 export async function deleteMovement(id, tableName = "stock_movements") {
   const cleanId = String(id).trim()
+
+  const guard = tableName === "export_warehouse_movements"
+    ? await checkExportMovementDeletable(cleanId)
+    : await checkStockMovementDeletable(cleanId)
+  if (!guard.canDelete) {
+    return { status: 403, body: { error: guard.reason, isPermanentlyBlocked: true } }
+  }
+
   return await withTransaction(async (conn) => {
     const [existing] = await conn.query(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [cleanId])
     if (existing.length === 0) {
@@ -164,7 +173,8 @@ export async function deleteMovement(id, tableName = "stock_movements") {
     }
 
     const row = existing[0]
-    // Restore quantity if an export reject deduction is deleted
+
+    // 1. Restore quantity if an export reject deduction is deleted
     if (tableName === "export_warehouse_movements" && row.product_id && row.net_quantity) {
       if (row.movement_type === "REJECT_DEDUCTION" || String(row.movement_type).toUpperCase().includes("REJECT")) {
         await conn.query(
@@ -174,8 +184,42 @@ export async function deleteMovement(id, tableName = "stock_movements") {
       }
     }
 
+    // 2. Atomically delete linked journal entries and journal entry lines
+    const voucherOrRef = row.voucher_no || row.reference_id || row.batch_no || ""
+    const [jes] = await conn.query(
+      `SELECT id FROM \`journal_entries\` 
+       WHERE source_id IN (?, ?, ?, ?) 
+          OR id IN (?, ?) 
+          OR id LIKE ? 
+          OR (
+            (source_type IN ('Inventory', 'Inventory Intake', 'Stock Intake') OR id LIKE 'JE-INTAKE-%') 
+            AND description LIKE ?
+          )`,
+      [cleanId, `STK-IN-${cleanId}`, `STK-LOSS-REJECT-${cleanId}`, `STK-IN-${voucherOrRef}`, cleanId, `JE-INTAKE-${cleanId}`, `%${cleanId}%`, `%${cleanId}%`]
+    )
+    for (const j of jes) {
+      await conn.query("DELETE FROM `journal_entries` WHERE id = ?", [j.id])
+    }
+
+    // 3. Delete the movement record
     await conn.query(`DELETE FROM \`${tableName}\` WHERE id = ?`, [cleanId])
-    return { status: 200, body: { success: true, message: `Movement '${cleanId}' deleted.` } }
+
+    // 4. If export warehouse movement, update parent product cumulative valuation & net quantity
+    if (tableName === "export_warehouse_movements" && row.product_id) {
+      const [remRows] = await conn.query(
+        "SELECT * FROM `export_warehouse_movements` WHERE product_id = ?",
+        [row.product_id]
+      )
+      const intakeRows = remRows.filter(m => m.movement_type === "INBOUND_RECEIPT" || Number(m.net_quantity || 0) > 0)
+      const newIntakeVal = intakeRows.reduce((s, m) => s + (Number(m.gross_quantity || m.net_quantity || 0) * Number(m.unit_price || 0)), 0)
+      const newNetQty = remRows.reduce((s, m) => s + Number(m.net_quantity || 0), 0)
+      await conn.query(
+        "UPDATE `export_products` SET quantity = ?, total_stock_value = ?, updated_at = NOW(3) WHERE id = ?",
+        [newNetQty, newIntakeVal, row.product_id]
+      )
+    }
+
+    return { status: 200, body: { success: true, message: `Movement '${cleanId}' and linked entries deleted.`, deletedJournalEntries: jes.length } }
   })
 }
 

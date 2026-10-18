@@ -6,6 +6,8 @@ export const inventoryRouter = Router()
 
 // Enforce RBAC: Only superadmin and inventory can execute mutations on inventory routes
 const requireInventoryMutation = authorizeRoles("superadmin", "inventory")
+// Strict Governance: Deleting products, batches, movements, and transfers requires superadmin role
+const requireSuperadmin = authorizeRoles("superadmin")
 
 
 // ── 1. Products (Strict Route Scoping for Export Commodities vs Pharmaceuticals) ────
@@ -95,7 +97,7 @@ inventoryRouter.put(allProductRoutes.map((r) => `${r}/:id`), requireInventoryMut
   }
 })
 
-inventoryRouter.delete(allProductRoutes.map((r) => `${r}/:id`), requireInventoryMutation, async (req, res, next) => {
+inventoryRouter.delete(allProductRoutes.map((r) => `${r}/:id`), requireSuperadmin, async (req, res, next) => {
   try {
     const result = await inventoryService.deleteProduct(req.params.id)
     res.status(result.status).json(result.body)
@@ -157,7 +159,7 @@ inventoryRouter.post(batchRoutes.map((r) => `${r}/:id/transition`), requireInven
   }
 })
 
-inventoryRouter.delete(batchRoutes.map((r) => `${r}/:id`), requireInventoryMutation, async (req, res, next) => {
+inventoryRouter.delete(batchRoutes.map((r) => `${r}/:id`), requireSuperadmin, async (req, res, next) => {
   try {
     const result = await inventoryService.deleteBatch(req.params.id)
     res.status(result.status).json(result.body)
@@ -219,7 +221,7 @@ inventoryRouter.patch(stockMovementRoutes.map((r) => `${r}/:id/difference`), req
   }
 })
 
-inventoryRouter.delete(stockMovementRoutes.map((r) => `${r}/:id`), requireInventoryMutation, async (req, res, next) => {
+inventoryRouter.delete(stockMovementRoutes.map((r) => `${r}/:id`), requireSuperadmin, async (req, res, next) => {
   try {
     const result = await inventoryService.deleteMovement(req.params.id, "stock_movements")
     res.status(result.status).json(result.body)
@@ -285,7 +287,7 @@ inventoryRouter.patch(exportMovementRoutes.map((r) => `${r}/:id/difference`), re
   }
 })
 
-inventoryRouter.delete(exportMovementRoutes.map((r) => `${r}/:id`), requireInventoryMutation, async (req, res, next) => {
+inventoryRouter.delete(exportMovementRoutes.map((r) => `${r}/:id`), requireSuperadmin, async (req, res, next) => {
   try {
     const result = await inventoryService.deleteMovement(req.params.id, "export_warehouse_movements")
     res.status(result.status).json(result.body)
@@ -338,7 +340,7 @@ inventoryRouter.patch(transferRoutes.map((r) => `${r}/:id`), requireInventoryMut
   }
 })
 
-inventoryRouter.delete(transferRoutes.map((r) => `${r}/:id`), requireInventoryMutation, async (req, res, next) => {
+inventoryRouter.delete(transferRoutes.map((r) => `${r}/:id`), requireSuperadmin, async (req, res, next) => {
   try {
     const result = await inventoryService.deleteTransfer(req.params.id)
     res.status(result.status).json(result.body)
@@ -400,7 +402,7 @@ inventoryRouter.put(quarantineRoutes.map((r) => `${r}/:id`), requireInventoryMut
   }
 })
 
-inventoryRouter.delete(quarantineRoutes.map((r) => `${r}/:id`), requireInventoryMutation, async (req, res, next) => {
+inventoryRouter.delete(quarantineRoutes.map((r) => `${r}/:id`), requireSuperadmin, async (req, res, next) => {
   try {
     const result = await inventoryService.deleteQuarantineRecord(req.params.id)
     res.status(result.status).json(result.body)

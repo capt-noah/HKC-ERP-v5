@@ -1091,9 +1091,11 @@ export async function postSalesIssue(arg1, arg2 = null, existingConn = null) {
         totalQty += issueQty
         totalAmount += issueQty * itemSellingPrice
 
-        // Match export or pharma
-        let matchedExport = exportProds.find(p => p.id === prodId || (p.name && p.name.toLowerCase().trim() === itemName))
-        let matchedPharma = pharmaProds.find(p => p.id === prodId || (p.name && p.name.toLowerCase().trim() === itemName))
+        // Match export or pharma: ID match MUST strictly precede name match
+        let matchedExport = (prodId && exportProds.find(p => p.id === prodId)) ||
+                            (itemName ? exportProds.find(p => p.name && p.name.toLowerCase().trim() === itemName) : null)
+        let matchedPharma = (prodId && pharmaProds.find(p => p.id === prodId)) ||
+                            (itemName ? pharmaProds.find(p => p.name && p.name.toLowerCase().trim() === itemName) : null)
 
         const isWh1 =
           isExportWarehouse(existing.warehouse_id) ||
@@ -1212,11 +1214,11 @@ export async function postSalesIssue(arg1, arg2 = null, existingConn = null) {
 
           if (targetBatchId) {
             const [bRows] = await conn.query(
-              "SELECT * FROM `pharma_product_batches` WHERE id = ? FOR UPDATE",
-              [targetBatchId]
+              "SELECT * FROM `pharma_product_batches` WHERE (id = ? OR (product_id = ? AND batch_no = ?)) AND quantity > 0 AND (qa_status != 'Quarantined' OR qa_status IS NULL) FOR UPDATE",
+              [targetBatchId, realProdId, targetBatchId]
             )
-            if (bRows.length > 0) {
-              const b = bRows[0]
+            for (const b of bRows) {
+              if (remainingPharmaDeduct <= 0) break
               const curQty = Number(b.quantity || 0)
               const deduct = Math.min(curQty, remainingPharmaDeduct)
               remainingPharmaDeduct -= deduct

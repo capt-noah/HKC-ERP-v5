@@ -302,12 +302,14 @@ export default function BinCardEntryModal({
       <RecordDeleteModal
         isOpen={isDeleteModalOpen}
         title="Delete Movement Entry"
-        recordId={entry?.batchNo}
-        recordName={`${entry?.qtyReceived ? `Received +${entry.qtyReceived}` : `Issued -${entry?.qtyIssued}`} ${unit} (${entry?.party || ''})`}
+        recordId={entry?.id || entry?.batchNo}
+        recordName={`${cardTitle} — ${entry?.qtyReceived ? `Received +${entry.qtyReceived}` : `Issued -${entry?.qtyIssued}`} ${unit} (${entry?.party || ''})`}
+        resourceType="stock_movements"
         description="Are you sure you want to delete this movement entry? The running stock balance will be automatically recalculated."
         isDeleting={isDeleting}
         onClose={() => setIsDeleteModalOpen(false)}
         onConfirmDelete={handleConfirmDelete}
+        onRequestSubmitted={() => setIsDeleteModalOpen(false)}
       />
     </>
   )

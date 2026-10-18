@@ -10,6 +10,7 @@ import { listSalesIssues, type SalesIssue } from "@/lib/salesIssuesApi"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuthStore } from "@/lib/authStore"
 import { getUserPermittedWarehouses } from "@/lib/warehouses"
+import { CustomerReceivablesSection } from "@/components/receivables/CustomerReceivablesSection"
 
 function money(value: number) {
   return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -118,7 +119,6 @@ export default function SalesDashboard() {
   }, [salesIssues, isScoped, permittedWarehouses])
 
   const postedIssues = safeIssues.filter((issue) => issue?.status === "Posted")
-  const draftIssues = safeIssues.filter((issue) => issue?.status === "Draft")
   const creditIssues = safeIssues.filter((issue) => (issue?.payment_type || "Cash").toLowerCase() === "credit")
   const totalCustomerCreditDue = creditIssues.reduce((sum, issue) => {
     const total = Number(issue?.total_amount || 0)
@@ -126,6 +126,35 @@ export default function SalesDashboard() {
     const due = typeof issue?.balance_due === "number" ? Math.max(0, issue.balance_due) : Math.max(0, total - paid)
     return sum + due
   }, 0)
+
+  const receivableItems = useMemo(() => {
+    return safeIssues
+      .filter((si) => si?.status !== "Cancelled")
+      .map((si: any) => {
+        const isCash = (si.payment_type || "Cash").toLowerCase() === "cash"
+        const totalAmount = Number(si.total_amount || 0)
+        const amountPaid = isCash ? totalAmount : Number(si.amount_paid || 0)
+        const balanceDue = isCash ? 0 : (typeof si.balance_due === "number" ? Math.max(0, si.balance_due) : Math.max(0, totalAmount - amountPaid))
+        const percentPaid = totalAmount > 0 ? Math.min(100, Math.round((amountPaid / totalAmount) * 100)) : (isCash ? 100 : 0)
+        const isPaid = isCash || (totalAmount > 0 && amountPaid >= totalAmount) || balanceDue <= 0.01 || si.settlement_status === "Fully Settled"
+
+        return {
+          id: si.id,
+          fs_no: si.fs_no || si.id,
+          reference_no: si.reference_no || "",
+          sale_date: si.sale_date || "",
+          customer_name: si.customer_name || "Customer",
+          payment_type: si.payment_type || "Credit",
+          calculatedTotal: totalAmount,
+          calculatedPaid: amountPaid,
+          calculatedDue: balanceDue,
+          percentPaid,
+          effectiveSettlement: (isPaid ? "Paid" : amountPaid > 0 ? "Ongoing" : "Unpaid") as "Unpaid" | "Ongoing" | "Paid",
+          sales_issue_id: si.id,
+        }
+      })
+      .filter((si) => si.calculatedDue > 0.01 && si.effectiveSettlement !== "Paid")
+  }, [safeIssues])
   const issuedAmount = postedIssues.reduce((sum, issue) => sum + Number(issue?.total_amount || 0), 0)
   const postedIssueCount = postedIssues.length
   const openSalesOrders = scopedSalesOrders.filter(
@@ -220,31 +249,13 @@ export default function SalesDashboard() {
             </div>
           </GlassCard>
 
-          <GlassCard className="p-6 lg:col-span-4">
-            <div className="mb-5 border-b border-zinc-100 pb-3">
-              <h3 className="text-xs font-black uppercase tracking-tight text-zinc-900">Sales Work Queue</h3>
-              <p className="text-[11px] font-semibold text-zinc-400">Live counts from sales records</p>
-            </div>
-            <div className="space-y-3">
-              {isLoading ? (
-                Array.from({ length: 4 }).map((_, index) => (
-                  <div key={index} className="flex items-center justify-between rounded-xl bg-zinc-50 px-3 py-2.5">
-                    <Skeleton className="h-3 w-32 bg-zinc-200/80" />
-                    <Skeleton className="h-4 w-8 bg-zinc-200/80" />
-                  </div>
-                ))
-              ) : [
-                { label: "Draft Sales Issues", value: draftIssues.length.toLocaleString() },
-                { label: "Credit Sales Issues", value: creditIssues.length.toLocaleString() },
-                { label: "Active Receivables Due", value: `ETB ${money(totalCustomerCreditDue)}` },
-                { label: "Sales Orders", value: salesOrders.length.toLocaleString() },
-              ].map((row) => (
-                <div key={row.label} className="flex items-center justify-between rounded-xl bg-zinc-50 px-3 py-2.5">
-                  <span className="text-xs font-bold text-zinc-600">{row.label}</span>
-                  <span className="font-mono text-sm font-black text-zinc-950">{row.value}</span>
-                </div>
-              ))}
-            </div>
+          <GlassCard className="p-6 lg:col-span-4 flex flex-col justify-between">
+            <CustomerReceivablesSection
+              items={receivableItems}
+              isLoading={isLoading}
+              showHeader={true}
+              maxHeight="max-h-[320px]"
+            />
           </GlassCard>
         </div>
       </main>
