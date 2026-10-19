@@ -1,7 +1,7 @@
 import React, { useEffect } from "react"
 import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
-import { X, ArrowRight, Receipt, Calendar } from "lucide-react"
+import { X, Receipt, Calendar } from "lucide-react"
 
 export interface CustomerCreditItem {
   id: string
@@ -85,13 +85,13 @@ export const CustomerCreditsModal: React.FC<CustomerCreditsModalProps> = ({
 
   if (!isOpen || !group) return null
 
-  const handleOpenSalesIssue = (record: CustomerCreditItem) => {
-    const editTarget =
+  const handlePaySalesIssue = (record: CustomerCreditItem) => {
+    const payTarget =
       record.sales_issue_id ||
       record.fs_no ||
       (record.id ? record.id.replace(/^INV-(SI-)?/, "") : "")
     const searchTarget = record.fs_no || record.customer_name
-    navigate(`/sales/sales-issued?search=${encodeURIComponent(searchTarget)}&editId=${encodeURIComponent(editTarget)}`)
+    navigate(`/sales/sales-issued?search=${encodeURIComponent(searchTarget)}&payId=${encodeURIComponent(payTarget)}`)
     onClose()
   }
 
@@ -158,7 +158,7 @@ export const CustomerCreditsModal: React.FC<CustomerCreditsModalProps> = ({
             <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">
               Itemized Credit Records ({group.records.length})
             </span>
-            <span className="text-[11px] text-zinc-400">Click any credit record to open in Sales Issue</span>
+            <span className="text-[11px] text-zinc-400">Click any credit record to record payment installment</span>
           </div>
 
           {group.records.map((rec) => {
@@ -166,7 +166,7 @@ export const CustomerCreditsModal: React.FC<CustomerCreditsModalProps> = ({
             return (
               <div
                 key={rec.id}
-                onClick={() => handleOpenSalesIssue(rec)}
+                onClick={() => handlePaySalesIssue(rec)}
                 className="group p-4 rounded-2xl bg-white border border-zinc-200/90 hover:border-emerald-500/40 hover:bg-emerald-50/20 hover:shadow-md transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3"
               >
                 <div className="space-y-1">
@@ -216,9 +216,9 @@ export const CustomerCreditsModal: React.FC<CustomerCreditsModalProps> = ({
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-100 text-zinc-700 group-hover:bg-emerald-700 group-hover:text-white transition-all text-xs font-bold shrink-0">
-                    <span>Open</span>
-                    <ArrowRight className="size-3.5 group-hover:translate-x-0.5 transition-transform" />
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200/80 group-hover:bg-emerald-700 group-hover:text-white group-hover:border-emerald-700 transition-all text-xs font-black shrink-0">
+                    <Receipt className="size-3.5" />
+                    <span>Pay</span>
                   </div>
                 </div>
               </div>

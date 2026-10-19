@@ -153,6 +153,7 @@ export default function SalesIssued() {
 
   const [searchParams, setSearchParams] = useSearchParams()
   const editIdParam = searchParams.get("editId")
+  const payIdParam = searchParams.get("payId")
   const searchParam = searchParams.get("search")
 
   const [page, setPage] = useState(1)
@@ -160,6 +161,7 @@ export default function SalesIssued() {
   const [batchFilter, setBatchFilter] = useState("ALL")
   const [search, setSearch] = useState(() => searchParam || "")
   const openedEditIdRef = useRef<string | null>(null)
+  const openedPayIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (searchParam !== null && searchParam !== undefined && searchParam !== search) {
@@ -402,7 +404,9 @@ export default function SalesIssued() {
     const customers = erp.getCustomers()
     return salesOrders.map((so) => {
       const alreadyIssued = rows.some((row) => (row.sales_order_id && row.sales_order_id === so.id) || (row.reference_no && (row.reference_no === so.id || row.reference_no.includes(so.id))))
-      const isFullyDelivered = so.deliveryStatus === "Fully Delivered"
+      const delStatus = String(so.deliveryStatus || (so as any).delivery_status || "").trim().toLowerCase()
+      const stage = String(so.stage || "").trim().toLowerCase()
+      const isFullyDelivered = delStatus === "fully delivered" || delStatus === "delivered" || stage === "shipped" || stage === "completed"
 
       if (isFullyDelivered || alreadyIssued) {
         return null
@@ -793,33 +797,16 @@ export default function SalesIssued() {
       : "1000-02-26"
 
     const drAcc = financeStore.getMappedAccount(mappingRuleKey, fallbackDrCode, { warehouseId: whId, itemName })
-    const activeMapping = financeStore.getGlMappings().find((m) => m.id === mappingRuleKey)
-    const multiAccountsPool = activeMapping?.multi_accounts && activeMapping.multi_accounts.length > 0
-      ? activeMapping.multi_accounts
-      : null
-
-    let debitLines: SplitLineItem[] = []
-    if (multiAccountsPool && multiAccountsPool.length > 1 && !isCreditSale) {
-      debitLines = multiAccountsPool.map((poolAcc, idx) => ({
-        id: `dr-sale-${Date.now()}-${idx + 1}`,
-        accountId: poolAcc.account_id || poolAcc.account_code,
-        accountCode: poolAcc.account_code,
-        accountName: poolAcc.account_name,
-        description: idx === 0 ? "Customer Direct Deposit" : "Settlement Allocation",
-        amount: idx === 0 ? gTot : 0,
-      }))
-    } else {
-      debitLines = [
-        {
-          id: `dr-sale-${Date.now()}-1`,
-          accountId: drAcc?.id || fallbackDrCode,
-          accountCode: drAcc?.code || fallbackDrCode,
-          accountName: drAcc?.name || (isCreditSale ? (isProcessing ? "CLEANING SERVICE RECIEVABLE" : (isExportSale ? "EXPORT SALES RECIVEABLE" : "VET MEDICEN SALES RECIVABLE")) : "Commercial Bank of Ethiopia (CBE)"),
-          description: isCreditSale ? `Receivable - ${cName || "Customer"}` : "Customer Direct Deposit",
-          amount: gTot,
-        },
-      ]
-    }
+    const debitLines: SplitLineItem[] = [
+      {
+        id: `dr-sale-${Date.now()}-1`,
+        accountId: drAcc?.id || fallbackDrCode,
+        accountCode: drAcc?.code || fallbackDrCode,
+        accountName: drAcc?.name || (isCreditSale ? (isProcessing ? "CLEANING SERVICE RECIEVABLE" : (isExportSale ? "EXPORT SALES RECIVEABLE" : "VET MEDICEN SALES RECIVABLE")) : "Commercial Bank of Ethiopia (CBE)"),
+        description: isCreditSale ? `Receivable - ${cName || "Customer"}` : "Customer Direct Deposit",
+        amount: gTot,
+      },
+    ]
 
     // 2. Section A: Credit Accounts (Sales Revenue + VAT)
     const isWh1Sale = (isExportSale || isWH1(whId, warehouses)) && !isProcessing
@@ -1367,6 +1354,50 @@ export default function SalesIssued() {
     setPayAdviceFiles([])
     setPayNotes("")
   }
+
+  // Auto-open record payment modal if payId was provided via URL (e.g. from Customer Receivables modal)
+  useEffect(() => {
+    if (!payIdParam) {
+      openedPayIdRef.current = null
+      return
+    }
+    if (openedPayIdRef.current === payIdParam) return
+
+    let cancelled = false
+    const triggerAutoPay = async () => {
+      try {
+        const full = await getSalesIssue(payIdParam)
+        if (!cancelled && full) {
+          openedPayIdRef.current = payIdParam
+          openRecordPayment(full)
+          const nextParams = new URLSearchParams(searchParams)
+          nextParams.delete("payId")
+          setSearchParams(nextParams, { replace: true })
+          return
+        }
+      } catch {
+        const match = rows.find(
+          (r) =>
+            r.id === payIdParam ||
+            (r.fs_no && r.fs_no.toLowerCase() === payIdParam.toLowerCase()) ||
+            (r.reference_no && r.reference_no.toLowerCase() === payIdParam.toLowerCase())
+        )
+        if (!cancelled && match) {
+          openedPayIdRef.current = payIdParam
+          openRecordPayment(match)
+          const nextParams = new URLSearchParams(searchParams)
+          nextParams.delete("payId")
+          setSearchParams(nextParams, { replace: true })
+        }
+      }
+    }
+
+    void triggerAutoPay()
+
+    return () => {
+      cancelled = true
+    }
+  }, [payIdParam, searchParams, setSearchParams, rows])
 
   const handleRecordInstallmentSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

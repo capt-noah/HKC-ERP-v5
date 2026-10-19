@@ -742,6 +742,22 @@ export async function createSalesIssue(input, existingId = null, existingConn = 
 
   try {
     return await runInTransaction(existingConn, async (conn) => {
+      // Prevent duplicate SO fulfillment
+      if (sales_order_id) {
+        const [existingOrderLink] = await conn.query(
+          "SELECT id, fs_no FROM `sales_issues` WHERE sales_order_id = ? AND id != ? LIMIT 1",
+          [sales_order_id, id]
+        )
+        if (existingOrderLink.length > 0) {
+          return {
+            status: 400,
+            body: {
+              error: `Sales Order '${sales_order_id}' is already linked to Sales Issue '${existingOrderLink[0].fs_no || existingOrderLink[0].id}'. A sales order cannot be linked to multiple sales issues.`
+            }
+          }
+        }
+      }
+
       // 1. Save Header
       await conn.query(
         `INSERT INTO \`sales_issues\` (
@@ -868,6 +884,22 @@ export async function updateSalesIssue(input, id, existingConn = null) {
       const incomingSoId = input?.sales_order_id !== undefined ? input.sales_order_id : (input?.salesOrderId !== undefined ? input.salesOrderId : existing.sales_order_id)
       const incomingRef = input?.reference_no !== undefined ? input.reference_no : (input?.referenceNo !== undefined ? input.referenceNo : existing.reference_no)
       const resolvedSoId = incomingSoId || (incomingRef && String(incomingRef).startsWith("SO-") ? incomingRef : null)
+
+      // Prevent duplicate SO fulfillment
+      if (resolvedSoId) {
+        const [existingOrderLink] = await conn.query(
+          "SELECT id, fs_no FROM `sales_issues` WHERE sales_order_id = ? AND id != ? AND fs_no != ? LIMIT 1",
+          [resolvedSoId, cleanId, cleanId]
+        )
+        if (existingOrderLink.length > 0) {
+          return {
+            status: 400,
+            body: {
+              error: `Sales Order '${resolvedSoId}' is already linked to Sales Issue '${existingOrderLink[0].fs_no || existingOrderLink[0].id}'. A sales order cannot be linked to multiple sales issues.`
+            }
+          }
+        }
+      }
 
       const payment_type = input?.payment_type || existing.payment_type || "Cash"
       const isCash = payment_type.toLowerCase() === "cash"
@@ -1092,10 +1124,31 @@ export async function postSalesIssue(arg1, arg2 = null, existingConn = null) {
         totalAmount += issueQty * itemSellingPrice
 
         // Match export or pharma: ID match MUST strictly precede name match
-        let matchedExport = (prodId && exportProds.find(p => p.id === prodId)) ||
-                            (itemName ? exportProds.find(p => p.name && p.name.toLowerCase().trim() === itemName) : null)
-        let matchedPharma = (prodId && pharmaProds.find(p => p.id === prodId)) ||
-                            (itemName ? pharmaProds.find(p => p.name && p.name.toLowerCase().trim() === itemName) : null)
+        let targetBatchNo = item.batch_no || item.batch_number
+        let targetBatchId = item.batch_id
+
+        let matchedExport = prodId ? exportProds.find(p => p.id === prodId) : null
+        let matchedPharma = prodId ? pharmaProds.find(p => p.id === prodId) : null
+
+        // Disambiguate parent product using batch if product has multiple parents (e.g. multi-batch records)
+        if (targetBatchNo || targetBatchId) {
+          const [batchMatches] = await conn.query(
+            "SELECT product_id FROM `pharma_product_batches` WHERE (batch_no = ? OR id = ?) LIMIT 1",
+            [targetBatchNo || "", targetBatchId || ""]
+          )
+          if (batchMatches.length > 0 && batchMatches[0].product_id) {
+            const batchParentId = batchMatches[0].product_id
+            const foundPharma = pharmaProds.find(p => p.id === batchParentId)
+            if (foundPharma) {
+              matchedPharma = foundPharma
+            }
+          }
+        }
+
+        if (!matchedExport && !matchedPharma && itemName) {
+          matchedExport = exportProds.find(p => p.name && p.name.toLowerCase().trim() === itemName) || null
+          matchedPharma = pharmaProds.find(p => p.name && p.name.toLowerCase().trim() === itemName) || null
+        }
 
         const isWh1 =
           isExportWarehouse(existing.warehouse_id) ||
