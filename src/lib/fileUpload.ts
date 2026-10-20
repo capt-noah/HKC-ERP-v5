@@ -123,6 +123,7 @@ export async function splitPdfIfOversized(
   }
 
   try {
+    // @ts-ignore
     const { PDFDocument } = await import("pdf-lib")
     const arrayBuffer = await file.arrayBuffer()
     const srcDoc = await PDFDocument.load(arrayBuffer)

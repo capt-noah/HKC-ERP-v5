@@ -3546,11 +3546,12 @@ class ErpStore {
     try {
       await createResource<SalesOrder>("sales_orders", enrichedSo)
       // Also log creation in user activity logs
+      const currentUserId = useAuthStore.getState().user?.id || null
       await createResource("user_activity_logs", {
         id: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        user_id: null,
-        username: so.salesPerson || "Sales Officer",
-        fullname: so.salesPerson || "Sales Officer",
+        user_id: currentUserId,
+        username: so.salesPerson || useAuthStore.getState().user?.username || "Sales Officer",
+        fullname: so.salesPerson || useAuthStore.getState().user?.fullname || "Sales Officer",
         action: "Create",
         resource: "sales_orders",
         details: { orderId: enrichedSo.id, customer: enrichedSo.customer, amount: enrichedSo.amount, status: "Pending" },
@@ -3587,9 +3588,10 @@ class ErpStore {
     try {
       await updateResource<SalesOrder>("sales_orders", soId, updated)
       // Log to user_activity_logs
+      const currentUserId = useAuthStore.getState().user?.id || null
       await createResource("user_activity_logs", {
         id: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        user_id: null,
+        user_id: currentUserId,
         username: approverName,
         fullname: approverName,
         action: "Approve",
@@ -3628,9 +3630,10 @@ class ErpStore {
     try {
       await updateResource<SalesOrder>("sales_orders", soId, updated)
       // Log to user_activity_logs
+      const currentUserId = useAuthStore.getState().user?.id || null
       await createResource("user_activity_logs", {
         id: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        user_id: null,
+        user_id: currentUserId,
         username: declinerName,
         fullname: declinerName,
         action: "Decline",

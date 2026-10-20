@@ -3,6 +3,8 @@ import { getResource, listResources } from "../db/resourceRegistry.js"
 import { crudService } from "../modules/common/crudService.js"
 import { validateStrongPassword, sanitizeUser } from "../modules/auth/authUtils.js"
 import { normalizeRole } from "../modules/auth/authMiddleware.js"
+import { pool } from "../db/client.js"
+import { unwrapRow } from "../db/dbUtils.js"
 import bcrypt from "bcryptjs"
 
 export const crudRouter = Router()
@@ -172,6 +174,24 @@ crudRouter.get("/:resource", async (req, res, next) => {
       })
       return
     }
+
+    // Role-based scoping for user_activity_logs:
+    // Non-superadmin users must strictly only receive their own activity records from the database
+    if (req.params.resource === "user_activity_logs") {
+      const user = req.user
+      const userRoles = (user?.roles || (user?.role ? [user.role] : [])).map(normalizeRole)
+      const isSuperAdmin = userRoles.includes("superadmin")
+
+      if (!isSuperAdmin && user) {
+        const [rows] = await pool.query(
+          "SELECT * FROM `user_activity_logs` WHERE (user_id = ? OR (user_id IS NULL AND username = ?)) ORDER BY created_at DESC LIMIT 200",
+          [user.id, user.username]
+        )
+        const userLogs = (rows || []).map((r) => unwrapRow(r, resource.storage))
+        return res.status(200).json(userLogs)
+      }
+    }
+
     const result = await crudService.list({ resource, query: req.query, headers: req.headers })
     if (result.headers?.["Content-Range"]) {
       res.setHeader("Content-Range", result.headers["Content-Range"])
@@ -182,17 +202,15 @@ crudRouter.get("/:resource", async (req, res, next) => {
       responseBody = responseBody.map(sanitizeUser)
     }
 
-    // If non-superadmin queries user_activity_logs, scope the response strictly to their own activities
+    // Secondary defense-in-depth safety filter for activity logs
     if (req.params.resource === "user_activity_logs" && Array.isArray(responseBody)) {
       const user = req.user
-      const userRoles = user?.roles || (user?.role ? [user.role] : [])
+      const userRoles = (user?.roles || (user?.role ? [user.role] : [])).map(normalizeRole)
       if (!userRoles.includes("superadmin") && user) {
         responseBody = responseBody.filter(
           (log) =>
-            log.user_id === user.id ||
-            log.username === user.username ||
             (log.user_id && user.id && String(log.user_id).toLowerCase() === String(user.id).toLowerCase()) ||
-            (log.username && user.username && String(log.username).toLowerCase() === String(user.username).toLowerCase())
+            (log.username && user.username && user.username !== "system" && String(log.username).toLowerCase() === String(user.username).toLowerCase())
         )
       }
     }

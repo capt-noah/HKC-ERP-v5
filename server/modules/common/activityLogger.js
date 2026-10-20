@@ -390,24 +390,40 @@ export function generateActivitySummary({ method, resource, action, body = {}, d
 /**
  * Log activity helper writing resiliently through Drizzle CRUD.
  */
-export async function logActivity(userId, username, fullname, action, resource, details = {}) {
+export async function logActivity(userIdOrObj, username, fullname, action, resource, details = {}) {
   try {
+    let uid = userIdOrObj
+    let uname = username
+    let fname = fullname
+    let act = action
+    let res = resource
+    let det = details
+
+    if (userIdOrObj && typeof userIdOrObj === "object") {
+      uid = userIdOrObj.userId || userIdOrObj.user_id || null
+      uname = userIdOrObj.username || null
+      fname = userIdOrObj.fullname || userIdOrObj.fullName || null
+      act = userIdOrObj.action || null
+      res = userIdOrObj.resource || userIdOrObj.module || null
+      det = userIdOrObj.details || userIdOrObj
+    }
+
     const id = `LOG-${Date.now()}-${crypto.randomUUID().slice(0, 6)}`
     const logResource = getResource("user_activity_logs")
-    const actionLabel = details.activityType || action || "Activity"
+    const actionLabel = det?.activityType || act || "Activity"
     await drizzleCreateRow({
       resource: logResource,
       body: {
         id,
-        user_id: userId || null,
-        username: username || "system",
-        fullname: fullname || details.fullname || null,
+        user_id: uid || null,
+        username: uname || "system",
+        fullname: fname || det?.fullname || null,
         action: actionLabel,
-        resource: resource || "system",
-        module: resource || "system",
-        entity_type: details.entityType || resource || null,
-        entity_id: details.itemId || null,
-        details: { fullname, ...details },
+        resource: res || "system",
+        module: userIdOrObj?.module || res || "system",
+        entity_type: det?.entityType || userIdOrObj?.entityType || res || null,
+        entity_id: det?.itemId || userIdOrObj?.entityId || null,
+        details: { ...(typeof det === "object" && det !== null ? det : {}), fullname: fname || det?.fullname || null },
         created_at: new Date().toISOString(),
       },
     })

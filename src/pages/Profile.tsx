@@ -260,29 +260,18 @@ export default function Profile() {
       if (Array.isArray(logs)) {
         const uid = effectiveUser?.id ? String(effectiveUser.id).toLowerCase().trim() : ""
         const uname = effectiveUser?.username ? String(effectiveUser.username).toLowerCase().trim() : ""
-        const roles = effectiveUser?.roles || (effectiveUser?.role ? [effectiveUser.role] : [])
-        const isSuper = roles.includes("superadmin")
+        // Strictly isolate actions performed by this specific user
+        const myLogs = logs.filter((l) => {
+          const logUid = l.user_id ? String(l.user_id).toLowerCase().trim() : ""
+          const logUname = l.username ? String(l.username).toLowerCase().trim() : ""
+          const detailUid = l.details?.userId || l.details?.user_id ? String(l.details.userId || l.details.user_id).toLowerCase().trim() : ""
+          const detailUname = l.details?.username ? String(l.details.username).toLowerCase().trim() : ""
 
-        let myLogs: UserActivityLog[] = []
-        if (isSuper) {
-          myLogs = logs.filter((l) => {
-            const logUid = l.user_id ? String(l.user_id).toLowerCase().trim() : ""
-            const logUname = l.username ? String(l.username).toLowerCase().trim() : ""
-            return (uid && logUid === uid) || (uname && logUname === uname)
-          })
-          if (myLogs.length === 0) {
-            myLogs = logs
-          }
-        } else {
-          myLogs = logs.filter((l) => {
-            const logUid = l.user_id ? String(l.user_id).toLowerCase().trim() : ""
-            const logUname = l.username ? String(l.username).toLowerCase().trim() : ""
-            return (uid && logUid === uid) || (uname && logUname === uname)
-          })
-          if (myLogs.length === 0 && logs.length > 0) {
-            myLogs = logs
-          }
-        }
+          const matchId = Boolean(uid && (logUid === uid || detailUid === uid))
+          const matchUname = Boolean(uname && uname !== "system" && (logUname === uname || detailUname === uname))
+
+          return matchId || matchUname
+        })
 
         myLogs.sort((a, b) => {
           const tA = parseSafeDate(a.created_at)?.getTime() || 0
@@ -290,9 +279,12 @@ export default function Profile() {
           return tB - tA
         })
         setActivityLogs(myLogs)
+      } else {
+        setActivityLogs([])
       }
     } catch (err) {
       console.warn("Could not load user activity logs:", err)
+      setActivityLogs([])
     } finally {
       setLoadingLogs(false)
     }
