@@ -435,10 +435,11 @@ export function unwrapRow(row, storage) {
   }
 
   const rawMType = String(out.movement_type || out.movementType || out.type || "").toUpperCase()
-  const isReceipt = rawMType === "RECEIPT" || rawMType === "INBOUND" || rawMType === "ADJUSTMENT_IN" || rawMType === "ENTRY" || rawMType === "GRV_ENTRY"
+  const isReceipt = rawMType === "RECEIPT" || rawMType === "INBOUND" || rawMType === "ADJUSTMENT_IN" || rawMType === "ENTRY" || rawMType === "GRV_ENTRY" || rawMType === "TRANSFER_IN"
   const isQuarantine = rawMType === "QUARANTINE"
   const isReject = rawMType === "REJECT_DEDUCTION" || rawMType === "REJECT"
-  const isIssue = rawMType === "ISSUE" || rawMType === "OUTBOUND" || rawMType === "DISPATCH" || rawMType === "ADJUSTMENT_OUT" || rawMType === "LEAVE" || rawMType === "OUTBOUND_DISPATCH"
+  const isTransfer = rawMType === "TRANSFER" || rawMType === "TRANSFER_OUT"
+  const isIssue = rawMType === "ISSUE" || rawMType === "OUTBOUND" || rawMType === "DISPATCH" || rawMType === "ADJUSTMENT_OUT" || rawMType === "LEAVE" || rawMType === "OUTBOUND_DISPATCH" || isTransfer
 
   const rawQty = Number(out.quantity ?? out.qty ?? out.gross_quantity ?? out.net_quantity ?? 0)
   if (out.qtyReceived === undefined) {
@@ -447,8 +448,8 @@ export function unwrapRow(row, storage) {
   if (out.qtyIssued === undefined) {
     out.qtyIssued = (isIssue || isQuarantine || isReject) ? Math.abs(rawQty) : 0
   }
-  if (out.type === undefined || out.type === "RECEIPT" || out.type === "ISSUE" || out.type === "GRV_ENTRY" || out.type === "OUTBOUND_DISPATCH" || out.type === "REJECT_DEDUCTION") {
-    out.type = isQuarantine ? "quarantine" : isReject ? "reject" : isReceipt ? "entry" : "leave"
+  if (out.type === undefined || out.type === "RECEIPT" || out.type === "ISSUE" || out.type === "GRV_ENTRY" || out.type === "OUTBOUND_DISPATCH" || out.type === "REJECT_DEDUCTION" || out.type === "TRANSFER" || out.type === "TRANSFER_OUT" || out.type === "TRANSFER_IN") {
+    out.type = isQuarantine ? "quarantine" : isReject ? "reject" : isTransfer ? "transfer_out" : isReceipt ? "entry" : "leave"
   }
 
   if (out.movement_date !== undefined && out.date === undefined) out.date = out.movement_date

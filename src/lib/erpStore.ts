@@ -725,15 +725,16 @@ class ErpStore {
 
         const matchingMovements = (stockMovements || []).filter((sm: any) => sm.product_id === p.id || sm.productId === p.id)
         const mappedPharmaBinEntries: BinCardMovementEntry[] = matchingMovements.map((sm: any) => {
-          const isReceipt = sm.movement_type === "RECEIPT" || sm.movement_type === "INBOUND" || sm.movement_type === "ADJUSTMENT_IN" || sm.movement_type === "TRANSFER_IN" || sm.type === "entry"
-          const isQuarantine = sm.movement_type === "QUARANTINE" || sm.type === "quarantine"
-          const isTransfer = sm.movement_type === "TRANSFER" || sm.movement_type === "TRANSFER_OUT"
-          const isIssue = sm.movement_type === "ISSUE" || sm.movement_type === "OUTBOUND" || sm.movement_type === "DISPATCH" || sm.movement_type === "ADJUSTMENT_OUT" || sm.type === "leave"
+          const mType = String(sm.movement_type || sm.movementType || sm.type || "").toUpperCase()
+          const isReceipt = mType === "RECEIPT" || mType === "INBOUND" || mType === "ADJUSTMENT_IN" || mType === "TRANSFER_IN" || sm.type === "entry"
+          const isQuarantine = mType === "QUARANTINE" || sm.type === "quarantine"
+          const isTransfer = mType === "TRANSFER" || mType === "TRANSFER_OUT" || sm.type === "transfer_out"
+          const isIssue = mType === "ISSUE" || mType === "OUTBOUND" || mType === "DISPATCH" || mType === "ADJUSTMENT_OUT" || sm.type === "leave" || isTransfer
           
           const qty = Number(sm.quantity ?? sm.qty ?? sm.qtyReceived ?? sm.qtyIssued ?? 0)
-          const qtyReceived = sm.qtyReceived !== undefined ? Number(sm.qtyReceived) : (isReceipt ? qty : 0)
-          const qtyIssued = sm.qtyIssued !== undefined ? Number(sm.qtyIssued) : ((isIssue || isQuarantine || isTransfer) ? qty : 0)
-          const mType = isQuarantine ? "quarantine" : isTransfer ? "transfer_out" : isReceipt ? "entry" : "leave"
+          const qtyReceived = Number(sm.qtyReceived || 0) > 0 ? Number(sm.qtyReceived) : (isReceipt ? qty : 0)
+          const qtyIssued = Number(sm.qtyIssued || 0) > 0 ? Number(sm.qtyIssued) : ((isIssue || isQuarantine) ? qty : 0)
+          const resolvedType = isQuarantine ? "quarantine" : isTransfer ? "transfer_out" : isReceipt ? "entry" : "leave"
 
           const batchMatch = matchingBatches.find((b: any) => (b.batch_no || b.batchNo) === (sm.batch_no || sm.batchNo))
           const mfgDate = sm.mfg_date || sm.mfgDate || batchMatch?.mfgDate || batchMatch?.mfg_date || p.mfg_date || p.manufacturingDate || ""
@@ -746,7 +747,7 @@ class ErpStore {
 
           return {
             id: sm.id,
-            type: mType as any,
+            type: resolvedType as any,
             date: sm.movement_date || sm.date || sm.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
             batchNo: resolvedBatchNo,
             voucherNo: sm.reference_id || sm.reference || sm.voucherNo || undefined,
@@ -2270,46 +2271,6 @@ class ErpStore {
             supplierName: originProd?.supplierName || "Internal Transfer",
           }
           await this.addProduct(newProd)
-
-          await createResource("pharma_product_batches", {
-            id: newBatchId,
-            product_id: newProdId,
-            warehouse_id: currentTransfer.to_warehouse,
-            batch_no: item.batch_no || "BATCH-01",
-            mfg_date: (item as any).mfg_date || null,
-            expiry_date: item.expiry || "2099-12-31",
-            quantity: incQty,
-            unit_cost: item.unit_price || originProd?.unitCost || 0,
-            selling_price: originProd?.sellingPrice || 0,
-            qa_status: "Released",
-          } as any).catch((err) => console.warn("Failed to insert pharma_product_batches:", err))
-
-          // Record stock movement log for receipt
-          const movement: StockMovementLog = {
-            id: `SM-${Date.now().toString().slice(-4)}`,
-            date: new Date().toISOString().split("T")[0],
-            type: "TRANSFER",
-            productId: newProdId,
-            productName: item.item,
-            fromWarehouse: currentTransfer.from_warehouse,
-            toWarehouse: currentTransfer.to_warehouse,
-            qty: incQty,
-            unit: item.UOM,
-            reference: currentTransfer.reference_number,
-            remarks: `Transfer received from ${currentTransfer.from_warehouse} (${currentTransfer.reference_number})`,
-          }
-          await createResource<StockMovementLog>("stock_movements", {
-            ...movement,
-            product_id: newProdId,
-            warehouse_id: currentTransfer.to_warehouse,
-            movement_type: "TRANSFER_IN",
-            batch_no: item.batch_no || "BATCH-01",
-            quantity: incQty,
-            unit_cost: item.unit_price || (originProd?.unitCost || 0),
-            balance_after: incQty,
-            party: `Transfer from ${currentTransfer.from_warehouse}`,
-          } as any).catch(() => {})
-          this.stockMovements.unshift(movement)
         }
       }
     }

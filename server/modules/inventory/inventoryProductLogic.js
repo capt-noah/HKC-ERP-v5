@@ -146,13 +146,14 @@ function hydratePharmaProduct(productRow, batches = [], movements = []) {
   unwrapped.binCardEntries = movements.map((m) => {
     const r = unwrapRow(m, "relational")
     const mType = String(r.movementType || r.movement_type || r.type || "").toUpperCase()
-    const isReceipt = mType === "RECEIPT" || mType === "INBOUND" || mType === "ADJUSTMENT_IN" || mType === "ENTRY"
+    const isReceipt = mType === "RECEIPT" || mType === "INBOUND" || mType === "ADJUSTMENT_IN" || mType === "ENTRY" || mType === "TRANSFER_IN"
     const isQuarantine = mType === "QUARANTINE"
-    const isTransfer = mType === "TRANSFER"
+    const isTransfer = mType === "TRANSFER" || mType === "TRANSFER_OUT"
+    const isIssue = mType === "ISSUE" || mType === "OUTBOUND" || mType === "DISPATCH" || mType === "ADJUSTMENT_OUT" || mType === "LEAVE" || mType === "OUTBOUND_DISPATCH" || isTransfer
     const qty = Number(r.quantity ?? r.qty ?? r.qtyReceived ?? r.qtyIssued ?? 0)
 
-    const qtyReceived = r.qtyReceived !== undefined ? Number(r.qtyReceived) : (isReceipt ? qty : 0)
-    const qtyIssued = r.qtyIssued !== undefined ? Number(r.qtyIssued) : (!isReceipt ? qty : 0)
+    const qtyReceived = Number(r.qtyReceived || 0) > 0 ? Number(r.qtyReceived) : (isReceipt ? qty : 0)
+    const qtyIssued = Number(r.qtyIssued || 0) > 0 ? Number(r.qtyIssued) : (isIssue ? qty : 0)
 
     return {
       id: r.id,
@@ -163,10 +164,10 @@ function hydratePharmaProduct(productRow, batches = [], movements = []) {
       qtyIssued,
       balance: Number(r.balanceAfter ?? r.balance_after ?? unwrapped.quantity ?? 0),
       expiryDate: r.expiryDate || r.expiry_date || "",
-      party: r.party || (isReceipt ? "Supplier Arrival" : isQuarantine ? "Quarantine Hold" : "Customer Dispatch"),
+      party: r.party || (isReceipt ? "Supplier Arrival" : isQuarantine ? "Quarantine Hold" : isTransfer ? "Store Transfer" : "Customer Dispatch"),
       unitPrice: Number(r.unitCost ?? r.unit_cost ?? r.unitPrice ?? r.unit_price ?? unwrapped.unitCost ?? unwrapped.unit_cost ?? 0),
       sellingPrice: (r.sellingPrice != null || r.selling_price != null) ? Number(r.sellingPrice ?? r.selling_price) : undefined,
-      remark: r.notes || r.reason || (isReceipt ? "Stock Receipt" : isQuarantine ? "Quarantine Hold" : "Stock Issue"),
+      remark: r.notes || r.reason || (isReceipt ? "Stock Receipt" : isQuarantine ? "Quarantine Hold" : isTransfer ? "Store Transfer" : "Stock Issue"),
       createdAt: r.createdAt || r.created_at,
     }
   })
