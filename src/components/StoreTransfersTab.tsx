@@ -1165,10 +1165,10 @@ export default function StoreTransfersTab() {
                     <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">1. Origin Issuance Sign-off</span>
                     <div className="text-xs space-y-1.5 font-semibold">
                       <p><span className="text-zinc-400">Date:</span> {selectedTransfer.issued_at || selectedTransfer.date}</p>
-                      <p><span className="text-zinc-400">Dispatcher:</span> <strong className="text-zinc-900">{selectedTransfer.issued_by || currentUserName || "Authorized Store Dispatcher"}</strong></p>
+                      <p><span className="text-zinc-400">Dispatcher:</span> <strong className="text-zinc-900">{selectedTransfer.issued_by || (selectedTransfer as any).requested_by || "Authorized Store Dispatcher"}</strong></p>
                       <div className="pt-1">
                         <span className="font-serif italic text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-md border border-emerald-200 inline-block">
-                          {selectedTransfer.issued_signature || selectedTransfer.issued_by || currentUserName || "Authorized"}
+                          {selectedTransfer.issued_signature || selectedTransfer.issued_by || (selectedTransfer as any).requested_by || "Authorized"}
                         </span>
                       </div>
                     </div>
@@ -1180,10 +1180,10 @@ export default function StoreTransfersTab() {
                     {selectedTransfer.status === "Received" ? (
                       <div className="text-xs space-y-1.5 font-semibold">
                         <p><span className="text-zinc-400">Date:</span> {selectedTransfer.received_at || selectedTransfer.date}</p>
-                        <p><span className="text-zinc-400">Verified By:</span> <strong className="text-zinc-900">{selectedTransfer.received_by || "Authorized Receiver"}</strong></p>
+                        <p><span className="text-zinc-400">Verified By:</span> <strong className="text-zinc-900">{selectedTransfer.received_by || (selectedTransfer as any).approved_by || "Authorized Receiver"}</strong></p>
                         <div className="pt-1">
                           <span className="font-serif italic text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-md border border-emerald-200 inline-block">
-                            {selectedTransfer.received_signature || selectedTransfer.received_by || "Verified & Received"}
+                            {selectedTransfer.received_signature || selectedTransfer.received_by || (selectedTransfer as any).approved_by || "Verified & Received"}
                           </span>
                         </div>
                       </div>

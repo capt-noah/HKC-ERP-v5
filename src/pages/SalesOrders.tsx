@@ -203,6 +203,7 @@ export default function SalesOrders() {
   const [isUploadingPaymentAdvice, setIsUploadingPaymentAdvice] = useState(false)
   const [isSubmittingQuotation, setIsSubmittingQuotation] = useState(false)
   const [deletingOrder, setDeletingOrder] = useState<SalesOrder | null>(null)
+  const [isDeletingOrder, setIsDeletingOrder] = useState(false)
   const [isNewQuotationOpen, setIsNewQuotationOpen] = useState(false)
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false)
   const financeStore = useFinanceStore()
@@ -3093,19 +3094,30 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         resourceType="sales_orders"
         warehouseId={deletingOrder?.warehouse}
         description="This will permanently delete this Sales Order contract from system registry."
-        onClose={() => setDeletingOrder(null)}
+        isDeleting={isDeletingOrder}
+        onClose={() => {
+          if (isDeletingOrder) return
+          setDeletingOrder(null)
+        }}
         onRequestSubmitted={() => {
           setDeletingOrder(null)
           setIsEditOrderOpen(false)
           setEditingOrder(null)
         }}
-        onConfirmDelete={() => {
+        onConfirmDelete={async () => {
           if (!deletingOrder) return
-          erp.deleteSalesOrder(deletingOrder.id)
-          showToast("Order Deleted", "info", `Sales Order ${deletingOrder.id} removed successfully.`)
-          setDeletingOrder(null)
-          setIsEditOrderOpen(false)
-          setEditingOrder(null)
+          setIsDeletingOrder(true)
+          try {
+            await erp.deleteSalesOrder(deletingOrder.id)
+            showToast("Order Deleted", "info", `Sales Order ${deletingOrder.id} removed successfully.`)
+            setDeletingOrder(null)
+            setIsEditOrderOpen(false)
+            setEditingOrder(null)
+          } catch (err: any) {
+            showToast("Deletion Blocked", "warning", err.message || "Failed to delete Sales Order contract.")
+          } finally {
+            setIsDeletingOrder(false)
+          }
         }}
       />
 

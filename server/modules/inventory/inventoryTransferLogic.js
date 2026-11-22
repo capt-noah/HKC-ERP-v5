@@ -54,8 +54,23 @@ export async function createTransfer(body = {}) {
 
   const transferId = body.id || body.transfer_no || `TR-${Date.now()}`
   const validCols = await getTableColumns("store_transfers")
+  const dispatcher = body.issued_by || body.issuedBy || body.requested_by || body.requestedBy || ""
+  const dispatcherSig = body.issued_signature || body.issuedSignature || dispatcher
+  const issuedTime = body.issued_at || body.issuedAt || body.request_date || body.requestDate || getLocalDateString()
+
   const normalized = normalizeBodyToDbColumns(
-    { ...body, id: transferId, transfer_no: body.transfer_no || transferId, from_warehouse_id: fromWh, to_warehouse_id: toWh },
+    {
+      ...body,
+      id: transferId,
+      transfer_no: body.transfer_no || transferId,
+      from_warehouse_id: fromWh,
+      to_warehouse_id: toWh,
+      requested_by: dispatcher,
+      issued_by: dispatcher,
+      issued_at: issuedTime,
+      issued_signature: dispatcherSig,
+      request_date: issuedTime,
+    },
     validCols
   )
 
@@ -110,7 +125,19 @@ export async function createTransfer(body = {}) {
 export async function updateTransfer(id, updates = {}) {
   const cleanId = String(id).trim()
   const validCols = await getTableColumns("store_transfers")
-  const normalized = normalizeBodyToDbColumns(updates, validCols)
+  const receiver = updates.received_by || updates.receivedBy || updates.approved_by || updates.approvedBy || ""
+  const receiverSig = updates.received_signature || updates.receivedSignature || receiver
+  const receivedTime = updates.received_at || updates.receivedAt || updates.completed_date || updates.completedDate || ""
+  const discrepancy = updates.discrepancy_remark || updates.discrepancyRemark || updates.discrepancyText || updates.notes || ""
+
+  const enrichedUpdates = {
+    ...updates,
+    ...(receiver ? { received_by: receiver, approved_by: receiver } : {}),
+    ...(receiverSig ? { received_signature: receiverSig } : {}),
+    ...(receivedTime ? { received_at: receivedTime, completed_date: receivedTime } : {}),
+    ...(discrepancy ? { discrepancy_remark: discrepancy, notes: discrepancy } : {}),
+  }
+  const normalized = normalizeBodyToDbColumns(enrichedUpdates, validCols)
 
   return await withTransaction(async (conn) => {
     const updateCols = Object.keys(normalized).filter(

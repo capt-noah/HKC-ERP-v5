@@ -3939,10 +3939,11 @@ class ErpStore {
     return { success: true, invoiceId: invId }
   }
 
-  public deleteSalesOrder(id: string) {
+  public async deleteSalesOrder(id: string): Promise<boolean> {
+    await deleteResource("sales_orders", id)
     this.salesOrders = this.salesOrders.filter((so) => so.id !== id)
-    deleteResource("sales_orders", id).catch((err) => console.error("Failed to delete Sales Order:", err))
     this.notify()
+    return true
   }
 
   // Customer Credit Limit Analysis

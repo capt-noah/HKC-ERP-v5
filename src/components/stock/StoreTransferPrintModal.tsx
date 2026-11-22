@@ -200,10 +200,10 @@ export default function StoreTransferPrintModal({
                 <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 block">1. Origin Issuance Sign-off</span>
                 <div className="text-xs space-y-1 font-semibold">
                   <p><span className="text-zinc-400">Date:</span> {transfer.issued_at || transfer.date}</p>
-                  <p><span className="text-zinc-400">Dispatcher:</span> <strong className="text-zinc-900">{transfer.issued_by || "Store Manager"}</strong></p>
+                  <p><span className="text-zinc-400">Dispatcher:</span> <strong className="text-zinc-900">{transfer.issued_by || (transfer as any).requested_by || "Store Manager"}</strong></p>
                   <div className="pt-1">
                     <span className="font-serif italic text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-200">
-                      {transfer.issued_signature || transfer.issued_by || "Authorized"}
+                      {transfer.issued_signature || transfer.issued_by || (transfer as any).requested_by || "Authorized"}
                     </span>
                   </div>
                 </div>
@@ -215,10 +215,10 @@ export default function StoreTransferPrintModal({
                 {transfer.status === "Received" ? (
                   <div className="text-xs space-y-1 font-semibold">
                     <p><span className="text-zinc-400">Date:</span> {transfer.received_at || transfer.date}</p>
-                    <p><span className="text-zinc-400">Verified By:</span> <strong className="text-zinc-900">{transfer.received_by}</strong></p>
+                    <p><span className="text-zinc-400">Verified By:</span> <strong className="text-zinc-900">{transfer.received_by || (transfer as any).approved_by || "Authorized Receiver"}</strong></p>
                     <div className="pt-1">
                       <span className="font-serif italic text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-200">
-                        {transfer.received_signature || transfer.received_by || "Verified"}
+                        {transfer.received_signature || transfer.received_by || (transfer as any).approved_by || "Verified"}
                       </span>
                     </div>
                   </div>

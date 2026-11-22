@@ -711,6 +711,10 @@ export async function drizzleDeleteRow({ resource, id }) {
     if (tableName === "pharma_products") {
       await pool.query("DELETE FROM pharma_product_batches WHERE product_id = ?", [String(targetDbId)]).catch(() => {})
     }
+    if (tableName === "sales_orders") {
+      await pool.query("DELETE FROM shipment_documents WHERE sales_order_id = ? OR entity_id = ?", [String(targetDbId), String(targetDbId)]).catch(() => {})
+      await pool.query("DELETE FROM deletion_requests WHERE record_id = ? AND resource_type = 'sales_orders'", [String(targetDbId)]).catch(() => {})
+    }
 
     await pool.query(`DELETE FROM \`${tableName}\` WHERE id = ?`, [String(targetDbId)])
     if (tableName === "warehouses") {

@@ -1330,20 +1330,20 @@ export function printStoreTransferDocument(transfer: PrintStoreTransferOptions):
   <div class="signoff-container">
     <div class="signoff-box">
       <div class="signoff-title">1. Origin Facility Issuance Sign-off</div>
-      <div class="signoff-row"><span class="signoff-label">Issuing Officer:</span> <span class="signoff-val">${transfer.issuedBy || "Store Manager"}</span></div>
+      <div class="signoff-row"><span class="signoff-label">Issuing Officer:</span> <span class="signoff-val">${transfer.issuedBy || (transfer as any).requestedBy || (transfer as any).requested_by || "Store Manager"}</span></div>
       <div class="signoff-row"><span class="signoff-label">Date & Time:</span> <span class="signoff-val">${transfer.issuedAt || transfer.date}</span></div>
       <div>
-        <span class="signature-badge">${transfer.issuedSignature || transfer.issuedBy || "Authorized"}</span>
+        <span class="signature-badge">${transfer.issuedSignature || transfer.issuedBy || (transfer as any).requestedBy || "Authorized"}</span>
       </div>
     </div>
 
     <div class="signoff-box">
       <div class="signoff-title">2. Destination Facility Receiver Sign-off</div>
       ${transfer.status === "Received" ? `
-        <div class="signoff-row"><span class="signoff-label">Receiving Officer:</span> <span class="signoff-val">${transfer.receivedBy || "Store Manager"}</span></div>
+        <div class="signoff-row"><span class="signoff-label">Receiving Officer:</span> <span class="signoff-val">${transfer.receivedBy || (transfer as any).approvedBy || (transfer as any).approved_by || "Store Manager"}</span></div>
         <div class="signoff-row"><span class="signoff-label">Date & Time:</span> <span class="signoff-val">${transfer.receivedAt || transfer.date}</span></div>
         <div>
-          <span class="signature-badge">${transfer.receivedSignature || transfer.receivedBy || "Verified"}</span>
+          <span class="signature-badge">${transfer.receivedSignature || transfer.receivedBy || (transfer as any).approvedBy || "Verified"}</span>
         </div>
       ` : transfer.status === "Discrepancy" ? `
         <div class="signoff-row" style="color:#b45309; font-weight:bold;">Status: Discrepancy Flagged</div>

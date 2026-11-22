@@ -2710,7 +2710,7 @@ export default function ControlCenter() {
                                 {/* Action Buttons */}
                                 <td className="py-4 px-5 text-right whitespace-nowrap">
                                   <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                                    {status !== "Approved" && (
+                                    {status === "Pending" && (
                                       <button
                                         type="button"
                                         disabled={isProcessing}
@@ -3201,10 +3201,10 @@ export default function ControlCenter() {
                       }}
                       className="px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-extrabold transition-all shadow-2xs cursor-pointer"
                     >
-                      Decline Order
+                      {viewModalOrder.approvalStatus === "Approved" ? "Revoke / Decline Order" : "Decline Order"}
                     </button>
                   )}
-                  {viewModalOrder.approvalStatus !== "Approved" && (
+                  {viewModalOrder.approvalStatus === "Pending" && (
                     <button
                       type="button"
                       onClick={() => {
