@@ -83,8 +83,10 @@ export function normalizeBodyToDbColumns(body, validCols) {
     wh1Entries: "wh1_entries",
     binCardEntries: "bin_card_entries",
     productId: "product_id",
+    product_id: "product_id",
     productName: "product_name",
     movementType: "movement_type",
+    type: "movement_type",
     balanceAfter: "balance_after",
     batch: "batch_no",
     batchNo: "batch_no",
@@ -126,7 +128,9 @@ export function normalizeBodyToDbColumns(body, validCols) {
     unitPrice: "unit_price",
     createdBy: "created_by",
     issuedBy: "requested_by",
+    issued_by: "requested_by",
     receivedBy: "approved_by",
+    received_by: "approved_by",
     commodityType: "commodity_type",
     cropYear: "crop_year",
     cleanYieldPct: "clean_yield_pct",
@@ -520,8 +524,16 @@ export function unwrapRow(row, storage) {
     if (out.requestDate === undefined) out.requestDate = out.request_date
     if (out.date === undefined) out.date = out.request_date
   }
-  if (out.requested_by !== undefined && out.requestedBy === undefined) out.requestedBy = out.requested_by
-  if (out.approved_by !== undefined && out.approvedBy === undefined) out.approvedBy = out.approved_by
+  if (out.requested_by !== undefined) {
+    if (out.requestedBy === undefined) out.requestedBy = out.requested_by
+    if (out.issued_by === undefined) out.issued_by = out.requested_by
+    if (out.issuedBy === undefined) out.issuedBy = out.requested_by
+  }
+  if (out.approved_by !== undefined) {
+    if (out.approvedBy === undefined) out.approvedBy = out.approved_by
+    if (out.received_by === undefined) out.received_by = out.approved_by
+    if (out.receivedBy === undefined) out.receivedBy = out.approved_by
+  }
   if (out.completed_date !== undefined && out.completedDate === undefined) out.completedDate = out.completed_date
 
   // Normalization for purchase_orders

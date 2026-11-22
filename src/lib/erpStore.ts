@@ -725,9 +725,9 @@ class ErpStore {
 
         const matchingMovements = (stockMovements || []).filter((sm: any) => sm.product_id === p.id || sm.productId === p.id)
         const mappedPharmaBinEntries: BinCardMovementEntry[] = matchingMovements.map((sm: any) => {
-          const isReceipt = sm.movement_type === "RECEIPT" || sm.movement_type === "INBOUND" || sm.movement_type === "ADJUSTMENT_IN" || sm.type === "entry"
+          const isReceipt = sm.movement_type === "RECEIPT" || sm.movement_type === "INBOUND" || sm.movement_type === "ADJUSTMENT_IN" || sm.movement_type === "TRANSFER_IN" || sm.type === "entry"
           const isQuarantine = sm.movement_type === "QUARANTINE" || sm.type === "quarantine"
-          const isTransfer = sm.movement_type === "TRANSFER"
+          const isTransfer = sm.movement_type === "TRANSFER" || sm.movement_type === "TRANSFER_OUT"
           const isIssue = sm.movement_type === "ISSUE" || sm.movement_type === "OUTBOUND" || sm.movement_type === "DISPATCH" || sm.movement_type === "ADJUSTMENT_OUT" || sm.type === "leave"
           
           const qty = Number(sm.quantity ?? sm.qty ?? sm.qtyReceived ?? sm.qtyIssued ?? 0)
@@ -742,11 +742,13 @@ class ErpStore {
           const sellingPrice = (rawSellingPrice !== undefined && !isNaN(rawSellingPrice) && rawSellingPrice > 0) ? rawSellingPrice : undefined
           const unitPrice = sm.unit_cost != null ? Number(sm.unit_cost) : (sm.unit_price != null ? Number(sm.unit_price) : (p.unitCost != null ? Number(p.unitCost) : 0))
 
+          const resolvedBatchNo = sm.batch_no || sm.batchNo || batchMatch?.batchNo || batchMatch?.batch_no || p.batch || p.batch_no || ""
+
           return {
             id: sm.id,
             type: mType as any,
             date: sm.movement_date || sm.date || sm.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10),
-            batchNo: sm.batch_no || sm.batchNo || "BATCH",
+            batchNo: resolvedBatchNo,
             voucherNo: sm.reference_id || sm.reference || sm.voucherNo || undefined,
             qtyReceived,
             qtyIssued,
@@ -811,7 +813,7 @@ class ErpStore {
                   line_no: idx + 1,
                   productId: ti.product_id || ti.productId || "",
                   item: ti.product_name || ti.productName || "Product",
-                  batch_no: ti.batch_no || ti.batchNo || "BATCH",
+                  batch_no: ti.batch_no || ti.batchNo || "",
                   quantity: Number(ti.quantity || 0),
                   UOM: ti.uom || ti.UOM || "Unit",
                   unit_price: Number(ti.unit_cost || ti.unitCost || 0),
@@ -1796,9 +1798,6 @@ class ErpStore {
 
   // Inter-Warehouse Transfer Execution
   public async addStockTransfer(transfer: Transfer): Promise<{ success: boolean; journalEntryId?: string }> {
-    let transferVal = 0
-    let jeId: string | undefined = undefined
-
     const matchesWarehouse = (whA?: string, whB?: string): boolean => {
       if (!whA || !whB) return false
       const a = whA.toLowerCase().trim()
@@ -1809,7 +1808,7 @@ class ErpStore {
       return a.includes(b) || b.includes(a)
     }
 
-    // Only move inventory and post GL entry if transfer is Issued or Received (not Draft)
+    // Only move inventory if transfer is Issued or Received (not Draft)
     if (transfer.status !== "Draft") {
       for (const item of transfer.line_items) {
         const originProd = this.products.find(
@@ -1820,9 +1819,7 @@ class ErpStore {
           (p) => p.id === item.productId || p.name.toLowerCase().trim() === item.item.toLowerCase().trim()
         )
 
-        const valuation = originProd ? (originProd.unitCost || 1000) : 1000
         const issueQty = Number(item.quantity) || 0
-        transferVal += issueQty * valuation
 
         if (originProd) {
           let remainingToDeduct = issueQty
@@ -1870,12 +1867,12 @@ class ErpStore {
           })
         }
 
-        // Record Stock Movement Log
+        // Record Stock Movement Log for Outbound Dispatch
         const movement: StockMovementLog = {
           id: `SM-${Date.now().toString().slice(-4)}`,
           date: transfer.date || new Date().toISOString().split("T")[0],
           type: "TRANSFER",
-          productId: originProd?.id,
+          productId: originProd?.id || item.productId,
           productName: item.item,
           fromWarehouse: transfer.from_warehouse,
           toWarehouse: transfer.to_warehouse,
@@ -1884,33 +1881,18 @@ class ErpStore {
           reference: transfer.reference_number,
           remarks: item.remark || `Transfer from ${transfer.from_warehouse} to ${transfer.to_warehouse}`,
         }
-        await createResource<StockMovementLog>("stock_movements", movement).catch(() => {})
+        await createResource<StockMovementLog>("stock_movements", {
+          ...movement,
+          product_id: originProd?.id || item.productId,
+          warehouse_id: transfer.from_warehouse,
+          movement_type: "TRANSFER_OUT",
+          batch_no: item.batch_no || originProd?.batch || originProd?.batches?.[0]?.batchNo || "",
+          quantity: issueQty,
+          unit_cost: originProd?.unitCost || 0,
+          balance_after: originProd ? Math.max(0, Number(originProd.quantity || 0) - issueQty) : 0,
+          party: `Transfer to ${transfer.to_warehouse}`,
+        } as any).catch(() => {})
         this.stockMovements.unshift(movement)
-      }
-
-      // Post Double-Entry Journal Voucher in Finance Store for inter-warehouse inventory asset transfer
-      const stockAcc = financeStore.getAccounts().find((a) => a.code === "1410-01" || a.code === "1410-03" || a.code === "1410" || a.account_type === "Asset") || financeStore.getAccounts()[0]
-
-      if (stockAcc && transferVal > 0) {
-        const postRes = financeStore.postJournalEntry(
-          {
-            entry_date: transfer.date || new Date().toISOString().split("T")[0],
-            description: `Inter-Warehouse Inventory Asset Transfer ${transfer.reference_number} (${transfer.from_warehouse} → ${transfer.to_warehouse})`,
-            source_type: "Warehouse Transfer",
-            source_id: transfer.reference_number,
-            created_by: transfer.issued_by || "Warehouse Store Manager",
-            currency: "ETB",
-            exchange_rate: 1.0,
-          },
-          [
-            { account_id: stockAcc.id, debit_amount: transferVal, credit_amount: 0, warehouse_id: transfer.to_warehouse },
-            { account_id: stockAcc.id, debit_amount: 0, credit_amount: transferVal, warehouse_id: transfer.from_warehouse },
-          ]
-        )
-        if (postRes.success && postRes.entry) {
-          jeId = postRes.entry.id
-          transfer.journalEntryId = jeId
-        }
       }
     }
 
@@ -1919,7 +1901,7 @@ class ErpStore {
       console.error("Failed to persist store transfer:", err)
     )
     this.notify()
-    return { success: true, journalEntryId: jeId }
+    return { success: true }
   }
 
   public async updateTransferStatus(
@@ -1928,7 +1910,8 @@ class ErpStore {
     receivedBy?: string,
     remark?: string,
     receivedSignature?: string,
-    receivedAt?: string
+    receivedAt?: string,
+    productAssignments?: Record<number, string> | Record<string, string>
   ): Promise<void> {
     const currentTransfer = this.transfers.find((t) => t.reference_number === refNum)
     if (!currentTransfer) return
@@ -1994,6 +1977,33 @@ class ErpStore {
             stockBreakdown: updatedBreakdown,
             binCardEntries: [...(originProd.binCardEntries || []), leaveEntry],
           })
+
+          // Record Stock Movement Log for Outbound Dispatch
+          const movement: StockMovementLog = {
+            id: `SM-${Date.now().toString().slice(-4)}`,
+            date: currentTransfer.date || new Date().toISOString().split("T")[0],
+            type: "TRANSFER",
+            productId: originProd.id,
+            productName: item.item,
+            fromWarehouse: currentTransfer.from_warehouse,
+            toWarehouse: currentTransfer.to_warehouse,
+            qty: issueQty,
+            unit: item.UOM,
+            reference: currentTransfer.reference_number,
+            remarks: item.remark || `Transfer from ${currentTransfer.from_warehouse} to ${currentTransfer.to_warehouse}`,
+          }
+          await createResource<StockMovementLog>("stock_movements", {
+            ...movement,
+            product_id: originProd.id,
+            warehouse_id: currentTransfer.from_warehouse,
+            movement_type: "TRANSFER_OUT",
+            batch_no: item.batch_no || originProd.batch || originProd.batches?.[0]?.batchNo || "",
+            quantity: issueQty,
+            unit_cost: originProd.unitCost || 0,
+            balance_after: newBalance,
+            party: `Transfer to ${currentTransfer.to_warehouse}`,
+          } as any).catch(() => {})
+          this.stockMovements.unshift(movement)
         }
       }
     }
@@ -2050,17 +2060,55 @@ class ErpStore {
               stockBreakdown: updatedBreakdown,
               binCardEntries: [...(originProd.binCardEntries || []), leaveEntry],
             })
+
+            const movement: StockMovementLog = {
+              id: `SM-${Date.now().toString().slice(-4)}`,
+              date: currentTransfer.date || new Date().toISOString().split("T")[0],
+              type: "TRANSFER",
+              productId: originProd.id,
+              productName: item.item,
+              fromWarehouse: currentTransfer.from_warehouse,
+              toWarehouse: currentTransfer.to_warehouse,
+              qty: issueQty,
+              unit: item.UOM,
+              reference: currentTransfer.reference_number,
+              remarks: item.remark || `Transfer from ${currentTransfer.from_warehouse} to ${currentTransfer.to_warehouse}`,
+            }
+            await createResource<StockMovementLog>("stock_movements", {
+              ...movement,
+              product_id: originProd.id,
+              warehouse_id: currentTransfer.from_warehouse,
+              movement_type: "TRANSFER_OUT",
+              batch_no: item.batch_no || originProd.batch || originProd.batches?.[0]?.batchNo || "",
+              quantity: issueQty,
+              unit_cost: originProd.unitCost || 0,
+              balance_after: newBalance,
+              party: `Transfer to ${currentTransfer.to_warehouse}`,
+            } as any).catch(() => {})
+            this.stockMovements.unshift(movement)
           }
         }
       }
 
       // Add stock entry to destination warehouse
-      for (const item of currentTransfer.line_items) {
-        const destProd = this.products.find(
-          (p) =>
-            matchesWarehouse(p.warehouse, currentTransfer.to_warehouse) &&
-            (p.name.toLowerCase().trim() === item.item.toLowerCase().trim() || p.sku === item.item)
-        )
+      for (let itemIdx = 0; itemIdx < currentTransfer.line_items.length; itemIdx++) {
+        const item = currentTransfer.line_items[itemIdx]
+        const assignedId =
+          (productAssignments as any)?.[itemIdx] ??
+          (item.productId ? (productAssignments as any)?.[item.productId] : undefined) ??
+          (item.item ? (productAssignments as any)?.[item.item] : undefined)
+
+        let destProd: Product | undefined = undefined
+        if (assignedId && assignedId !== "NEW") {
+          destProd = this.products.find((p) => p.id === assignedId)
+        } else if (!assignedId) {
+          destProd = this.products.find(
+            (p) =>
+              matchesWarehouse(p.warehouse, currentTransfer.to_warehouse) &&
+              (p.name.toLowerCase().trim() === item.item.toLowerCase().trim() || p.sku === item.item)
+          )
+        }
+
         const incQty = Number(item.quantity) || 0
 
         if (destProd) {
@@ -2074,12 +2122,31 @@ class ErpStore {
             return b
           })
           if (!batchMatched) {
-            updatedBatches.push({
+            const newBatchId = `BAT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+            const newBatchObj = {
+              id: newBatchId,
               batchNo: item.batch_no || "BATCH-01",
               qty: incQty,
               expiry: item.expiry || "",
-              status: "Released",
-            })
+              mfgDate: (item as any).mfg_date || "",
+              unitPrice: item.unit_price || destProd.unitCost || 0,
+              sellingPrice: destProd.sellingPrice || 0,
+              status: "Released" as const,
+            }
+            updatedBatches.push(newBatchObj)
+            // Immediately persist batch to MySQL
+            await createResource("pharma_product_batches", {
+              id: newBatchId,
+              product_id: destProd.id,
+              warehouse_id: currentTransfer.to_warehouse,
+              batch_no: item.batch_no || "BATCH-01",
+              mfg_date: (item as any).mfg_date || null,
+              expiry_date: item.expiry || "2099-12-31",
+              quantity: incQty,
+              unit_cost: item.unit_price || destProd.unitCost || 0,
+              selling_price: destProd.sellingPrice || 0,
+              qa_status: "Released",
+            } as any).catch((err) => console.warn("Failed to insert pharma_product_batches:", err))
           }
 
           let breakdownMatched = false
@@ -2116,12 +2183,40 @@ class ErpStore {
             stockBreakdown: updatedBreakdown,
             binCardEntries: [...(destProd.binCardEntries || []), entryRecord],
           })
+
+          // Record stock movement log for receipt into destProd
+          const movement: StockMovementLog = {
+            id: `SM-${Date.now().toString().slice(-4)}`,
+            date: new Date().toISOString().split("T")[0],
+            type: "TRANSFER",
+            productId: destProd.id,
+            productName: item.item,
+            fromWarehouse: currentTransfer.from_warehouse,
+            toWarehouse: currentTransfer.to_warehouse,
+            qty: incQty,
+            unit: item.UOM,
+            reference: currentTransfer.reference_number,
+            remarks: `Transfer received from ${currentTransfer.from_warehouse} (${currentTransfer.reference_number})`,
+          }
+          await createResource<StockMovementLog>("stock_movements", {
+            ...movement,
+            product_id: destProd.id,
+            warehouse_id: currentTransfer.to_warehouse,
+            movement_type: "TRANSFER_IN",
+            batch_no: item.batch_no || destProd.batch || "",
+            quantity: incQty,
+            unit_cost: item.unit_price || destProd.unitCost || 0,
+            balance_after: nextQty,
+            party: `Transfer from ${currentTransfer.from_warehouse}`,
+          } as any).catch(() => {})
+          this.stockMovements.unshift(movement)
         } else {
           // Destination product does not exist yet: create it in to_warehouse
           const originProd = this.products.find(
             (p) => p.id === item.productId || p.name.toLowerCase().trim() === item.item.toLowerCase().trim()
           )
           const newProdId = `P-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+          const newBatchId = `BAT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
           const entryRecord: BinCardMovementEntry = {
             id: `BCE-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             type: "entry",
@@ -2154,10 +2249,14 @@ class ErpStore {
             expiry: item.expiry || "",
             batches: [
               {
+                id: newBatchId,
                 batchNo: item.batch_no || "BATCH-01",
                 qty: incQty,
                 expiry: item.expiry || "",
+                mfgDate: (item as any).mfg_date || "",
                 status: "Released",
+                unitPrice: item.unit_price || originProd?.unitCost || 0,
+                sellingPrice: originProd?.sellingPrice || 0,
               },
             ],
             stockBreakdown: [
@@ -2171,23 +2270,47 @@ class ErpStore {
             supplierName: originProd?.supplierName || "Internal Transfer",
           }
           await this.addProduct(newProd)
-        }
 
-        // Record stock movement log for receipt
-        const movement: StockMovementLog = {
-          id: `SM-${Date.now().toString().slice(-4)}`,
-          date: new Date().toISOString().split("T")[0],
-          type: "RECEIPT",
-          productName: item.item,
-          fromWarehouse: currentTransfer.from_warehouse,
-          toWarehouse: currentTransfer.to_warehouse,
-          qty: incQty,
-          unit: item.UOM,
-          reference: currentTransfer.reference_number,
-          remarks: `Transfer received from ${currentTransfer.from_warehouse} (${currentTransfer.reference_number})`,
+          await createResource("pharma_product_batches", {
+            id: newBatchId,
+            product_id: newProdId,
+            warehouse_id: currentTransfer.to_warehouse,
+            batch_no: item.batch_no || "BATCH-01",
+            mfg_date: (item as any).mfg_date || null,
+            expiry_date: item.expiry || "2099-12-31",
+            quantity: incQty,
+            unit_cost: item.unit_price || originProd?.unitCost || 0,
+            selling_price: originProd?.sellingPrice || 0,
+            qa_status: "Released",
+          } as any).catch((err) => console.warn("Failed to insert pharma_product_batches:", err))
+
+          // Record stock movement log for receipt
+          const movement: StockMovementLog = {
+            id: `SM-${Date.now().toString().slice(-4)}`,
+            date: new Date().toISOString().split("T")[0],
+            type: "TRANSFER",
+            productId: newProdId,
+            productName: item.item,
+            fromWarehouse: currentTransfer.from_warehouse,
+            toWarehouse: currentTransfer.to_warehouse,
+            qty: incQty,
+            unit: item.UOM,
+            reference: currentTransfer.reference_number,
+            remarks: `Transfer received from ${currentTransfer.from_warehouse} (${currentTransfer.reference_number})`,
+          }
+          await createResource<StockMovementLog>("stock_movements", {
+            ...movement,
+            product_id: newProdId,
+            warehouse_id: currentTransfer.to_warehouse,
+            movement_type: "TRANSFER_IN",
+            batch_no: item.batch_no || "BATCH-01",
+            quantity: incQty,
+            unit_cost: item.unit_price || (originProd?.unitCost || 0),
+            balance_after: incQty,
+            party: `Transfer from ${currentTransfer.from_warehouse}`,
+          } as any).catch(() => {})
+          this.stockMovements.unshift(movement)
         }
-        await createResource<StockMovementLog>("stock_movements", movement).catch(() => {})
-        this.stockMovements.unshift(movement)
       }
     }
 
@@ -2438,6 +2561,27 @@ class ErpStore {
             } as any)
           } catch (bErr) {
             console.warn("Could not sync pharma_product_batches in updateProductDetails:", bErr)
+          }
+        } else {
+          try {
+            const newBatchId = `BAT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+            b.id = newBatchId
+            const batchQty = Number(b.qty ?? (b as any).quantity ?? 0)
+            const qaStatus = b.status || (b as any).qaStatus || (b as any).qa_status || (batchQty === 0 ? "Quarantined" : "Released")
+            await createResource("pharma_product_batches", {
+              id: newBatchId,
+              product_id: id,
+              warehouse_id: currentProduct.warehouse,
+              batch_no: b.batchNo || targetBatchNo || "BATCH-01",
+              mfg_date: b.mfgDate || targetMfg || null,
+              expiry_date: b.expiry || targetExp || "2099-12-31",
+              quantity: batchQty,
+              unit_cost: (b as any).unitPrice ?? currentProduct.unitCost ?? 0,
+              selling_price: (b as any).sellingPrice ?? currentProduct.sellingPrice ?? 0,
+              qa_status: qaStatus,
+            } as any)
+          } catch (createErr) {
+            console.warn("Could not create pharma_product_batches in updateProductDetails:", createErr)
           }
         }
       }

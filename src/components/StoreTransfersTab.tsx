@@ -169,6 +169,7 @@ export default function StoreTransfersTab() {
   const [receiptMode, setReceiptMode] = useState<"match" | "discrepancy">("match")
   const [discrepancyText, setDiscrepancyText] = useState("")
   const [isProcessingReceipt, setIsProcessingReceipt] = useState(false)
+  const [productAssignments, setProductAssignments] = useState<Record<number, string>>({})
 
   // --- PRINT & EXPORT MODAL STATE ---
   const [printTransfer, setPrintTransfer] = useState<Transfer | null>(null)
@@ -487,13 +488,39 @@ export default function StoreTransfersTab() {
       issued_signature: currentUserName,
     }
 
-    const res = await erp.addStockTransfer(payload)
+    await erp.addStockTransfer(payload)
     showToast(
       "Transfer Dispatched",
       "success",
-      `Stock units dispatched from ${formFromW} to ${formToW} by ${currentUserName}. ${res.journalEntryId ? `Voucher ${res.journalEntryId} created.` : ""}`
+      `Stock units dispatched from ${formFromW} to ${formToW} by ${currentUserName}.`
     )
     setIsFormOpen(false)
+  }
+
+  // --- OPEN RECEIPT MODAL WITH ASSIGNMENTS INITIALIZED ---
+  const handleOpenReceiptModal = (transfer: Transfer) => {
+    setSelectedTransfer(null)
+    setReceivingTransfer(transfer)
+    setReceiptMode("match")
+    setDiscrepancyText("")
+
+    // Initialize product assignments for receiver
+    const initialMap: Record<number, string> = {}
+    const items = transfer.line_items || []
+    items.forEach((item, idx) => {
+      const matchingProds = products.filter(
+        (p) =>
+          matchesOriginWarehouse(p.warehouse, transfer.to_warehouse) &&
+          (p.name.toLowerCase().trim() === item.item.toLowerCase().trim() || p.sku === item.item)
+      )
+      if (matchingProds.length > 0) {
+        initialMap[idx] = matchingProds[0].id
+      } else {
+        initialMap[idx] = "NEW"
+      }
+    })
+    setProductAssignments(initialMap)
+    setIsReceiptOpen(true)
   }
 
   // --- CONFIRM RECEIPT (MATCH OR DISCREPANCY) ---
@@ -526,7 +553,8 @@ export default function StoreTransfersTab() {
       currentUserName,
       receiptMode === "discrepancy" ? discrepancyText.trim() : undefined,
       currentUserName,
-      todayStr
+      todayStr,
+      productAssignments
     )
 
     const refNum = receivingTransfer.reference_number
@@ -717,10 +745,7 @@ export default function StoreTransfersTab() {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation()
-                        setSelectedTransfer(null)
-                        setReceivingTransfer(transfer)
-                        setReceiptMode("match")
-                        setIsReceiptOpen(true)
+                        handleOpenReceiptModal(transfer)
                       }}
                       className="px-2.5 py-1.5 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[10px] inline-flex items-center gap-1 transition-all active:scale-95 shadow-xs cursor-pointer"
                       title="Receive Stock into Store"
@@ -1231,13 +1256,7 @@ export default function StoreTransfersTab() {
                   isReceiver(selectedTransfer) ? (
                     <button
                       type="button"
-                      onClick={() => {
-                        const t = selectedTransfer
-                        setSelectedTransfer(null)
-                        setReceivingTransfer(t)
-                        setReceiptMode("match")
-                        setIsReceiptOpen(true)
-                      }}
+                      onClick={() => handleOpenReceiptModal(selectedTransfer)}
                       className="h-11 px-6 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold shadow-md active:scale-95 cursor-pointer transition-all flex items-center gap-1.5"
                     >
                       <Check className="size-4" /> Process Receipt
@@ -1268,10 +1287,10 @@ export default function StoreTransfersTab() {
           />
 
           <div
-            className="relative w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl z-[131] border border-zinc-200 text-xs"
+            className="relative w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl z-[131] border border-zinc-200 text-xs max-h-[90vh] flex flex-col"
           >
               {/* Header */}
-              <div className="flex items-center justify-between pb-3.5 border-b border-zinc-200 mb-4">
+              <div className="flex items-center justify-between pb-3.5 border-b border-zinc-200 mb-4 shrink-0">
                 <div>
                   <h3 className="text-base font-black text-zinc-900 uppercase tracking-tight">
                     Confirm Stock Receipt
@@ -1292,70 +1311,155 @@ export default function StoreTransfersTab() {
                 </button>
               </div>
 
-              {/* Receiving Officer Banner */}
-              <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200 mb-4 font-semibold">
-                <span className="text-[10px] font-black uppercase text-zinc-400 block">Receiving Officer</span>
-                <span className="text-xs font-black text-zinc-900">{currentUserName}</span>
-              </div>
-
-              {/* Verification Choices */}
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setReceiptMode("match")}
-                    className={`p-4 rounded-2xl border transition-all text-left flex flex-col justify-between h-28 cursor-pointer ${
-                      receiptMode === "match"
-                        ? "border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-500/20"
-                        : "border-zinc-200 bg-white hover:bg-zinc-50"
-                    }`}
-                  >
-                    <div className="size-7 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700">
-                      <Check className="size-4" />
-                    </div>
-                    <div>
-                      <h4 className="font-black text-zinc-900 text-xs">Quantities Match</h4>
-                      <p className="text-[10px] text-zinc-400 mt-0.5">Physical goods match transfer manifest</p>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setReceiptMode("discrepancy")}
-                    className={`p-4 rounded-2xl border transition-all text-left flex flex-col justify-between h-28 cursor-pointer ${
-                      receiptMode === "discrepancy"
-                        ? "border-amber-600 bg-amber-50/60 ring-2 ring-amber-500/20"
-                        : "border-zinc-200 bg-white hover:bg-zinc-50"
-                    }`}
-                  >
-                    <div className="size-7 rounded-full bg-amber-100 flex items-center justify-center text-amber-700">
-                      <AlertTriangle className="size-4" />
-                    </div>
-                    <div>
-                      <h4 className="font-black text-zinc-900 text-xs">Discrepancy</h4>
-                      <p className="text-[10px] text-zinc-400 mt-0.5">Variance or damaged goods observed</p>
-                    </div>
-                  </button>
+              <div className="overflow-y-auto space-y-4 pr-1">
+                {/* Receiving Officer Banner */}
+                <div className="bg-zinc-50 p-3 rounded-xl border border-zinc-200 font-semibold">
+                  <span className="text-[10px] font-black uppercase text-zinc-400 block">Receiving Officer</span>
+                  <span className="text-xs font-black text-zinc-900">{currentUserName}</span>
                 </div>
 
-                {receiptMode === "discrepancy" && (
-                  <div>
-                    <label className="text-[11px] font-black uppercase text-zinc-500 block mb-1">
-                      Discrepancy Details <span className="text-rose-600">*</span>
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={discrepancyText}
-                      onChange={(e) => setDiscrepancyText(e.target.value)}
-                      placeholder="Specify short shipment, carton damage, or lot variance..."
-                      className="w-full rounded-xl border border-zinc-200 p-3 text-xs outline-none focus:border-amber-500"
-                    />
+                {/* Verification Choices */}
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setReceiptMode("match")}
+                      className={`p-4 rounded-2xl border transition-all text-left flex flex-col justify-between h-28 cursor-pointer ${
+                        receiptMode === "match"
+                          ? "border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-500/20"
+                          : "border-zinc-200 bg-white hover:bg-zinc-50"
+                      }`}
+                    >
+                      <div className="size-7 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700">
+                        <Check className="size-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-black text-zinc-900 text-xs">Quantities Match</h4>
+                        <p className="text-[10px] text-zinc-400 mt-0.5">Physical goods match transfer manifest</p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setReceiptMode("discrepancy")}
+                      className={`p-4 rounded-2xl border transition-all text-left flex flex-col justify-between h-28 cursor-pointer ${
+                        receiptMode === "discrepancy"
+                          ? "border-amber-600 bg-amber-50/60 ring-2 ring-amber-500/20"
+                          : "border-zinc-200 bg-white hover:bg-zinc-50"
+                      }`}
+                    >
+                      <div className="size-7 rounded-full bg-amber-100 flex items-center justify-center text-amber-700">
+                        <AlertTriangle className="size-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-black text-zinc-900 text-xs">Discrepancy</h4>
+                        <p className="text-[10px] text-zinc-400 mt-0.5">Variance or damaged goods observed</p>
+                      </div>
+                    </button>
                   </div>
-                )}
+
+                  {receiptMode === "discrepancy" && (
+                    <div>
+                      <label className="text-[11px] font-black uppercase text-zinc-500 block mb-1">
+                        Discrepancy Details <span className="text-rose-600">*</span>
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={discrepancyText}
+                        onChange={(e) => setDiscrepancyText(e.target.value)}
+                        placeholder="Specify short shipment, carton damage, or lot variance..."
+                        className="w-full rounded-xl border border-zinc-200 p-3 text-xs outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Receiver Destination Product Assignment */}
+                <div className="space-y-3 pt-3 border-t border-zinc-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black uppercase text-zinc-700 tracking-wider">
+                      Destination Product Allocation ({receivingTransfer.to_warehouse})
+                    </span>
+                    <span className="text-[10px] text-zinc-400 font-medium">
+                      Select target product or create new
+                    </span>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {(receivingTransfer.line_items || []).map((item, idx) => {
+                      const destWhProducts = products.filter((p) =>
+                        matchesOriginWarehouse(p.warehouse, receivingTransfer.to_warehouse)
+                      )
+                      const matchingProds = destWhProducts.filter(
+                        (p) =>
+                          p.name.toLowerCase().trim() === item.item.toLowerCase().trim() ||
+                          p.sku === item.item
+                      )
+                      const otherProds = destWhProducts.filter(
+                        (p) => !matchingProds.some((mp) => mp.id === p.id)
+                      )
+
+                      return (
+                        <div
+                          key={idx}
+                          className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200 text-xs space-y-2"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <span className="font-extrabold text-zinc-900 block">{item.item}</span>
+                              <span className="text-[10px] font-mono font-semibold text-zinc-500">
+                                Qty: {item.quantity} {item.UOM || "units"} &bull; Batch: {item.batch_no || "N/A"}
+                                {item.expiry ? ` &bull; Exp: ${item.expiry}` : ""}
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-200/70 text-zinc-700 whitespace-nowrap">
+                              Item {idx + 1}
+                            </span>
+                          </div>
+
+                          <div>
+                            <label className="text-[10px] font-black uppercase text-zinc-500 block mb-1">
+                              Receive into Product Record at {receivingTransfer.to_warehouse}
+                            </label>
+                            <select
+                              value={productAssignments[idx] || "NEW"}
+                              onChange={(e) =>
+                                setProductAssignments((prev) => ({ ...prev, [idx]: e.target.value }))
+                              }
+                              className="w-full h-9 px-2.5 rounded-lg border border-zinc-200 bg-white font-medium text-xs text-zinc-800 outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600/30"
+                            >
+                              {matchingProds.length > 0 && (
+                                <optgroup label={`Matching Products in ${receivingTransfer.to_warehouse}`}>
+                                  {matchingProds.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name} [{p.id}] &mdash; Current Stock: {p.quantity} {p.unit}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
+                              <option value="NEW">
+                                + Register as New Product in {receivingTransfer.to_warehouse}
+                              </option>
+                              {otherProds.length > 0 && (
+                                <optgroup label="Other Warehouse Records">
+                                  {otherProds.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name} [{p.id}] &mdash; Current Stock: {p.quantity} {p.unit}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              )}
+                            </select>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
               </div>
 
               {/* Actions */}
-              <div className="pt-5 mt-5 border-t border-zinc-200 flex items-center justify-end gap-2.5">
+              <div className="pt-4 mt-4 border-t border-zinc-200 flex items-center justify-end gap-2.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => {
