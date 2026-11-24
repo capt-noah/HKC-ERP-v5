@@ -812,6 +812,7 @@ export function unwrapRow(row, storage) {
     out.urgent = Boolean(out.urgent)
   }
   if (out.description !== undefined && out.desc === undefined) out.desc = out.description
+  if (out.desc !== undefined && out.description === undefined) out.description = out.desc
 
   // Normalization for hkc_doc_records
   if (out.shipment_id !== undefined && out.shipmentId === undefined) out.shipmentId = out.shipment_id

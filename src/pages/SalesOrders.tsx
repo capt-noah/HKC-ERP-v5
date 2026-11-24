@@ -1837,12 +1837,12 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
                 )}
 
                 <div className="w-full">
-                  <label className="block text-xs font-bold text-zinc-700 mb-1">Contract Description</label>
+                  <label className="block text-xs font-bold text-zinc-700 mb-1">Description</label>
                   <textarea 
                     value={newDesc}
                     onChange={(e) => setNewDesc(e.target.value)}
                     rows={2}
-                    placeholder="Enter sales contract terms or description..."
+                    placeholder="Enter order description..."
                     className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold outline-none resize-none" 
                   />
                 </div>
@@ -2475,12 +2475,12 @@ function resolveWarehouseCode(rawWh: string | undefined, warehousesList: Array<{
         </div>
 
         <div className="w-full">
-          <label className="block text-xs font-bold text-zinc-700 mb-1">Contract Description</label>
+          <label className="block text-xs font-bold text-zinc-700 mb-1">Description</label>
           <textarea 
             value={editingOrder.desc}
             onChange={(e) => setEditingOrder({ ...editingOrder, desc: e.target.value })}
             rows={2}
-            placeholder="Enter contract terms..."
+            placeholder="Enter order description..."
             className="w-full px-3 py-2 rounded-xl bg-zinc-50 border border-zinc-200 text-xs font-semibold outline-none resize-none" 
           />
         </div>

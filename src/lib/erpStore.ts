@@ -246,6 +246,7 @@ export interface Quotation {
   currency: string
   status: "Draft" | "Quoted" | "Ordered" | "Expired" | "Cancelled"
   desc: string
+  description?: string
   paymentTerms?: string
   salesPerson?: string
   items: SalesOrderItem[]
@@ -296,6 +297,7 @@ export interface SalesOrder {
   stage: "Quote" | "Confirmed" | "Picking" | "Shipped" | "Delivered" | "Cancelled"
   progress?: number
   desc: string
+  description?: string
   initials: string
   label: string
   avatarBg: string
@@ -1093,6 +1095,8 @@ class ErpStore {
           customer: so.customer || so.customer_name || "Customer",
           customer_name: so.customer_name || so.customer || "Customer",
           warehouse: so.warehouse || so.warehouse_id || "WH2-VET-ALEM",
+          desc: so.description || so.desc || "",
+          description: so.description || so.desc || "",
           amount: Number(so.amount ?? so.grand_total ?? so.total_amount ?? so.subtotal ?? 0),
           items: Array.isArray(so.items) ? so.items : [],
           approvalStatus: so.approvalStatus || so.approval_status || "Pending",

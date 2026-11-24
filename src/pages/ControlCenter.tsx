@@ -2604,7 +2604,13 @@ export default function ControlCenter() {
 
                                 <td className="py-4 px-4">
                                   <span className="font-bold text-zinc-900 block">{so.customer || (so as any).customer_name || "Customer"}</span>
-                                  <span className="text-[10px] text-zinc-500 font-medium">Customer Order</span>
+                                  {(so.description || so.desc) ? (
+                                    <span className="text-[10px] text-zinc-500 font-medium block truncate max-w-[160px]" title={so.description || so.desc}>
+                                      {so.description || so.desc}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-zinc-500 font-medium">Customer Order</span>
+                                  )}
                                 </td>
 
                                 <td className="py-4 px-4">
@@ -2783,6 +2789,14 @@ export default function ControlCenter() {
                 <span className="text-zinc-500 font-bold">Warehouse & Terms:</span>
                 <span className="font-bold text-zinc-800">{approveModalOrder.warehouse} • {approveModalOrder.paymentType === "Cash" ? "Sales" : "Credit"}</span>
               </div>
+              {(approveModalOrder.description || approveModalOrder.desc) && (
+                <div className="flex justify-between items-start pt-1">
+                  <span className="text-zinc-500 font-bold">Description:</span>
+                  <span className="font-semibold text-zinc-800 text-right max-w-[220px] truncate" title={approveModalOrder.description || approveModalOrder.desc}>
+                    {approveModalOrder.description || approveModalOrder.desc}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between items-center pt-2 border-t border-zinc-200">
                 <span className="text-zinc-700 font-black">Total Contract Amount:</span>
                 <span className="font-mono font-black text-emerald-700 text-sm">
@@ -2989,6 +3003,16 @@ export default function ControlCenter() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Order Description */}
+              <div className="p-4 bg-zinc-50 rounded-2xl border border-zinc-200/80 space-y-1.5">
+                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                  <FileText className="size-3 text-zinc-500" /> Description
+                </p>
+                <p className="text-xs text-zinc-800 font-medium whitespace-pre-wrap leading-relaxed">
+                  {viewModalOrder.description || viewModalOrder.desc || "No description provided."}
+                </p>
               </div>
 
               {/* Line Items Table */}
